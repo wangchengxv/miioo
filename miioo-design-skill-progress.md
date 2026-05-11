@@ -28,6 +28,10 @@ design-system/
     tooltip.md                ← 已完成
     checkbox-radio.md         ← 已完成
     tab.md                    ← 已完成
+
+src/
+  components/
+    PrimaryNav.jsx            ← 主导航组件（expanded / compact / vertical 三种变体）
 ```
 
 ---
@@ -66,4 +70,4 @@ design-system/
 - [x] Tooltip 提示气泡
 - [x] Checkbox & Radio 复选框和单选框
 - [x] Tab 标签页
-- [ ] Navigation 导航
+- [x] Navigation 导航（PrimaryNav 组件，三种变体：expanded / compact / vertical，液态玻璃 indicator）

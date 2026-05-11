@@ -1,9 +1,58 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { PulsingBorder } from '@paper-design/shaders-react';
 import bgImage from '../assets/home-bg.png';
 import PrimaryNav from '../components/PrimaryNav';
+import LoginModal from '../components/LoginModal';
+import ApiConfigModal from '../components/ApiConfigModal';
 
 const ICON_STYLE = { flexShrink: '0' };
+
+const MAX_NOTIFICATION_ITEMS = 5;
+
+const NOTIFICATION_ITEMS = [
+  {
+    id: 'n1',
+    title: '系统通知',
+    content: '你的项目《海上残响》已完成自动保存，可以继续编辑。',
+    time: '3小时前',
+    unread: true,
+  },
+  {
+    id: 'n2',
+    title: '创作提醒',
+    content: '分镜草稿已生成完成，去时间轴里继续细化镜头。',
+    time: '昨天',
+    unread: true,
+  },
+  {
+    id: 'n3',
+    title: '协作动态',
+    content: '林渡在《晨雾码头》里留下了 2 条批注。',
+    time: '昨天',
+    unread: false,
+  },
+  {
+    id: 'n4',
+    title: '系统通知',
+    content: '你收藏的参考镜头包已同步到资产中心。',
+    time: '2天前',
+    unread: false,
+  },
+  {
+    id: 'n5',
+    title: '创作提醒',
+    content: '角色设定页检测到可复用的风格提示词。',
+    time: '2天前',
+    unread: false,
+  },
+  {
+    id: 'n6',
+    title: '系统通知',
+    content: '新一轮模型能力更新已开放体验。',
+    time: '3天前',
+    unread: false,
+  },
+];
 
 const NAV_ITEMS = [
   {
@@ -32,8 +81,15 @@ const NAV_ITEMS = [
     label: '创作',
     icon: (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={ICON_STYLE}>
-        <path d="M6.334 2.667L9.334 5.333L12.678 3.37L11 7L14 9.667L10 9.333L8.5 12.667L7.667 9L3.667 8.667L7.17 6.55L6.334 2.667Z" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
-        <path d="M2.667 14.007L7.667 9" stroke="#FFFFFF" strokeLinecap="round" />
+        <g clipPath="url(#clip0_1037_281)">
+          <path d="M5.86347 1.33264L9.56947 4.62603L13.7004 2.20108L11.6275 6.68533L15.3335 9.97995L10.3922 9.56735L8.5392 13.6859L7.51017 9.15599L2.56885 8.74462L6.89621 6.12943L5.86347 1.33264Z" stroke="white" strokeWidth="1.23533" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M1.3335 15.3413L7.51015 9.15601" stroke="white" strokeWidth="1.23533" strokeLinecap="round" />
+        </g>
+        <defs>
+          <clipPath id="clip0_1037_281">
+            <rect width="16" height="16" fill="white" />
+          </clipPath>
+        </defs>
       </svg>
     ),
   },
@@ -49,10 +105,201 @@ const NAV_ITEMS = [
   },
 ];
 
+function MenuPopupItem({ label }) {
+  const [hovered, setHovered] = useState(false);
+  const [pressed, setPressed] = useState(false);
+
+  return (
+    <button
+      type="button"
+      className="flex items-center gap-1 w-full rounded-md border-0 bg-transparent text-left cursor-pointer"
+      style={{
+        padding: '8px 12px',
+        backgroundColor: pressed ? '#FFFFFF14' : hovered ? '#FFFFFF0D' : 'transparent',
+        transition: 'background-color 120ms ease, color 120ms ease',
+      }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => {
+        setHovered(false);
+        setPressed(false);
+      }}
+      onMouseDown={() => setPressed(true)}
+      onMouseUp={() => setPressed(false)}
+    >
+      <div
+        className="w-fit shrink-0 font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-sm/4.5"
+        style={{ color: pressed || hovered ? '#FFFFFF' : '#FFFFFF99' }}
+      >
+        {label}
+      </div>
+    </button>
+  );
+}
+
+const COMMUNITY_QR_CODE_URL = 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KR8EAVS6CW9V257SBVP40T1A.png';
+
+function QRCodePopup({ anchorLeft }) {
+  return (
+    <div className="qr-popup" style={{ left: anchorLeft ?? 40, bottom: 24, translate: '0 -50%' }} role="dialog" aria-label="官方社群二维码">
+      <div className="qr-popup-code" style={{ backgroundImage: `url(${COMMUNITY_QR_CODE_URL})` }} />
+      <div className="qr-popup-caption font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif]">
+        扫码加入官方社群
+      </div>
+    </div>
+  );
+}
+
+function NotificationEmptyIcon() {
+  return (
+    <svg width="56" height="56" viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <rect x="6" y="6" width="44" height="44" rx="22" fill="url(#notification-empty-bg)" />
+      <rect x="6.5" y="6.5" width="43" height="43" rx="21.5" stroke="url(#notification-empty-stroke)" />
+      <path d="M20.667 29.667H20V30.333H20.667V29.667ZM35.333 29.667V30.333H36V29.667H35.333ZM17.5 29C17.132 29 16.833 29.298 16.833 29.667C16.833 30.035 17.132 30.333 17.5 30.333V29ZM38.5 30.333C38.868 30.333 39.167 30.035 39.167 29.667C39.167 29.298 38.868 29 38.5 29V30.333ZM30.667 29.667H31.333C31.333 29.298 31.035 29 30.667 29V29.667ZM25.333 29.667V29C24.965 29 24.667 29.298 24.667 29.667H25.333ZM28 12.333V11.667C23.4 11.667 19.667 15.4 19.667 20H20.333H21C21 16.136 24.136 13 28 13V12.333ZM20.333 20H19.667V29.667H20.333H21V20H20.333ZM20.333 29.667V30.333H35.333V29.667V29H20.333V29.667ZM35.333 29.667H36V20H35.333H34.667V29.667H35.333ZM35.333 20H36C36 15.4 32.6 11.667 28 11.667V12.333V13C31.864 13 34.667 16.136 34.667 20H35.333ZM17.5 29.667V30.333H38.5V29.667V29H17.5V29.667ZM28 33V33.667C29.841 33.667 31.333 32.174 31.333 30.333H30.667H30C30 31.438 29.105 32.333 28 32.333V33ZM30.667 30.333H31.333V29.667H30.667H30V30.333H30.667ZM30.667 29.667V29H25.333V29.667V30.333H30.667V29.667ZM25.333 29.667H24.667V30.333H25.333H26V29.667H25.333ZM25.333 30.333H24.667C24.667 32.174 26.159 33.667 28 33.667V33V32.333C26.895 32.333 26 31.438 26 30.333H25.333Z" fill="url(#notification-empty-bell)" fillOpacity="0.92" />
+      <circle cx="35" cy="17" r="3" fill="#7AE5B9" fillOpacity="0.9" />
+      <defs>
+        <linearGradient id="notification-empty-bg" x1="10" y1="10" x2="46" y2="46" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#FFFFFF" stopOpacity="0.12" />
+          <stop offset="1" stopColor="#FFFFFF" stopOpacity="0.04" />
+        </linearGradient>
+        <linearGradient id="notification-empty-stroke" x1="10" y1="10" x2="46" y2="46" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#FFFFFF" stopOpacity="0.24" />
+          <stop offset="1" stopColor="#FFFFFF" stopOpacity="0.08" />
+        </linearGradient>
+        <linearGradient id="notification-empty-bell" x1="28" y1="11.667" x2="28" y2="33.667" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#FFFFFF" />
+          <stop offset="1" stopColor="#B7C0CC" />
+        </linearGradient>
+      </defs>
+    </svg>
+  );
+}
+
+function NotificationEmptyState() {
+  return (
+    <div className="notification-empty-state">
+      <div className="notification-empty-icon-wrap">
+        <NotificationEmptyIcon />
+      </div>
+      <div className="font-['AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] font-medium text-base/5 text-white">
+        暂无通知
+      </div>
+      <div className="max-w-[220px] text-center font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-sm/5 text-[#FFFFFF99]">
+        新的系统消息和创作提醒会显示在这里
+      </div>
+    </div>
+  );
+}
+
+function NotificationCard({ item, onClick }) {
+  const [hovered, setHovered] = useState(false);
+  const [pressed, setPressed] = useState(false);
+
+  return (
+    <button
+      type="button"
+      className="notification-card"
+      data-hovered={hovered}
+      data-pressed={pressed}
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => {
+        setHovered(false);
+        setPressed(false);
+      }}
+      onMouseDown={() => setPressed(true)}
+      onMouseUp={() => setPressed(false)}
+    >
+      <div className="flex items-start gap-3 self-stretch">
+        <div className="flex flex-col items-start gap-1 flex-1 min-w-0">
+          <div className="flex items-center gap-2 w-full min-w-0">
+            <div className="truncate font-['AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] font-medium text-sm/4.5 text-white">
+              {item.title}
+            </div>
+            {item.unread && <span className="notification-card-dot" aria-hidden="true" />}
+          </div>
+          <div className="notification-card-content font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-sm/5 text-[#FFFFFF99]">
+            {item.content}
+          </div>
+        </div>
+        <div className="shrink-0 font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-xs/4 text-[#FFFFFF66]">
+          {item.time}
+        </div>
+      </div>
+    </button>
+  );
+}
+
+function NotificationPopup({ items, onClose, anchorLeft }) {
+  const [closeHovered, setCloseHovered] = useState(false);
+  const [closePressed, setClosePressed] = useState(false);
+  const [isScrolling, setIsScrolling] = useState(false);
+  const scrollEndTimerRef = useRef(null);
+  const visibleItems = items.slice(0, MAX_NOTIFICATION_ITEMS);
+  const isEmpty = visibleItems.length === 0;
+
+  useEffect(() => () => {
+    if (scrollEndTimerRef.current) {
+      window.clearTimeout(scrollEndTimerRef.current);
+    }
+  }, []);
+
+  const handleListScroll = () => {
+    setIsScrolling(true);
+    if (scrollEndTimerRef.current) {
+      window.clearTimeout(scrollEndTimerRef.current);
+    }
+    scrollEndTimerRef.current = window.setTimeout(() => {
+      setIsScrolling(false);
+      scrollEndTimerRef.current = null;
+    }, 480);
+  };
+
+  return (
+    <div className="notification-popup" style={{ left: anchorLeft ?? 40, bottom: 24 }} role="dialog" aria-label="消息中心">
+      <div className="notification-popup-header">
+        <div className="font-['AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] font-medium text-base/5 text-white">
+          消息中心
+        </div>
+        <button
+          type="button"
+          className="notification-close"
+          data-hovered={closeHovered}
+          data-pressed={closePressed}
+          onClick={onClose}
+          onMouseEnter={() => setCloseHovered(true)}
+          onMouseLeave={() => {
+            setCloseHovered(false);
+            setClosePressed(false);
+          }}
+          onMouseDown={() => setClosePressed(true)}
+          onMouseUp={() => setClosePressed(false)}
+          aria-label="关闭消息中心"
+        >
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+            <path d="M3.5 3.5L10.5 10.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+            <path d="M10.5 3.5L3.5 10.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+          </svg>
+        </button>
+      </div>
+      {isEmpty ? (
+        <NotificationEmptyState />
+      ) : (
+        <div className="notification-popup-list" data-scrolling={isScrolling} onScroll={handleListScroll} role="list">
+          {visibleItems.map((item) => (
+            <NotificationCard key={item.id} item={item} onClick={onClose} />
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 const BOTTOM_NAV_ITEMS = [
   {
     key: 'apps',
     label: '应用',
+    tooltip: '官方社群',
+    popup: ({ anchorLeft }) => <QRCodePopup anchorLeft={anchorLeft} />,
     icon: (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={ICON_STYLE}>
         <path d="M14 2H10.667V5.333H14V2Z" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
@@ -70,6 +317,8 @@ const BOTTOM_NAV_ITEMS = [
   {
     key: 'notifications',
     label: '通知',
+    tooltip: '通知',
+    popup: ({ close, anchorLeft }) => <NotificationPopup items={NOTIFICATION_ITEMS} onClose={close} anchorLeft={anchorLeft} />,
     icon: (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={ICON_STYLE}>
         <path d="M3.8 12.2H3.3V12.7H3.8V12.2ZM12.2 12.2V12.7H12.7V12.2H12.2ZM2 11.7C1.724 11.7 1.5 11.924 1.5 12.2C1.5 12.476 1.724 12.7 2 12.7V12.2V11.7ZM14 12.7C14.276 12.7 14.5 12.476 14.5 12.2C14.5 11.924 14.276 11.7 14 11.7V12.2V12.7ZM9.5 12.2H10C10 11.924 9.776 11.7 9.5 11.7V12.2ZM6.5 12.2V11.7C6.224 11.7 6 11.924 6 12.2H6.5ZM8 2V1.5C5.404 1.5 3.3 3.604 3.3 6.2H3.8H4.3C4.3 4.157 5.957 2.5 8 2.5V2ZM3.8 6.2H3.3V12.2H3.8H4.3V6.2H3.8ZM3.8 12.2V12.7H12.2V12.2V11.7H3.8V12.2ZM12.2 12.2H12.7V6.2H12.2H11.7V12.2H12.2ZM12.2 6.2H12.7C12.7 3.604 10.596 1.5 8 1.5V2V2.5C10.043 2.5 11.7 4.157 11.7 6.2H12.2ZM2 12.2V12.7H14V12.2V11.7H2V12.2ZM8 14V14.5C9.105 14.5 10 13.605 10 12.5H9.5H9C9 13.052 8.552 13.5 8 13.5V14ZM9.5 12.5H10V12.2H9.5H9V12.5H9.5ZM9.5 12.2V11.7H6.5V12.2V12.7H9.5V12.2ZM6.5 12.2H6V12.5H6.5H7V12.2H6.5ZM6.5 12.5H6C6 13.605 6.895 14.5 8 14.5V14V13.5C7.448 13.5 7 13.052 7 12.5H6.5Z" fill="#FFFFFF" />
@@ -79,6 +328,7 @@ const BOTTOM_NAV_ITEMS = [
   {
     key: 'api',
     label: 'API',
+    tooltip: '配置API',
     icon: (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={ICON_STYLE}>
         <rect x="2" y="2" width="12" height="12" rx="2" stroke="#FFFFFF" />
@@ -89,6 +339,14 @@ const BOTTOM_NAV_ITEMS = [
   {
     key: 'menu',
     label: '菜单',
+    tooltip: '更多选项',
+    popup: (
+      <div className="flex flex-col items-start w-max rounded-lg absolute left-10 bottom-0 [box-shadow:#00000066_0px_4px_16px] bg-[#161616] border border-solid border-[#FFFFFF0D] p-1" style={{ zIndex: 50 }}>
+        {['操作手册', '更新日志', '用户协议', '隐私政策'].map((label) => (
+          <MenuPopupItem key={label} label={label} />
+        ))}
+      </div>
+    ),
     icon: (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={ICON_STYLE}>
         <path d="M2.65 3.983H13.317" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
@@ -103,9 +361,9 @@ const BG_URL = bgImage;
 
 const CMB_ICON_DEFAULT = (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: '0' }}>
-    <path d="M3.33329 14.6667H12.6666C13.0348 14.6667 13.3333 14.3682 13.3333 14V4.66671H9.99996V1.33337H3.33329C2.9651 1.33337 2.66663 1.63185 2.66663 2.00004V14C2.66663 14.3682 2.9651 14.6667 3.33329 14.6667Z" fill="#2DC3E1" stroke="#2DC3E1" strokeLinecap="round" strokeLinejoin="round" />
-    <path d="M10 1.33337L13.3333 4.66671" stroke="#2DC3E1" strokeLinecap="round" strokeLinejoin="round" />
-    <path d="M6.96918 9.92307C6.92086 10.0698 6.89669 10.1427 6.85699 10.1561C6.83963 10.1619 6.82084 10.1619 6.80348 10.1561C6.76379 10.1427 6.73961 10.0698 6.69129 9.92307C6.4902 9.31032 6.38922 9.00394 6.19936 8.76143C6.11177 8.64967 6.01079 8.5487 5.89903 8.4611C5.65652 8.27123 5.35015 8.17026 4.7374 7.96918C4.59068 7.92085 4.51776 7.89669 4.50438 7.85698C4.49856 7.83962 4.49856 7.82083 4.50438 7.80347C4.51776 7.76378 4.59068 7.73961 4.7374 7.69128C5.35015 7.49019 5.65652 7.38922 5.89903 7.19936C6.01122 7.11176 6.11176 7.01079 6.19936 6.89902C6.38923 6.65608 6.4902 6.34971 6.69129 5.73739C6.73961 5.59068 6.76378 5.51775 6.80348 5.50437C6.82084 5.49855 6.83963 5.49855 6.85699 5.50437C6.89669 5.51775 6.92086 5.59068 6.96918 5.73739C7.17027 6.35014 7.27125 6.65651 7.46111 6.89902C7.54874 7.01075 7.64959 7.11145 7.76144 7.19892C8.00439 7.38922 8.31076 7.49019 8.92351 7.69171C9.06979 7.73961 9.14272 7.76377 9.15652 7.8039C9.16225 7.82113 9.16225 7.83975 9.15652 7.85698C9.14272 7.89668 9.06979 7.92085 8.92351 7.96918C8.31076 8.17026 8.00438 8.27124 7.76144 8.4611C7.64968 8.54869 7.54914 8.64967 7.46154 8.76143C7.27168 9.00438 7.17027 9.31032 6.96918 9.92307ZM10.0295 11.1676C9.99754 11.2651 9.98158 11.3138 9.95483 11.3229C9.94334 11.3267 9.93093 11.3267 9.91944 11.3229C9.89269 11.3138 9.87672 11.2651 9.84479 11.1676C9.71059 10.7589 9.64328 10.5548 9.51684 10.393C9.45815 10.3183 9.39084 10.251 9.31618 10.1928C9.15436 10.0659 8.95026 9.99859 8.54205 9.86482C8.44453 9.83245 8.39534 9.81649 8.38671 9.78973C8.38289 9.77825 8.38289 9.76583 8.38671 9.75435C8.39534 9.7276 8.4441 9.71163 8.54205 9.6797C8.95026 9.54507 9.1548 9.47818 9.31618 9.35175C9.39079 9.2932 9.45802 9.22582 9.5164 9.15109C9.64327 8.98927 9.71058 8.78517 9.84436 8.37653C9.87672 8.27901 9.89268 8.23025 9.91944 8.22119C9.93093 8.21737 9.94334 8.21737 9.95483 8.22119C9.98158 8.23025 9.99754 8.27901 10.0295 8.37653C10.1641 8.78517 10.231 8.98928 10.3579 9.15109C10.4163 9.22567 10.4835 9.29289 10.5581 9.35131C10.7199 9.47818 10.924 9.54549 11.3326 9.67926C11.4302 9.71163 11.4789 9.72759 11.488 9.75435C11.4918 9.76583 11.4918 9.77825 11.488 9.78973C11.4789 9.81648 11.4302 9.83245 11.3326 9.86438C10.924 9.99901 10.7199 10.0659 10.5581 10.1928C10.4834 10.251 10.4161 10.3183 10.3579 10.393C10.231 10.5548 10.1637 10.7589 10.0299 11.1675L10.0295 11.1676ZM7.85897 12.3918C7.83869 12.4526 7.82876 12.4832 7.81236 12.4888C7.80509 12.4913 7.7972 12.4913 7.78993 12.4888C7.77353 12.4832 7.76318 12.4526 7.74333 12.3918C7.65918 12.1363 7.61733 12.009 7.53793 11.9076C7.50168 11.861 7.45983 11.8191 7.41279 11.7825C7.31181 11.7035 7.18408 11.6616 6.92906 11.5775C6.86822 11.5572 6.83758 11.5473 6.83197 11.5309C6.8295 11.5236 6.8295 11.5157 6.83197 11.5085C6.83758 11.4921 6.86822 11.4821 6.92906 11.4618C7.18408 11.3777 7.31181 11.3358 7.41322 11.2569C7.45982 11.2204 7.50184 11.1783 7.53836 11.1317C7.61733 11.0303 7.65918 10.903 7.74333 10.6476C7.76318 10.5867 7.77353 10.5561 7.78993 10.5505C7.7972 10.548 7.80509 10.548 7.81236 10.5505C7.82876 10.5561 7.83869 10.5867 7.85897 10.6476C7.94268 10.903 7.98497 11.0303 8.06394 11.1317C8.10045 11.1784 8.14246 11.2204 8.18908 11.2569C8.29005 11.3358 8.41778 11.3777 8.67323 11.4618C8.73408 11.4821 8.76472 11.4921 8.77033 11.5085C8.77279 11.5157 8.77279 11.5236 8.77033 11.5309C8.76472 11.5473 8.73408 11.5572 8.67323 11.5775C8.41778 11.6612 8.29005 11.7035 8.18908 11.7825C8.14246 11.819 8.10045 11.861 8.06394 11.9076C7.98497 12.009 7.94311 12.1363 7.85897 12.3918Z" fill="white" />
+    <path d="M3.33329 14.6667H12.6666C13.0348 14.6667 13.3333 14.3682 13.3333 14V4.66671H9.99996V1.33337H3.33329C2.9651 1.33337 2.66663 1.63185 2.66663 2.00004V14C2.66663 14.3682 2.9651 14.6667 3.33329 14.6667Z" fill="#2DC3E1" stroke="#2DC3E1" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M10 1.33337L13.3333 4.66671" stroke="#2DC3E1" strokeLinecap="round" strokeLinejoin="round"/>
+    <path d="M8.67439 7.93831C8.72969 7.77042 8.75735 7.68696 8.80278 7.67166C8.82264 7.66496 8.84415 7.66496 8.86401 7.67166C8.90944 7.68696 8.9371 7.77042 8.9924 7.93831C9.22252 8.63952 9.33807 8.99012 9.55534 9.26763C9.65558 9.39553 9.77113 9.51108 9.89903 9.61132C10.1765 9.8286 10.5271 9.94414 11.2284 10.1743C11.3962 10.2296 11.4797 10.2572 11.495 10.3026C11.5017 10.3225 11.5017 10.344 11.495 10.3639C11.4797 10.4093 11.3962 10.437 11.2284 10.4923C10.5271 10.7224 10.1765 10.8379 9.89903 11.0552C9.77064 11.1554 9.65559 11.271 9.55534 11.3989C9.33806 11.6769 9.22252 12.0275 8.9924 12.7282C8.9371 12.8961 8.90945 12.9796 8.86401 12.9949C8.84415 13.0015 8.82265 13.0015 8.80278 12.9949C8.75735 12.9796 8.72969 12.8961 8.67439 12.7282C8.44428 12.027 8.32872 11.6764 8.11146 11.3989C8.01117 11.271 7.89576 11.1558 7.76776 11.0557C7.48975 10.8379 7.13915 10.7224 6.43795 10.4918C6.27055 10.437 6.1871 10.4093 6.1713 10.3634C6.16475 10.3437 6.16475 10.3224 6.1713 10.3026C6.1871 10.2572 6.27055 10.2296 6.43795 10.1743C7.13915 9.94414 7.48976 9.82859 7.76776 9.61132C7.89566 9.51109 8.01072 9.39553 8.11095 9.26763C8.32823 8.98962 8.44428 8.63952 8.67439 7.93831ZM5.17233 6.51418C5.20887 6.40258 5.22714 6.34678 5.25775 6.33641C5.2709 6.33204 5.2851 6.33204 5.29824 6.33641C5.32886 6.34678 5.34713 6.40258 5.38367 6.51418C5.53724 6.98181 5.61427 7.21538 5.75896 7.40055C5.82612 7.48598 5.90315 7.56302 5.98859 7.62968C6.17377 7.77486 6.40733 7.85189 6.87447 8.00497C6.98607 8.04201 7.04236 8.06028 7.05224 8.0909C7.05661 8.10404 7.05661 8.11824 7.05224 8.13139C7.04236 8.162 6.98656 8.18027 6.87447 8.21681C6.40733 8.37088 6.17326 8.44742 5.98859 8.59211C5.90322 8.65911 5.82628 8.73621 5.75946 8.82173C5.61428 9.00691 5.53725 9.24047 5.38417 9.7081C5.34713 9.8197 5.32886 9.8755 5.29824 9.88587C5.2851 9.89024 5.2709 9.89024 5.25775 9.88587C5.22714 9.8755 5.20887 9.8197 5.17233 9.7081C5.01826 9.24047 4.94172 9.0069 4.79654 8.82173C4.72969 8.73639 4.65276 8.65945 4.56742 8.59261C4.38224 8.44743 4.14868 8.3704 3.68104 8.21731C3.56944 8.18027 3.51365 8.16201 3.50328 8.13139C3.49891 8.11824 3.49891 8.10404 3.50328 8.0909C3.51365 8.06028 3.56944 8.04201 3.68104 8.00547C4.14868 7.8514 4.38225 7.77487 4.56742 7.62968C4.65284 7.56302 4.72988 7.48599 4.79654 7.40056C4.94172 7.21538 5.01875 6.98182 5.17184 6.51419L5.17233 6.51418ZM7.65616 5.11325C7.67937 5.04363 7.69073 5.00856 7.70949 5.00214C7.71781 4.99929 7.72685 4.99929 7.73517 5.00214C7.75393 5.00856 7.76578 5.04363 7.7885 5.11325C7.88479 5.40558 7.93269 5.55126 8.02355 5.6673C8.06503 5.72063 8.11292 5.76853 8.16675 5.81051C8.2823 5.90087 8.42847 5.94877 8.72031 6.04506C8.78993 6.06827 8.825 6.07963 8.83142 6.09839C8.83424 6.10672 8.83424 6.11574 8.83142 6.12407C8.825 6.14283 8.78993 6.15419 8.72031 6.1774C8.42847 6.27369 8.2823 6.32159 8.16626 6.41196C8.11293 6.45375 8.06485 6.50183 8.02305 6.55516C7.93269 6.67121 7.88479 6.81688 7.7885 7.10921C7.76578 7.17883 7.75393 7.2139 7.73517 7.22032C7.72685 7.22318 7.71781 7.22318 7.70949 7.22032C7.69073 7.2139 7.67937 7.17883 7.65616 7.10921C7.56037 6.81688 7.51197 6.67121 7.42161 6.55516C7.37982 6.50182 7.33174 6.45374 7.2784 6.41196C7.16285 6.32159 7.01668 6.27369 6.72435 6.1774C6.65473 6.15419 6.61966 6.14283 6.61324 6.12407C6.61042 6.11574 6.61042 6.10672 6.61324 6.09839C6.61966 6.07963 6.65473 6.06827 6.72435 6.04506C7.01668 5.94927 7.16285 5.90087 7.2784 5.81051C7.33174 5.76873 7.37982 5.72064 7.42161 5.6673C7.51197 5.55126 7.55987 5.40558 7.65616 5.11325Z" fill="white"/>
   </svg>
 );
 
@@ -118,12 +376,12 @@ const CMB_ICON_HOVER = (
       <linearGradient id="cmb-h3" x1="8" y1="0.833" x2="8" y2="15.166" gradientUnits="userSpaceOnUse"><stop stopColor="#7AE5B9"/><stop offset="1" stopColor="#2DC3E1"/></linearGradient>
       <linearGradient id="cmb-h4" x1="8" y1="1.333" x2="8" y2="14.667" gradientUnits="userSpaceOnUse"><stop stopColor="#7AE5B9"/><stop offset="1" stopColor="#2DC3E1"/></linearGradient>
     </defs>
-    <path d="M9.646 0.98C9.842 0.785 10.158 0.785 10.354 0.98L13.687 4.313C13.882 4.508 13.882 4.825 13.687 5.02C13.491 5.215 13.175 5.215 12.979 5.02L9.646 1.687C9.451 1.492 9.451 1.175 9.646 0.98Z" fill="url(#cmb-h0)" />
-    <path d="M3.333 14.667H12.667C13.035 14.667 13.333 14.368 13.333 14V4.667H10V1.333H3.333C2.965 1.333 2.667 1.632 2.667 2V14C2.667 14.368 2.965 14.667 3.333 14.667Z" fill="url(#cmb-h1)" />
-    <path d="M3.333 14.667H12.667C13.035 14.667 13.333 14.368 13.333 14V4.667H10V1.333H3.333C2.965 1.333 2.667 1.632 2.667 2V14C2.667 14.368 2.965 14.667 3.333 14.667Z" fill="url(#cmb-h2)" />
-    <path d="M2.167 14V2C2.167 1.356 2.689 0.833 3.334 0.833H10C10.276 0.833 10.5 1.057 10.5 1.333V4.166H13.334C13.61 4.167 13.833 4.391 13.834 4.666V14C13.833 14.645 13.311 15.166 12.667 15.166H3.334C2.689 15.166 2.167 14.645 2.167 14ZM3.167 14C3.167 14.092 3.242 14.166 3.334 14.166H12.667C12.759 14.166 12.833 14.092 12.834 14V5.166H10C9.724 5.166 9.5 4.942 9.5 4.666V1.833H3.334C3.242 1.833 3.167 1.908 3.167 2V14Z" fill="url(#cmb-h3)" />
-    <path d="M2.167 14V2C2.167 1.356 2.689 0.833 3.334 0.833H10C10.276 0.833 10.5 1.057 10.5 1.333V4.166H13.334C13.61 4.167 13.833 4.391 13.834 4.666V14C13.833 14.645 13.311 15.166 12.667 15.166H3.334C2.689 15.166 2.167 14.645 2.167 14ZM3.167 14C3.167 14.092 3.242 14.166 3.334 14.166H12.667C12.759 14.166 12.833 14.092 12.834 14V5.166H10C9.724 5.166 9.5 4.942 9.5 4.666V1.833H3.334C3.242 1.833 3.167 1.908 3.167 2V14Z" fill="url(#cmb-h4)" />
-    <path d="M6.969 9.923C6.921 10.07 6.897 10.143 6.857 10.156C6.84 10.162 6.821 10.162 6.803 10.156C6.764 10.143 6.74 10.07 6.691 9.923C6.49 9.31 6.389 9.004 6.199 8.761C6.112 8.65 6.011 8.549 5.899 8.461C5.657 8.271 5.35 8.17 4.737 7.969C4.591 7.921 4.518 7.897 4.504 7.857C4.499 7.84 4.499 7.821 4.504 7.803C4.518 7.764 4.591 7.74 4.737 7.691C5.35 7.49 5.657 7.389 5.899 7.199C6.011 7.112 6.112 7.011 6.199 6.899C6.389 6.656 6.49 6.35 6.691 5.737C6.74 5.591 6.764 5.518 6.803 5.504C6.821 5.499 6.84 5.499 6.857 5.504C6.897 5.518 6.921 5.591 6.969 5.737C7.17 6.35 7.271 6.657 7.461 6.899C7.549 7.011 7.65 7.111 7.761 7.199C8.004 7.389 8.311 7.49 8.924 7.692C9.07 7.74 9.143 7.764 9.157 7.804C9.162 7.821 9.162 7.84 9.157 7.857C9.143 7.897 9.07 7.921 8.924 7.969C8.311 8.17 8.004 8.271 7.761 8.461C7.65 8.549 7.549 8.65 7.462 8.761C7.272 9.004 7.17 9.31 6.969 9.923ZM10.03 11.168C9.998 11.265 9.982 11.314 9.955 11.323C9.943 11.327 9.931 11.327 9.919 11.323C9.893 11.314 9.877 11.265 9.845 11.168C9.711 10.759 9.643 10.555 9.517 10.393C9.458 10.318 9.391 10.251 9.316 10.193C9.154 10.066 8.95 9.999 8.542 9.865C8.445 9.832 8.395 9.816 8.387 9.79C8.383 9.778 8.383 9.766 8.387 9.754C8.395 9.728 8.444 9.712 8.542 9.68C8.95 9.545 9.155 9.478 9.316 9.352C9.391 9.293 9.458 9.226 9.516 9.151C9.643 8.989 9.711 8.785 9.844 8.377C9.877 8.279 9.893 8.23 9.919 8.221C9.931 8.217 9.943 8.217 9.955 8.221C9.982 8.23 9.998 8.279 10.03 8.377C10.164 8.785 10.231 8.989 10.358 9.151C10.416 9.226 10.483 9.293 10.558 9.351C10.72 9.478 10.924 9.545 11.333 9.679C11.43 9.712 11.479 9.728 11.488 9.754C11.492 9.766 11.492 9.778 11.488 9.79C11.479 9.816 11.43 9.832 11.333 9.864C10.924 9.999 10.72 10.066 10.558 10.193C10.483 10.251 10.416 10.318 10.358 10.393C10.231 10.555 10.164 10.759 10.03 11.168ZM7.859 12.392C7.839 12.453 7.829 12.483 7.812 12.489C7.805 12.491 7.797 12.491 7.79 12.489C7.774 12.483 7.763 12.453 7.743 12.392C7.659 12.136 7.617 12.009 7.538 11.908C7.502 11.861 7.46 11.819 7.413 11.783C7.312 11.704 7.184 11.662 6.929 11.578C6.868 11.557 6.838 11.547 6.832 11.531C6.83 11.524 6.83 11.516 6.832 11.508C6.838 11.492 6.868 11.482 6.929 11.462C7.184 11.378 7.312 11.336 7.413 11.257C7.46 11.22 7.502 11.178 7.538 11.132C7.617 11.03 7.659 10.903 7.743 10.648C7.763 10.587 7.774 10.556 7.79 10.55C7.797 10.548 7.805 10.548 7.812 10.55C7.829 10.556 7.839 10.587 7.859 10.648C7.943 10.903 7.985 11.03 8.064 11.132C8.1 11.178 8.142 11.22 8.189 11.257C8.29 11.336 8.418 11.378 8.673 11.462C8.734 11.482 8.765 11.492 8.77 11.508C8.773 11.516 8.773 11.524 8.77 11.531C8.765 11.547 8.734 11.557 8.673 11.578C8.418 11.661 8.29 11.704 8.189 11.783C8.142 11.819 8.1 11.861 8.064 11.908C7.985 12.009 7.943 12.136 7.859 12.392Z" fill="#FFFFFF" />
+    <path d="M9.64644 0.979858C9.84171 0.784596 10.1582 0.784596 10.3535 0.979858L13.6865 4.31287C13.8817 4.50813 13.8817 4.82464 13.6865 5.0199C13.4912 5.21516 13.1747 5.21516 12.9795 5.0199L9.64644 1.68689C9.45118 1.49163 9.45118 1.17512 9.64644 0.979858Z" fill="url(#cmb-h0)"/>
+    <path d="M3.33329 14.6667H12.6666C13.0348 14.6667 13.3333 14.3682 13.3333 14V4.66671H9.99996V1.33337H3.33329C2.9651 1.33337 2.66663 1.63185 2.66663 2.00004V14C2.66663 14.3682 2.9651 14.6667 3.33329 14.6667Z" fill="url(#cmb-h1)"/>
+    <path d="M3.33329 14.6667H12.6666C13.0348 14.6667 13.3333 14.3682 13.3333 14V4.66671H9.99996V1.33337H3.33329C2.9651 1.33337 2.66663 1.63185 2.66663 2.00004V14C2.66663 14.3682 2.9651 14.6667 3.33329 14.6667Z" fill="url(#cmb-h2)"/>
+    <path d="M2.16663 14.0004V2.00037C2.16663 1.35603 2.68929 0.833374 3.33362 0.833374H9.99963C10.2758 0.833374 10.4996 1.05723 10.4996 1.33337V4.16638H13.3336C13.6095 4.16656 13.8334 4.3905 13.8336 4.66638V14.0004C13.8334 14.6446 13.3109 15.1664 12.6666 15.1664H3.33362C2.6894 15.1664 2.1668 14.6446 2.16663 14.0004ZM3.16663 14.0004C3.1668 14.0923 3.24167 14.1664 3.33362 14.1664H12.6666C12.7586 14.1664 12.8334 14.0923 12.8336 14.0004V5.16638H9.99963C9.72364 5.16621 9.49963 4.94242 9.49963 4.66638V1.83337H3.33362C3.24157 1.83337 3.16663 1.90832 3.16663 2.00037V14.0004Z" fill="url(#cmb-h3)"/>
+    <path d="M2.16663 14.0004V2.00037C2.16663 1.35603 2.68929 0.833374 3.33362 0.833374H9.99963C10.2758 0.833374 10.4996 1.05723 10.4996 1.33337V4.16638H13.3336C13.6095 4.16656 13.8334 4.3905 13.8336 4.66638V14.0004C13.8334 14.6446 13.3109 15.1664 12.6666 15.1664H3.33362C2.6894 15.1664 2.1668 14.6446 2.16663 14.0004ZM3.16663 14.0004C3.1668 14.0923 3.24167 14.1664 3.33362 14.1664H12.6666C12.7586 14.1664 12.8334 14.0923 12.8336 14.0004V5.16638H9.99963C9.72364 5.16621 9.49963 4.94242 9.49963 4.66638V1.83337H3.33362C3.24157 1.83337 3.16663 1.90832 3.16663 2.00037V14.0004Z" fill="url(#cmb-h4)"/>
+    <path d="M8.67439 7.93831C8.72969 7.77042 8.75735 7.68696 8.80278 7.67166C8.82264 7.66496 8.84415 7.66496 8.86401 7.67166C8.90944 7.68696 8.9371 7.77042 8.9924 7.93831C9.22252 8.63952 9.33807 8.99012 9.55534 9.26763C9.65558 9.39553 9.77113 9.51108 9.89903 9.61132C10.1765 9.8286 10.5271 9.94414 11.2284 10.1743C11.3962 10.2296 11.4797 10.2572 11.495 10.3026C11.5017 10.3225 11.5017 10.344 11.495 10.3639C11.4797 10.4093 11.3962 10.437 11.2284 10.4923C10.5271 10.7224 10.1765 10.8379 9.89903 11.0552C9.77064 11.1554 9.65559 11.271 9.55534 11.3989C9.33806 11.6769 9.22252 12.0275 8.9924 12.7282C8.9371 12.8961 8.90945 12.9796 8.86401 12.9949C8.84415 13.0015 8.82265 13.0015 8.80278 12.9949C8.75735 12.9796 8.72969 12.8961 8.67439 12.7282C8.44428 12.027 8.32872 11.6764 8.11146 11.3989C8.01117 11.271 7.89576 11.1558 7.76776 11.0557C7.48975 10.8379 7.13915 10.7224 6.43795 10.4918C6.27055 10.437 6.1871 10.4093 6.1713 10.3634C6.16475 10.3437 6.16475 10.3224 6.1713 10.3026C6.1871 10.2572 6.27055 10.2296 6.43795 10.1743C7.13915 9.94414 7.48976 9.82859 7.76776 9.61132C7.89566 9.51109 8.01072 9.39553 8.11095 9.26763C8.32823 8.98962 8.44428 8.63952 8.67439 7.93831ZM5.17233 6.51418C5.20887 6.40258 5.22714 6.34678 5.25775 6.33641C5.2709 6.33204 5.2851 6.33204 5.29824 6.33641C5.32886 6.34678 5.34713 6.40258 5.38367 6.51418C5.53724 6.98181 5.61427 7.21538 5.75896 7.40055C5.82612 7.48598 5.90315 7.56302 5.98859 7.62968C6.17377 7.77486 6.40733 7.85189 6.87447 8.00497C6.98607 8.04201 7.04236 8.06028 7.05224 8.0909C7.05661 8.10404 7.05661 8.11824 7.05224 8.13139C7.04236 8.162 6.98656 8.18027 6.87447 8.21681C6.40733 8.37088 6.17326 8.44742 5.98859 8.59211C5.90322 8.65911 5.82628 8.73621 5.75946 8.82173C5.61428 9.00691 5.53725 9.24047 5.38417 9.7081C5.34713 9.8197 5.32886 9.8755 5.29824 9.88587C5.2851 9.89024 5.2709 9.89024 5.25775 9.88587C5.22714 9.8755 5.20887 9.8197 5.17233 9.7081C5.01826 9.24047 4.94172 9.0069 4.79654 8.82173C4.72969 8.73639 4.65276 8.65945 4.56742 8.59261C4.38224 8.44743 4.14868 8.3704 3.68104 8.21731C3.56944 8.18027 3.51365 8.16201 3.50328 8.13139C3.49891 8.11824 3.49891 8.10404 3.50328 8.0909C3.51365 8.06028 3.56944 8.04201 3.68104 8.00547C4.14868 7.8514 4.38225 7.77487 4.56742 7.62968C4.65284 7.56302 4.72988 7.48599 4.79654 7.40056C4.94172 7.21538 5.01875 6.98182 5.17184 6.51419L5.17233 6.51418ZM7.65616 5.11325C7.67937 5.04363 7.69073 5.00856 7.70949 5.00214C7.71781 4.99929 7.72685 4.99929 7.73517 5.00214C7.75393 5.00856 7.76578 5.04363 7.7885 5.11325C7.88479 5.40558 7.93269 5.55126 8.02355 5.6673C8.06503 5.72063 8.11292 5.76853 8.16675 5.81051C8.2823 5.90087 8.42847 5.94877 8.72031 6.04506C8.78993 6.06827 8.825 6.07963 8.83142 6.09839C8.83424 6.10672 8.83424 6.11574 8.83142 6.12407C8.825 6.14283 8.78993 6.15419 8.72031 6.1774C8.42847 6.27369 8.2823 6.32159 8.16626 6.41196C8.11293 6.45375 8.06485 6.50183 8.02305 6.55516C7.93269 6.67121 7.88479 6.81688 7.7885 7.10921C7.76578 7.17883 7.75393 7.2139 7.73517 7.22032C7.72685 7.22318 7.71781 7.22318 7.70949 7.22032C7.69073 7.2139 7.67937 7.17883 7.65616 7.10921C7.56037 6.81688 7.51197 6.67121 7.42161 6.55516C7.37982 6.50182 7.33174 6.45374 7.2784 6.41196C7.16285 6.32159 7.01668 6.27369 6.72435 6.1774C6.65473 6.15419 6.61966 6.14283 6.61324 6.12407C6.61042 6.11574 6.61042 6.10672 6.61324 6.09839C6.61966 6.07963 6.65473 6.06827 6.72435 6.04506C7.01668 5.94927 7.16285 5.90087 7.2784 5.81051C7.33174 5.76873 7.37982 5.72064 7.42161 5.6673C7.51197 5.55126 7.55987 5.40558 7.65616 5.11325Z" fill="white"/>
   </svg>
 );
 
@@ -156,7 +414,7 @@ function CreationManualButton() {
   );
 }
 
-function LoginButton() {
+function LoginButton({ onClick }) {
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
 
@@ -167,6 +425,7 @@ function LoginButton() {
         boxShadow: pressed ? 'none' : '#00000066 3px 3px 8px',
         transition: 'box-shadow 120ms ease',
       }}
+      onClick={onClick}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => { setHovered(false); setPressed(false); }}
       onMouseDown={() => setPressed(true)}
@@ -265,7 +524,19 @@ function StartCreationButton() {
 export default function Home() {
   const [activeKey, setActiveKey] = useState('home');
   const [bottomActiveKey, setBottomActiveKey] = useState(null);
-  const toggleBottom = (key) => setBottomActiveKey((prev) => (prev === key ? null : key));
+  const [loginOpen, setLoginOpen] = useState(false);
+  const [apiConfigOpen, setApiConfigOpen] = useState(false);
+
+  const handleBottomNavChange = (key) => {
+    if (key === 'api') {
+      setBottomActiveKey(null);
+      setApiConfigOpen(true);
+      return;
+    }
+
+    setBottomActiveKey((prev) => (prev === key ? null : key));
+  };
+
   return (
     <div className="[font-synthesis:none] overflow-clip w-screen h-screen relative bg-neutral-400 antialiased">
       <div className="absolute bg-cover bg-center inset-0" style={{ backgroundImage: `url(${BG_URL})` }} />
@@ -291,7 +562,7 @@ export default function Home() {
           </svg>
           <div className="flex items-center gap-16 p-0">
             <CreationManualButton />
-            <LoginButton />
+            <LoginButton onClick={() => setLoginOpen(true)} />
           </div>
         </div>
 
@@ -306,7 +577,7 @@ export default function Home() {
             <PrimaryNav
               items={BOTTOM_NAV_ITEMS}
               activeKey={bottomActiveKey}
-              onChange={toggleBottom}
+              onChange={handleBottomNavChange}
               variant="compact"
             />
           </div>
@@ -315,6 +586,9 @@ export default function Home() {
 
       {/* start button */}
       <StartCreationButton />
+
+      <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} />
+      <ApiConfigModal open={apiConfigOpen} onClose={() => setApiConfigOpen(false)} />
     </div>
   );
 }

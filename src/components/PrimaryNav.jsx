@@ -12,31 +12,66 @@ import { useState, useRef, useLayoutEffect, useCallback, useEffect } from 'react
  * 2) 点击瞬间：源按钮液态挤压，目标按钮液态放大过冲
  * 3) activeKey = null 时不渲染 indicator（toggle 行为由外层控制）
  */
+function Tooltip({ label }) {
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: 'calc(100% + 8px)',
+        top: '50%',
+        transform: 'translateY(-50%)',
+        pointerEvents: 'none',
+        zIndex: 50,
+        display: 'flex',
+        alignItems: 'center',
+        padding: '2px 8px',
+        borderRadius: '4px',
+        backgroundColor: '#111111',
+        whiteSpace: 'nowrap',
+        fontFamily: "'AlibabaPuHuiTi_2_55_Regular', 'Alibaba PuHuiTi 2.0', system-ui, sans-serif",
+        fontSize: '12px',
+        fontWeight: 400,
+        lineHeight: '16px',
+        color: '#FFFFFF',
+      }}
+    >
+      {label}
+    </div>
+  );
+}
+
 export default function PrimaryNav({ items, activeKey = null, onChange, variant = 'expanded' }) {
   const containerRef = useRef(null);
   const itemRefs = useRef(new Map());
   const innerRef = useRef(null);
+  const indicatorRef = useRef(null);
+  const prevKeyRef = useRef(activeKey);
 
-  const [rect, setRect] = useState(null);
-  const [prevKey, setPrevKey] = useState(activeKey);
+  const [hoveredKey, setHoveredKey] = useState(null);
+  const [popupAnchorLeft, setPopupAnchorLeft] = useState(null);
+
+  const isCompact = variant === 'compact';
+  const isVertical = variant === 'vertical';
 
   const measure = useCallback(() => {
-    const container = containerRef.current;
-    if (activeKey == null) {
-      setRect(null);
-      return;
+    const target = activeKey != null ? itemRefs.current.get(activeKey) : null;
+
+    if (isCompact) {
+      const activeItem = items.find((item) => item.key === activeKey);
+      setPopupAnchorLeft(target && activeItem?.popup ? target.getBoundingClientRect().right + 8 : null);
     }
-    const target = itemRefs.current.get(activeKey);
-    if (!container || !target) return;
+
+    const container = containerRef.current;
+    const indicator = indicatorRef.current;
+    if (!container || !indicator || !target) return;
     const c = container.getBoundingClientRect();
     const t = target.getBoundingClientRect();
-    setRect({
-      top: t.top - c.top,
-      left: t.left - c.left,
-      width: t.width,
-      height: t.height,
-    });
-  }, [activeKey]);
+    indicator.style.top = `${t.top - c.top}px`;
+    indicator.style.left = `${t.left - c.left}px`;
+    indicator.style.width = `${t.width}px`;
+    indicator.style.height = `${t.height}px`;
+    indicator.style.opacity = '1';
+  }, [activeKey, isCompact, items]);
 
   useLayoutEffect(() => {
     measure();
@@ -58,6 +93,7 @@ export default function PrimaryNav({ items, activeKey = null, onChange, variant 
   }, [activeKey]);
 
   useEffect(() => {
+    const prevKey = prevKeyRef.current;
     if (prevKey === activeKey) return;
     const fromEl = prevKey != null ? itemRefs.current.get(prevKey) : null;
     const toEl = activeKey != null ? itemRefs.current.get(activeKey) : null;
@@ -72,16 +108,15 @@ export default function PrimaryNav({ items, activeKey = null, onChange, variant 
       void toEl.offsetWidth;
       toEl.classList.add('primary-nav-item-pop');
     }
-    setPrevKey(activeKey);
-  }, [activeKey, prevKey]);
+    prevKeyRef.current = activeKey;
+  }, [activeKey]);
 
   const registerItem = (key) => (el) => {
     if (el) itemRefs.current.set(key, el);
     else itemRefs.current.delete(key);
   };
 
-  const isCompact = variant === 'compact';
-  const isVertical = variant === 'vertical';
+  const hasOpenPopup = isCompact && items.some((item) => item.popup && item.key === activeKey);
   const containerCls = isCompact
     ? 'primary-nav flex flex-col items-center gap-8 self-stretch'
     : isVertical
@@ -95,46 +130,52 @@ export default function PrimaryNav({ items, activeKey = null, onChange, variant 
 
   return (
     <div ref={containerRef} className={containerCls} style={isVertical ? { '--primary-nav-indicator-radius': '16px' } : undefined}>
-      {rect && (
-        <div
-          className="primary-nav-indicator"
-          style={{
-            top: rect.top,
-            left: rect.left,
-            width: rect.width,
-            height: rect.height,
-          }}
-        >
+      {activeKey != null && (
+        <div ref={indicatorRef} className="primary-nav-indicator" style={{ opacity: 0 }}>
           <div ref={innerRef} className="primary-nav-indicator-inner fluid-glass" />
         </div>
       )}
 
       {items.map((item) => {
         const isActive = item.key === activeKey;
+        const isHovered = hoveredKey === item.key;
+        const showTooltip = isCompact && item.tooltip && isHovered && !isActive && !hasOpenPopup;
+        const showPopup = isCompact && item.popup && isActive;
+        const popupContent = typeof item.popup === 'function'
+          ? item.popup({ close: () => onChange?.(item.key), anchorLeft: popupAnchorLeft })
+          : item.popup;
         return (
-          <button
-            key={item.key}
-            ref={registerItem(item.key)}
-            type="button"
-            className={itemCls}
-            style={isVertical ? { borderRadius: '16px', flexDirection: 'column' } : undefined}
-            onClick={() => onChange?.(item.key)}
-            aria-label={item.label}
-          >
-            {item.icon}
-            {!isCompact && item.label && (
-              <span
-                className={`w-fit shrink-0 ${isVertical ? 'text-xs/4' : 'text-base/5'} ${
-                  isActive
-                    ? "font-['AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] font-medium"
-                    : "font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif]"
-                }`}
-                style={isVertical ? { fontSize: '12px', lineHeight: '16px' } : undefined}
-              >
-                {item.label}
-              </span>
-            )}
-          </button>
+          <div key={item.key} style={{ position: 'relative' }}>
+            <button
+              ref={registerItem(item.key)}
+              type="button"
+              className={itemCls}
+              style={{
+                ...(isVertical ? { borderRadius: '16px', flexDirection: 'column' } : undefined),
+                position: 'relative',
+              }}
+              onClick={() => onChange?.(item.key)}
+              onMouseEnter={() => setHoveredKey(item.key)}
+              onMouseLeave={() => setHoveredKey(null)}
+              aria-label={item.label}
+            >
+              {item.icon}
+              {!isCompact && item.label && (
+                <span
+                  className={`w-fit shrink-0 ${isVertical ? 'text-xs/4' : 'text-base/5'} ${
+                    isActive
+                      ? "font-['AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] font-medium"
+                      : "font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif]"
+                  }`}
+                  style={isVertical ? { fontSize: '12px', lineHeight: '16px' } : undefined}
+                >
+                  {item.label}
+                </span>
+              )}
+              {showTooltip && <Tooltip label={item.tooltip} />}
+            </button>
+            {showPopup && popupContent}
+          </div>
         );
       })}
     </div>

@@ -4,15 +4,6 @@ const FONT = "'Alibaba PuHuiTi 2.0', system-ui, sans-serif"
 
 // ─── Icons ────────────────────────────────────────────────────────────────────
 
-function SearchIcon({ color = 'rgba(255,255,255,0.40)' }) {
-  return (
-    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
-      <circle cx="7" cy="7" r="4.5" stroke={color} strokeWidth="1.5" />
-      <path d="M10.5 10.5L13 13" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
-    </svg>
-  )
-}
-
 function ChevronIcon({ color = '#FFFFFF' }) {
   return (
     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
