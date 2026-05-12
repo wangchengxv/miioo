@@ -21,11 +21,11 @@
 
 | 尺寸 | 高度 | 左内边距 | 右内边距 | 圆角 | 字号 | 典型用途 |
 |---|---|---|---|---|---|---|
-| **正常 Default** | 36px（`h-9`） | `spacing-12`（`pl-3`） | `spacing-6`（`pr-1.5`） | 8px（`rounded-medium`） | `font-size-14` | 常规表单、搜索框 |
-| **小 Small** | 24px（`h-6`） | `spacing-12`（`pl-3`） | `spacing-6`（`pr-1.5`） | 6px（`rounded-md`） | `font-size-12` | 紧凑场景，小尺寸内嵌无内置按钮 |
+| **正常 Default** | 36px（`h-9`） | `pl-[12px]`（12px） | `pr-[6px]`（6px） | 8px（`rounded-medium`） | `font-size-14` | 常规表单、搜索框 |
+| **小 Small** | 24px（`h-6`） | `pl-[12px]`（12px） | `pr-[6px]`（6px） | 6px（`rounded-md`） | `font-size-12` | 紧凑场景，小尺寸内嵌无内置按钮 |
 
-> 小尺寸输入框内部不包含按钮，如需按钮，将 Secondary 小尺寸按钮紧跟在输入框后面，二者之间间距 `spacing-8`（`gap-2`）。
-> 正常尺寸内嵌按钮使用 Secondary 小尺寸按钮（`h-6`，宽度由 `spacing-8`（`px-2`）决定）。
+> 小尺寸输入框内部不包含按钮，如需按钮，将 Secondary 小尺寸按钮紧跟在输入框后面，二者之间间距 `gap-[8px]`（8px）。
+> 正常尺寸内嵌按钮使用 Secondary 小尺寸按钮（`h-6`，宽度由 `px-[8px]`（8px）决定）。
 
 ---
 
@@ -47,7 +47,7 @@
 
 | 后缀类型 | 说明 |
 |---|---|
-| 内嵌按钮 | Secondary 小按钮，高度 `h-6`，宽度 `px-2`，紧贴右侧内边距 |
+| 内嵌按钮 | Secondary 小按钮，高度 `h-6`，宽度 `px-[8px]`，紧贴右侧内边距 |
 | 下拉箭头图标 | 16x16 SVG，颜色跟随状态：激活/已输入用白色，禁用用 `text-input-text-hint` |
 | 字数统计 | `text-input-text-hint`，格式为 `当前字数/最大字数` |
 | 前缀图标 | 16x16 SVG，放在文字左侧，颜色用 `text-input-text-hint` |
@@ -81,7 +81,7 @@ function Input({ placeholder = "hint", value = "", disabled = false, state = "no
   return (
     <div
       className={`
-        flex items-center gap-2 h-9 pl-3 pr-1.5 rounded-medium justify-between
+        flex items-center gap-[8px] h-9 pl-[12px] pr-[6px] rounded-medium justify-between
         ${disabled ? "bg-input-bg-disabled" : "bg-input-bg-normal"}
         ${disabled ? "" : `border border-solid ${borderClass}`}
         [outline:1px_solid_var(--color-stroke-outline)] outline-offset-0
@@ -112,7 +112,7 @@ function InputSuffixButton({ label, disabled }) {
   return (
     <div
       className={`
-        flex items-center h-6 shrink-0 rounded-md px-2 gap-1
+        flex items-center h-6 shrink-0 rounded-md px-[8px] gap-[4px]
         ${disabled
           ? "bg-btn-primary-bg-normal [outline:1px_solid_var(--color-stroke-outline)] outline-offset-0"
           : "bg-btn-primary-bg-normal border border-btn-primary-border [outline:1px_solid_var(--color-stroke-outline)] outline-offset-0 [box-shadow:var(--color-shadow)_3px_3px_8px] hover:bg-btn-primary-bg-hover active:bg-btn-primary-bg-active cursor-pointer"
@@ -134,7 +134,7 @@ function InputSuffixButton({ label, disabled }) {
 /* 使用示例 */
 export default function InputDemo() {
   return (
-    <div className="flex flex-col gap-4 p-8 bg-surface-content-area">
+    <div className="flex flex-col gap-[16px] p-[32px] bg-surface-content-area">
       {/* 默认态，带内嵌按钮 */}
       <Input
         placeholder="hint"
@@ -232,7 +232,7 @@ function CharCount({ current, max, disabled }) {
 ```jsx
 function InputWithError({ placeholder, value, errorMsg }) {
   return (
-    <div className="flex flex-col items-start gap-1">
+    <div className="flex flex-col items-start gap-[4px]">
       <Input
         placeholder={placeholder}
         value={value}
@@ -240,7 +240,7 @@ function InputWithError({ placeholder, value, errorMsg }) {
         suffix={<InputSuffixButton label="搜索" />}
       />
       {errorMsg && (
-        <div className="px-3 text-status-wrong text-font-size-14" style={{ fontFamily: FONT }}>
+        <div className="px-[12px] text-status-wrong text-font-size-14" style={{ fontFamily: FONT }}>
           {errorMsg}
         </div>
       )}
@@ -259,7 +259,7 @@ function InputWithError({ placeholder, value, errorMsg }) {
 
 ### 5.6 小尺寸输入框 — 外接按钮
 
-小尺寸输入框内部无按钮，如需按钮紧跟其后，间距 `gap-2`（8px）。
+小尺寸输入框内部无按钮，如需按钮紧跟其后，间距 `gap-[8px]`（8px）。
 
 ```jsx
 function InputSmall({ placeholder = "hint", value = "", disabled = false, state = "normal" }) {
@@ -278,7 +278,7 @@ function InputSmall({ placeholder = "hint", value = "", disabled = false, state 
   return (
     <div
       className={`
-        flex items-center gap-2 h-6 pl-3 pr-1.5 rounded-md justify-between
+        flex items-center gap-[8px] h-6 pl-[12px] pr-[6px] rounded-md justify-between
         ${disabled ? "bg-input-bg-disabled" : "bg-input-bg-normal"}
         ${disabled ? "" : `border border-solid ${borderClass}`}
         [outline:1px_solid_var(--color-stroke-outline)] outline-offset-0
@@ -301,7 +301,7 @@ function InputSmall({ placeholder = "hint", value = "", disabled = false, state 
 /* 小尺寸 + 外接按钮 */
 export function InputSmallWithButton() {
   return (
-    <div className="flex items-center gap-2">
+    <div className="flex items-center gap-[8px]">
       <InputSmall placeholder="hint" state="normal" />
       <InputSuffixButton label="搜索" />
     </div>
@@ -332,7 +332,7 @@ function Textarea({ placeholder = "hint", value = "", disabled = false, state = 
       placeholder={placeholder}
       disabled={disabled}
       className={`
-        h-[100px] w-full px-3 py-2 rounded-medium resize-none
+        h-[100px] w-full px-[12px] py-[8px] rounded-medium resize-none
         ${disabled ? "bg-input-bg-disabled" : "bg-input-bg-normal"}
         ${disabled ? "" : `border border-solid ${borderClass}`}
         [outline:1px_solid_var(--color-stroke-outline)] outline-offset-0

@@ -13,7 +13,7 @@
 | 字号 | `font-size-14` |
 | 字重 | `font-weight-regular` |
 | 颜色 | `text-text-secondary` |
-| 与输入框间距 | `spacing-4`（`gap-1`） |
+| 与输入框间距 | `gap-[4px]`（4px） |
 
 **选填字段处理：** 不使用必填标识，选填情况在输入框的 placeholder 中注明，格式为"提示文字（选填）"。
 
@@ -28,13 +28,13 @@ Label 文字
 [输入框]
 ```
 
-字段内部使用 `flex flex-col gap-1` 布局（gap-1 = 4px）。
+字段内部使用 `flex flex-col gap-[4px]` 布局（gap-[4px] = 4px）。
 
 ---
 
 ## 三、字段间距
 
-多个字段纵向排列时，字段与字段之间间距为 `spacing-16`（`gap-4`）。
+多个字段纵向排列时，字段与字段之间间距为 `gap-[16px]`（16px）。
 
 ---
 
@@ -47,7 +47,7 @@ const FONT = "'AlibabaPuHuiTi 2_55 Regular','Alibaba PuHuiTi 2.0',system-ui,sans
 
 function FormField({ label, placeholder, value, disabled, state }) {
   return (
-    <div className="flex flex-col gap-1">
+    <div className="flex flex-col gap-[4px]">
       <span
         className="text-text-secondary text-font-size-14 font-font-weight-regular"
         style={{ fontFamily: FONT }}
@@ -74,7 +74,7 @@ function FormField({ label, placeholder, value, disabled, state }) {
 ```jsx
 export default function FormDemo() {
   return (
-    <div className="flex flex-col gap-4">
+    <div className="flex flex-col gap-[16px]">
       <FormField
         label="项目名称"
         placeholder="请输入项目名称"
@@ -98,4 +98,4 @@ export default function FormDemo() {
 
 - 不使用左右结构，label 始终在输入框上方
 - 不在 label 上添加必填星号，选填信息在 placeholder 中说明
-- 字段间距固定为 `spacing-16`，不可随意调整
+- 字段间距固定为 `gap-[16px]`（16px），不可随意调整
