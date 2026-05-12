@@ -31,7 +31,7 @@ Select 由两部分组成：**触发器 Trigger** + **下拉面板 Dropdown**。
 | 描边 | `border border-select-border` |
 | 阴影 | `box-shadow: 0px 4px 16px var(--color-select-shadow)` |
 | 圆角 | `rounded-medium`（8px） |
-| 内边距 | `p-1`（4px） |
+| 内边距 | `p-[4px]`（4px） |
 | 面板宽度 | 默认与触发器等宽，特殊场景可自定义 |
 
 ---
@@ -40,7 +40,7 @@ Select 由两部分组成：**触发器 Trigger** + **下拉面板 Dropdown**。
 
 | 属性 | 值 |
 |---|---|
-| 内边距 | `px-3 py-2` |
+| 内边距 | `px-[12px] py-[8px]` |
 | 圆角 | `rounded-md`（6px） |
 | 字号 | `font-size-14` |
 | 字重 | `font-weight-regular` |
@@ -63,9 +63,9 @@ Select 由两部分组成：**触发器 Trigger** + **下拉面板 Dropdown**。
 | 属性 | 值 |
 |---|---|
 | 图标尺寸 | 16x16 |
-| 图标与文字间距 | `gap-1`（4px） |
+| 图标与文字间距 | `gap-[4px]`（4px） |
 | 图标颜色 | 与当前状态的文字 token 保持一致 |
-| 布局 | `flex items-center gap-1` |
+| 布局 | `flex items-center gap-[4px]` |
 
 ---
 
@@ -74,8 +74,8 @@ Select 由两部分组成：**触发器 Trigger** + **下拉面板 Dropdown**。
 如果选项需要按类别分组，分组标题与选项的组合方式与 `form.md` 的 label + 输入框规范一致：
 - 分组标题在上，选项列表在下
 - 标题文字：`text-text-secondary` + `font-size-14`
-- 标题与选项间距：`gap-1`（4px）
-- 分组与分组间距：`gap-4`（16px）
+- 标题与选项间距：`gap-[4px]`（4px）
+- 分组与分组间距：`gap-[16px]`（16px）
 
 ---
 
@@ -104,7 +104,7 @@ function SelectItem({ label, state = "normal", icon: Icon, onClick }) {
 
   return (
     <div
-      className={`flex items-center gap-1 px-3 py-2 self-stretch rounded-md ${bgClass} ${
+      className={`flex items-center gap-[4px] px-[12px] py-[8px] self-stretch rounded-md ${bgClass} ${
         state === "disabled" ? "cursor-not-allowed" : "cursor-pointer"
       }`}
       onClick={state !== "disabled" ? onClick : undefined}
@@ -124,7 +124,7 @@ function SelectItem({ label, state = "normal", icon: Icon, onClick }) {
 function SelectDropdown({ items, style }) {
   return (
     <div
-      className="flex flex-col items-start rounded-medium bg-select-bg border border-select-border p-1"
+      className="flex flex-col items-start rounded-medium bg-select-bg border border-select-border p-[4px]"
       style={{
         boxShadow: "0px 4px 16px var(--color-select-shadow)",
         ...style,
@@ -172,11 +172,11 @@ function InputSelect({ placeholder = "请选择", options = [] }) {
   };
 
   return (
-    <div className="flex flex-col items-start gap-1 relative">
+    <div className="flex flex-col items-start gap-[4px] relative">
       {/* 触发器：Input 组件激活态 */}
       <div
         className={`
-          flex items-center gap-2 h-9 pl-3 pr-1.5 rounded-medium justify-between w-full
+          flex items-center gap-[8px] h-9 pl-[12px] pr-[6px] rounded-medium justify-between w-full
           bg-input-bg-normal
           border border-solid
           ${open ? "border-input-border-focus [box-shadow:0px_0px_10px_var(--color-glow)]" : "border-input-border-normal"}
@@ -212,7 +212,7 @@ function InputSelect({ placeholder = "请选择", options = [] }) {
 /* 使用示例 */
 export default function SelectDemo() {
   return (
-    <div className="p-8 bg-surface-content-area">
+    <div className="p-[32px] bg-surface-content-area">
       <InputSelect
         placeholder="请选择类型"
         options={[
@@ -235,14 +235,14 @@ export default function SelectDemo() {
 function SelectDropdownGrouped({ groups }) {
   return (
     <div
-      className="flex flex-col items-start rounded-medium bg-select-bg border border-select-border p-1 gap-4"
+      className="flex flex-col items-start rounded-medium bg-select-bg border border-select-border p-[4px] gap-[16px]"
       style={{ boxShadow: "0px 4px 16px var(--color-select-shadow)" }}
     >
       {groups.map((group, gi) => (
-        <div key={gi} className="flex flex-col items-start gap-1 self-stretch">
+        <div key={gi} className="flex flex-col items-start gap-[4px] self-stretch">
           {/* 分组标题 */}
           <span
-            className="px-3 text-text-secondary text-font-size-14 font-font-weight-regular"
+            className="px-[12px] text-text-secondary text-font-size-14 font-font-weight-regular"
             style={{ fontFamily: FONT }}
           >
             {group.label}

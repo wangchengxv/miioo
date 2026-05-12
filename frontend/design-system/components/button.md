@@ -23,8 +23,8 @@
 
 | 尺寸 | 高度 | 水平内边距 | 字号 | 圆角 | 图标尺寸 | 典型用途 |
 |---|---|---|---|---|---|---|
-| **大 Large** | 36px（`h-9`） | `spacing-16`（`px-4`） | `font-size-14` | 8px（`rounded-medium`） | 16x16 | 常规操作，界面中最常见的尺寸 |
-| **小 Small** | 24px（`h-6`） | `spacing-12`（`px-3`） | `font-size-12` | 6px（`rounded-[6px]`） | 12x12 | 紧凑场景，如表格行内操作、标签旁按钮 |
+| **大 Large** | 36px（`h-9`） | `px-[16px]`（16px） | `font-size-14` | 8px（`rounded-medium`） | 16x16 | 常规操作，界面中最常见的尺寸 |
+| **小 Small** | 24px（`h-6`） | `px-[12px]`（12px） | `font-size-12` | 6px（`rounded-[6px]`） | 12x12 | 紧凑场景，如表格行内操作、标签旁按钮 |
 
 > 特殊场景的特殊尺寸按钮，暂时使用大尺寸（Large）样式替代，待后续单独定义。
 
@@ -70,7 +70,7 @@ hover / active 状态只改变内层 `bg-btn-primary-bg-*` 纯色背景值，外
 
 | 组合 | 说明 |
 |---|---|
-| 图标 + 文字 | 图标在左，文字在右，间距 `gap-1`（4px） |
+| 图标 + 文字 | 图标在左，文字在右，间距 `gap-[4px]`（4px） |
 | 仅文字 | 无图标，左右内边距不变 |
 | 仅图标 | 无文字，左右内边距改为与高度对称，形成正方形按钮 |
 
@@ -100,7 +100,7 @@ function AccentButton({ children, icon: Icon, disabled, onClick }) {
       onClick={handleClick}
       disabled={disabled || loading}
       className="
-        [font-synthesis:none] flex items-center gap-1 px-4 py-0.5
+        [font-synthesis:none] flex items-center gap-[4px] px-[16px] py-0.5
         justify-center rounded-medium h-9
         bg-btn-accent-bg-normal
         hover:bg-btn-accent-bg-hover
@@ -180,7 +180,7 @@ function PrimaryButton({ children, icon: Icon, disabled, onClick }) {
       {/* 内层容器：纯色背景遮住外层，只露出 1px 渐变边缘 */}
       <div
         className="
-          flex items-center gap-1 px-4 py-0.5 justify-center
+          flex items-center gap-[4px] px-[16px] py-0.5 justify-center
           rounded-[7px] flex-1 w-full
           bg-btn-primary-bg-normal
           hover:bg-btn-primary-bg-hover
@@ -235,7 +235,7 @@ function SecondaryButton({ children, icon: Icon, disabled, onClick }) {
       onClick={handleClick}
       disabled={disabled || loading}
       className="
-        [font-synthesis:none] flex items-center gap-1 px-4 py-0.5
+        [font-synthesis:none] flex items-center gap-[4px] px-[16px] py-0.5
         justify-center rounded-medium h-9
         bg-btn-primary-bg-normal
         hover:bg-btn-primary-bg-hover
@@ -294,7 +294,7 @@ function DangerButton({ children, icon: Icon, disabled, onClick }) {
       onClick={handleClick}
       disabled={disabled || loading}
       className="
-        [font-synthesis:none] flex items-center gap-1 px-4 py-0.5
+        [font-synthesis:none] flex items-center gap-[4px] px-[16px] py-0.5
         justify-center rounded-medium h-9
         bg-btn-danger-bg-normal
         hover:bg-btn-danger-bg-hover
@@ -342,7 +342,7 @@ function SecondaryButtonSmall({ children, disabled, onClick }) {
       disabled={disabled}
       className="
         [font-synthesis:none] flex items-center justify-center
-        h-6 px-3 rounded-[6px]
+        h-6 px-[12px] rounded-[6px]
         bg-btn-primary-bg-normal
         hover:bg-btn-primary-bg-hover
         active:bg-btn-primary-bg-active

@@ -18,7 +18,7 @@ Tag 只有一种固定尺寸，设计上与 `font-size-14`（`text-sm/4.5`）的
 
 | 属性 | 值 |
 |---|---|
-| 水平内边距 | `spacing-4`（`px-1`） |
+| 水平内边距 | `px-[4px]`（4px） |
 | 垂直内边距 | 0（`py-0`） |
 | 圆角 | 6px（`rounded-md`） |
 | 字号 | `font-size-14`（`text-sm/4.5`） |
@@ -59,7 +59,7 @@ function Tag({ label, type = "scene" }) {
 
   return (
     <div
-      className={`flex flex-col items-start gap-0 px-1 py-0 rounded-md ${bg}`}
+      className={`flex flex-col items-start gap-0 px-[4px] py-0 rounded-md ${bg}`}
       style={{ boxShadow: "var(--color-stroke-normal) 0px 0px 0px 1px inset" }}
     >
       <div
@@ -80,7 +80,7 @@ function Tag({ label, type = "scene" }) {
 ```jsx
 export default function TagDemo() {
   return (
-    <div className="flex flex-col items-start gap-2 p-4 bg-surface-base">
+    <div className="flex flex-col items-start gap-[8px] p-[16px] bg-surface-base">
       <Tag label="@scene" type="scene" />
       <Tag label="@character" type="character" />
       <Tag label="@prop" type="prop" />

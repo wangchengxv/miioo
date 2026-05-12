@@ -111,6 +111,23 @@ export default function PrimaryNav({ items, activeKey = null, onChange, variant 
     prevKeyRef.current = activeKey;
   }, [activeKey]);
 
+  useEffect(() => {
+    if (!isCompact) return;
+    const hasOpenPopup = items.some((item) => item.popup && item.key === activeKey);
+    if (!hasOpenPopup) return;
+
+    const handleOutsideClick = (e) => {
+      const container = containerRef.current;
+      if (container && !container.contains(e.target)) {
+        const activeItem = items.find((item) => item.key === activeKey);
+        onChange?.(activeItem?.key);
+      }
+    };
+
+    document.addEventListener('mousedown', handleOutsideClick);
+    return () => document.removeEventListener('mousedown', handleOutsideClick);
+  }, [activeKey, isCompact, items, onChange]);
+
   const registerItem = (key) => (el) => {
     if (el) itemRefs.current.set(key, el);
     else itemRefs.current.delete(key);
@@ -120,12 +137,12 @@ export default function PrimaryNav({ items, activeKey = null, onChange, variant 
   const containerCls = isCompact
     ? 'primary-nav flex flex-col items-center gap-8 self-stretch'
     : isVertical
-    ? 'primary-nav flex flex-col items-start gap-8 flex-1'
+    ? 'primary-nav flex flex-col items-start gap-16 flex-1'
     : 'primary-nav flex flex-col items-start gap-12';
   const itemCls = isCompact
     ? 'primary-nav-item flex items-center justify-center rounded-full size-[32px]'
     : isVertical
-    ? 'primary-nav-item flex flex-col items-center justify-center gap-4 rounded-[16px] size-[56px]'
+    ? 'primary-nav-item flex flex-col items-center justify-center gap-4 rounded-[16px] size-[48px]'
     : 'primary-nav-item flex items-center gap-8 px-20 py-12 rounded-full';
 
   return (

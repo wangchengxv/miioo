@@ -17,12 +17,12 @@
 | 背景色 | `bg-toast-bg`（black-50） |
 | 背景模糊 | `backdrop-blur-[20px]` |
 | 圆角 | `rounded-medium`（8px） |
-| 内边距 | `px-4 py-2` |
+| 内边距 | `px-[16px] py-[8px]` |
 | 图标尺寸 | 16x16，颜色跟随状态色 |
 | 文字 | `text-text-primary` + `font-size-16` |
-| 图标与文字间距 | `gap-2` |
+| 图标与文字间距 | `gap-[8px]` |
 | 自动消失时长 | 建议 2000-3000ms |
-| 出现位置 | 屏幕底部居中，距底部 `spacing-32` |
+| 出现位置 | 屏幕底部居中，距底部 32px |
 
 ### 代码示例
 
@@ -67,7 +67,7 @@ function Toast({ message, type = "success", duration = 2500, onClose }) {
   return (
     <div className="fixed bottom-8 left-1/2 -translate-x-1/2 z-50">
       <div
-        className="flex items-center gap-2 px-4 py-2 rounded-medium bg-toast-bg backdrop-blur-[20px]"
+        className="flex items-center gap-[8px] px-[16px] py-[8px] rounded-medium bg-toast-bg backdrop-blur-[20px]"
       >
         {Icon && <Icon />}
         <span
@@ -98,11 +98,11 @@ function Toast({ message, type = "success", duration = 2500, onClose }) {
 | 描边 | 对应状态色纯色，`border border-solid` |
 | 背景模糊 | `backdrop-blur-[20px]` |
 | 圆角 | `rounded-medium`（8px） |
-| 内边距 | `px-4 py-2` |
+| 内边距 | `px-[16px] py-[8px]` |
 | 图标尺寸 | 16x16 |
 | 文字色 | 对应状态色的 200 档纯色 |
 | 关闭图标颜色 | 同文字色 |
-| 出现位置 | 屏幕右上角，距顶部和右侧各 `spacing-16` |
+| 出现位置 | 屏幕右上角，距顶部和右侧各 16px |
 
 **三种状态对应色值：**
 
@@ -153,7 +153,7 @@ function Notification({ message, type = "warning", onClose }) {
   return (
     <div className="fixed top-4 right-4 z-50">
       <div
-        className={`flex items-center gap-2 px-4 py-2 rounded-medium w-60 backdrop-blur-[20px] ${bg} border border-solid ${border}`}
+        className={`flex items-center gap-[8px] px-[16px] py-[8px] rounded-medium w-60 backdrop-blur-[20px] ${bg} border border-solid ${border}`}
       >
         <Icon />
         <span

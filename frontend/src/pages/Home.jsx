@@ -190,7 +190,63 @@ function NotificationEmptyState() {
   );
 }
 
-function NotificationCard({ item, onClick }) {
+function NotificationDetailModal({ item, onClose }) {
+  return (
+    <div
+      className="fixed inset-0 z-[200] flex items-center justify-center bg-surface-overlay backdrop-blur-[20px]"
+      onClick={onClose}
+    >
+      <div
+        className="[font-synthesis:none] w-[400px] flex flex-col rounded-large bg-surface-modal overflow-hidden antialiased"
+        style={{ boxShadow: '0px 8px 32px rgba(0,0,0,0.6)' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center gap-[16px] justify-between w-100 py-[16px] bg-surface-modal rounded-t-large rounded-b-none px-[24px]">
+          <span className="flex-1 font-['AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] font-medium text-white text-base/5">
+            {item.title}
+          </span>
+          <button type="button" onClick={onClose} className="shrink-0 cursor-pointer" aria-label="关闭">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+              <path d="M2.667 2.667L13.333 13.333" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M2.667 13.333L13.333 2.667" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex flex-col items-start gap-[16px] py-[8px] w-100 bg-surface-modal px-[24px]">
+          <div className="text-[14px] leading-[175%] self-stretch font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFFCC]">
+            {item.content}
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div className="flex items-center gap-[16px] justify-between w-100 bg-surface-modal py-[16px] px-[24px] rounded-t-none rounded-b-large">
+          <div className="flex flex-1 items-center">
+            <div className="flex-1 h-fit font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFF66] text-xs/4">
+              {item.time}
+            </div>
+            <button
+              type="button"
+              onClick={onClose}
+              className="flex flex-col h-9 shrink-0 rounded-lg [box-shadow:#00000066_3px_3px_8px] [outline:1px_solid_#00000080] p-px cursor-pointer"
+              style={{ backgroundImage: 'linear-gradient(in oklab 148.76deg, oklab(94.7% -0.078 -0.022 / 30%) 3.64%, oklab(75.5% -0.102 -0.072 / 0%) 42.81%), linear-gradient(in oklab 180deg, #FFFFFF14, #FFFFFF14)' }}
+            >
+              <div className="flex items-center grow shrink basis-[0%] rounded-[7px] px-[15px] gap-[4px] bg-btn-primary-bg-normal hover:bg-btn-primary-bg-hover active:bg-btn-primary-bg-active">
+                <span className="inline-block w-max shrink-0 font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-white text-sm/4.5">
+                  关闭
+                </span>
+              </div>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NotificationCard({ item, onOpenDetail }) {
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
 
@@ -200,7 +256,7 @@ function NotificationCard({ item, onClick }) {
       className="notification-card"
       data-hovered={hovered}
       data-pressed={pressed}
-      onClick={onClick}
+      onClick={onOpenDetail}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => {
         setHovered(false);
@@ -233,6 +289,7 @@ function NotificationPopup({ items, onClose, anchorLeft }) {
   const [closeHovered, setCloseHovered] = useState(false);
   const [closePressed, setClosePressed] = useState(false);
   const [isScrolling, setIsScrolling] = useState(false);
+  const [detailItem, setDetailItem] = useState(null);
   const scrollEndTimerRef = useRef(null);
   const visibleItems = items.slice(0, MAX_NOTIFICATION_ITEMS);
   const isEmpty = visibleItems.length === 0;
@@ -255,42 +312,47 @@ function NotificationPopup({ items, onClose, anchorLeft }) {
   };
 
   return (
-    <div className="notification-popup" style={{ left: anchorLeft ?? 40, bottom: 24 }} role="dialog" aria-label="消息中心">
-      <div className="notification-popup-header">
-        <div className="font-['AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] font-medium text-base/5 text-white">
-          消息中心
-        </div>
-        <button
-          type="button"
-          className="notification-close"
-          data-hovered={closeHovered}
-          data-pressed={closePressed}
-          onClick={onClose}
-          onMouseEnter={() => setCloseHovered(true)}
-          onMouseLeave={() => {
-            setCloseHovered(false);
-            setClosePressed(false);
-          }}
-          onMouseDown={() => setClosePressed(true)}
-          onMouseUp={() => setClosePressed(false)}
-          aria-label="关闭消息中心"
-        >
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-            <path d="M3.5 3.5L10.5 10.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-            <path d="M10.5 3.5L3.5 10.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-          </svg>
-        </button>
-      </div>
-      {isEmpty ? (
-        <NotificationEmptyState />
-      ) : (
-        <div className="notification-popup-list" data-scrolling={isScrolling} onScroll={handleListScroll} role="list">
-          {visibleItems.map((item) => (
-            <NotificationCard key={item.id} item={item} onClick={onClose} />
-          ))}
-        </div>
+    <>
+      {detailItem && (
+        <NotificationDetailModal item={detailItem} onClose={() => setDetailItem(null)} />
       )}
-    </div>
+      <div className="notification-popup" style={{ left: anchorLeft ?? 40, bottom: 24 }} role="dialog" aria-label="消息中心">
+        <div className="notification-popup-header">
+          <div className="font-['AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] font-medium text-base/5 text-white">
+            消息中心
+          </div>
+          <button
+            type="button"
+            className="notification-close"
+            data-hovered={closeHovered}
+            data-pressed={closePressed}
+            onClick={onClose}
+            onMouseEnter={() => setCloseHovered(true)}
+            onMouseLeave={() => {
+              setCloseHovered(false);
+              setClosePressed(false);
+            }}
+            onMouseDown={() => setClosePressed(true)}
+            onMouseUp={() => setClosePressed(false)}
+            aria-label="关闭消息中心"
+          >
+            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+              <path d="M3.5 3.5L10.5 10.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+              <path d="M10.5 3.5L3.5 10.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
+        {isEmpty ? (
+          <NotificationEmptyState />
+        ) : (
+          <div className="notification-popup-list" data-scrolling={isScrolling} onScroll={handleListScroll} role="list">
+            {visibleItems.map((item) => (
+              <NotificationCard key={item.id} item={item} onOpenDetail={() => setDetailItem(item)} />
+            ))}
+          </div>
+        )}
+      </div>
+    </>
   );
 }
 
@@ -340,9 +402,9 @@ const BOTTOM_NAV_ITEMS = [
     key: 'menu',
     label: '菜单',
     tooltip: '更多选项',
-    popup: (
+    popup: ({ close, anchorLeft }) => (
       <div className="flex flex-col items-start w-max rounded-lg absolute left-10 bottom-0 [box-shadow:#00000066_0px_4px_16px] bg-[#161616] border border-solid border-[#FFFFFF0D] p-1" style={{ zIndex: 50 }}>
-        {['操作手册', '更新日志', '用户协议', '隐私政策'].map((label) => (
+        {['操作手册', '更新日志', '用户协议', '隐私政策', '商务合作', '关于我们'].map((label) => (
           <MenuPopupItem key={label} label={label} />
         ))}
       </div>
@@ -545,8 +607,8 @@ export default function Home() {
         style={{ backgroundImage: 'linear-gradient(in oklab 180deg, oklab(0% 0 0 / 0%) 81.58%, oklab(0% 0 0) 100%), linear-gradient(in oklab 90deg, oklab(0% 0 0 / 60%) 0%, oklab(0% 0 0 / 0%) 9.99%)' }}
       >
         {/* headbar */}
-        <div className="flex items-center px-32 py-12 justify-between gap-[37px] self-stretch">
-          <svg width="80" height="24.15" viewBox="0 0 947 286" fill="none" xmlns="http://www.w3.org/2000/svg" className="shrink-0" aria-label="miioo">
+        <div className="flex items-center px-24 py-12 justify-between gap-[37px] self-stretch">
+          <svg width="66" height="19.92" viewBox="0 0 947 286" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flex: '0 1 auto', width: '66px' }} aria-label="miioo">
             <path d="M335 86H389V286H335V86Z" fill="white"/>
             <path d="M425 86H479V286H425V86Z" fill="white"/>
             <path d="M180 251C180 270.33 164.33 286 145 286C125.67 286 110 270.33 110 251C110 231.67 125.67 216 145 216C164.33 216 180 231.67 180 251Z" fill="#00D4FF"/>
@@ -568,7 +630,7 @@ export default function Home() {
 
         {/* primary navigation */}
         <div className="flex flex-col items-start gap-0 flex-1 p-0">
-          <div className="flex flex-col items-start px-32 py-24 flex-1">
+          <div className="flex flex-col items-start px-24 py-24 flex-1">
             <PrimaryNav items={NAV_ITEMS} activeKey={activeKey} onChange={setActiveKey} variant="vertical" />
           </div>
 
