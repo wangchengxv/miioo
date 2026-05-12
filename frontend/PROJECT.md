@@ -1,6 +1,6 @@
 # miioo 项目进度管理文档
 
-> 最后更新：2026-05-11
+> 最后更新：2026-05-12
 
 ---
 
@@ -84,10 +84,13 @@ miioo/
 ├── public/                    # 静态资源
 ├── src/
 │   ├── assets/                # 图片、SVG 等资源
-│   ├── components/            # 通用组件（Button、Input 等）← 待建立
+│   ├── components/            # 通用组件
+│   │   ├── PrimaryNav.jsx     # 左侧一级导航（expanded / compact / vertical）
+│   │   ├── ApiConfigModal.jsx # API 配置弹窗（多服务商，最多 9 张卡片）
+│   │   └── LoginModal.jsx     # 登录弹窗（手机号 / 微信扫码 / 绑定手机）
 │   ├── layouts/               # 页面框架（侧边栏、顶栏）← 待建立
 │   ├── pages/                 # 业务页面
-│   │   ├── Home.jsx           # 首页（开发中）
+│   │   ├── Home.jsx           # 首页（交互验收中）
 │   │   ├── ButtonShowcase.jsx # 按钮组件展示页（已有）
 │   │   └── InputShowcase.jsx  # 输入框组件展示页（已有）
 │   ├── App.jsx                # 根组件
@@ -135,6 +138,7 @@ miioo/
 - [x] Checkbox & Radio
 - [x] Tab 标签页
 - [x] Navigation 导航（PrimaryNav 组件，expanded / compact / vertical 三种变体）
+- [x] Switch Button 开关按钮（API 配置 / 模型卡片开关场景）
 
 ### 业务页面（src/pages/）
 - [x] 首页 — 顶部栏（Logo、创作手册按钮、登录按钮）
@@ -143,8 +147,9 @@ miioo/
 - [x] 首页 — 开始创作按钮（200×52，PulsingBorder 动效）
 - [x] 首页 — 底部工具交互（社群二维码、消息中心、更多菜单 popup；API 按钮打开配置弹窗）
 - [x] 首页 — 登录弹窗原型（手机号登录 / 微信扫码 / 绑定手机号）
-- [x] 首页 — API 配置弹窗原型（推荐配置 / 服务商选择入口）
-- [ ] 首页 — 交互验收与细节收尾
+- [x] 首页 — API 配置弹窗（推荐配置 / 多服务商卡片，最多 9 张，支持新增与编辑自定义服务商）
+- [x] 首页 — 交互验收（API 配置多服务商新增与编辑已手动验证通过）
+- [ ] 首页 — 细节收尾
 - [ ] 项目列表页
 - [ ] 项目工作流 — 全局设定
 - [ ] 项目工作流 — 剧本
