@@ -997,7 +997,7 @@ function CustomProviderModal({ draft, onChange, onCancel, onAdd }) {
   );
 }
 
-export default function ApiConfigModal({ open, onClose }) {
+export default function ApiConfigModal({ open, onClose, onConfigured }) {
   const [state, setState] = useState(createDefaultState);
   const [toasts, setToasts] = useState([]);
   const [confirmDelete, setConfirmDelete] = useState(null);
@@ -1101,10 +1101,12 @@ export default function ApiConfigModal({ open, onClose }) {
       activeModelTab: '对话模型',
     }));
 
-  const saveOneLinkConfig = () =>
+  const saveOneLinkConfig = () => {
     setState((current) => ({ ...current, mainConfigured: true, onelinkEnabled: true, childView: null }));
+    onConfigured?.();
+  };
 
-  const saveCustomProviderModelConfig = () =>
+  const saveCustomProviderModelConfig = () => {
     setState((current) => ({
       ...current,
       childView: null,
@@ -1113,6 +1115,8 @@ export default function ApiConfigModal({ open, onClose }) {
         provider.id === current.activeCustomProviderId ? { ...provider, configured: true, enabled: true } : provider,
       ),
     }));
+    onConfigured?.();
+  };
 
   const addCustomProvider = () =>
     setState((current) => {

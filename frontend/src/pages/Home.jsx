@@ -4,6 +4,12 @@ import bgImage from '../assets/home-bg.png';
 import PrimaryNav from '../components/PrimaryNav';
 import LoginModal from '../components/LoginModal';
 import ApiConfigModal from '../components/ApiConfigModal';
+import AccountMenu from '../components/AccountMenu';
+import ProfileModal from '../components/ProfileModal';
+import NewProjectModal from '../components/NewProjectModal';
+import ProjectList from './ProjectList';
+import GlobalSettings from './GlobalSettings';
+import SubjectPage from './SubjectPage';
 
 const ICON_STYLE = { flexShrink: '0' };
 
@@ -511,7 +517,7 @@ function LoginButton({ onClick }) {
 
 const SECONDARY_TEXT = 'rgba(255, 255, 255, 0.60)';
 
-function StartCreationButton() {
+function StartCreationButton({ onClick }) {
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
 
@@ -534,6 +540,7 @@ function StartCreationButton() {
       onMouseUp={() => setPressed(false)}
       role="button"
       tabIndex={0}
+      onClick={onClick}
     >
       {/* outer shader bloom — subtle 8px spill onto bg image on hover */}
       <div
@@ -583,11 +590,330 @@ function StartCreationButton() {
   );
 }
 
-export default function Home() {
+const STEP_TABS = [
+  {
+    key: 'global',
+    label: '项目总览',
+    alwaysEnabled: true,
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+        <path d="M7.667 6.667V2H2V6.667H7.667Z" stroke="#FFFFFF" strokeLinejoin="round" />
+        <path d="M14 14V9.333H8.333V14H14Z" stroke="#FFFFFF" strokeLinejoin="round" />
+        <path d="M10.333 2V6.667H14V2H10.333Z" stroke="#FFFFFF" strokeLinejoin="round" />
+        <path d="M2 9.333V14H5.667V9.333H2Z" stroke="#FFFFFF" strokeLinejoin="round" />
+      </svg>
+    ),
+    activeWidth: 110,
+    activeIcon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+        <defs>
+          <linearGradient id="gs_active_0" x1="4.83333" y1="2" x2="4.83333" y2="6.66667" gradientUnits="userSpaceOnUse">
+            <stop stopColor="#C2F2FF"/><stop offset="1" stopColor="#2DC3E1"/>
+          </linearGradient>
+          <linearGradient id="gs_active_1" x1="11.1667" y1="9.33337" x2="11.1667" y2="14" gradientUnits="userSpaceOnUse">
+            <stop stopColor="#C2F2FF"/><stop offset="1" stopColor="#2DC3E1"/>
+          </linearGradient>
+          <linearGradient id="gs_active_2" x1="12.1667" y1="2" x2="12.1667" y2="6.66667" gradientUnits="userSpaceOnUse">
+            <stop stopColor="#C2F2FF"/><stop offset="1" stopColor="#2DC3E1"/>
+          </linearGradient>
+          <linearGradient id="gs_active_3" x1="3.83333" y1="9.33337" x2="3.83333" y2="14" gradientUnits="userSpaceOnUse">
+            <stop stopColor="#C2F2FF"/><stop offset="1" stopColor="#2DC3E1"/>
+          </linearGradient>
+        </defs>
+        <path d="M7.66667 6.66667V2H2V6.66667H7.66667Z" fill="url(#gs_active_0)" stroke="url(#gs_active_0)" strokeLinejoin="round"/>
+        <path d="M14 14V9.33337H8.33337V14H14Z" fill="url(#gs_active_1)" stroke="url(#gs_active_1)" strokeLinejoin="round"/>
+        <path d="M10.3334 2V6.66667H14V2H10.3334Z" fill="url(#gs_active_2)" stroke="url(#gs_active_2)" strokeLinejoin="round"/>
+        <path d="M2 9.33337V14H5.66667V9.33337H2Z" fill="url(#gs_active_3)" stroke="url(#gs_active_3)" strokeLinejoin="round"/>
+      </svg>
+    ),
+  },
+  {
+    key: 'script',
+    label: '剧本',
+    alwaysEnabled: true,
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+        <path d="M1.667 2.333H5.333C6.806 2.333 8 3.527 8 5V14C8 12.896 7.105 12 6 12H1.667V2.333Z" stroke="#FFFFFF" strokeLinejoin="round" />
+        <path d="M14.333 2.333H10.667C9.194 2.333 8 3.527 8 5V14C8 12.896 8.895 12 10 12H14.333V2.333Z" stroke="#FFFFFF" strokeLinejoin="round" />
+      </svg>
+    ),
+    activeWidth: 80,
+    activeIcon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+        <defs>
+          <linearGradient id="sc_active_0" x1="4.833" y1="2.333" x2="4.833" y2="14" gradientUnits="userSpaceOnUse">
+            <stop stopColor="#C2F2FF"/><stop offset="1" stopColor="#2DC3E1"/>
+          </linearGradient>
+          <linearGradient id="sc_active_1" x1="11.167" y1="2.333" x2="11.167" y2="14" gradientUnits="userSpaceOnUse">
+            <stop stopColor="#C2F2FF"/><stop offset="1" stopColor="#2DC3E1"/>
+          </linearGradient>
+        </defs>
+        <path d="M1.667 2.333H5.333C6.806 2.333 8 3.527 8 5V14C8 12.896 7.105 12 6 12H1.667V2.333Z" fill="url(#sc_active_0)" stroke="url(#sc_active_0)" strokeLinejoin="round"/>
+        <path d="M14.333 2.333H10.667C9.194 2.333 8 3.527 8 5V14C8 12.896 8.895 12 10 12H14.333V2.333Z" fill="url(#sc_active_1)" stroke="url(#sc_active_1)" strokeLinejoin="round"/>
+      </svg>
+    ),
+  },
+  {
+    key: 'subject',
+    label: '主体',
+    alwaysEnabled: false,
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+        <path d="M3.333 3.333H10.667H12.667V14.667H3.333V3.333Z" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M3.333 3.333L10.667 1.333V3.333" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M8 9.333C8.736 9.333 9.333 8.736 9.333 8C9.333 7.264 8.736 6.667 8 6.667C7.264 6.667 6.667 7.264 6.667 8C6.667 8.736 7.264 9.333 8 9.333Z" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M6.667 11.333H9.333" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+    activeWidth: 80,
+    activeIcon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+        <defs>
+          <linearGradient id="_64i21n0" x1="7" y1="1.333" x2="7" y2="3.333" gradientUnits="userSpaceOnUse">
+            <stop stopColor="#C2F2FF"/><stop offset="1" stopColor="#2DC3E1"/>
+          </linearGradient>
+          <linearGradient id="_64i21n1" x1="7" y1="1.333" x2="7" y2="3.333" gradientUnits="userSpaceOnUse">
+            <stop stopColor="#C2F2FF"/><stop offset="1" stopColor="#2DC3E1"/>
+          </linearGradient>
+          <linearGradient id="_64i21n2" x1="8" y1="3.333" x2="8" y2="14.667" gradientUnits="userSpaceOnUse">
+            <stop stopColor="#C2F2FF"/><stop offset="1" stopColor="#2DC3E1"/>
+          </linearGradient>
+          <linearGradient id="_64i21n3" x1="8" y1="3.333" x2="8" y2="14.667" gradientUnits="userSpaceOnUse">
+            <stop stopColor="#C2F2FF"/><stop offset="1" stopColor="#2DC3E1"/>
+          </linearGradient>
+        </defs>
+        <path d="M3.333 3.333L10.667 1.333V3.333" fill="url(#_64i21n0)" />
+        <path d="M3.333 3.333L10.667 1.333V3.333" stroke="url(#_64i21n1)" strokeLinejoin="round" />
+        <path d="M3.333 3.333H10.667H12.667V14.667H3.333V3.333Z" fill="url(#_64i21n2)" stroke="url(#_64i21n3)" strokeLinejoin="round" />
+        <path d="M8 9.333C8.736 9.333 9.333 8.736 9.333 8C9.333 7.264 8.736 6.667 8 6.667C7.264 6.667 6.667 7.264 6.667 8C6.667 8.736 7.264 9.333 8 9.333Z" stroke="#090909" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M6.667 11.333H9.333" stroke="#090909" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  {
+    key: 'storyboard',
+    label: '分镜',
+    alwaysEnabled: false,
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+        <path d="M5.333 2H2.667C2.298 2 2 2.298 2 2.667V5.333" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M5.333 14H2.667C2.298 14 2 13.701 2 13.333V10.667" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M10.667 14H13.333C13.701 14 14 13.701 14 13.333V10.667" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M10.667 2H13.333C13.701 2 14 2.298 14 2.667V5.333" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M11.333 8C11.333 6.159 9.841 4.667 8 4.667C6.159 4.667 4.667 6.159 4.667 8C4.667 9.841 6.159 11.333 8 11.333C9.841 11.333 11.333 9.841 11.333 8Z" stroke="#FFFFFF" />
+        <path d="M8 9C7.448 9 7 8.552 7 8C7 7.448 7.448 7 8 7C8.552 7 9 7.448 9 8C9 8.552 8.552 9 8 9Z" fill="#FFFFFF" />
+      </svg>
+    ),
+  },
+  {
+    key: 'edit',
+    label: '剪辑',
+    alwaysEnabled: false,
+    icon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+        <path d="M14.333 5.667V3H11.333M14.333 5.667V10.333M14.333 5.667H11.333M11.333 3V5.667M11.333 3H10M14.333 10.333V13H11.333M14.333 10.333H11.333M11.333 5.667H10M1.667 5.667V3H4.667M1.667 5.667V10.333M1.667 5.667H4.667M4.667 3V5.667M4.667 3H6M1.667 10.333V13H4.667M1.667 10.333H4.667M4.667 5.667H6M4.667 13V10.333M4.667 13H6M4.667 10.333H6M11.333 13V10.333M11.333 13H10M11.333 10.333H10" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M8 2.333V3.667" stroke="#FFFFFF" strokeLinecap="round" />
+        <path d="M8 5.667V7" stroke="#FFFFFF" strokeLinecap="round" />
+        <path d="M8 9V10.333" stroke="#FFFFFF" strokeLinecap="round" />
+        <path d="M8 12.333V13.667" stroke="#FFFFFF" strokeLinecap="round" />
+      </svg>
+    ),
+  },
+];
+
+function WorkflowHeadbar({ activeStep, onStepChange, unlockedSteps, isLoggedIn, onLoginClick, onLogout, onOpenProfile }) {
+  return (
+    <div className="[font-synthesis:none] flex items-center justify-between gap-[37px] self-stretch h-[60px] relative shrink-0 antialiased px-24">
+      {/* Logo */}
+      <svg width="80" height="25" viewBox="0 0 80 25" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+        <path d="M28.3 7.265H32.862V24.161H28.3V7.265Z" fill="#FFFFFF" />
+        <path d="M35.903 7.265H40.465V24.161H35.903V7.265Z" fill="#FFFFFF" />
+        <path d="M15.206 21.204C15.206 22.837 13.882 24.16 12.249 24.16C10.616 24.16 9.292 22.837 9.292 21.204C9.292 19.571 10.616 18.247 12.249 18.247C13.882 18.247 15.206 19.571 15.206 21.204Z" fill="#00D4FF" />
+        <path fillRule="evenodd" clipRule="evenodd" d="M0 24.161L0 3.295H0.056H0.472C1.175 5.75 2.626 7.89 4.562 9.453V24.161H0Z" fill="#FFFFFF" />
+        <path fillRule="evenodd" clipRule="evenodd" d="M24.498 24.161H19.936V9.453C21.872 7.89 23.323 5.75 24.026 3.295H24.442H24.498L24.498 24.161Z" fill="#FFFFFF" />
+        <path d="M55.333 15.713C55.333 13.847 53.82 12.334 51.954 12.334C50.087 12.334 48.575 13.847 48.575 15.713C48.575 17.579 50.087 19.092 51.954 19.092V24.161C47.288 24.161 43.506 20.378 43.506 15.713C43.506 11.047 47.288 7.265 51.954 7.265C56.619 7.265 60.401 11.047 60.401 15.713C60.401 20.378 56.619 24.161 51.954 24.161V19.092C53.82 19.092 55.333 17.579 55.333 15.713Z" fill="#FFFFFF" />
+        <path d="M74.931 15.713C74.931 13.847 73.418 12.334 71.552 12.334C69.686 12.334 68.173 13.847 68.173 15.713C68.173 17.579 69.686 19.092 71.552 19.092V24.161C66.887 24.161 63.105 20.378 63.105 15.713C63.105 11.047 66.887 7.265 71.552 7.265C76.218 7.265 80 11.047 80 15.713C80 20.378 76.218 24.161 71.552 24.161V19.092C73.418 19.092 74.931 17.579 74.931 15.713Z" fill="#FFFFFF" />
+        <path d="M35.734 0C37.274 0 38.522 1.248 38.522 2.788C38.522 4.327 37.274 5.575 35.734 5.575C35.243 5.575 34.783 5.449 34.382 5.226C35.239 4.75 35.818 3.837 35.818 2.788C35.818 1.739 35.239 0.825 34.382 0.349C34.783 0.127 35.243 0 35.734 0Z" fill="#00D4FF" style={{ opacity: 0.4 }} />
+        <path d="M38.437 0C39.977 0 41.225 1.248 41.225 2.788C41.225 4.327 39.977 5.575 38.437 5.575C37.947 5.575 37.486 5.449 37.086 5.226C37.942 4.75 38.522 3.837 38.522 2.788C38.522 1.739 37.942 0.825 37.086 0.349C37.486 0.127 37.947 0 38.437 0Z" fill="#00D4FF" style={{ opacity: 0.2 }} />
+        <path d="M35.818 2.788C35.818 4.327 34.57 5.575 33.03 5.575C31.491 5.575 30.243 4.327 30.243 2.788C30.243 1.248 31.491 0 33.03 0C34.57 0 35.818 1.248 35.818 2.788Z" fill="#00D4FF" style={{ opacity: 0.6 }} />
+        <path d="M33.115 2.788C33.115 4.327 31.867 5.575 30.327 5.575C28.788 5.575 27.54 4.327 27.54 2.788C27.54 1.248 28.788 0 30.327 0C31.867 0 33.115 1.248 33.115 2.788Z" fill="#00D4FF" />
+        <path fillRule="evenodd" clipRule="evenodd" d="M12.249 12.165C17.842 12.165 22.559 8.416 24.026 3.295H24.442C24.479 3.684 24.498 4.078 24.498 4.477C24.498 11.242 19.014 16.727 12.249 16.727C5.484 16.727 0 11.242 0 4.477C0 4.078 0.019 3.684 0.056 3.295H0.472C1.939 8.416 6.656 12.165 12.249 12.165Z" fill="#FFFFFF" />
+      </svg>
+
+      {/* Right: 创作手册 + user */}
+      <div className="flex items-center gap-24 p-0">
+        <CreationManualButton />
+        {isLoggedIn ? (
+          <AccountMenu
+            userName="Suzy"
+            userId="miioo_suzy"
+            phone="178 **** 0361"
+            wechat="suzylee"
+            onLogout={onLogout}
+            onOpenProfile={onOpenProfile}
+          />
+        ) : (
+          <LoginButton onClick={onLoginClick} />
+        )}
+      </div>
+
+      {/* Step tabs — absolute centered */}
+      <div className="flex items-center gap-24 absolute" style={{ left: 'calc(50% - 9px)', top: '50%', translate: '-50% -50%' }}>
+        {STEP_TABS.map((tab) => {
+          const isActive = tab.key === activeStep;
+          const isDisabled = !tab.alwaysEnabled && !unlockedSteps.has(tab.key) && !isActive;
+
+          if (isActive) {
+            return (
+              <div
+                key={tab.key}
+                className="flex flex-col items-start gap-0 rounded-full relative p-0 h-[32px]"
+                style={{ cursor: 'pointer' }}
+                onClick={() => onStepChange(tab.key)}
+              >
+                <PulsingBorder
+                  speed={1} roundness={1} thickness={0.1} softness={0.75}
+                  intensity={0.2} bloom={0.25} spots={2} spotSize={0.5}
+                  pulse={0.25} smoke={0.3} smokeSize={0.6}
+                  scale={1} rotation={0} aspectRatio="auto"
+                  frame={tab.key === 'subject' ? 6788171.039985808 : 2135739.739999904}
+                  colors={['#0DC1FD']}
+                  colorBack="#00000000"
+                  className="h-[32px] rounded-full shrink-0 bg-black"
+                  style={{ width: `${tab.activeWidth ?? 110}px` }}
+                />
+                <div className="flex items-center gap-[4px] absolute p-0" style={{ left: '50%', top: '50%', translate: '-50% -50%' }}>
+                  {tab.activeIcon ?? tab.icon}
+                  <span
+                    className="inline-block w-max shrink-0 font-['AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] font-medium text-transparent bg-clip-text text-sm/[18px]"
+                    style={{ backgroundImage: 'linear-gradient(in oklab 180deg, oklab(93.3% -0.043 -0.030) 0%, 31.4%, oklab(75.5% -0.102 -0.072) 100%)' }}
+                  >
+                    {tab.label}
+                  </span>
+                </div>
+              </div>
+            );
+          }
+
+          if (isDisabled) {
+            return (
+              <div
+                key={tab.key}
+                className="flex flex-col h-[32px] rounded-full p-px [outline:1px_solid_#00000080]"
+                style={{ backgroundImage: 'linear-gradient(in oklab 180deg, #FFFFFF14, #FFFFFF14)', pointerEvents: 'none' }}
+              >
+                <div className="flex items-center grow shrink basis-[0%] rounded-full px-[15px] gap-[4px] self-stretch justify-center bg-[#090909]">
+                  <span style={{ opacity: 0.4, display: 'flex', alignItems: 'center' }}>{tab.icon}</span>
+                  <span className="inline-block w-max shrink-0 font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFF66] text-sm/[18px]">
+                    {tab.label}
+                  </span>
+                </div>
+              </div>
+            );
+          }
+
+          // alwaysEnabled, non-active
+          return (
+            <div
+              key={tab.key}
+              className="flex flex-col h-[32px] rounded-full p-px [outline:1px_solid_#00000080] cursor-pointer"
+              style={{ backgroundImage: 'linear-gradient(in oklab 148.76deg, oklab(94.7% -0.078 -0.022 / 30%) 3.64%, oklab(75.5% -0.102 -0.072 / 0%) 42.81%), linear-gradient(in oklab 180deg, #FFFFFF14, #FFFFFF14)' }}
+              onClick={() => onStepChange(tab.key)}
+            >
+              <div className="flex items-center grow shrink basis-[0%] rounded-full px-[15px] gap-[4px] self-stretch justify-center bg-[#090909] hover:bg-[#1D1E1E] transition-colors">
+                {tab.icon}
+                <span className="inline-block w-max shrink-0 font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-white text-sm/[18px]">
+                  {tab.label}
+                </span>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+export default function Home({ onProjectCreated }) {
   const [activeKey, setActiveKey] = useState('home');
   const [bottomActiveKey, setBottomActiveKey] = useState(null);
   const [loginOpen, setLoginOpen] = useState(false);
   const [apiConfigOpen, setApiConfigOpen] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [apiConfigured, setApiConfigured] = useState(false);
+  const [profileOpen, setProfileOpen] = useState(false);
+  const [newProjectOpen, setNewProjectOpen] = useState(false);
+  const [projects, setProjects] = useState([]);
+  const [activeProject, setActiveProject] = useState(null);
+  const [activeStep, setActiveStep] = useState('script');
+  const [subjectInitialTab, setSubjectInitialTab] = useState('char');
+  // Tracks which non-alwaysEnabled steps have ever had content — once unlocked, stays unlocked
+  const [unlockedSteps, setUnlockedSteps] = useState(new Set());
+
+  const handleUnlockStep = (stepKey) => {
+    setUnlockedSteps((prev) => {
+      if (prev.has(stepKey)) return prev;
+      const next = new Set(prev);
+      next.add(stepKey);
+      return next;
+    });
+  };
+
+  const handleNavChange = (key) => {
+    setActiveKey(key);
+    setActiveProject(null);
+  };
+
+  const showApiBubble = !apiConfigOpen && (!isLoggedIn || (isLoggedIn && !apiConfigured));
+
+  const bottomNavItems = BOTTOM_NAV_ITEMS.map((item) => {
+    if (item.key !== 'api' || !showApiBubble) return item;
+    return {
+      ...item,
+      bubble: (
+        <div
+          style={{
+            position: 'absolute',
+            left: '35.5px',
+            top: '50%',
+            translate: '0 -50%',
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'flex-start',
+            gap: 0,
+            padding: '8px 16px',
+            borderRadius: '8px',
+            backgroundColor: '#FFFFFF',
+            pointerEvents: 'none',
+            zIndex: 50,
+            whiteSpace: 'nowrap',
+            animation: 'api-bubble-nudge 2.4s cubic-bezier(0.36, 0.07, 0.19, 0.97) 1.2s infinite',
+          }}
+        >
+          <div className="w-fit font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#090909] text-sm/4.5">
+            点击此处配置API
+          </div>
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 16 16"
+            fill="none"
+            xmlns="http://www.w3.org/2000/svg"
+            style={{
+              position: 'absolute',
+              left: 7,
+              top: '50%',
+              rotate: '90deg',
+              translate: '0 -50%',
+              transformOrigin: '0% 0%',
+            }}
+          >
+            <path d="M12 6.333L8 10.333L4 6.333H12Z" fill="#FFFFFF" stroke="#FFFFFF" strokeWidth="1.333" strokeLinejoin="round" />
+          </svg>
+        </div>
+      ),
+    };
+  });
 
   const handleBottomNavChange = (key) => {
     if (key === 'api') {
@@ -599,14 +925,30 @@ export default function Home() {
     setBottomActiveKey((prev) => (prev === key ? null : key));
   };
 
+  const handleProjectCreated = (project) => {
+    setProjects((prev) => [...prev, project]);
+    setActiveKey('project');
+  };
+
   return (
     <div className="[font-synthesis:none] overflow-clip w-screen h-screen relative bg-neutral-400 antialiased">
-      <div className="absolute bg-cover bg-center inset-0" style={{ backgroundImage: `url(${BG_URL})` }} />
-      <div
-        className="flex flex-col items-start absolute inset-0"
-        style={{ backgroundImage: 'linear-gradient(in oklab 180deg, oklab(0% 0 0 / 0%) 81.58%, oklab(0% 0 0) 100%), linear-gradient(in oklab 90deg, oklab(0% 0 0 / 60%) 0%, oklab(0% 0 0 / 0%) 9.99%)' }}
-      >
+      {/* background — only visible on home page */}
+      {activeKey === 'home' && (
+        <>
+          <div className="absolute bg-cover bg-center inset-0" style={{ backgroundImage: `url(${BG_URL})` }} />
+          <div
+            className="absolute inset-0 pointer-events-none"
+            style={{ backgroundImage: 'linear-gradient(in oklab 180deg, oklab(0% 0 0 / 0%) 81.58%, oklab(0% 0 0) 100%), linear-gradient(in oklab 90deg, oklab(0% 0 0 / 60%) 0%, oklab(0% 0 0 / 0%) 9.99%)' }}
+          />
+        </>
+      )}
+      {activeKey !== 'home' && (
+        <div className="absolute inset-0 bg-neutral-400" />
+      )}
+
+      <div className="flex flex-col items-start absolute inset-0">
         {/* headbar */}
+        {!activeProject ? (
         <div className="flex items-center px-24 py-12 justify-between gap-[37px] self-stretch">
           <svg width="66" height="19.92" viewBox="0 0 947 286" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flex: '0 1 auto', width: '66px' }} aria-label="miioo">
             <path d="M335 86H389V286H335V86Z" fill="white"/>
@@ -624,33 +966,122 @@ export default function Home() {
           </svg>
           <div className="flex items-center gap-16 p-0">
             <CreationManualButton />
-            <LoginButton onClick={() => setLoginOpen(true)} />
+            {isLoggedIn ? (
+              <AccountMenu
+                userName="Suzy"
+                userId="miioo_suzy"
+                phone="178 **** 0361"
+                wechat="suzylee"
+                onLogout={() => setIsLoggedIn(false)}
+                onOpenProfile={() => setProfileOpen(true)}
+              />
+            ) : (
+              <LoginButton onClick={() => setLoginOpen(true)} />
+            )}
           </div>
         </div>
+        ) : (
+        <WorkflowHeadbar
+          activeStep={activeStep}
+          onStepChange={setActiveStep}
+          unlockedSteps={unlockedSteps}
+          isLoggedIn={isLoggedIn}
+          onLoginClick={() => setLoginOpen(true)}
+          onLogout={() => setIsLoggedIn(false)}
+          onOpenProfile={() => setProfileOpen(true)}
+        />
+        )}
 
-        {/* primary navigation */}
-        <div className="flex flex-col items-start gap-0 flex-1 p-0">
-          <div className="flex flex-col items-start px-24 py-24 flex-1">
-            <PrimaryNav items={NAV_ITEMS} activeKey={activeKey} onChange={setActiveKey} variant="vertical" />
+        {/* body: nav + content */}
+        <div className="flex flex-1 overflow-hidden self-stretch">
+          {/* primary navigation */}
+          <div className="flex flex-col items-start gap-0">
+            <div
+              className="flex flex-col items-start py-24 flex-1"
+              style={{
+                paddingLeft: activeKey === 'project' ? '12px' : '24px',
+                paddingRight: activeKey === 'project' ? '12px' : '24px',
+                transition: 'padding-left 320ms cubic-bezier(0.4, 0, 0.2, 1), padding-right 320ms cubic-bezier(0.4, 0, 0.2, 1)',
+              }}
+            >
+              <PrimaryNav items={NAV_ITEMS} activeKey={activeKey} onChange={handleNavChange} variant="vertical" />
+            </div>
+
+            {/* bottom icon group */}
+            <div
+              className="py-24"
+              style={{
+                paddingLeft: activeKey === 'project' ? '8px' : '32px',
+                paddingRight: activeKey === 'project' ? '8px' : '32px',
+                alignSelf: 'stretch',
+                transition: 'padding-left 320ms cubic-bezier(0.4, 0, 0.2, 1), padding-right 320ms cubic-bezier(0.4, 0, 0.2, 1)',
+              }}
+            >
+              <PrimaryNav
+                items={bottomNavItems}
+                activeKey={bottomActiveKey}
+                onChange={handleBottomNavChange}
+                variant="compact"
+              />
+            </div>
           </div>
 
-          {/* bottom icon group */}
-          <div className="px-32 py-24 self-stretch">
-            <PrimaryNav
-              items={BOTTOM_NAV_ITEMS}
-              activeKey={bottomActiveKey}
-              onChange={handleBottomNavChange}
-              variant="compact"
-            />
+          {/* page content */}
+          <div className="flex-1 overflow-hidden relative">
+            {activeKey === 'home' && (
+              <StartCreationButton onClick={() => setNewProjectOpen(true)} />
+            )}
+            {activeKey === 'project' && !activeProject && (
+              <ProjectList
+                projects={projects}
+                onNewProject={() => setNewProjectOpen(true)}
+                onOpenProject={(p) => setActiveProject(p)}
+              />
+            )}
+            {activeKey === 'project' && activeProject && activeStep !== 'subject' && (
+              <GlobalSettings
+                projectName={activeProject.name}
+                onBack={() => setActiveProject(null)}
+                activeStep={activeStep}
+                onStepChange={setActiveStep}
+                onUnlockStep={handleUnlockStep}
+                onGoToSubject={(tab) => {
+                  setSubjectInitialTab(tab);
+                  handleUnlockStep('subject');
+                  setActiveStep('subject');
+                }}
+              />
+            )}
+            {activeKey === 'project' && activeProject && activeStep === 'subject' && (
+              <SubjectPage
+                projectName={activeProject.name}
+                episodeName="第一集"
+                onUnlockStep={handleUnlockStep}
+                initialTab={subjectInitialTab}
+              />
+            )}
           </div>
         </div>
       </div>
 
-      {/* start button */}
-      <StartCreationButton />
-
-      <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} />
-      <ApiConfigModal open={apiConfigOpen} onClose={() => setApiConfigOpen(false)} />
+      <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} onSuccess={() => { setLoginOpen(false); setIsLoggedIn(true); }} />
+      <ApiConfigModal open={apiConfigOpen} onClose={() => setApiConfigOpen(false)} onConfigured={() => setApiConfigured(true)} />
+      <ProfileModal
+        open={profileOpen}
+        onClose={() => setProfileOpen(false)}
+        userName="Suzy"
+        userId="miioo_suzy"
+        phone="178 **** 0361"
+        wechat="suzylee"
+      />
+      <NewProjectModal
+        open={newProjectOpen}
+        onClose={() => setNewProjectOpen(false)}
+        onConfirm={({ name }) => {
+          setNewProjectOpen(false);
+          handleProjectCreated({ id: Date.now(), name, date: '刚刚' });
+        }}
+      />
     </div>
   );
 }

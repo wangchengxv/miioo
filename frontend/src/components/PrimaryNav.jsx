@@ -142,7 +142,7 @@ export default function PrimaryNav({ items, activeKey = null, onChange, variant 
   const itemCls = isCompact
     ? 'primary-nav-item flex items-center justify-center rounded-full size-[32px]'
     : isVertical
-    ? 'primary-nav-item flex flex-col items-center justify-center gap-4 rounded-[16px] size-[48px]'
+    ? 'primary-nav-item flex flex-col items-center justify-center gap-[2px] rounded-[16px] size-[48px]'
     : 'primary-nav-item flex items-center gap-8 px-20 py-12 rounded-full';
 
   return (
@@ -192,6 +192,7 @@ export default function PrimaryNav({ items, activeKey = null, onChange, variant 
               {showTooltip && <Tooltip label={item.tooltip} />}
             </button>
             {showPopup && popupContent}
+            {isCompact && item.bubble && !showPopup && item.bubble}
           </div>
         );
       })}

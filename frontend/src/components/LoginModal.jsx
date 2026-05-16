@@ -461,7 +461,7 @@ function BindPhoneView({ onBind, onBack }) {
   );
 }
 
-export default function LoginModal({ open, onClose }) {
+export default function LoginModal({ open, onClose, onSuccess }) {
   const [tab, setTab] = useState('phone');
   const [step, setStep] = useState('login');
 
@@ -473,6 +473,11 @@ export default function LoginModal({ open, onClose }) {
       setTab('phone');
       setStep('login');
     }, 0);
+  };
+
+  const handleLoginSuccess = () => {
+    onSuccess?.();
+    handleClose();
   };
 
   return (
@@ -505,9 +510,9 @@ export default function LoginModal({ open, onClose }) {
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', flex: 1, alignSelf: 'stretch', padding: 0, backgroundColor: '#161616' }}>
           <ModalHeader onClose={handleClose} />
           {step === 'bind' ? (
-            <BindPhoneView onBind={handleClose} onBack={() => setStep('login')} />
+            <BindPhoneView onBind={handleLoginSuccess} onBack={() => setStep('login')} />
           ) : tab === 'phone' ? (
-            <PhoneLoginView onLogin={handleClose} onChangeTab={setTab} />
+            <PhoneLoginView onLogin={handleLoginSuccess} onChangeTab={setTab} />
           ) : (
             <WechatView onBackToPhone={() => setTab('phone')} onScanSuccess={() => setStep('bind')} />
           )}
