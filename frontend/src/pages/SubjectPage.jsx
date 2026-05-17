@@ -796,13 +796,14 @@ function CharCard({ name, desc, imageUrl, voice, onVoiceClick, onClick }) {
             {/* headphone preview icon */}
             <button
               type="button"
-              title={voicePlaying ? '停止试听' : '试听'}
-              onClick={(e) => { e.stopPropagation(); setVoicePlaying((v) => !v); }}
-              style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center' }}
+              title={!voice ? '请先选择音色' : voicePlaying ? '停止试听' : '试听'}
+              disabled={!voice}
+              onClick={(e) => { e.stopPropagation(); if (voice) setVoicePlaying((v) => !v); }}
+              style={{ background: 'transparent', border: 'none', padding: 0, cursor: voice ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center' }}
             >
-              {voicePlaying
+              {voicePlaying && voice
                 ? <PlayingWaveIcon color="#2DC3E1" size={16} />
-                : <HeadphoneIcon color="#2DC3E1" />
+                : <HeadphoneIcon color={voice ? '#2DC3E1' : '#FFFFFF26'} />
               }
             </button>
           </div>
@@ -1141,11 +1142,11 @@ function ImageViewModal({ open, imageUrl, onClose }) {
   if (!open) return null;
   return (
     <div
-      style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)' }}
+      style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
       onClick={onClose}
     >
       <div
-        style={{ display: 'flex', flexDirection: 'column', width: '800px', borderRadius: '16px', overflow: 'clip', height: '600px' }}
+        style={{ display: 'flex', flexDirection: 'column', width: '800px', borderRadius: '16px', overflow: 'hidden', height: '600px' }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* header */}
@@ -1163,7 +1164,7 @@ function ImageViewModal({ open, imageUrl, onClose }) {
           </div>
         </div>
         {/* image area */}
-        <div style={{ flex: 1, display: 'flex', padding: '8px 24px', overflow: 'clip', gap: '12px', flexDirection: 'column', background: '#161616' }}>
+        <div style={{ flex: 1, display: 'flex', padding: '8px 24px', overflow: 'hidden', gap: '12px', flexDirection: 'column', background: '#161616', minHeight: 0 }}>
           {imageUrl
             ? <img src={imageUrl} alt="" style={{ width: '100%', flex: 1, borderRadius: '8px', objectFit: 'contain', minHeight: 0 }} />
             : <div style={{ width: '100%', flex: 1, borderRadius: '8px', background: '#FFFFFF14' }} />
@@ -1191,8 +1192,7 @@ function ImageViewModal({ open, imageUrl, onClose }) {
 }
 
 // Uploaded image card — interactive: hover highlights border, click toggles settled
-function ImageItem({ settled: initialSettled, imageUrl, onView }) {
-  const [settled, setSettled] = useState(initialSettled ?? false);
+function ImageItem({ settled, imageUrl, onView, onSettledChange }) {
   const [hovered, setHovered] = useState(false);
 
   const borderColor = settled ? '#2DC3E1' : hovered ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.08)';
@@ -1201,7 +1201,7 @@ function ImageItem({ settled: initialSettled, imageUrl, onView }) {
     <div
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      onClick={() => setSettled((v) => !v)}
+      onClick={() => onSettledChange?.(!settled)}
       style={{
         height: '144px', borderRadius: '6px', flexShrink: 0,
         border: `1px solid ${borderColor}`,
@@ -1219,7 +1219,7 @@ function ImageItem({ settled: initialSettled, imageUrl, onView }) {
 
       {/* top overlay: settled checkbox */}
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, padding: '8px 10px', backgroundImage: 'linear-gradient(in oklab 180deg, oklab(0% 0 0 / 60%) 0%, oklab(0% 0 0 / 0%) 100%)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-        <Checkbox checked={settled} onChange={(e) => { e.stopPropagation(); setSettled((v) => !v); }} />
+        <Checkbox checked={settled} onChange={(e) => { e.stopPropagation(); onSettledChange?.(!settled); }} />
         <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: settled ? '#2DC3E1' : '#FFFFFF66' }}>定稿</span>
       </div>
 
@@ -1389,7 +1389,7 @@ function RefImageField({ maxImages = 3 }) {
   );
 }
 
-function EditSubjectPanel({ char, tabLabel = '角色', onClose, onCommit }) {
+function EditSubjectPanel({ char, tabLabel = '角色', onClose, onCommit, onCoverChange }) {
   const [closeHovered, setCloseHovered] = useState(false);
   const [genHovered, setGenHovered] = useState(false);
   const [genPressed, setGenPressed] = useState(false);
@@ -1697,7 +1697,24 @@ function EditSubjectPanel({ char, tabLabel = '角色', onClose, onCommit }) {
             }}
           />
           {generatedImages.map((img, i) => (
-            <ImageItem key={img.id ?? img.url + i} imageUrl={img.url} settled={img.settled} onView={setViewImageUrl} />
+            <ImageItem
+              key={img.id ?? img.url + i}
+              imageUrl={img.url}
+              settled={img.settled}
+              onView={setViewImageUrl}
+              onSettledChange={(newSettled) => {
+                setGeneratedImages((prev) => {
+                  const next = prev.map((item, idx) =>
+                    idx === i
+                      ? { ...item, settled: newSettled }
+                      : { ...item, settled: newSettled ? false : item.settled }
+                  );
+                  const settledImg = next.find((item) => item.settled);
+                  onCoverChange?.(settledImg?.url ?? null);
+                  return next;
+                });
+              }}
+            />
           ))}
         </div>
       </div>
@@ -1709,7 +1726,7 @@ function EditSubjectPanel({ char, tabLabel = '角色', onClose, onCommit }) {
 
 let _nextId = 100;
 
-export default function SubjectPage({ projectName = '两只老虎的奇遇', onUnlockStep, initialTab = 'char' }) {
+export default function SubjectPage({ projectName = '两只老虎的奇遇', onUnlockStep, onStartStoryboard, initialTab = 'char', chars: externalChars, onCharsChange, scenes: externalScenes, onScenesChange, props: externalProps, onPropsChange }) {
   const [activeTab, setActiveTab] = useState(initialTab);
   const [activeEpisode, setActiveEpisode] = useState(MOCK_EPISODES[0]);
   const [batchGenOpen, setBatchGenOpen] = useState(false);
@@ -1717,9 +1734,27 @@ export default function SubjectPage({ projectName = '两只老虎的奇遇', onU
   const [selectedScene, setSelectedScene] = useState(null);
   const [selectedProp, setSelectedProp] = useState(null);
   const [voiceModalChar, setVoiceModalChar] = useState(null);
-  const [chars, setChars] = useState(INITIAL_CHARS);
-  const [scenes, setScenes] = useState([]);
-  const [props, setProps] = useState([]);
+  const [internalChars, setInternalChars] = useState(INITIAL_CHARS);
+  const chars = externalChars !== undefined ? externalChars : internalChars;
+  function setChars(updater) {
+    const next = typeof updater === 'function' ? updater(chars) : updater;
+    setInternalChars(next);
+    onCharsChange?.(next);
+  }
+  const [internalScenes, setInternalScenes] = useState([]);
+  const scenes = externalScenes !== undefined ? externalScenes : internalScenes;
+  function setScenes(updater) {
+    const next = typeof updater === 'function' ? updater(scenes) : updater;
+    setInternalScenes(next);
+    onScenesChange?.(next);
+  }
+  const [internalProps, setInternalProps] = useState([]);
+  const props = externalProps !== undefined ? externalProps : internalProps;
+  function setProps(updater) {
+    const next = typeof updater === 'function' ? updater(props) : updater;
+    setInternalProps(next);
+    onPropsChange?.(next);
+  }
   const [charVoices, setCharVoices] = useState(() =>
     Object.fromEntries(INITIAL_CHARS.map((c) => [c.id, c.voice]))
   );
@@ -1766,7 +1801,7 @@ export default function SubjectPage({ projectName = '两只老虎的奇遇', onU
         addLabel={`添加${TABS.find((t) => t.key === activeTab)?.label ?? '主体'}`}
         onAddChar={handleAdd}
         onBatchGen={() => setBatchGenOpen(true)}
-        onStartStoryboard={() => {}}
+        onStartStoryboard={onStartStoryboard}
         tabLabel={TABS.find((t) => t.key === activeTab)?.label ?? '主体'}
       />
 
@@ -1823,6 +1858,7 @@ export default function SubjectPage({ projectName = '两只老虎的奇遇', onU
       {/* edit panel */}
       {selectedChar && (
         <EditSubjectPanel
+          key={selectedChar.id}
           char={selectedChar}
           tabLabel="角色"
           onClose={() => setSelectedChar(null)}
@@ -1830,10 +1866,14 @@ export default function SubjectPage({ projectName = '两只老虎的奇遇', onU
             setChars((prev) => prev.map((c) => c.id === selectedChar.id ? { ...c, name, desc } : c));
             setSelectedChar((prev) => ({ ...prev, name, desc }));
           }}
+          onCoverChange={(imageUrl) => {
+            setChars((prev) => prev.map((c) => c.id === selectedChar.id ? { ...c, imageUrl } : c));
+          }}
         />
       )}
       {selectedScene && (
         <EditSubjectPanel
+          key={selectedScene.id}
           char={selectedScene}
           tabLabel="场景"
           onClose={() => setSelectedScene(null)}
@@ -1841,16 +1881,23 @@ export default function SubjectPage({ projectName = '两只老虎的奇遇', onU
             setScenes((prev) => prev.map((s) => s.id === selectedScene.id ? { ...s, name, desc } : s));
             setSelectedScene((prev) => ({ ...prev, name, desc }));
           }}
+          onCoverChange={(imageUrl) => {
+            setScenes((prev) => prev.map((s) => s.id === selectedScene.id ? { ...s, imageUrl } : s));
+          }}
         />
       )}
       {selectedProp && (
         <EditSubjectPanel
+          key={selectedProp.id}
           char={selectedProp}
           tabLabel="道具"
           onClose={() => setSelectedProp(null)}
           onCommit={(name, desc) => {
             setProps((prev) => prev.map((p) => p.id === selectedProp.id ? { ...p, name, desc } : p));
             setSelectedProp((prev) => ({ ...prev, name, desc }));
+          }}
+          onCoverChange={(imageUrl) => {
+            setProps((prev) => prev.map((p) => p.id === selectedProp.id ? { ...p, imageUrl } : p));
           }}
         />
       )}

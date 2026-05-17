@@ -10,6 +10,7 @@ import NewProjectModal from '../components/NewProjectModal';
 import ProjectList from './ProjectList';
 import GlobalSettings from './GlobalSettings';
 import SubjectPage from './SubjectPage';
+import StoryboardPage from './StoryboardPage';
 
 const ICON_STYLE = { flexShrink: '0' };
 
@@ -694,6 +695,7 @@ const STEP_TABS = [
     key: 'storyboard',
     label: '分镜',
     alwaysEnabled: false,
+    activeWidth: 80,
     icon: (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
         <path d="M5.333 2H2.667C2.298 2 2 2.298 2 2.667V5.333" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
@@ -702,6 +704,33 @@ const STEP_TABS = [
         <path d="M10.667 2H13.333C13.701 2 14 2.298 14 2.667V5.333" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
         <path d="M11.333 8C11.333 6.159 9.841 4.667 8 4.667C6.159 4.667 4.667 6.159 4.667 8C4.667 9.841 6.159 11.333 8 11.333C9.841 11.333 11.333 9.841 11.333 8Z" stroke="#FFFFFF" />
         <path d="M8 9C7.448 9 7 8.552 7 8C7 7.448 7.448 7 8 7C8.552 7 9 7.448 9 8C9 8.552 8.552 9 8 9Z" fill="#FFFFFF" />
+      </svg>
+    ),
+    activeIcon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+        <defs>
+          <linearGradient id="sb_active_0" x1="3.167" y1="2" x2="3.167" y2="5.333" gradientUnits="userSpaceOnUse">
+            <stop stopColor="#C2F2FF"/><stop offset="1" stopColor="#2DC3E1"/>
+          </linearGradient>
+          <linearGradient id="sb_active_1" x1="3.167" y1="10.667" x2="3.167" y2="14" gradientUnits="userSpaceOnUse">
+            <stop stopColor="#C2F2FF"/><stop offset="1" stopColor="#2DC3E1"/>
+          </linearGradient>
+          <linearGradient id="sb_active_2" x1="12.833" y1="10.667" x2="12.833" y2="14" gradientUnits="userSpaceOnUse">
+            <stop stopColor="#C2F2FF"/><stop offset="1" stopColor="#2DC3E1"/>
+          </linearGradient>
+          <linearGradient id="sb_active_3" x1="12.833" y1="2" x2="12.833" y2="5.333" gradientUnits="userSpaceOnUse">
+            <stop stopColor="#C2F2FF"/><stop offset="1" stopColor="#2DC3E1"/>
+          </linearGradient>
+          <linearGradient id="sb_active_4" x1="8" y1="4.667" x2="8" y2="11.333" gradientUnits="userSpaceOnUse">
+            <stop stopColor="#C2F2FF"/><stop offset="1" stopColor="#2DC3E1"/>
+          </linearGradient>
+        </defs>
+        <path d="M5.333 2H2.667C2.298 2 2 2.298 2 2.667V5.333" stroke="url(#sb_active_0)" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M5.333 14H2.667C2.298 14 2 13.701 2 13.333V10.667" stroke="url(#sb_active_1)" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M10.667 14H13.333C13.701 14 14 13.701 14 13.333V10.667" stroke="url(#sb_active_2)" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M10.667 2H13.333C13.701 2 14 2.298 14 2.667V5.333" stroke="url(#sb_active_3)" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M11.333 8C11.333 6.159 9.841 4.667 8 4.667C6.159 4.667 4.667 6.159 4.667 8C4.667 9.841 6.159 11.333 8 11.333C9.841 11.333 11.333 9.841 11.333 8Z" stroke="url(#sb_active_4)" />
+        <path d="M8 9C7.448 9 7 8.552 7 8C7 7.448 7.448 7 8 7C8.552 7 9 7.448 9 8C9 8.552 8.552 9 8 9Z" fill="url(#sb_active_4)" />
       </svg>
     ),
   },
@@ -761,7 +790,10 @@ function WorkflowHeadbar({ activeStep, onStepChange, unlockedSteps, isLoggedIn, 
       <div className="flex items-center gap-24 absolute" style={{ left: 'calc(50% - 9px)', top: '50%', translate: '-50% -50%' }}>
         {STEP_TABS.map((tab) => {
           const isActive = tab.key === activeStep;
-          const isDisabled = !tab.alwaysEnabled && !unlockedSteps.has(tab.key) && !isActive;
+          const activeIndex = STEP_TABS.findIndex(t => t.key === activeStep);
+          const tabIndex = STEP_TABS.findIndex(t => t.key === tab.key);
+          // Steps before or at the current active step are always accessible
+          const isDisabled = !tab.alwaysEnabled && !unlockedSteps.has(tab.key) && !isActive && tabIndex > activeIndex;
 
           if (isActive) {
             return (
@@ -847,6 +879,9 @@ export default function Home({ onProjectCreated }) {
   const [activeProject, setActiveProject] = useState(null);
   const [activeStep, setActiveStep] = useState('script');
   const [subjectInitialTab, setSubjectInitialTab] = useState('char');
+  const [sharedChars, setSharedChars] = useState([]);
+  const [sharedScenes, setSharedScenes] = useState([]);
+  const [sharedProps, setSharedProps] = useState([]);
   // Tracks which non-alwaysEnabled steps have ever had content — once unlocked, stays unlocked
   const [unlockedSteps, setUnlockedSteps] = useState(new Set());
 
@@ -1038,13 +1073,16 @@ export default function Home({ onProjectCreated }) {
                 onOpenProject={(p) => setActiveProject(p)}
               />
             )}
-            {activeKey === 'project' && activeProject && activeStep !== 'subject' && (
+            {activeKey === 'project' && activeProject && activeStep !== 'subject' && activeStep !== 'storyboard' && (
               <GlobalSettings
                 projectName={activeProject.name}
                 onBack={() => setActiveProject(null)}
                 activeStep={activeStep}
                 onStepChange={setActiveStep}
                 onUnlockStep={handleUnlockStep}
+                chars={sharedChars}
+                scenes={sharedScenes}
+                props={sharedProps}
                 onGoToSubject={(tab) => {
                   setSubjectInitialTab(tab);
                   handleUnlockStep('subject');
@@ -1058,6 +1096,25 @@ export default function Home({ onProjectCreated }) {
                 episodeName="第一集"
                 onUnlockStep={handleUnlockStep}
                 initialTab={subjectInitialTab}
+                chars={sharedChars}
+                onCharsChange={setSharedChars}
+                scenes={sharedScenes}
+                onScenesChange={setSharedScenes}
+                props={sharedProps}
+                onPropsChange={setSharedProps}
+                onStartStoryboard={() => {
+                  handleUnlockStep('storyboard');
+                  setActiveStep('storyboard');
+                }}
+              />
+            )}
+            {activeKey === 'project' && activeProject && activeStep === 'storyboard' && (
+              <StoryboardPage
+                projectName={activeProject.name}
+                chars={sharedChars}
+                scenes={sharedScenes}
+                props={sharedProps}
+                onUnlockStep={handleUnlockStep}
               />
             )}
           </div>

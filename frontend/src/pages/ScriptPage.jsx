@@ -981,7 +981,7 @@ function AiThinkingMessage() {
   );
 }
 
-const CHAR_INTERVAL = 20;
+const CHAR_INTERVAL = 5;
 
 function AiStreamingContent({ content, onDone }) {
   const allChars = useMemo(() => [...content], [content]);

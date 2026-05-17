@@ -6,7 +6,7 @@ const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-u
 
 // ── Stat card ──────────────────────────────────────────────────────────────
 
-function StatCard({ label, images = [], onClick }) {
+function StatCard({ label, count, images = [], onClick }) {
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
   const isClickable = !!onClick;
@@ -66,7 +66,7 @@ function StatCard({ label, images = [], onClick }) {
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flex: 1, justifyContent: 'space-between' }}>
           <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '16px', color: '#FFFFFF' }}>{label}</span>
-          <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '16px', color: '#FFFFFF99' }}>0</span>
+          <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '16px', color: '#FFFFFF99' }}>{count ?? 0}</span>
         </div>
       </div>
       {/* hover arrow hint */}
@@ -323,7 +323,7 @@ function ProjectNameHeading({ value, onChange }) {
 
 // ── Main ───────────────────────────────────────────────────────────────────
 
-export default function GlobalSettings({ projectName = '这里是项目名称', onBack, activeStep, onStepChange, onGoToSubject }) {
+export default function GlobalSettings({ projectName = '这里是项目名称', onBack, activeStep, onStepChange, onGoToSubject, chars = [], scenes = [], props = [] }) {
   const [name, setName] = useState(projectName);
   const [description, setDescription] = useState('');
   const [coverUrl, setCoverUrl] = useState('');
@@ -413,14 +413,15 @@ export default function GlobalSettings({ projectName = '这里是项目名称', 
           <span style={{ fontFamily: FONT_MEDIUM, fontWeight: 500, fontSize: '16px', lineHeight: '20px', color: '#FFFFFF' }}>资产概况</span>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: '20px', alignSelf: 'stretch' }}>
             {[
-              { label: '角色', tab: 'char' },
-              { label: '场景', tab: 'scene' },
-              { label: '道具', tab: 'prop' },
-              { label: '剧集结构', tab: null },
-            ].map(({ label, tab }) => (
+              { label: '角色', tab: 'char', count: chars.length },
+              { label: '场景', tab: 'scene', count: scenes.length },
+              { label: '道具', tab: 'prop', count: props.length },
+              { label: '剧集结构', tab: null, count: null },
+            ].map(({ label, tab, count }) => (
               <StatCard
                 key={label}
                 label={label}
+                count={count}
                 onClick={tab ? () => onGoToSubject?.(tab) : undefined}
               />
             ))}
