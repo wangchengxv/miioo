@@ -94,6 +94,9 @@ miioo/
 │   │   ├── AccountMenu.jsx        # 账户菜单 popup
 │   │   ├── NewProjectModal.jsx    # 新建项目弹窗
 │   │   ├── ProfileModal.jsx       # 个人资料弹窗
+│   │   ├── BatchDownloadModal.jsx # 分镜批量下载弹窗
+│   │   ├── ShotViewerModal.jsx    # 分镜镜头全屏查看弹窗
+│   │   ├── Toggle.jsx             # 开关组件（分镜页使用）
 │   │   └── LiquidGlassDefs.jsx    # 液态玻璃 SVG filter 定义
 │   ├── layouts/               # 页面框架（侧边栏、顶栏）← 待建立
 │   ├── pages/                 # 业务页面
@@ -102,6 +105,7 @@ miioo/
 │   │   ├── GlobalSettings.jsx     # 工作流 — 全局设定
 │   │   ├── ScriptPage.jsx         # 工作流 — 剧本（LLM 对话式创作）
 │   │   ├── SubjectPage.jsx        # 工作流 — 主体（角色/场景/道具）
+│   │   ├── StoryboardPage.jsx     # 工作流 — 分镜（分镜卡片、批量下载、镜头查看）
 │   │   ├── ButtonShowcase.jsx     # 按钮组件展示页
 │   │   └── InputShowcase.jsx      # 输入框组件展示页
 │   ├── ref/                   # 设计稿参考代码（只读，不引入业务）
@@ -172,7 +176,7 @@ miioo/
 - [x] 项目工作流 — 全局设定页面（项目概况统计卡片、模型配置区含对话/图片/视频/配音模型 tab 与模型卡片）
 - [x] 项目工作流 — 剧本页面（单剧本工作区模型；InputCard 固定底部 700px；AI 思考动画 + 流式输出；左侧剧集目录（首发后常驻）；右侧剧本查看/编辑双态；编辑态富文本（Tiptap）+ 工具栏；左右联动滚动定位；定稿后解锁主体步骤）
 - [x] 项目工作流 — 主体页面（角色/场景/道具卡片列表；有内容时触发步骤解锁回调）
-- [ ] 项目工作流 — 分镜
+- [x] 项目工作流 — 分镜页面（分镜卡片网格；集数切换；批量下载 BatchDownloadModal；镜头全屏查看 ShotViewerModal；Toggle 开关组件；从 Home 接收 chars/scenes/props 资产数据）
 - [ ] 项目工作流 — 剪辑成片
 - [ ] 创作页（生图/生视频）
 - [ ] 资产库
