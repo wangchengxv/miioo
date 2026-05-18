@@ -983,9 +983,18 @@ function AiThinkingMessage() {
 
 const CHAR_INTERVAL = 5;
 
-function AiStreamingContent({ content, onDone }) {
+function AiStreamingContent({ content, index: indexProp, onIndexChange, onDone }) {
   const allChars = useMemo(() => [...content], [content]);
-  const [index, setIndex] = useState(0);
+  const [indexLocal, setIndexLocal] = useState(0);
+  const isControlled = indexProp !== undefined;
+  const index = isControlled ? indexProp : indexLocal;
+  const setIndex = isControlled
+    ? (updater) => {
+        const next = typeof updater === 'function' ? updater(indexProp) : updater;
+        onIndexChange?.(next);
+      }
+    : setIndexLocal;
+
   const containerRef = useRef(null);
   const shouldStickToBottomRef = useRef(true);
 
@@ -1315,6 +1324,8 @@ function ScriptPanel({
   onGoToSubject,
   onStreamingDone,
   onActiveIndexChange,
+  streamingIndex,
+  onStreamingIndexChange,
   renderedContentRef,
   editorContentRef,
 }) {
@@ -1351,7 +1362,7 @@ function ScriptPanel({
             <AiThinkingMessage />
           </div>
         ) : isStreaming ? (
-          <AiStreamingContent key={scriptContent} content={scriptContent} onDone={onStreamingDone} />
+          <AiStreamingContent key={scriptContent} content={scriptContent} index={streamingIndex} onIndexChange={onStreamingIndexChange} onDone={onStreamingDone} />
         ) : isEditing ? (
           <ScriptEditor initialContent={draftContent} onContentChange={onDraftChange} containerRef={editorContentRef} />
         ) : (
@@ -1412,11 +1423,25 @@ function ScriptPanel({
   );
 }
 
-export default function ScriptPage({ onGoToSubject }) {
-  const [phase, setPhase] = useState('initial');
-  const [hasStarted, setHasStarted] = useState(false);
-  const [scriptContent, setScriptContent] = useState('');
-  const [draftContent, setDraftContent] = useState('');
+export default function ScriptPage({ onGoToSubject, onEpisodesChange, phase: phaseProp, onPhaseChange, hasStarted: hasStartedProp, onHasStartedChange, scriptContent: scriptContentProp, onScriptContentChange, draftContent: draftContentProp, onDraftContentChange, streamingIndex: streamingIndexProp, onStreamingIndexChange }) {
+  const [phaseLocal, setPhaseLocalRaw] = useState('initial');
+  const [hasStartedLocal, setHasStartedLocalRaw] = useState(false);
+  const [scriptContentLocal, setScriptContentLocalRaw] = useState('');
+  const [draftContentLocal, setDraftContentLocalRaw] = useState('');
+  const [streamingIndexLocal, setStreamingIndexLocal] = useState(0);
+
+  const isControlled = phaseProp !== undefined;
+  const phase = isControlled ? phaseProp : phaseLocal;
+  const hasStarted = isControlled ? hasStartedProp : hasStartedLocal;
+  const scriptContent = isControlled ? scriptContentProp : scriptContentLocal;
+  const draftContent = isControlled ? draftContentProp : draftContentLocal;
+  const streamingIndex = (isControlled && streamingIndexProp !== undefined) ? streamingIndexProp : streamingIndexLocal;
+  const setStreamingIndex = (isControlled && onStreamingIndexChange) ? onStreamingIndexChange : setStreamingIndexLocal;
+
+  const setPhase = isControlled ? onPhaseChange : setPhaseLocalRaw;
+  const setHasStarted = isControlled ? onHasStartedChange : setHasStartedLocalRaw;
+  const setScriptContent = isControlled ? onScriptContentChange : setScriptContentLocalRaw;
+  const setDraftContent = isControlled ? onDraftContentChange : setDraftContentLocalRaw;
   const [selectedEpisode, setSelectedEpisode] = useState(0);
   const renderedContentRef = useRef(null);
   const editorContentRef = useRef(null);
@@ -1429,6 +1454,10 @@ export default function ScriptPage({ onGoToSubject }) {
 
   const visibleContent = phase === 'edit' ? draftContent : scriptContent;
   const outline = useMemo(() => parseScriptOutline(visibleContent).filter((item) => item.level === 2), [visibleContent]);
+
+  useEffect(() => {
+    onEpisodesChange?.(outline.map((item) => item.title));
+  }, [outline, onEpisodesChange]);
   const episodeRailLoading = hasStarted && (phase === 'thinking' || phase === 'streaming');
   const safeSelectedEpisode = outline.length > 0 ? Math.min(selectedEpisode, outline.length - 1) : 0;
 
@@ -1440,6 +1469,7 @@ export default function ScriptPage({ onGoToSubject }) {
     setScriptContent('');
     setDraftContent('');
     setSelectedEpisode(0);
+    setStreamingIndex(0);
 
     setTimeout(() => {
       setScriptContent(MOCK_SCRIPT_MARKDOWN);
@@ -1527,6 +1557,8 @@ export default function ScriptPage({ onGoToSubject }) {
                   onGoToSubject={onGoToSubject}
                   onStreamingDone={handleStreamingDone}
                   onActiveIndexChange={setSelectedEpisode}
+                  streamingIndex={streamingIndex}
+                  onStreamingIndexChange={setStreamingIndex}
                   renderedContentRef={renderedContentRef}
                   editorContentRef={editorContentRef}
                 />

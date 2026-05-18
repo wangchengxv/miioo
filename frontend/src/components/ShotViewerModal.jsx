@@ -2,6 +2,15 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import Toggle from './Toggle';
 
+// ── API stubs (TODO: 替换为真实接口) ──────────────────────────────────────
+
+async function apiUpdateShotFinalized(shotId, finalized) {
+  // TODO: PATCH /shots/:shotId  body: { finalized }
+  console.log('[mock] update shot finalized', shotId, finalized);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
 
@@ -123,6 +132,7 @@ export default function ShotViewerModal({ shot, onClose, onFinalizeChange }) {
 
   const handleFinalize = (val) => {
     setFinalized(val);
+    apiUpdateShotFinalized(shot?.id, val);
     onFinalizeChange?.(shot?.id, val);
   };
 

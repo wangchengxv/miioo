@@ -1,5 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
 
+// ── API stubs (TODO: 替换为真实接口) ──────────────────────────────────────
+
+async function apiLogout() {
+  // TODO: POST /auth/logout
+  console.log('[mock] logout');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
 const FONT_REGULAR = "'AlibabaPuHuiTi 2_55 Regular','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
 
@@ -203,7 +212,7 @@ export default function AccountMenu({
             <MenuItem
               icon={IconLogout}
               label="退出登录"
-              onClick={() => { setOpen(false); onLogout?.(); }}
+              onClick={async () => { setOpen(false); await apiLogout(); onLogout?.(); }}
             />
           </div>
         </div>

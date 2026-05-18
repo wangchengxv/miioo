@@ -1,5 +1,26 @@
 import { useState } from 'react';
 
+// ── API stubs (TODO: 替换为真实接口) ──────────────────────────────────────
+
+async function apiUpdateUser(data) {
+  // TODO: PATCH /users/me  body: { name?, email?, bio?, ... }
+  console.log('[mock] update user', data);
+}
+
+async function apiUploadAvatar(file) {
+  // TODO: POST /users/me/avatar  body: FormData { file }
+  // returns: { avatarUrl }
+  console.log('[mock] upload avatar', file?.name);
+  return { avatarUrl: null };
+}
+
+async function apiDeleteAccount() {
+  // TODO: DELETE /users/me
+  console.log('[mock] delete account');
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
 const FONT_REGULAR = "'AlibabaPuHuiTi 2_55 Regular','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
 
@@ -216,6 +237,11 @@ export default function ProfileModal({ open, onClose, userId, phone, wechat, use
   const [wechatVal, setWechatVal] = useState(wechat || '');
   const [deleteConfirm, setDeleteConfirm] = useState(false);
 
+  const handleClose = () => {
+    apiUpdateUser({ name: nameVal, phone: phoneVal, wechat: wechatVal });
+    onClose?.();
+  };
+
   if (!open) return null;
 
   return (
@@ -231,7 +257,7 @@ export default function ProfileModal({ open, onClose, userId, phone, wechat, use
         backdropFilter: 'blur(12px)',
         WebkitBackdropFilter: 'blur(12px)',
       }}
-      onClick={onClose}
+      onClick={handleClose}
     >
       <div
         style={{
@@ -261,7 +287,7 @@ export default function ProfileModal({ open, onClose, userId, phone, wechat, use
             type="button"
             className="flex items-center justify-center border-0 cursor-pointer rounded-[6px]"
             style={{ width: '28px', height: '28px', background: 'transparent', padding: 0 }}
-            onClick={onClose}
+            onClick={handleClose}
           >
             <CloseIcon />
           </button>
@@ -297,7 +323,7 @@ export default function ProfileModal({ open, onClose, userId, phone, wechat, use
       </div>
       {deleteConfirm && (
         <DeleteConfirmDialog
-          onConfirm={() => { setDeleteConfirm(false); onClose?.(); }}
+          onConfirm={async () => { await apiDeleteAccount(); setDeleteConfirm(false); onClose?.(); }}
           onCancel={() => setDeleteConfirm(false)}
         />
       )}

@@ -375,51 +375,60 @@ function DeleteProjectDialog({ projectName, onConfirm, onCancel }) {
     >
       <div
         style={{
-          width: '320px',
-          background: '#1D1E1E',
-          border: '1px solid rgba(255,255,255,0.08)',
+          width: '360px',
+          background: '#161616',
           borderRadius: '16px',
-          padding: '24px 24px 20px 24px',
+          padding: '24px',
           display: 'flex',
           flexDirection: 'column',
-          gap: '8px',
+          gap: '24px',
+          boxShadow: '#00000099 0px 8px 32px',
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-          <span style={{ fontFamily: FONT_MEDIUM, fontWeight: 500, fontSize: '16px', lineHeight: '24px', color: '#FFFFFF' }}>
-            确认删除项目？
-          </span>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <span style={{ fontFamily: FONT_MEDIUM, fontWeight: 500, fontSize: '16px', lineHeight: '20px', color: '#FFFFFF' }}>
+              确定要删除吗？
+            </span>
+            <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.6)' }}>
+              「{projectName}」将被永久删除，无法恢复。
+            </span>
+          </div>
           <button
             type="button"
             onClick={onCancel}
-            style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', cursor: 'pointer', borderRadius: '6px', padding: 0, flexShrink: 0 }}
+            style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', cursor: 'pointer', borderRadius: '8px', padding: 0, flexShrink: 0 }}
           >
-            <CloseIcon />
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+              <path d="M2.667 2.667L13.333 13.333" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M2.667 13.333L13.333 2.667" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
           </button>
         </div>
-        <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '20px', color: 'rgba(255,255,255,0.5)' }}>
-          「{projectName}」将被永久删除，无法恢复。
-        </span>
-        <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px' }}>
           <button
             type="button"
             onClick={onCancel}
             style={{
-              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
               height: '36px',
+              flexShrink: 0,
               borderRadius: '8px',
-              border: '1px solid rgba(255,255,255,0.12)',
-              background: 'transparent',
+              paddingLeft: '16px',
+              paddingRight: '16px',
+              boxShadow: '#00000066 3px 3px 8px',
+              backgroundColor: '#161616',
+              border: '1px solid #FFFFFF14',
+              outline: '1px solid #00000080',
               cursor: 'pointer',
               fontFamily: FONT,
               fontSize: '14px',
-              lineHeight: '20px',
-              color: 'rgba(255,255,255,0.7)',
-              transition: 'background 120ms',
+              lineHeight: '18px',
+              color: 'rgba(255,255,255,0.6)',
             }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
           >
             取消
           </button>
@@ -427,22 +436,25 @@ function DeleteProjectDialog({ projectName, onConfirm, onCancel }) {
             type="button"
             onClick={onConfirm}
             style={{
-              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
               height: '36px',
+              flexShrink: 0,
               borderRadius: '8px',
-              border: '1px solid rgba(247,95,95,0.3)',
-              background: 'rgba(247,95,95,0.12)',
+              paddingLeft: '16px',
+              paddingRight: '16px',
+              backgroundColor: '#D13B3B',
+              border: '1px solid rgba(255,255,255,0.2)',
               cursor: 'pointer',
-              fontFamily: FONT,
+              fontFamily: FONT_MEDIUM,
+              fontWeight: 500,
               fontSize: '14px',
-              lineHeight: '20px',
-              color: 'rgba(247,95,95,1)',
-              transition: 'background 120ms',
+              lineHeight: '18px',
+              color: '#FFFFFF',
             }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(247,95,95,0.2)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(247,95,95,0.12)'; }}
           >
-            确认删除
+            删除
           </button>
         </div>
       </div>

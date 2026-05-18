@@ -186,22 +186,17 @@ function EpisodeSelector({ episodes, value, onChange }) {
 
 // ── Toolbar ────────────────────────────────────────────────────────────────
 
-function Toolbar({ projectName, episodes, episodeName, onEpisodeChange, onAddChar, onBatchGen, onStartStoryboard, addLabel = '添加角色', tabLabel = '角色' }) {
+function Toolbar({ projectName, onAddChar, onBatchGen, onStartStoryboard, addLabel = '添加角色', tabLabel = '角色' }) {
   return (
     <div className="flex items-center justify-between self-stretch shrink-0">
       {/* breadcrumb */}
       <div className="flex items-center gap-[6px]">
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+          <path d="M10 3L6 8L10 13" stroke="#FFFFFF73" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
         <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '20px', color: '#FFFFFF73' }}>
           {projectName}
         </span>
-        <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
-          <path d="M5.5 3.5L9 7L5.5 10.5" stroke="#FFFFFF40" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-        <EpisodeSelector
-          episodes={episodes}
-          value={episodeName}
-          onChange={onEpisodeChange}
-        />
       </div>
 
       {/* actions */}
@@ -519,54 +514,60 @@ function DeleteConfirmModal({ onCancel, onConfirm }) {
     >
       <div
         style={{
-          width: '320px',
-          background: '#1D1E1E',
-          border: '1px solid rgba(255,255,255,0.08)',
+          width: '360px',
+          background: '#161616',
           borderRadius: '16px',
-          padding: '24px 24px 20px 24px',
+          padding: '24px',
           display: 'flex',
           flexDirection: 'column',
-          gap: '8px',
+          gap: '24px',
+          boxShadow: '#00000099 0px 8px 32px',
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '4px' }}>
-          <span style={{ fontFamily: FONT_MEDIUM, fontWeight: 500, fontSize: '16px', lineHeight: '24px', color: '#FFFFFF' }}>
-            确认删除主体？
-          </span>
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <span style={{ fontFamily: FONT_MEDIUM, fontWeight: 500, fontSize: '16px', lineHeight: '20px', color: '#FFFFFF' }}>
+              确定要删除吗？
+            </span>
+            <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.6)' }}>
+              删除后，该主体相关数据将被清除且不可恢复。
+            </span>
+          </div>
           <button
             type="button"
             onClick={onCancel}
-            style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', cursor: 'pointer', borderRadius: '6px', padding: 0, flexShrink: 0 }}
+            style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', cursor: 'pointer', borderRadius: '8px', padding: 0, flexShrink: 0 }}
           >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
-              <path d="M2.667 2.667L13.333 13.333" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
-              <path d="M2.667 13.333L13.333 2.667" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+              <path d="M2.667 2.667L13.333 13.333" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M2.667 13.333L13.333 2.667" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
         </div>
-        <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '20px', color: 'rgba(255,255,255,0.5)' }}>
-          删除后，该主体相关数据将被清除且不可恢复。
-        </span>
-        <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px' }}>
           <button
             type="button"
             onClick={onCancel}
             style={{
-              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
               height: '36px',
+              flexShrink: 0,
               borderRadius: '8px',
-              border: '1px solid rgba(255,255,255,0.12)',
-              background: 'transparent',
+              paddingLeft: '16px',
+              paddingRight: '16px',
+              boxShadow: '#00000066 3px 3px 8px',
+              backgroundColor: '#161616',
+              border: '1px solid #FFFFFF14',
+              outline: '1px solid #00000080',
               cursor: 'pointer',
               fontFamily: FONT,
               fontSize: '14px',
-              lineHeight: '20px',
-              color: 'rgba(255,255,255,0.7)',
-              transition: 'background 120ms',
+              lineHeight: '18px',
+              color: 'rgba(255,255,255,0.6)',
             }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = 'transparent'; }}
           >
             取消
           </button>
@@ -574,22 +575,25 @@ function DeleteConfirmModal({ onCancel, onConfirm }) {
             type="button"
             onClick={onConfirm}
             style={{
-              flex: 1,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
               height: '36px',
+              flexShrink: 0,
               borderRadius: '8px',
-              border: '1px solid rgba(247,95,95,0.3)',
-              background: 'rgba(247,95,95,0.12)',
+              paddingLeft: '16px',
+              paddingRight: '16px',
+              backgroundColor: '#D13B3B',
+              border: '1px solid rgba(255,255,255,0.2)',
               cursor: 'pointer',
-              fontFamily: FONT,
+              fontFamily: FONT_MEDIUM,
+              fontWeight: 500,
               fontSize: '14px',
-              lineHeight: '20px',
-              color: '#F75F5F',
-              transition: 'background 120ms',
+              lineHeight: '18px',
+              color: '#FFFFFF',
             }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(247,95,95,0.2)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(247,95,95,0.12)'; }}
           >
-            确认删除
+            删除
           </button>
         </div>
       </div>
@@ -837,6 +841,48 @@ function AddCard({ onClick }) {
       </span>
     </div>
   );
+}
+
+// ── API stubs (TODO: 替换为真实接口) ──────────────────────────────────────
+
+async function apiCreateSubject(type, data) {
+  // TODO: POST /projects/:projectId/subjects  body: { type, ...data }
+  console.log('[mock] create subject', type, data);
+  return { id: Date.now() };
+}
+
+async function apiUpdateSubject(id, data) {
+  // TODO: PATCH /subjects/:id  body: data
+  console.log('[mock] update subject', id, data);
+}
+
+async function apiDeleteSubject(id) {
+  // TODO: DELETE /subjects/:id
+  console.log('[mock] delete subject', id);
+}
+
+async function apiGenerateSubjectImage(subjectId, params) {
+  // TODO: POST /subjects/:subjectId/generate  body: params
+  // returns: { jobId, imageUrl }
+  console.log('[mock] generate image for subject', subjectId, params);
+  return { jobId: `job-${Date.now()}`, imageUrl: null };
+}
+
+async function apiBatchGenerate(params) {
+  // TODO: POST /projects/:projectId/subjects/batch-generate  body: params
+  console.log('[mock] batch generate', params);
+}
+
+async function apiGetEpisodes(projectId) {
+  // TODO: GET /projects/:projectId/episodes
+  console.log('[mock] get episodes', projectId);
+  return MOCK_EPISODES;
+}
+
+async function apiGetModels() {
+  // TODO: GET /models?type=image
+  console.log('[mock] get models');
+  return ['Doubao-Seed-2.0-Pro', 'Doubao-Seed-1.6', 'FLUX.1-dev', 'Stable Diffusion XL'];
 }
 
 // ── Mock data ──────────────────────────────────────────────────────────────
@@ -1661,9 +1707,12 @@ function EditSubjectPanel({ char, tabLabel = '角色', onClose, onCommit, onCove
               onMouseLeave={() => { setGenHovered(false); setGenPressed(false); }}
               onMouseDown={() => setGenPressed(true)}
               onMouseUp={() => setGenHovered(true)}
-              onClick={() => {
+              onClick={async () => {
                 const placeholder = `generated-${Date.now()}`;
                 setGeneratedImages((prev) => [{ url: null, settled: false, id: placeholder }, ...prev]);
+                // TODO: 替换为真实接口，用返回的 imageUrl 更新对应占位项
+                // const { imageUrl } = await apiGenerateSubjectImage(char.id, { model: selectedModel, referenceImages });
+                // setGeneratedImages((prev) => prev.map((img) => img.id === placeholder ? { ...img, url: imageUrl } : img));
               }}
               style={{
                 display: 'flex', alignItems: 'center', height: '36px', borderRadius: '8px', padding: '0 16px', gap: '4px', cursor: 'pointer', border: '1px solid rgba(255,255,255,0.2)',
@@ -1735,21 +1784,21 @@ export default function SubjectPage({ projectName = '两只老虎的奇遇', onU
   const [selectedProp, setSelectedProp] = useState(null);
   const [voiceModalChar, setVoiceModalChar] = useState(null);
   const [internalChars, setInternalChars] = useState(INITIAL_CHARS);
-  const chars = externalChars !== undefined ? externalChars : internalChars;
+  const chars = (externalChars !== undefined && externalChars !== null) ? externalChars : internalChars;
   function setChars(updater) {
     const next = typeof updater === 'function' ? updater(chars) : updater;
     setInternalChars(next);
     onCharsChange?.(next);
   }
   const [internalScenes, setInternalScenes] = useState([]);
-  const scenes = externalScenes !== undefined ? externalScenes : internalScenes;
+  const scenes = (externalScenes !== undefined && externalScenes !== null) ? externalScenes : internalScenes;
   function setScenes(updater) {
     const next = typeof updater === 'function' ? updater(scenes) : updater;
     setInternalScenes(next);
     onScenesChange?.(next);
   }
   const [internalProps, setInternalProps] = useState([]);
-  const props = externalProps !== undefined ? externalProps : internalProps;
+  const props = (externalProps !== undefined && externalProps !== null) ? externalProps : internalProps;
   function setProps(updater) {
     const next = typeof updater === 'function' ? updater(props) : updater;
     setInternalProps(next);
@@ -1765,8 +1814,9 @@ export default function SubjectPage({ projectName = '两只老虎的奇遇', onU
     prop: props.length,
   };
 
-  const handleAdd = () => {
-    const id = ++_nextId;
+  const handleAdd = async () => {
+    const type = activeTab; // 'char' | 'scene' | 'prop'
+    const { id } = await apiCreateSubject(type, { name: '待定', desc: '待定' });
     if (activeTab === 'char') {
       setChars((prev) => [...prev, { id, name: '待定', desc: '待定', imageUrl: null, voice: null }]);
     } else if (activeTab === 'scene') {
@@ -1795,9 +1845,6 @@ export default function SubjectPage({ projectName = '两只老虎的奇遇', onU
     >
       <Toolbar
         projectName={projectName}
-        episodes={MOCK_EPISODES}
-        episodeName={activeEpisode}
-        onEpisodeChange={setActiveEpisode}
         addLabel={`添加${TABS.find((t) => t.key === activeTab)?.label ?? '主体'}`}
         onAddChar={handleAdd}
         onBatchGen={() => setBatchGenOpen(true)}
@@ -1865,9 +1912,11 @@ export default function SubjectPage({ projectName = '两只老虎的奇遇', onU
           onCommit={(name, desc) => {
             setChars((prev) => prev.map((c) => c.id === selectedChar.id ? { ...c, name, desc } : c));
             setSelectedChar((prev) => ({ ...prev, name, desc }));
+            apiUpdateSubject(selectedChar.id, { name, desc });
           }}
           onCoverChange={(imageUrl) => {
             setChars((prev) => prev.map((c) => c.id === selectedChar.id ? { ...c, imageUrl } : c));
+            apiUpdateSubject(selectedChar.id, { imageUrl });
           }}
         />
       )}
@@ -1880,9 +1929,11 @@ export default function SubjectPage({ projectName = '两只老虎的奇遇', onU
           onCommit={(name, desc) => {
             setScenes((prev) => prev.map((s) => s.id === selectedScene.id ? { ...s, name, desc } : s));
             setSelectedScene((prev) => ({ ...prev, name, desc }));
+            apiUpdateSubject(selectedScene.id, { name, desc });
           }}
           onCoverChange={(imageUrl) => {
             setScenes((prev) => prev.map((s) => s.id === selectedScene.id ? { ...s, imageUrl } : s));
+            apiUpdateSubject(selectedScene.id, { imageUrl });
           }}
         />
       )}
@@ -1895,9 +1946,11 @@ export default function SubjectPage({ projectName = '两只老虎的奇遇', onU
           onCommit={(name, desc) => {
             setProps((prev) => prev.map((p) => p.id === selectedProp.id ? { ...p, name, desc } : p));
             setSelectedProp((prev) => ({ ...prev, name, desc }));
+            apiUpdateSubject(selectedProp.id, { name, desc });
           }}
           onCoverChange={(imageUrl) => {
             setProps((prev) => prev.map((p) => p.id === selectedProp.id ? { ...p, imageUrl } : p));
+            apiUpdateSubject(selectedProp.id, { imageUrl });
           }}
         />
       )}
@@ -1918,7 +1971,7 @@ export default function SubjectPage({ projectName = '两只老虎的奇遇', onU
       <BatchGenerateModal
         open={batchGenOpen}
         onClose={() => setBatchGenOpen(false)}
-        onConfirm={(params) => console.log('batch generate', params)}
+        onConfirm={(params) => apiBatchGenerate(params)}
       />
     </div>
   );

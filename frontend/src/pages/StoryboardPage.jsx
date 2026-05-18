@@ -4,6 +4,52 @@ import BatchDownloadModal from '../components/BatchDownloadModal';
 import ShotViewerModal from '../components/ShotViewerModal';
 import Toggle from '../components/Toggle';
 
+// ── API stubs (TODO: 替换为真实接口) ──────────────────────────────────────
+
+async function apiUploadFile(file) {
+  // TODO: POST /upload  body: FormData { file }
+  // returns: { url }
+  console.log('[mock] upload file', file.name);
+  return { url: URL.createObjectURL(file) };
+}
+
+async function apiGenerateImage(shotId, params) {
+  // TODO: POST /shots/:shotId/generate-image  body: params
+  // returns: { jobId, imageUrl }
+  console.log('[mock] generate image for shot', shotId, params);
+  return { jobId: `job-${Date.now()}`, imageUrl: null };
+}
+
+async function apiGenerateVideo(shotId, params) {
+  // TODO: POST /shots/:shotId/generate-video  body: params
+  // returns: { jobId, videoUrl }
+  console.log('[mock] generate video for shot', shotId, params);
+  return { jobId: `job-${Date.now()}`, videoUrl: null };
+}
+
+async function apiCreateShot(episodeId, data) {
+  // TODO: POST /episodes/:episodeId/shots  body: data
+  console.log('[mock] create shot', episodeId, data);
+  return { id: `shot-${Date.now()}-${Math.random()}` };
+}
+
+async function apiUpdateShot(shotId, data) {
+  // TODO: PATCH /shots/:shotId  body: data
+  console.log('[mock] update shot', shotId, data);
+}
+
+async function apiDeleteShot(shotId) {
+  // TODO: DELETE /shots/:shotId
+  console.log('[mock] delete shot', shotId);
+}
+
+async function apiReorderShots(episodeId, orderedIds) {
+  // TODO: PATCH /episodes/:episodeId/shots/reorder  body: { orderedIds }
+  console.log('[mock] reorder shots', episodeId, orderedIds);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
 
@@ -1671,36 +1717,48 @@ const IconVideoPlaceholder = () => (
 function DeleteConfirmModal({ shotNumber, onConfirm, onCancel }) {
   return createPortal(
     <div
-      style={{ position: 'fixed', inset: 0, zIndex: 9998, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.50)', backdropFilter: 'blur(4px)' }}
+      style={{ position: 'fixed', inset: 0, zIndex: 9998, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
       onClick={onCancel}
     >
       <div
-        style={{ width: '360px', borderRadius: '12px', backgroundColor: '#1D1E1E', border: '1px solid rgba(255,255,255,0.08)', boxShadow: '0px 8px 32px rgba(0,0,0,0.60)', overflow: 'hidden' }}
+        style={{ width: '360px', borderRadius: '16px', backgroundColor: '#161616', boxShadow: '#00000099 0px 8px 32px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '24px' }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={{ padding: '20px 24px 16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
-          <span style={{ fontSize: '16px', fontWeight: 500, color: '#FFFFFF', fontFamily: FONT_MEDIUM, lineHeight: '20px' }}>
-            删除镜头 {String(shotNumber).padStart(2, '0')}
-          </span>
-          <span style={{ fontSize: '14px', color: 'rgba(255,255,255,0.60)', fontFamily: FONT, lineHeight: '20px' }}>
-            此操作不可撤销，确认删除该镜头？
-          </span>
-        </div>
-        <div style={{ padding: '12px 24px 20px', display: 'flex', justifyContent: 'flex-end', gap: '8px' }}>
-          <div
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <span style={{ fontSize: '16px', fontWeight: 500, color: '#FFFFFF', fontFamily: FONT_MEDIUM, lineHeight: '20px' }}>
+              确定要删除吗？
+            </span>
+            <span style={{ fontSize: '14px', color: 'rgba(255,255,255,0.6)', fontFamily: FONT, lineHeight: '18px' }}>
+              此操作不可撤销，镜头 {String(shotNumber).padStart(2, '0')} 将被永久删除。
+            </span>
+          </div>
+          <button
+            type="button"
             onClick={onCancel}
-            style={{ display: 'flex', flexDirection: 'column', height: '36px', flexShrink: 0, borderRadius: '8px', padding: '1px', boxShadow: 'rgba(0,0,0,0.40) 3px 3px 8px', backgroundImage: 'linear-gradient(in oklab 148.76deg, oklab(94.7% -0.078 -0.022 / 30%) 3.64%, oklab(75.5% -0.102 -0.072 / 0%) 42.81%), linear-gradient(in oklab 180deg, #FFFFFF14, #FFFFFF14)', outline: '1px solid #00000080', cursor: 'pointer' }}
+            style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', cursor: 'pointer', borderRadius: '8px', padding: 0, flexShrink: 0 }}
           >
-            <div style={{ display: 'flex', alignItems: 'center', flex: 1, borderRadius: '7px', paddingInline: '15px', backgroundColor: '#161616' }}>
-              <span style={{ fontSize: '14px', color: '#FFFFFF', fontFamily: FONT }}>取消</span>
-            </div>
-          </div>
-          <div
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+              <path d="M2.667 2.667L13.333 13.333" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M2.667 13.333L13.333 2.667" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px' }}>
+          <button
+            type="button"
+            onClick={onCancel}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '36px', flexShrink: 0, borderRadius: '8px', paddingLeft: '16px', paddingRight: '16px', boxShadow: '#00000066 3px 3px 8px', backgroundColor: '#161616', border: '1px solid #FFFFFF14', outline: '1px solid #00000080', cursor: 'pointer', fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.6)' }}
+          >
+            取消
+          </button>
+          <button
+            type="button"
             onClick={onConfirm}
-            style={{ display: 'flex', alignItems: 'center', height: '36px', flexShrink: 0, borderRadius: '8px', paddingInline: '16px', backgroundColor: '#E05252', border: '1px solid rgba(255,255,255,0.20)', outline: '1px solid #00000080', cursor: 'pointer' }}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '36px', flexShrink: 0, borderRadius: '8px', paddingLeft: '16px', paddingRight: '16px', backgroundColor: '#D13B3B', border: '1px solid rgba(255,255,255,0.2)', cursor: 'pointer', fontFamily: FONT_MEDIUM, fontWeight: 500, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF' }}
           >
-            <span style={{ fontSize: '14px', color: '#FFFFFF', fontFamily: FONT }}>删除</span>
-          </div>
+            删除
+          </button>
         </div>
       </div>
     </div>,
@@ -3653,9 +3711,10 @@ const INITIAL_SHOTS = [
 
 const EPISODES = ['第一集', '第二集', '第三集', '第四集', '第五集', '第六集'];
 
-export default function StoryboardPage({ projectName = '两只老虎的奇遇', chars = [], scenes = [], props = [], onUnlockStep }) {
+export default function StoryboardPage({ projectName = '两只老虎的奇遇', chars = [], scenes = [], props = [], episodes = EPISODES, onUnlockStep, onVideoGenerated }) {
+  const activeEpisodes = episodes.length > 0 ? episodes : EPISODES;
   const [shots, setShots] = useState(INITIAL_SHOTS);
-  const [episode, setEpisode] = useState('第一集');
+  const [episode, setEpisode] = useState(() => activeEpisodes[0] ?? '第一集');
   const [dragId, setDragId] = useState(null);
   const [overId, setOverId] = useState(null);
   const [generatingImages, setGeneratingImages] = useState(false);
@@ -3667,6 +3726,12 @@ export default function StoryboardPage({ projectName = '两只老虎的奇遇', 
   // 单镜头生成面板
   const [imagePanel, setImagePanel] = useState(null); // { shot }
   const [videoPanel, setVideoPanel] = useState(null); // { shot }
+
+  useEffect(() => {
+    if (activeEpisodes.length > 0 && !activeEpisodes.includes(episode)) {
+      setEpisode(activeEpisodes[0]);
+    }
+  }, [activeEpisodes]);
 
   function showToast(msg, type = 'success') {
     setToast({ msg, type });
@@ -3707,6 +3772,7 @@ export default function StoryboardPage({ projectName = '两只老虎的奇遇', 
       );
     }
     setGeneratingVideos(false);
+    onVideoGenerated?.(activeEpisodes.indexOf(episode));
     showToast('分镜视频生成完成');
   }
 
@@ -3740,6 +3806,7 @@ export default function StoryboardPage({ projectName = '两只老虎的奇遇', 
 
   function updateShot(id, next) {
     setShots((prev) => prev.map((s) => (s.id === id ? next : s)));
+    // TODO: apiUpdateShot(id, next)
   }
 
   function addShotAfter(id) {
@@ -3747,6 +3814,7 @@ export default function StoryboardPage({ projectName = '两只老虎的奇遇', 
       const idx = prev.findIndex((s) => s.id === id);
       const newShot = makeShot(0);
       const next = [...prev.slice(0, idx + 1), newShot, ...prev.slice(idx + 1)];
+      // TODO: apiCreateShot(episodeId, newShot)
       return next.map((s, i) => ({ ...s, number: i + 1 }));
     });
   }
@@ -3756,11 +3824,13 @@ export default function StoryboardPage({ projectName = '两只老虎的奇遇', 
       const idx = prev.findIndex((s) => s.id === id);
       const copy = { ...prev[idx], id: `shot-copy-${Date.now()}` };
       const next = [...prev.slice(0, idx + 1), copy, ...prev.slice(idx + 1)];
+      // TODO: apiCreateShot(episodeId, copy)
       return next.map((s, i) => ({ ...s, number: i + 1 }));
     });
   }
 
   function deleteShot(id) {
+    // TODO: apiDeleteShot(id)
     setShots((prev) => {
       const next = prev.filter((s) => s.id !== id);
       return next.map((s, i) => ({ ...s, number: i + 1 }));
@@ -3770,6 +3840,7 @@ export default function StoryboardPage({ projectName = '两只老虎的奇遇', 
   function addNewShot() {
     setShots((prev) => {
       const newShot = makeShot(prev.length + 1);
+      // TODO: apiCreateShot(episodeId, newShot)
       return [...prev, newShot];
     });
   }
@@ -3822,7 +3893,7 @@ export default function StoryboardPage({ projectName = '两只老虎的奇遇', 
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ flexShrink: 0 }}>
             <path d="M5.5 3.5L9 7L5.5 10.5" stroke="#FFFFFF40" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
-          <EpisodeSelector episodes={EPISODES} value={episode} onChange={setEpisode} />
+          <EpisodeSelector episodes={activeEpisodes} value={episode} onChange={setEpisode} />
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           <GhostBtn icon={<IconBatchImage />} onClick={() => setShowImageModal(true)} loading={generatingImages} disabled={generatingImages || generatingVideos}>批量生成分镜图</GhostBtn>
@@ -3954,8 +4025,10 @@ export default function StoryboardPage({ projectName = '两只老虎的奇遇', 
         scenes={scenes}
         props={props}
         onClose={() => setImagePanel(null)}
-        onGenerate={async () => {
+        onGenerate={async (params) => {
           const shot = imagePanel.shot;
+          // TODO: 替换为真实接口 apiGenerateImage(shot.id, params)
+          // const { imageUrl } = await apiGenerateImage(shot.id, params);
           await new Promise((r) => setTimeout(r, 1000));
           const mockUrl = `https://picsum.photos/seed/${shot.id}/400/225`;
           setShots((prev) => prev.map((s) => s.id === shot.id && !s.storyboardImage
@@ -3974,8 +4047,10 @@ export default function StoryboardPage({ projectName = '两只老虎的奇遇', 
         scenes={scenes}
         props={props}
         onClose={() => setVideoPanel(null)}
-        onGenerate={async () => {
+        onGenerate={async (params) => {
           const shot = videoPanel.shot;
+          // TODO: 替换为真实接口 apiGenerateVideo(shot.id, params)
+          // const { videoUrl } = await apiGenerateVideo(shot.id, params);
           await new Promise((r) => setTimeout(r, 1200));
           const mockUrl = `https://www.w3schools.com/html/mov_bbb.mp4`;
           setShots((prev) => prev.map((s) => s.id === shot.id && !s.storyboardVideo
@@ -3983,6 +4058,7 @@ export default function StoryboardPage({ projectName = '两只老虎的奇遇', 
             : s
           ));
           showToast('分镜视频生成完成');
+          onVideoGenerated?.(activeEpisodes.indexOf(episode));
           return { url: mockUrl };
         }}
       />

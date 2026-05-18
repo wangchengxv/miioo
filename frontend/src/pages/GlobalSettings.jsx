@@ -1,5 +1,14 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useCallback } from 'react';
 import ScriptPage from './ScriptPage';
+
+// ── API stubs (TODO: 替换为真实接口) ──────────────────────────────────────
+
+async function apiUpdateProject(projectId, data) {
+  // TODO: PATCH /projects/:projectId  body: { name?, description?, coverUrl?, ratio?, style? }
+  console.log('[mock] update project', projectId, data);
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
@@ -49,9 +58,9 @@ function StatCard({ label, count, images = [], onClick }) {
       <div
         style={{
           position: 'absolute',
+          top: -1,
           left: 0,
           right: 0,
-          bottom: -1,
           paddingTop: '18px',
           paddingBottom: '12px',
           paddingLeft: '16px',
@@ -61,7 +70,7 @@ function StatCard({ label, count, images = [], onClick }) {
           gap: '4px',
           justifyContent: 'space-between',
           borderRadius: '0 0 8px 8px',
-          backgroundImage: 'linear-gradient(in oklab 180deg, oklab(0% 0 0 / 0%) 0%, oklab(0% 0 0 / 60%) 100%)',
+          backgroundImage: 'linear-gradient(in oklab 180deg, oklab(0% 0 0 / 60%) 0%, oklab(0% 0 0 / 0%) 100%)',
         }}
       >
         <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flex: 1, justifyContent: 'space-between' }}>
@@ -72,7 +81,7 @@ function StatCard({ label, count, images = [], onClick }) {
       {/* hover arrow hint */}
       {isClickable && hovered && (
         <div style={{
-          position: 'absolute', top: '10px', right: '10px',
+          position: 'absolute', bottom: '10px', right: '10px',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           width: '20px', height: '20px', borderRadius: '9999px',
           background: '#FFFFFF14',
@@ -82,6 +91,110 @@ function StatCard({ label, count, images = [], onClick }) {
           </svg>
         </div>
       )}
+    </div>
+  );
+}
+
+// ── Episode grid ───────────────────────────────────────────────────────────
+
+const EPISODE_STATUS = {
+  edited:    { bg: '#003422', border: '#52BF9266', color: '#52BF92', label: '已剪辑定稿' },
+  generated: { bg: '#06252C', border: '#2DC3E166', color: '#2DC3E1', label: '已生成视频，待剪辑' },
+  pending:   { bg: '#FFFFFF08', border: '#FFFFFF14', color: '#FFFFFF33', label: '未生成视频' },
+};
+
+function EpisodeCard({ index, status = 'pending' }) {
+  const [hovered, setHovered] = useState(false);
+  const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
+  const s = EPISODE_STATUS[status];
+  const label = String(index + 1).padStart(2, '0');
+
+  const handleMouseEnter = useCallback((e) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    setTooltipPos({ x: rect.left + rect.width / 2, y: rect.top - 8 });
+    setHovered(true);
+  }, []);
+
+  return (
+    <div style={{ position: 'relative' }}>
+      <div
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={() => setHovered(false)}
+        style={{
+          width: '100%',
+          height: '32px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderRadius: '5px',
+          background: s.bg,
+          border: `1px solid ${s.border}`,
+          cursor: 'default',
+          transition: 'opacity 0.12s',
+          opacity: hovered ? 0.8 : 1,
+        }}
+      >
+        <span style={{ fontFamily: FONT, fontSize: '10px', lineHeight: '100%', color: s.color }}>{label}</span>
+      </div>
+      {hovered && (
+        <div style={{
+          position: 'fixed',
+          left: tooltipPos.x,
+          top: tooltipPos.y,
+          transform: 'translate(-50%, -100%)',
+          background: '#2A2A2A',
+          border: '1px solid #FFFFFF14',
+          borderRadius: '6px',
+          padding: '6px 10px',
+          pointerEvents: 'none',
+          zIndex: 9999,
+          whiteSpace: 'nowrap',
+        }}>
+          <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: '#FFFFFF99' }}>
+            第{index + 1}集 · {s.label}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EpisodeGrid({ episodes = [], statuses = {} }) {
+  const total = episodes.length;
+  if (total === 0) return null;
+
+  return (
+    <div style={{
+      flex: 1,
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '12px',
+      borderRadius: '8px',
+      padding: '16px',
+      background: '#1D1E1E',
+      border: '1px solid #FFFFFF14',
+      height: '200px',
+      boxSizing: 'border-box',
+    }}>
+      {/* header */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+        <span style={{ fontFamily: FONT_MEDIUM, fontSize: '14px', lineHeight: '100%', color: '#FFFFFF' }}>剧集结构</span>
+        <span style={{ fontFamily: FONT, fontSize: '13px', lineHeight: '16px', color: '#FFFFFF99' }}>共 {total} 集</span>
+      </div>
+      {/* grid */}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: 'repeat(auto-fit, minmax(32px, 1fr))',
+        gap: '6px',
+        overflowY: 'auto',
+        alignContent: 'flex-start',
+        flex: 1,
+        paddingRight: '2px',
+      }}>
+        {episodes.map((_, i) => (
+          <EpisodeCard key={i} index={i} status={statuses[i] ?? 'pending'} />
+        ))}
+      </div>
     </div>
   );
 }
@@ -323,10 +436,12 @@ function ProjectNameHeading({ value, onChange }) {
 
 // ── Main ───────────────────────────────────────────────────────────────────
 
-export default function GlobalSettings({ projectName = '这里是项目名称', onBack, activeStep, onStepChange, onGoToSubject, chars = [], scenes = [], props = [] }) {
+export default function GlobalSettings({ projectName = '这里是项目名称', projectId, onBack, activeStep, onStepChange, onGoToSubject, onEpisodesChange, chars = [], scenes = [], props = [], episodes = [], scriptPhase, onScriptPhaseChange, scriptHasStarted, onScriptHasStartedChange, scriptContent, onScriptContentChange, scriptDraftContent, onScriptDraftContentChange, scriptStreamingIndex, onScriptStreamingIndexChange, episodeStatuses = {} }) {
   const [name, setName] = useState(projectName);
   const [description, setDescription] = useState('');
   const [coverUrl, setCoverUrl] = useState('');
+  // TODO: 字段变化时调用 apiUpdateProject(projectId, { name, description, coverUrl })
+  // 建议用 useEffect + debounce 实现自动保存
 
   if (activeStep === 'script') {
     return (
@@ -341,7 +456,20 @@ export default function GlobalSettings({ projectName = '这里是项目名称', 
           display: 'flex',
         }}
       >
-        <ScriptPage onGoToSubject={() => onStepChange?.('subject')} />
+        <ScriptPage
+          onGoToSubject={onGoToSubject}
+          onEpisodesChange={onEpisodesChange}
+          phase={scriptPhase}
+          onPhaseChange={onScriptPhaseChange}
+          hasStarted={scriptHasStarted}
+          onHasStartedChange={onScriptHasStartedChange}
+          scriptContent={scriptContent}
+          onScriptContentChange={onScriptContentChange}
+          draftContent={scriptDraftContent}
+          onDraftContentChange={onScriptDraftContentChange}
+          streamingIndex={scriptStreamingIndex}
+          onStreamingIndexChange={onScriptStreamingIndexChange}
+        />
       </div>
     );
   }
@@ -416,7 +544,6 @@ export default function GlobalSettings({ projectName = '这里是项目名称', 
               { label: '角色', tab: 'char', count: chars.length },
               { label: '场景', tab: 'scene', count: scenes.length },
               { label: '道具', tab: 'prop', count: props.length },
-              { label: '剧集结构', tab: null, count: null },
             ].map(({ label, tab, count }) => (
               <StatCard
                 key={label}
@@ -425,6 +552,7 @@ export default function GlobalSettings({ projectName = '这里是项目名称', 
                 onClick={tab ? () => onGoToSubject?.(tab) : undefined}
               />
             ))}
+            <EpisodeGrid episodes={episodes} statuses={episodeStatuses} />
           </div>
         </div>
 

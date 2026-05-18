@@ -984,8 +984,11 @@ export default function ApiConfigModal({ open, onClose, onConfigured }) {
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3000);
   }, []);
 
-  const testConnection = useCallback(() => {
-    const success = Math.random() > 0.4;
+  const testConnection = useCallback(async () => {
+    // TODO: 替换为真实接口 POST /api-config/test  body: { apiKey, baseUrl, ... }
+    // const res = await fetch('/api/api-config/test', { method: 'POST', ... });
+    // const { success } = await res.json();
+    const success = Math.random() > 0.4; // mock
     if (success) {
       showToast('success', '连接成功！');
     } else {
@@ -1002,6 +1005,8 @@ export default function ApiConfigModal({ open, onClose, onConfigured }) {
   }
 
   function closeMain() {
+    // TODO: 替换为真实接口 POST /api-config  body: state（注意：API key 仅存本地，不上传云端）
+    // await fetch('/api/api-config', { method: 'POST', body: JSON.stringify(state) });
     resetState();
     onClose?.();
   }

@@ -161,7 +161,29 @@ function Tabs({ tab, onChange }) {
   );
 }
 
-function SendCodeButton() {
+async function sendVerificationCode(phone) {
+  // TODO: 替换为真实接口 POST /auth/send-code
+  // await fetch('/api/auth/send-code', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone }) });
+  console.log('[mock] send-code to', phone);
+}
+
+async function loginWithPhone(phone, code) {
+  // TODO: 替换为真实接口 POST /auth/login
+  // const res = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ phone, code }) });
+  // return res.json(); // { token, user }
+  console.log('[mock] login', phone, code);
+  return { token: 'mock-token', user: { id: 'mock-id', name: 'mock-user' } };
+}
+
+async function bindPhone(wechatToken, phone, code) {
+  // TODO: 替换为真实接口 POST /auth/bind-phone
+  // const res = await fetch('/api/auth/bind-phone', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ wechatToken, phone, code }) });
+  // return res.json();
+  console.log('[mock] bind-phone', phone, code);
+  return { token: 'mock-token', user: { id: 'mock-id', name: 'mock-user' } };
+}
+
+function SendCodeButton({ phone }) {
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
 
@@ -195,6 +217,7 @@ function SendCodeButton() {
       }}
       onMouseDown={() => setPressed(true)}
       onMouseUp={() => setPressed(false)}
+      onClick={() => sendVerificationCode(phone)}
     >
       <div style={{ fontFamily: FONT, color: textColor, fontSize: 12, lineHeight: '16px', transition: 'color 120ms ease' }}>获取</div>
     </button>
@@ -341,17 +364,22 @@ function PhoneLoginView({ onLogin, onChangeTab }) {
   const [code, setCode] = useState('');
   const [agreed, setAgreed] = useState(false);
 
+  const handleLogin = async () => {
+    await loginWithPhone(phone, code);
+    onLogin();
+  };
+
   return (
     <>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 24, width: '100%', paddingLeft: 32, paddingRight: 32, flex: 1, backgroundColor: '#161616' }}>
         <Tabs tab="phone" onChange={onChangeTab} />
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4, alignSelf: 'stretch', padding: 0 }}>
           <Field label="手机号" placeholder="请输入11位数字手机号" value={phone} onChange={(e) => setPhone(e.target.value)} errorText="手机号格式错误" />
-          <Field label="验证码" placeholder="请输入短信验证码" value={code} onChange={(e) => setCode(e.target.value)} suffix={<SendCodeButton />} errorText="验证码错误" />
+          <Field label="验证码" placeholder="请输入短信验证码" value={code} onChange={(e) => setCode(e.target.value)} suffix={<SendCodeButton phone={phone} />} errorText="验证码错误" />
         </div>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, justifyContent: 'space-between', width: '100%', backgroundColor: '#161616', padding: 32 }}>
-        <PrimaryButton onClick={onLogin}>登录</PrimaryButton>
+        <PrimaryButton onClick={handleLogin}>登录</PrimaryButton>
         <Agreement checked={agreed} onToggle={() => setAgreed((value) => !value)} />
       </div>
     </>
@@ -408,6 +436,12 @@ function BindPhoneView({ onBind, onBack }) {
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
 
+  const handleBind = async () => {
+    // TODO: wechatToken 需从微信 OAuth 回调中获取，当前 mock 传空字符串
+    await bindPhone('', phone, code);
+    onBind();
+  };
+
   return (
     <>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 16, width: '100%', paddingLeft: 32, paddingRight: 32, flex: 1, backgroundColor: '#161616' }}>
@@ -434,11 +468,11 @@ function BindPhoneView({ onBind, onBack }) {
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4, alignSelf: 'stretch', padding: 0 }}>
           <Field label="手机号" placeholder="请输入11位数字手机号" value={phone} onChange={(e) => setPhone(e.target.value)} errorText="手机号格式错误" />
-          <Field label="验证码" placeholder="请输入短信验证码" value={code} onChange={(e) => setCode(e.target.value)} suffix={<SendCodeButton />} errorText="验证码错误" />
+          <Field label="验证码" placeholder="请输入短信验证码" value={code} onChange={(e) => setCode(e.target.value)} suffix={<SendCodeButton phone={phone} />} errorText="验证码错误" />
         </div>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, justifyContent: 'space-between', width: '100%', backgroundColor: '#161616', padding: 32 }}>
-        <PrimaryButton onClick={onBind}>绑定并登录</PrimaryButton>
+        <PrimaryButton onClick={handleBind}>绑定并登录</PrimaryButton>
         <button
           type="button"
           onClick={onBack}

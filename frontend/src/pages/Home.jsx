@@ -11,6 +11,7 @@ import ProjectList from './ProjectList';
 import GlobalSettings from './GlobalSettings';
 import SubjectPage from './SubjectPage';
 import StoryboardPage from './StoryboardPage';
+import AssetsPage from './AssetsPage';
 
 const ICON_STYLE = { flexShrink: '0' };
 
@@ -773,6 +774,7 @@ function WorkflowHeadbar({ activeStep, onStepChange, unlockedSteps, isLoggedIn, 
       <div className="flex items-center gap-24 p-0">
         <CreationManualButton />
         {isLoggedIn ? (
+          // TODO: userName/userId 替换为 GET /users/me 返回的数据
           <AccountMenu
             userName="Suzy"
             userId="miioo_suzy"
@@ -875,13 +877,21 @@ export default function Home({ onProjectCreated }) {
   const [apiConfigured, setApiConfigured] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
+  // TODO: 替换为真实接口 GET /projects，在 useEffect 中拉取并 setProjects
   const [projects, setProjects] = useState([]);
   const [activeProject, setActiveProject] = useState(null);
   const [activeStep, setActiveStep] = useState('script');
   const [subjectInitialTab, setSubjectInitialTab] = useState('char');
-  const [sharedChars, setSharedChars] = useState([]);
-  const [sharedScenes, setSharedScenes] = useState([]);
-  const [sharedProps, setSharedProps] = useState([]);
+  const [sharedChars, setSharedChars] = useState(null);
+  const [sharedScenes, setSharedScenes] = useState(null);
+  const [sharedProps, setSharedProps] = useState(null);
+  const [scriptEpisodes, setScriptEpisodes] = useState([]);
+  const [scriptPhase, setScriptPhase] = useState('initial');
+  const [scriptHasStarted, setScriptHasStarted] = useState(false);
+  const [scriptContent, setScriptContent] = useState('');
+  const [scriptDraftContent, setScriptDraftContent] = useState('');
+  const [scriptStreamingIndex, setScriptStreamingIndex] = useState(0);
+  const [episodeStatuses, setEpisodeStatuses] = useState({});
   // Tracks which non-alwaysEnabled steps have ever had content — once unlocked, stays unlocked
   const [unlockedSteps, setUnlockedSteps] = useState(new Set());
 
@@ -1034,8 +1044,8 @@ export default function Home({ onProjectCreated }) {
             <div
               className="flex flex-col items-start py-24 flex-1"
               style={{
-                paddingLeft: activeKey === 'project' ? '12px' : '24px',
-                paddingRight: activeKey === 'project' ? '12px' : '24px',
+                paddingLeft: (activeKey === 'project' || activeKey === 'assets') ? '12px' : '24px',
+                paddingRight: (activeKey === 'project' || activeKey === 'assets') ? '12px' : '24px',
                 transition: 'padding-left 320ms cubic-bezier(0.4, 0, 0.2, 1), padding-right 320ms cubic-bezier(0.4, 0, 0.2, 1)',
               }}
             >
@@ -1046,8 +1056,8 @@ export default function Home({ onProjectCreated }) {
             <div
               className="py-24"
               style={{
-                paddingLeft: activeKey === 'project' ? '8px' : '32px',
-                paddingRight: activeKey === 'project' ? '8px' : '32px',
+                paddingLeft: (activeKey === 'project' || activeKey === 'assets') ? '8px' : '32px',
+                paddingRight: (activeKey === 'project' || activeKey === 'assets') ? '8px' : '32px',
                 alignSelf: 'stretch',
                 transition: 'padding-left 320ms cubic-bezier(0.4, 0, 0.2, 1), padding-right 320ms cubic-bezier(0.4, 0, 0.2, 1)',
               }}
@@ -1080,14 +1090,27 @@ export default function Home({ onProjectCreated }) {
                 activeStep={activeStep}
                 onStepChange={setActiveStep}
                 onUnlockStep={handleUnlockStep}
-                chars={sharedChars}
-                scenes={sharedScenes}
-                props={sharedProps}
-                onGoToSubject={(tab) => {
-                  setSubjectInitialTab(tab);
+                chars={sharedChars ?? []}
+                scenes={sharedScenes ?? []}
+                props={sharedProps ?? []}
+                episodes={scriptEpisodes}
+                onEpisodesChange={setScriptEpisodes}
+                scriptPhase={scriptPhase}
+                onScriptPhaseChange={setScriptPhase}
+                scriptHasStarted={scriptHasStarted}
+                onScriptHasStartedChange={setScriptHasStarted}
+                scriptContent={scriptContent}
+                onScriptContentChange={setScriptContent}
+                scriptDraftContent={scriptDraftContent}
+                onScriptDraftContentChange={setScriptDraftContent}
+                scriptStreamingIndex={scriptStreamingIndex}
+                onScriptStreamingIndexChange={setScriptStreamingIndex}
+                onGoToSubject={() => {
+                  setSubjectInitialTab('char');
                   handleUnlockStep('subject');
                   setActiveStep('subject');
                 }}
+                episodeStatuses={episodeStatuses}
               />
             )}
             {activeKey === 'project' && activeProject && activeStep === 'subject' && (
@@ -1111,11 +1134,21 @@ export default function Home({ onProjectCreated }) {
             {activeKey === 'project' && activeProject && activeStep === 'storyboard' && (
               <StoryboardPage
                 projectName={activeProject.name}
-                chars={sharedChars}
-                scenes={sharedScenes}
-                props={sharedProps}
+                chars={sharedChars ?? []}
+                scenes={sharedScenes ?? []}
+                props={sharedProps ?? []}
+                episodes={scriptEpisodes}
                 onUnlockStep={handleUnlockStep}
+                onVideoGenerated={(episodeIndex) => {
+                  setEpisodeStatuses((prev) => {
+                    if (prev[episodeIndex] === 'generated' || prev[episodeIndex] === 'edited') return prev;
+                    return { ...prev, [episodeIndex]: 'generated' };
+                  });
+                }}
               />
+            )}
+            {activeKey === 'assets' && (
+              <AssetsPage projects={projects} />
             )}
           </div>
         </div>
@@ -1134,9 +1167,20 @@ export default function Home({ onProjectCreated }) {
       <NewProjectModal
         open={newProjectOpen}
         onClose={() => setNewProjectOpen(false)}
-        onConfirm={({ name }) => {
+        onConfirm={({ name, desc, ratio, style, customStyleDesc, coverFile }) => {
           setNewProjectOpen(false);
-          handleProjectCreated({ id: Date.now(), name, date: '刚刚' });
+          // TODO: 替换为真实接口 POST /projects
+          // const formData = new FormData();
+          // formData.append('name', name);
+          // formData.append('desc', desc);
+          // formData.append('ratio', ratio);
+          // formData.append('style', style);
+          // formData.append('customStyleDesc', customStyleDesc);
+          // if (coverFile) formData.append('cover', coverFile);
+          // const res = await fetch('/api/projects', { method: 'POST', body: formData });
+          // const project = await res.json();
+          // handleProjectCreated(project);
+          handleProjectCreated({ id: Date.now(), name, desc, ratio, style, customStyleDesc, date: '刚刚' });
         }}
       />
     </div>
