@@ -1253,24 +1253,62 @@ function PanelPromptInput({ value, onChange, chars = [], scenes = [], props = []
 
 // ─── 生成分镜图面板 ────────────────────────────────────────────────────────────
 
-function GenerateImagePanel({ shot, chars = [], scenes = [], props = [], onClose, onGenerate }) {
+function RefSlotBtn({ onClick, children }) {
+  const [hov, setHov] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  return (
+    <div
+      onClick={onClick}
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => { setHov(false); setPressed(false); }}
+      onMouseDown={() => setPressed(true)}
+      onMouseUp={() => setPressed(false)}
+      style={{
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        height: '22px', paddingInline: '6px', borderRadius: '6px',
+        backgroundColor: pressed ? '#1a1a1a' : hov ? '#222323' : '#161616',
+        border: '1px solid rgba(255,255,255,0.08)', outline: '1px solid #00000080',
+        cursor: 'pointer', fontSize: '11px', lineHeight: '14px',
+        color: hov ? 'rgba(255,255,255,0.70)' : 'rgba(255,255,255,0.40)',
+        fontFamily: FONT, whiteSpace: 'nowrap', transition: 'background-color 0.10s, color 0.10s',
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
+function GenerateImagePanel({ shot, chars = [], scenes = [], props = [], onClose, onGenerate, generatedImages = [], onSetGeneratedImages }) {
   const [model, setModel] = useState('Doubao-Seed-2.0-Pro');
   const [resolution, setResolution] = useState('2K');
   const [prompt, setPrompt] = useState(shot?.description || '');
-  const [refMedia, setRefMedia] = useState(null);
+  const [refImages, setRefImages] = useState([]);
+  const [refImgPickerOpen, setRefImgPickerOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [btnHov, setBtnHov] = useState(false);
   const [btnPressed, setBtnPressed] = useState(false);
-  const [generatedImages, setGeneratedImages] = useState([]);
   const [viewImageUrl, setViewImageUrl] = useState(null);
+  const refFileRef = useRef(null);
+
+  function handleRefFileChange(e) {
+    const files = Array.from(e.target.files);
+    if (!files.length) return;
+    const newItems = files.map((f) => ({ id: URL.createObjectURL(f), url: URL.createObjectURL(f), name: f.name }));
+    setRefImages((prev) => [...prev, ...newItems]);
+    e.target.value = '';
+  }
+
+  function removeRefImage(id) {
+    setRefImages((prev) => prev.filter((img) => img.id !== id));
+  }
 
   async function handleGenerate() {
     if (loading) return;
     setLoading(true);
     const placeholder = `pending-${Date.now()}`;
-    setGeneratedImages((prev) => [{ url: null, settled: false, id: placeholder }, ...prev]);
-    const result = await onGenerate?.({ model, resolution, prompt });
-    setGeneratedImages((prev) =>
+    onSetGeneratedImages((prev) => [{ url: null, settled: false, id: placeholder }, ...prev]);
+    const result = await onGenerate?.({ model, resolution, prompt, refImages });
+    onSetGeneratedImages((prev) =>
       prev.map((item) => item.id === placeholder ? { ...item, url: result?.url ?? null } : item)
     );
     setLoading(false);
@@ -1318,7 +1356,41 @@ function GenerateImagePanel({ shot, chars = [], scenes = [], props = [], onClose
 
             <PanelPromptInput value={prompt} onChange={setPrompt} chars={chars} scenes={scenes} props={props} />
             <PanelSelect label="选择模型" value={model} options={['Doubao-Seed-2.0-Pro', 'Doubao-Seed-2.0-Lite', 'Flux 1.1 Pro']} onChange={setModel} />
-            <PanelUploadSlot label="参考主体" accept="image/*" media={refMedia} onUpload={setRefMedia} onRemove={() => setRefMedia(null)} />
+
+            {/* 参考图 — 多张 */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignSelf: 'stretch' }}>
+              <span style={{ fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.60)', fontFamily: FONT }}>参考图</span>
+              <input ref={refFileRef} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={handleRefFileChange} />
+              <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                {refImages.map((img) => (
+                  <div key={img.id} style={{ position: 'relative', width: '120px', height: '120px', borderRadius: '6px', overflow: 'hidden', flexShrink: 0, border: '1px solid rgba(255,255,255,0.12)' }}>
+                    <img src={img.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    <div
+                      onClick={() => removeRefImage(img.id)}
+                      style={{ position: 'absolute', top: '4px', right: '4px', width: '18px', height: '18px', borderRadius: '4px', backgroundColor: 'rgba(0,0,0,0.70)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                    >
+                      <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 2L8 8M8 2L2 8" stroke="#FFFFFF" strokeWidth="1.2" strokeLinecap="round"/></svg>
+                    </div>
+                  </div>
+                ))}
+                {/* 添加槽 */}
+                <div
+                  style={{
+                    width: '120px', height: '120px', borderRadius: '6px', flexShrink: 0,
+                    border: '1px dashed rgba(255,255,255,0.08)',
+                    backgroundColor: '#1D1E1E',
+                    display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '6px',
+                  }}
+                  onMouseEnter={(e) => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.28)'}
+                  onMouseLeave={(e) => e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'}
+                >
+                  <RefSlotBtn onClick={() => refFileRef.current?.click()}>本地上传</RefSlotBtn>
+                  <RefSlotBtn onClick={() => setRefImgPickerOpen(true)}>从资产库选择</RefSlotBtn>
+                </div>
+              </div>
+            </div>
+            <AssetPickerModal accept="image" open={refImgPickerOpen} onClose={() => setRefImgPickerOpen(false)} onConfirm={() => {}} />
+
             <PanelSelect label="分辨率" value={resolution} options={['1K', '2K', '4K']} onChange={setResolution} />
 
             {/* 生成按钮 */}
@@ -1362,7 +1434,7 @@ function GenerateImagePanel({ shot, chars = [], scenes = [], props = [], onClose
             <ImgUploadCard
               onUpload={(file) => {
                 const url = URL.createObjectURL(file);
-                setGeneratedImages((prev) => [{ url, settled: false, id: url }, ...prev]);
+                onSetGeneratedImages((prev) => [{ url, settled: false, id: url }, ...prev]);
               }}
             />
             {generatedImages.map((img, i) => (
@@ -1372,7 +1444,7 @@ function GenerateImagePanel({ shot, chars = [], scenes = [], props = [], onClose
                 settled={img.settled}
                 onView={setViewImageUrl}
                 onSettledChange={(newSettled) => {
-                  setGeneratedImages((prev) =>
+                  onSetGeneratedImages((prev) =>
                     prev.map((item, idx) =>
                       idx === i ? { ...item, settled: newSettled } : { ...item, settled: newSettled ? false : item.settled }
                     )
@@ -3829,16 +3901,30 @@ export default function StoryboardPage({ projectName = '两只老虎的奇遇', 
   const [toast, setToast] = useState(null);
   const [showImageModal, setShowImageModal] = useState(false);
   const [showVideoModal, setShowVideoModal] = useState(false);
+  const [batchExpanded, setBatchExpanded] = useState(false);
+  const batchBtnRef = useRef(null);
   const [showDownloadModal, setShowDownloadModal] = useState(false);
   // 单镜头生成面板
   const [imagePanel, setImagePanel] = useState(null); // { shot }
   const [videoPanel, setVideoPanel] = useState(null); // { shot }
+  const [genImageHistoryMap, setGenImageHistoryMap] = useState({}); // { [shotId]: generatedImages[] }
 
   useEffect(() => {
     if (activeEpisodes.length > 0 && !activeEpisodes.includes(episode)) {
       setEpisode(activeEpisodes[0]);
     }
   }, [activeEpisodes]);
+
+  useEffect(() => {
+    if (!batchExpanded) return;
+    function handleMouseDown(e) {
+      if (batchBtnRef.current && !batchBtnRef.current.contains(e.target)) {
+        setBatchExpanded(false);
+      }
+    }
+    document.addEventListener('mousedown', handleMouseDown);
+    return () => document.removeEventListener('mousedown', handleMouseDown);
+  }, [batchExpanded]);
 
   function showToast(msg, type = 'success') {
     setToast({ msg, type });
@@ -4002,8 +4088,15 @@ export default function StoryboardPage({ projectName = '两只老虎的奇遇', 
           </svg>
           <EpisodeSelector episodes={activeEpisodes} value={episode} onChange={setEpisode} />
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <GhostBtn icon={<IconBatchImage />} onClick={() => setShowImageModal(true)} loading={generatingImages || generatingVideos} disabled={generatingImages || generatingVideos}>批量生成</GhostBtn>
+        <div ref={batchBtnRef} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {batchExpanded ? (
+            <>
+              <GhostBtn icon={<IconBatchImage />} onClick={() => { setBatchExpanded(false); setShowImageModal(true); }} loading={generatingImages || generatingVideos} disabled={generatingImages || generatingVideos}>批量生成分镜图</GhostBtn>
+              <GhostBtn icon={<IconBatchVideo />} onClick={() => { setBatchExpanded(false); setShowVideoModal(true); }} loading={generatingImages || generatingVideos} disabled={generatingImages || generatingVideos}>批量生成分镜视频</GhostBtn>
+            </>
+          ) : (
+            <GhostBtn icon={<IconBatchImage />} onClick={() => setBatchExpanded(true)} loading={generatingImages || generatingVideos} disabled={generatingImages || generatingVideos}>批量生成</GhostBtn>
+          )}
           <GhostBtn icon={<IconDownload />} onClick={() => setShowDownloadModal(true)} disabled={generatingImages || generatingVideos}>批量下载</GhostBtn>
           <PrimaryBtn icon={<IconEdit />} onClick={handleStartEdit}>开始剪辑</PrimaryBtn>
         </div>
@@ -4132,6 +4225,14 @@ export default function StoryboardPage({ projectName = '两只老虎的奇遇', 
         chars={chars}
         scenes={scenes}
         props={props}
+        generatedImages={genImageHistoryMap[imagePanel.shot?.id] ?? []}
+        onSetGeneratedImages={(updater) => {
+          const shotId = imagePanel.shot?.id;
+          setGenImageHistoryMap((prev) => ({
+            ...prev,
+            [shotId]: typeof updater === 'function' ? updater(prev[shotId] ?? []) : updater,
+          }));
+        }}
         onClose={() => setImagePanel(null)}
         onGenerate={async (params) => {
           const shot = imagePanel.shot;
