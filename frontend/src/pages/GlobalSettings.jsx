@@ -19,6 +19,8 @@ function StatCard({ label, count, images = [], onClick }) {
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
   const isClickable = !!onClick;
+  const hasImages = images.length > 0;
+  const gridImages = images.slice(0, 9);
 
   return (
     <div
@@ -31,60 +33,62 @@ function StatCard({ label, count, images = [], onClick }) {
         height: '200px',
         flex: 1,
         display: 'flex',
-        alignItems: 'flex-start',
-        gap: '8px',
+        flexDirection: 'column',
+        gap: '12px',
         borderRadius: '8px',
-        padding: '12px 16px',
+        padding: '16px',
         position: 'relative',
         background: pressed ? '#252525' : hovered ? '#222222' : '#1D1E1E',
         border: `1px solid ${hovered ? '#FFFFFF26' : '#FFFFFF14'}`,
         cursor: isClickable ? 'pointer' : 'default',
         transition: 'background 0.15s, border-color 0.15s',
         overflow: 'hidden',
+        boxSizing: 'border-box',
       }}
     >
-      {[0, 1, 2].map((i) =>
-        images[i] ? (
-          <img
-            key={i}
-            src={images[i]}
-            alt=""
-            style={{ borderRadius: '6px', flex: 1, alignSelf: 'stretch', objectFit: 'cover', minWidth: 0 }}
-          />
-        ) : (
-          <div key={i} style={{ borderRadius: '6px', flex: 1, alignSelf: 'stretch', background: '#DDDDDD1A' }} />
-        )
-      )}
-      <div
-        style={{
-          position: 'absolute',
-          top: -1,
-          left: 0,
-          right: 0,
-          paddingTop: '18px',
-          paddingBottom: '12px',
-          paddingLeft: '16px',
-          paddingRight: '16px',
-          display: 'flex',
-          alignItems: 'flex-end',
-          gap: '4px',
-          justifyContent: 'space-between',
-          borderRadius: '0 0 8px 8px',
-          backgroundImage: 'linear-gradient(in oklab 180deg, oklab(0% 0 0 / 60%) 0%, oklab(0% 0 0 / 0%) 100%)',
-        }}
-      >
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flex: 1, justifyContent: 'space-between' }}>
-          <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '16px', color: '#FFFFFF' }}>{label}</span>
-          <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '16px', color: '#FFFFFF99' }}>{count ?? 0}</span>
-        </div>
+      {/* header inside card */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, position: 'relative', zIndex: 1 }}>
+        <span style={{ fontFamily: FONT_MEDIUM, fontSize: '14px', lineHeight: '100%', color: '#FFFFFF' }}>{label}</span>
+        <span style={{ fontFamily: FONT, fontSize: '13px', lineHeight: '16px', color: '#FFFFFF99' }}>{count ?? 0} 个</span>
       </div>
-      {/* hover arrow hint */}
+      {/* content area */}
+      {hasImages ? (
+        <div style={{
+          flex: 1,
+          display: 'grid',
+          gridTemplateColumns: 'repeat(3, 1fr)',
+          gridTemplateRows: 'repeat(3, 1fr)',
+          gap: '4px',
+          minHeight: 0,
+        }}>
+          {Array.from({ length: 9 }).map((_, i) => (
+            <div key={i} style={{ borderRadius: '4px', overflow: 'hidden', background: '#FFFFFF08' }}>
+              {gridImages[i] && (
+                <img src={gridImages[i]} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+              )}
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div style={{
+          flex: 1,
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', gap: '8px',
+        }}>
+          <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="4" y="4" width="24" height="24" rx="4" stroke="#FFFFFF26" strokeWidth="1.5" />
+            <circle cx="12" cy="13" r="2.5" stroke="#FFFFFF26" strokeWidth="1.5" />
+            <path d="M4 22L10 16L14 20L20 13L28 22" stroke="#FFFFFF26" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: '#FFFFFF33' }}>暂无素材</span>
+        </div>
+      )}
       {isClickable && hovered && (
         <div style={{
           position: 'absolute', bottom: '10px', right: '10px',
           display: 'flex', alignItems: 'center', justifyContent: 'center',
           width: '20px', height: '20px', borderRadius: '9999px',
-          background: '#FFFFFF14',
+          background: '#FFFFFF14', zIndex: 1,
         }}>
           <svg width="12" height="12" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
             <path d="M4 12L12 4M12 4H6M12 4V10" stroke="#FFFFFF99" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
@@ -100,7 +104,7 @@ function StatCard({ label, count, images = [], onClick }) {
 const EPISODE_STATUS = {
   edited:    { bg: '#003422', border: '#52BF9266', color: '#52BF92', label: '已剪辑定稿' },
   generated: { bg: '#06252C', border: '#2DC3E166', color: '#2DC3E1', label: '已生成视频，待剪辑' },
-  pending:   { bg: '#FFFFFF08', border: '#FFFFFF14', color: '#FFFFFF33', label: '未生成视频' },
+  pending:   { bg: '#FFFFFF08', border: '#FFFFFF14', color: '#FFFFFF99', label: '未生成视频' },
 };
 
 function EpisodeCard({ index, status = 'pending' }) {
@@ -134,7 +138,7 @@ function EpisodeCard({ index, status = 'pending' }) {
           opacity: hovered ? 0.8 : 1,
         }}
       >
-        <span style={{ fontFamily: FONT, fontSize: '10px', lineHeight: '100%', color: s.color }}>{label}</span>
+        <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '100%', color: s.color }}>{label}</span>
       </div>
       {hovered && (
         <div style={{
@@ -161,7 +165,7 @@ function EpisodeCard({ index, status = 'pending' }) {
 
 function EpisodeGrid({ episodes = [], statuses = {} }) {
   const total = episodes.length;
-  if (total === 0) return null;
+  const isEmpty = total === 0;
 
   return (
     <div style={{
@@ -176,25 +180,43 @@ function EpisodeGrid({ episodes = [], statuses = {} }) {
       height: '200px',
       boxSizing: 'border-box',
     }}>
-      {/* header */}
+      {/* header inside card */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
         <span style={{ fontFamily: FONT_MEDIUM, fontSize: '14px', lineHeight: '100%', color: '#FFFFFF' }}>剧集结构</span>
-        <span style={{ fontFamily: FONT, fontSize: '13px', lineHeight: '16px', color: '#FFFFFF99' }}>共 {total} 集</span>
+        {!isEmpty && <span style={{ fontFamily: FONT, fontSize: '13px', lineHeight: '16px', color: '#FFFFFF99' }}>共 {total} 集</span>}
       </div>
-      {/* grid */}
-      <div style={{
-        display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fit, minmax(32px, 1fr))',
-        gap: '6px',
-        overflowY: 'auto',
-        alignContent: 'flex-start',
-        flex: 1,
-        paddingRight: '2px',
-      }}>
-        {episodes.map((_, i) => (
-          <EpisodeCard key={i} index={i} status={statuses[i] ?? 'pending'} />
-        ))}
-      </div>
+      {isEmpty ? (
+        <div style={{
+          flex: 1,
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', gap: '8px',
+        }}>
+          <svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <rect x="4" y="6" width="24" height="20" rx="3" stroke="#FFFFFF26" strokeWidth="1.5" />
+            <path d="M4 12H28" stroke="#FFFFFF26" strokeWidth="1.5" />
+            <path d="M11 6V12" stroke="#FFFFFF26" strokeWidth="1.5" strokeLinecap="round" />
+            <path d="M21 6V12" stroke="#FFFFFF26" strokeWidth="1.5" strokeLinecap="round" />
+            <rect x="8" y="16" width="4" height="3" rx="1" fill="#FFFFFF26" />
+            <rect x="14" y="16" width="4" height="3" rx="1" fill="#FFFFFF26" />
+            <rect x="20" y="16" width="4" height="3" rx="1" fill="#FFFFFF26" />
+          </svg>
+          <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: '#FFFFFF33' }}>暂无剧集</span>
+        </div>
+      ) : (
+        <div style={{
+          display: 'grid',
+          gridTemplateColumns: 'repeat(auto-fit, minmax(32px, 1fr))',
+          gap: '6px',
+          overflowY: 'auto',
+          alignContent: 'flex-start',
+          flex: 1,
+          paddingRight: '2px',
+        }}>
+          {episodes.map((_, i) => (
+            <EpisodeCard key={i} index={i} status={statuses[i] ?? 'pending'} />
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -508,32 +530,6 @@ export default function GlobalSettings({ projectName = '这里是项目名称', 
             </svg>
             <ProjectNameHeading value={name} onChange={setName} />
           </div>
-          {/* Search */}
-          <div
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              height: '36px',
-              width: '232px',
-              paddingLeft: '12px',
-              paddingRight: '6px',
-              borderRadius: '8px',
-              justifyContent: 'space-between',
-              flexShrink: 0,
-              background: '#1D1E1E',
-              border: '1px solid #FFFFFF14',
-              outline: '1px solid #00000080',
-              boxSizing: 'border-box',
-            }}
-          >
-            <span style={{ flex: 1, fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF66' }}>搜索项目</span>
-            <div style={{ display: 'flex', alignItems: 'center', height: '24px', borderRadius: '6px', padding: '0 8px', gap: '4px' }}>
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
-                <path d="M7 12.667C10.13 12.667 12.667 10.13 12.667 7C12.667 3.87 10.13 1.333 7 1.333C3.87 1.333 1.333 3.87 1.333 7C1.333 10.13 3.87 12.667 7 12.667Z" stroke="#FFFFFF" strokeLinejoin="round" />
-                <path d="M11.074 11.074L13.902 13.902" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </div>
-          </div>
         </div>
 
         {/* Asset overview */}
@@ -541,14 +537,15 @@ export default function GlobalSettings({ projectName = '这里是项目名称', 
           <span style={{ fontFamily: FONT_MEDIUM, fontWeight: 500, fontSize: '16px', lineHeight: '20px', color: '#FFFFFF' }}>资产概况</span>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: '20px', alignSelf: 'stretch' }}>
             {[
-              { label: '角色', tab: 'char', count: chars.length },
-              { label: '场景', tab: 'scene', count: scenes.length },
-              { label: '道具', tab: 'prop', count: props.length },
-            ].map(({ label, tab, count }) => (
+              { label: '角色', tab: 'char', count: chars.length, items: chars },
+              { label: '场景', tab: 'scene', count: scenes.length, items: scenes },
+              { label: '道具', tab: 'prop', count: props.length, items: props },
+            ].map(({ label, tab, count, items }) => (
               <StatCard
                 key={label}
                 label={label}
                 count={count}
+                images={items.map((it) => it.imageUrl).filter(Boolean)}
                 onClick={tab ? () => onGoToSubject?.(tab) : undefined}
               />
             ))}

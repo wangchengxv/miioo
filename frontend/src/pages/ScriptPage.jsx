@@ -717,7 +717,6 @@ function InputCard({ onSend, width = '700px', disabled = false }) {
         gap: '0px',
         borderRadius: '20px',
         justifyContent: 'flex-end',
-        flexShrink: 0,
         padding: '1px',
         width,
         ...wrapperStyle,
@@ -1407,7 +1406,7 @@ function ScriptPanel({
           )}
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <PrimaryBtn onClick={onGoToSubject} disabled={!scriptContent}>
+            <PrimaryBtn onClick={() => onGoToSubject?.('char')} disabled={!scriptContent}>
               <span style={{ fontFamily: FONT_MEDIUM, fontSize: '14px', lineHeight: '18px', color: '#090909', whiteSpace: 'nowrap' }}>
                 开始提取主体
               </span>
@@ -1566,7 +1565,7 @@ export default function ScriptPage({ onGoToSubject, onEpisodesChange, phase: pha
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'center', alignSelf: 'stretch', paddingTop: '8px', overflow: 'visible', flexShrink: 0 }}>
-              <InputCard onSend={handleSend} width="700px" disabled={phase === 'thinking' || phase === 'streaming'} />
+              <InputCard onSend={handleSend} width="min(700px, 100%)" disabled={phase === 'thinking' || phase === 'streaming'} />
             </div>
           </div>
         </div>

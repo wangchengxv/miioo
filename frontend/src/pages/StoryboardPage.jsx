@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import BatchDownloadModal from '../components/BatchDownloadModal';
 import ShotViewerModal from '../components/ShotViewerModal';
 import Toggle from '../components/Toggle';
+import AssetPickerModal from '../components/AssetPickerModal';
 
 // ── API stubs (TODO: 替换为真实接口) ──────────────────────────────────────
 
@@ -63,6 +64,14 @@ function EpisodeSelector({ episodes, value, onChange }) {
   const [hovered, setHovered] = useState(false);
   const [hoveredIdx, setHoveredIdx] = useState(null);
   const rootRef = useRef(null);
+  const measureRef = useRef(null);
+  const [selectorWidth, setSelectorWidth] = useState(null);
+
+  // measure the longest episode name to fix the selector width
+  useEffect(() => {
+    if (!measureRef.current) return;
+    setSelectorWidth(measureRef.current.scrollWidth + 1);
+  }, [episodes]);
 
   useEffect(() => {
     if (!open) return;
@@ -74,16 +83,27 @@ function EpisodeSelector({ episodes, value, onChange }) {
   }, [open]);
 
   const dropdownMaxH = EPISODE_ITEM_H * EPISODE_MAX_VISIBLE + 8;
+  const longestEp = episodes.reduce((a, b) => (b.length > a.length ? b : a), '');
 
   return (
     <div ref={rootRef} style={{ position: 'relative', display: 'inline-flex', flexShrink: 0 }}>
+      {/* hidden span to measure longest text width */}
+      <span
+        ref={measureRef}
+        aria-hidden="true"
+        style={{
+          position: 'absolute', visibility: 'hidden', pointerEvents: 'none', whiteSpace: 'nowrap',
+          fontFamily: FONT_MEDIUM, fontSize: '14px', fontWeight: 500, lineHeight: '20px',
+          padding: '0 6px',
+        }}
+      >{longestEp}</span>
       {open ? (
         <div
           className="flex items-center gap-[6px] h-[28px] pl-[10px] pr-[6px] rounded-[6px] cursor-pointer border border-solid bg-input-bg-normal border-input-border-focus [outline:1px_solid_var(--color-stroke-outline)]"
-          style={{ boxShadow: '0px 0px 10px var(--color-glow)', minWidth: '80px' }}
+          style={{ boxShadow: '0px 0px 10px var(--color-glow)', width: selectorWidth ? `${selectorWidth + 32}px` : undefined }}
           onClick={() => setOpen(false)}
         >
-          <span className="flex-1 text-input-text-content text-font-size-14 shrink-0" style={{ fontFamily: FONT_MEDIUM, fontWeight: 500, lineHeight: '20px' }}>
+          <span className="flex-1 text-input-text-content text-font-size-14 truncate" style={{ fontFamily: FONT_MEDIUM, fontWeight: 500, lineHeight: '20px' }}>
             {value}
           </span>
           <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ flexShrink: 0 }}>
@@ -93,12 +113,12 @@ function EpisodeSelector({ episodes, value, onChange }) {
       ) : (
         <div
           className="flex items-center rounded-[6px] cursor-pointer"
-          style={{ height: '28px', padding: '0 6px', backgroundColor: hovered ? '#FFFFFF0F' : 'transparent', transition: 'background-color 0.12s' }}
+          style={{ height: '28px', padding: '0 6px', width: selectorWidth ? `${selectorWidth}px` : undefined, backgroundColor: hovered ? '#FFFFFF0F' : 'transparent', transition: 'background-color 0.12s' }}
           onMouseEnter={() => setHovered(true)}
           onMouseLeave={() => setHovered(false)}
           onClick={() => setOpen(true)}
         >
-          <span style={{ fontFamily: FONT_MEDIUM, fontSize: '14px', lineHeight: '20px', color: '#FFFFFFD9', fontWeight: 500 }}>
+          <span style={{ fontFamily: FONT_MEDIUM, fontSize: '14px', lineHeight: '20px', color: '#FFFFFFD9', fontWeight: 500, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
             {value}
           </span>
         </div>
@@ -106,7 +126,7 @@ function EpisodeSelector({ episodes, value, onChange }) {
       {open && (
         <div
           className="flex flex-col rounded-medium bg-select-bg border border-select-border absolute z-50"
-          style={{ top: 'calc(100% + 4px)', left: 0, minWidth: '100%', padding: '4px', boxShadow: '0px 4px 16px var(--color-select-shadow)', maxHeight: `${dropdownMaxH}px`, overflowY: episodes.length > EPISODE_MAX_VISIBLE ? 'auto' : 'visible' }}
+          style={{ top: 'calc(100% + 4px)', left: 0, width: selectorWidth ? `${selectorWidth + 32}px` : undefined, minWidth: '100%', padding: '4px', boxShadow: '0px 4px 16px var(--color-select-shadow)', maxHeight: `${dropdownMaxH}px`, overflowY: episodes.length > EPISODE_MAX_VISIBLE ? 'auto' : 'visible' }}
         >
           {episodes.map((ep, i) => {
             const isActive = ep === value;
@@ -118,9 +138,9 @@ function EpisodeSelector({ episodes, value, onChange }) {
                 style={{ height: `${EPISODE_ITEM_H}px`, cursor: 'pointer', backgroundColor: isActive ? 'var(--color-select-item-bg-active)' : isHov ? 'var(--color-select-item-bg-hover)' : 'transparent', color: isActive || isHov ? 'var(--color-select-item-text-hover)' : 'var(--color-select-item-text-normal)' }}
                 onMouseEnter={() => setHoveredIdx(i)}
                 onMouseLeave={() => setHoveredIdx(null)}
-                onClick={() => { onChange(ep); setOpen(false); }}
+                onClick={() => { onChange(ep); setOpen(false); setHovered(false); }}
               >
-                <span className="w-fit shrink-0 text-font-size-14 font-font-weight-regular" style={{ fontFamily: FONT }}>{ep}</span>
+                <span className="text-font-size-14 font-font-weight-regular" style={{ fontFamily: FONT, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', display: 'block', width: '100%' }}>{ep}</span>
               </div>
             );
           })}
@@ -557,29 +577,33 @@ function ImgUploadBtn({ label, onClick }) {
 // 上传占位卡
 function ImgUploadCard({ onUpload }) {
   const [hovered, setHovered] = useState(false);
+  const [assetPickerOpen, setAssetPickerOpen] = useState(false);
   const fileInputRef = useRef(null);
   return (
-    <div
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        height: '144px', borderRadius: '6px', flexShrink: 0,
-        border: `1px dashed ${hovered ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.08)'}`,
-        background: hovered ? '#222222' : '#1D1E1E',
-        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px',
-        transition: 'background 120ms, border-color 120ms',
-      }}
-    >
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="image/*"
-        style={{ display: 'none' }}
-        onChange={(e) => { if (e.target.files?.[0]) onUpload?.(e.target.files[0]); e.target.value = ''; }}
-      />
-      <ImgUploadBtn label="本地上传" onClick={() => fileInputRef.current?.click()} />
-      <ImgUploadBtn label="从资产库选择" onClick={() => {}} />
-    </div>
+    <>
+      <div
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        style={{
+          height: '144px', borderRadius: '6px', flexShrink: 0,
+          border: `1px dashed ${hovered ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.08)'}`,
+          background: hovered ? '#222222' : '#1D1E1E',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px',
+          transition: 'background 120ms, border-color 120ms',
+        }}
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="image/*"
+          style={{ display: 'none' }}
+          onChange={(e) => { if (e.target.files?.[0]) onUpload?.(e.target.files[0]); e.target.value = ''; }}
+        />
+        <ImgUploadBtn label="本地上传" onClick={() => fileInputRef.current?.click()} />
+        <ImgUploadBtn label="从资产库选择" onClick={() => setAssetPickerOpen(true)} />
+      </div>
+      <AssetPickerModal open={assetPickerOpen} onClose={() => setAssetPickerOpen(false)} onConfirm={() => {}} />
+    </>
   );
 }
 
@@ -702,6 +726,7 @@ function PanelUploadSlot({ label, onUpload, media, onRemove, accept = 'image/*' 
   const [btn1Pressed, setBtn1Pressed] = useState(false);
   const [btn2Hov, setBtn2Hov] = useState(false);
   const [btn2Pressed, setBtn2Pressed] = useState(false);
+  const [assetPickerOpen, setAssetPickerOpen] = useState(false);
   function handleFile(e) {
     const file = e.target.files[0];
     if (!file) return;
@@ -710,71 +735,75 @@ function PanelUploadSlot({ label, onUpload, media, onRemove, accept = 'image/*' 
     e.target.value = '';
   }
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignSelf: 'stretch' }}>
-      {label && <span style={{ fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.60)', fontFamily: FONT }}>{label}</span>}
-      <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-        <input ref={fileRef} type="file" accept={accept} style={{ display: 'none' }} onChange={handleFile} />
-        {media ? (
-          <div style={{ position: 'relative', width: '120px', height: '120px', borderRadius: '6px', overflow: 'hidden', flexShrink: 0, border: '1px solid rgba(255,255,255,0.12)' }}>
-            {media.type?.startsWith('video') ? (
-              <video src={media.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted playsInline />
-            ) : (
-              <img src={media.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-            )}
-            <div
-              onClick={onRemove}
-              style={{ position: 'absolute', top: '4px', right: '4px', width: '18px', height: '18px', borderRadius: '4px', backgroundColor: 'rgba(0,0,0,0.70)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-            >
-              <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 2L8 8M8 2L2 8" stroke="#FFFFFF" strokeWidth="1.2" strokeLinecap="round"/></svg>
+    <>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignSelf: 'stretch' }}>
+        {label && <span style={{ fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.60)', fontFamily: FONT }}>{label}</span>}
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <input ref={fileRef} type="file" accept={accept} style={{ display: 'none' }} onChange={handleFile} />
+          {media ? (
+            <div style={{ position: 'relative', width: '120px', height: '120px', borderRadius: '6px', overflow: 'hidden', flexShrink: 0, border: '1px solid rgba(255,255,255,0.12)' }}>
+              {media.type?.startsWith('video') ? (
+                <video src={media.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted playsInline />
+              ) : (
+                <img src={media.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              )}
+              <div
+                onClick={onRemove}
+                style={{ position: 'absolute', top: '4px', right: '4px', width: '18px', height: '18px', borderRadius: '4px', backgroundColor: 'rgba(0,0,0,0.70)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+              >
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 2L8 8M8 2L2 8" stroke="#FFFFFF" strokeWidth="1.2" strokeLinecap="round"/></svg>
+              </div>
             </div>
-          </div>
-        ) : (
-          <div
-            onMouseEnter={() => setHov(true)}
-            onMouseLeave={() => setHov(false)}
-            style={{
-              width: '120px', height: '120px', borderRadius: '6px', flexShrink: 0,
-              border: `1px dashed ${hov ? 'rgba(255,255,255,0.28)' : 'rgba(255,255,255,0.08)'}`,
-              backgroundColor: '#1D1E1E',
-              display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px',
-              transition: 'border-color 0.12s',
-            }}
-          >
+          ) : (
             <div
-              onClick={() => fileRef.current?.click()}
-              onMouseEnter={() => setBtn1Hov(true)}
-              onMouseLeave={() => { setBtn1Hov(false); setBtn1Pressed(false); }}
-              onMouseDown={() => setBtn1Pressed(true)}
-              onMouseUp={() => setBtn1Pressed(false)}
+              onMouseEnter={() => setHov(true)}
+              onMouseLeave={() => setHov(false)}
               style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'center', height: '24px', paddingInline: '6px', borderRadius: '6px',
-                backgroundColor: btn1Pressed ? '#1a1a1a' : btn1Hov ? '#222323' : '#161616',
-                border: '1px solid rgba(255,255,255,0.08)', outline: '1px solid #00000080',
-                cursor: 'pointer', fontSize: '12px', color: btn1Hov ? 'rgba(255,255,255,0.70)' : 'rgba(255,255,255,0.40)',
-                fontFamily: FONT, whiteSpace: 'nowrap', transition: 'background-color 0.10s, color 0.10s',
+                width: '120px', height: '120px', borderRadius: '6px', flexShrink: 0,
+                border: `1px dashed ${hov ? 'rgba(255,255,255,0.28)' : 'rgba(255,255,255,0.08)'}`,
+                backgroundColor: '#1D1E1E',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                transition: 'border-color 0.12s',
               }}
             >
-              本地上传
+              <div
+                onClick={() => fileRef.current?.click()}
+                onMouseEnter={() => setBtn1Hov(true)}
+                onMouseLeave={() => { setBtn1Hov(false); setBtn1Pressed(false); }}
+                onMouseDown={() => setBtn1Pressed(true)}
+                onMouseUp={() => setBtn1Pressed(false)}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', height: '24px', paddingInline: '6px', borderRadius: '6px',
+                  backgroundColor: btn1Pressed ? '#1a1a1a' : btn1Hov ? '#222323' : '#161616',
+                  border: '1px solid rgba(255,255,255,0.08)', outline: '1px solid #00000080',
+                  cursor: 'pointer', fontSize: '12px', color: btn1Hov ? 'rgba(255,255,255,0.70)' : 'rgba(255,255,255,0.40)',
+                  fontFamily: FONT, whiteSpace: 'nowrap', transition: 'background-color 0.10s, color 0.10s',
+                }}
+              >
+                本地上传
+              </div>
+              <div
+                onClick={() => setAssetPickerOpen(true)}
+                onMouseEnter={() => setBtn2Hov(true)}
+                onMouseLeave={() => { setBtn2Hov(false); setBtn2Pressed(false); }}
+                onMouseDown={() => setBtn2Pressed(true)}
+                onMouseUp={() => setBtn2Pressed(false)}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', height: '24px', paddingInline: '6px', borderRadius: '6px',
+                  backgroundColor: btn2Pressed ? '#1a1a1a' : btn2Hov ? '#222323' : '#161616',
+                  border: '1px solid rgba(255,255,255,0.08)', outline: '1px solid #00000080',
+                  cursor: 'pointer', fontSize: '12px', color: btn2Hov ? 'rgba(255,255,255,0.70)' : 'rgba(255,255,255,0.40)',
+                  fontFamily: FONT, whiteSpace: 'nowrap', transition: 'background-color 0.10s, color 0.10s',
+                }}
+              >
+                从资产库选择
+              </div>
             </div>
-            <div
-              onMouseEnter={() => setBtn2Hov(true)}
-              onMouseLeave={() => { setBtn2Hov(false); setBtn2Pressed(false); }}
-              onMouseDown={() => setBtn2Pressed(true)}
-              onMouseUp={() => setBtn2Pressed(false)}
-              style={{
-                display: 'flex', alignItems: 'center', justifyContent: 'center', height: '24px', paddingInline: '6px', borderRadius: '6px',
-                backgroundColor: btn2Pressed ? '#1a1a1a' : btn2Hov ? '#222323' : '#161616',
-                border: '1px solid rgba(255,255,255,0.08)', outline: '1px solid #00000080',
-                cursor: 'pointer', fontSize: '12px', color: btn2Hov ? 'rgba(255,255,255,0.70)' : 'rgba(255,255,255,0.40)',
-                fontFamily: FONT, whiteSpace: 'nowrap', transition: 'background-color 0.10s, color 0.10s',
-              }}
-            >
-              从资产库选择
-            </div>
-          </div>
-        )}
+          )}
+        </div>
       </div>
-    </div>
+      <AssetPickerModal open={assetPickerOpen} onClose={() => setAssetPickerOpen(false)} onConfirm={() => {}} />
+    </>
   );
 }
 
@@ -823,16 +852,19 @@ function serializeEditor(el) {
   return out;
 }
 
-function rebuildEditorDOM(el, text, allSubjects) {
+function rebuildEditorDOM(el, text, allSubjects, typeOverrides = {}) {
+  // typeOverrides: { [name]: type } 优先级最高，用于保留已知的正确类型
   const segs = parseSegments(text, allSubjects);
   el.innerHTML = '';
   for (const seg of segs) {
     if (seg.kind === 'text') {
       if (seg.text) el.appendChild(document.createTextNode(seg.text));
     } else {
-      const color = SUBJECT_TYPE_COLOR[seg.type] ?? '#E2E24B';
+      const type = typeOverrides[seg.name] ?? seg.type;
+      const color = SUBJECT_TYPE_COLOR[type] ?? '#E2E24B';
       const span = document.createElement('span');
       span.dataset.mention = seg.name;
+      span.dataset.mentionType = type;
       span.contentEditable = 'false';
       span.textContent = `@${seg.name}`;
       span.style.cssText = [
@@ -925,6 +957,8 @@ function PanelPromptInput({ value, onChange, chars = [], scenes = [], props = []
   const wrapRef = useRef(null);
   const composingRef = useRef(false);
   const suppressSyncRef = useRef(false);
+  const allSubjectsRef = useRef([]);
+  const typeOverridesRef = useRef({});
 
   const borderColor = focused ? 'rgba(45,195,225,0.60)' : hov ? 'rgba(255,255,255,0.20)' : 'rgba(255,255,255,0.08)';
   const outlineColor = focused ? 'rgba(45,195,225,0.12)' : '#00000080';
@@ -935,14 +969,29 @@ function PanelPromptInput({ value, onChange, chars = [], scenes = [], props = []
     ...scenes.map((s) => ({ ...s, _type: 'scene' })),
     ...props.map((p) => ({ ...p, _type: 'prop' })),
   ];
+  allSubjectsRef.current = allSubjects;
+
+  // 从当前 DOM 读出已确认的 name→type 映射，防止重建时因同名条目顺序问题丢失正确类型
+  function readDOMTypes(el) {
+    const map = {};
+    for (const node of el.childNodes) {
+      if (node.dataset?.mention && node.dataset?.mentionType) {
+        map[node.dataset.mention] = node.dataset.mentionType;
+      }
+    }
+    return map;
+  }
 
   function syncToValue(el) {
     if (suppressSyncRef.current) { suppressSyncRef.current = false; return; }
     const caretOffset = getCaretOffset(el);
+    // 把当前 DOM 里已有的类型合并进持久化 ref，防止 rebuild 时丢失
+    const domTypes = readDOMTypes(el);
+    typeOverridesRef.current = { ...typeOverridesRef.current, ...domTypes };
     const raw = serializeEditor(el);
     const clamped = raw.slice(0, MAX_PROMPT_LEN);
     onChange(clamped);
-    rebuildEditorDOM(el, clamped, allSubjects);
+    rebuildEditorDOM(el, clamped, allSubjects, typeOverridesRef.current);
     setCaretOffset(el, caretOffset);
     const textBefore = clamped.slice(0, caretOffset);
     const atIdx = textBefore.lastIndexOf('@');
@@ -958,7 +1007,7 @@ function PanelPromptInput({ value, onChange, chars = [], scenes = [], props = []
 
   useEffect(() => {
     if (focused && editorRef.current) {
-      rebuildEditorDOM(editorRef.current, value, allSubjects);
+      rebuildEditorDOM(editorRef.current, value, allSubjects, typeOverridesRef.current);
       setCaretOffset(editorRef.current, value.length);
     }
   }, [focused]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -1103,7 +1152,7 @@ function PanelPromptInput({ value, onChange, chars = [], scenes = [], props = []
     if (el) syncToValue(el);
   }
 
-  function handleSelectMention(name) {
+  function handleSelectMention(name, type) {
     const el = editorRef.current;
     if (!el) return;
     const caretOffset = getCaretOffset(el);
@@ -1115,9 +1164,12 @@ function PanelPromptInput({ value, onChange, chars = [], scenes = [], props = []
     onChange(newVal);
     setMentionQuery(null);
     suppressSyncRef.current = true;
+    // 读出已有类型映射，再把本次选中的类型合并进去
+    const typeOverrides = { ...readDOMTypes(el), [name]: type };
     requestAnimationFrame(() => {
       if (!editorRef.current) return;
-      rebuildEditorDOM(editorRef.current, newVal, allSubjects);
+      suppressSyncRef.current = false;
+      rebuildEditorDOM(editorRef.current, newVal, allSubjectsRef.current, typeOverrides);
       setCaretOffset(editorRef.current, atIdx + name.length + 2);
     });
   }
@@ -1529,29 +1581,33 @@ function GenerateVideoPanel({ shot, chars = [], scenes = [], props = [], onClose
 // 视频上传占位卡
 function VideoUploadCard({ onUpload }) {
   const [hovered, setHovered] = useState(false);
+  const [assetPickerOpen, setAssetPickerOpen] = useState(false);
   const fileInputRef = useRef(null);
   return (
-    <div
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        height: '144px', borderRadius: '6px', flexShrink: 0,
-        border: `1px dashed ${hovered ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.08)'}`,
-        background: hovered ? '#222222' : '#1D1E1E',
-        display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px',
-        transition: 'background 120ms, border-color 120ms',
-      }}
-    >
-      <input
-        ref={fileInputRef}
-        type="file"
-        accept="video/*"
-        style={{ display: 'none' }}
-        onChange={(e) => { if (e.target.files?.[0]) onUpload?.(e.target.files[0]); e.target.value = ''; }}
-      />
-      <ImgUploadBtn label="本地上传" onClick={() => fileInputRef.current?.click()} />
-      <ImgUploadBtn label="从资产库选择" onClick={() => {}} />
-    </div>
+    <>
+      <div
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        style={{
+          height: '144px', borderRadius: '6px', flexShrink: 0,
+          border: `1px dashed ${hovered ? 'rgba(255,255,255,0.25)' : 'rgba(255,255,255,0.08)'}`,
+          background: hovered ? '#222222' : '#1D1E1E',
+          display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px',
+          transition: 'background 120ms, border-color 120ms',
+        }}
+      >
+        <input
+          ref={fileInputRef}
+          type="file"
+          accept="video/*"
+          style={{ display: 'none' }}
+          onChange={(e) => { if (e.target.files?.[0]) onUpload?.(e.target.files[0]); e.target.value = ''; }}
+        />
+        <ImgUploadBtn label="本地上传" onClick={() => fileInputRef.current?.click()} />
+        <ImgUploadBtn label="从资产库选择" onClick={() => setAssetPickerOpen(true)} />
+      </div>
+      <AssetPickerModal open={assetPickerOpen} onClose={() => setAssetPickerOpen(false)} onConfirm={() => {}} />
+    </>
   );
 }
 
@@ -1994,7 +2050,7 @@ function CharMentionDropdown({ chars, query, onSelect, onClose, triggerRef }) {
 // ─── 主体 @ 下拉（角色/场景/道具，用于提示词输入框）─────────────────────────────
 
 const SUBJECT_TYPE_LABEL = { char: '角色', scene: '场景', prop: '道具' };
-const SUBJECT_TYPE_COLOR = { char: '#E2E24B', scene: '#4BE2C3', prop: '#E28B4B' };
+const SUBJECT_TYPE_COLOR = { char: '#E2E24B', scene: '#4BE2C3', prop: '#4B9EE2' };
 
 function SubjectMentionDropdown({ chars, scenes, props, query, onSelect, onClose, triggerRef }) {
   const ref = useRef(null);
@@ -2249,491 +2305,273 @@ function AddSlotBtn({ onClick }) {
   );
 }
 
-// ─── 旁白配音列 ───────────────────────────────────────────────────────────────
+// ─── 旁白配音弹窗 ─────────────────────────────────────────────────────────────
 
-function NarrationCol({ segments, onChange, chars }) {
-  const [editing, setEditing] = useState(false);
-  const [mentionQuery, setMentionQuery] = useState(null);
-  const [replacingIdx, setReplacingIdx] = useState(null);
-  const editorRef = useRef(null);
-  const wrapRef = useRef(null);
-  const labelRefs = useRef({});
-  const composingRef = useRef(false);
-  const suppressSyncRef = useRef(false);
+const SPEED_OPTIONS = [0.5,0.6,0.7,0.8,0.9,1.0,1.1,1.2,1.3,1.4,1.5,1.6,1.7,1.8,1.9,2.0];
 
-  // chars 作为 allSubjects（只有 char 类型）
-  const charSubjects = chars.map((c) => ({ ...c, _type: 'char' }));
+function VoiceDubModal({ open, onClose, chars = [], initialData = {}, onSaveGlobal, onSaveCurrent }) {
+  const [role, setRole] = useState(initialData.role ?? '旁白');
+  const [speed, setSpeed] = useState(initialData.speed ?? 1.0);
+  const [volume, setVolume] = useState(initialData.volume ?? 70);
+  const [lines, setLines] = useState(initialData.lines ?? '');
+  const [roleOpen, setRoleOpen] = useState(false);
+  const [roleHov, setRoleHov] = useState(null);
+  const roleDropdownRef = useRef(null);
+  const [closeBtnHov, setCloseBtnHov] = useState(false);
+  const [globalBtnHov, setGlobalBtnHov] = useState(false);
+  const [globalBtnPress, setGlobalBtnPress] = useState(false);
+  const [saveBtnHov, setSaveBtnHov] = useState(false);
+  const [saveBtnPress, setSaveBtnPress] = useState(false);
+  const [textareaFocus, setTextareaFocus] = useState(false);
+  const volTrackRef = useRef(null);
+  const draggingVol = useRef(false);
+  const speedTrackRef = useRef(null);
+  const draggingSpeed = useRef(false);
 
-  function segmentsToText(segs) {
-    return segs.map((s) => (s.type === 'char' ? `@${s.value}` : s.value)).join('');
-  }
-
-  function textToSegments(text) {
-    const parts = text.split(/(@[一-龥a-zA-Z0-9_]+)/g);
-    return parts
-      .filter((p) => p.length > 0)
-      .map((p) => {
-        if (p.startsWith('@')) return { type: 'char', value: p.slice(1) };
-        return { type: 'text', value: p };
-      });
-  }
-
-  function getCurrentText() {
-    const el = editorRef.current;
-    return el ? serializeEditor(el) : '';
-  }
-
-  function activate() {
-    setEditing(true);
-  }
-
-  function commit() {
-    setEditing(false);
-    setMentionQuery(null);
-    const text = getCurrentText();
-    onChange(textToSegments(text));
-  }
-
-  // 编辑态挂载后初始化 DOM
   useEffect(() => {
-    if (editing && editorRef.current) {
-      const initText = segmentsToText(segments);
-      rebuildEditorDOM(editorRef.current, initText, charSubjects);
-      setCaretOffset(editorRef.current, initText.length);
-      editorRef.current.focus();
+    if (open) {
+      setRole(initialData.role ?? '旁白');
+      setSpeed(initialData.speed ?? 1.0);
+      setVolume(initialData.volume ?? 70);
+      setLines(initialData.lines ?? '');
+      setRoleOpen(false);
+      setGlobalBtnHov(false);
+      setGlobalBtnPress(false);
+      setSaveBtnHov(false);
+      setSaveBtnPress(false);
     }
-  }, [editing]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // 原生 beforeinput：阻止在 mention span 内输入
+  function calcSpeedFromX(clientX) {
+    const track = speedTrackRef.current;
+    if (!track) return;
+    const rect = track.getBoundingClientRect();
+    const pct = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
+    const idx = Math.round(pct * (SPEED_OPTIONS.length - 1));
+    setSpeed(SPEED_OPTIONS[idx]);
+  }
+
+  function calcVolFromX(clientX) {
+    const track = volTrackRef.current;
+    if (!track) return;
+    const rect = track.getBoundingClientRect();
+    const pct = Math.min(100, Math.max(0, Math.round(((clientX - rect.left) / rect.width) * 100)));
+    setVolume(pct);
+  }
+
   useEffect(() => {
-    if (!editing) return;
-    const el = editorRef.current;
-    if (!el) return;
-    function nativeBeforeInput(e) {
-      if (composingRef.current) return;
-      const sel = window.getSelection();
-      if (!sel || sel.rangeCount === 0) return;
-      const range = sel.getRangeAt(0);
-      for (const node of el.childNodes) {
-        if (!node.dataset?.mention) continue;
-        const nodeRange = document.createRange();
-        nodeRange.selectNode(node);
-        if (
-          range.compareBoundaryPoints(Range.START_TO_END, nodeRange) > 0 &&
-          range.compareBoundaryPoints(Range.END_TO_START, nodeRange) < 0
-        ) {
-          e.preventDefault();
-          return;
-        }
+    if (!open) return;
+    function onMove(e) {
+      const x = e.touches ? e.touches[0].clientX : e.clientX;
+      if (draggingVol.current) calcVolFromX(x);
+      if (draggingSpeed.current) calcSpeedFromX(x);
+    }
+    function onUp() { draggingVol.current = false; draggingSpeed.current = false; }
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+  }, [open]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // 点击下拉框外部时收起
+  useEffect(() => {
+    if (!roleOpen) return;
+    function onDown(e) {
+      if (roleDropdownRef.current && !roleDropdownRef.current.contains(e.target)) {
+        setRoleOpen(false);
       }
     }
-    el.addEventListener('beforeinput', nativeBeforeInput);
-    return () => el.removeEventListener('beforeinput', nativeBeforeInput);
-  }, [editing]); // eslint-disable-line react-hooks/exhaustive-deps
-
-  function syncToValue(el) {
-    if (suppressSyncRef.current) { suppressSyncRef.current = false; return; }
-    const caretOffset = getCaretOffset(el);
-    const raw = serializeEditor(el);
-    rebuildEditorDOM(el, raw, charSubjects);
-    setCaretOffset(el, caretOffset);
-    const textBefore = raw.slice(0, caretOffset);
-    const atIdx = textBefore.lastIndexOf('@');
-    if (atIdx !== -1) {
-      const fragment = textBefore.slice(atIdx + 1);
-      if (!fragment.includes(' ') && !fragment.includes('\n')) {
-        setMentionQuery(fragment);
-        return;
-      }
-    }
-    setMentionQuery(null);
-  }
-
-  function handleInput() {
-    if (composingRef.current) return;
-    const el = editorRef.current;
-    if (el) syncToValue(el);
-  }
-
-  function handleCompositionStart() { composingRef.current = true; }
-  function handleCompositionEnd() {
-    composingRef.current = false;
-    const el = editorRef.current;
-    if (el) syncToValue(el);
-  }
-
-  function handleKeyDown(e) {
-    if (e.key === 'Escape') { commit(); return; }
-    const el = editorRef.current;
-    if (!el) return;
-    const sel = window.getSelection();
-    if (!sel || sel.rangeCount === 0) return;
-    const range = sel.getRangeAt(0);
-
-    if (e.key === 'Backspace' || e.key === 'Delete') {
-      for (const node of el.childNodes) {
-        if (!node.dataset?.mention) continue;
-        const nodeRange = document.createRange();
-        nodeRange.selectNode(node);
-        const collapsed = range.collapsed;
-
-        if (collapsed && e.key === 'Backspace') {
-          const afterRange = document.createRange();
-          afterRange.setStartAfter(node);
-          afterRange.collapse(true);
-          if (range.compareBoundaryPoints(Range.START_TO_START, afterRange) === 0) {
-            e.preventDefault();
-            const caretOffset = getCaretOffset(el) - (node.dataset.mention.length + 1);
-            node.remove();
-            const raw = serializeEditor(el);
-            rebuildEditorDOM(el, raw, charSubjects);
-            setCaretOffset(el, Math.max(0, caretOffset));
-            setMentionQuery(null);
-            return;
-          }
-        }
-        if (collapsed && e.key === 'Delete') {
-          const beforeRange = document.createRange();
-          beforeRange.setStartBefore(node);
-          beforeRange.collapse(true);
-          if (range.compareBoundaryPoints(Range.START_TO_START, beforeRange) === 0) {
-            e.preventDefault();
-            const caretOffset = getCaretOffset(el);
-            node.remove();
-            const raw = serializeEditor(el);
-            rebuildEditorDOM(el, raw, charSubjects);
-            setCaretOffset(el, caretOffset);
-            setMentionQuery(null);
-            return;
-          }
-        }
-        if (!collapsed) {
-          const inside =
-            range.compareBoundaryPoints(Range.START_TO_END, nodeRange) > 0 &&
-            range.compareBoundaryPoints(Range.END_TO_START, nodeRange) < 0;
-          if (inside) {
-            e.preventDefault();
-            const caretOffset = getCaretOffset(el);
-            range.deleteContents();
-            const raw = serializeEditor(el);
-            rebuildEditorDOM(el, raw, charSubjects);
-            setCaretOffset(el, Math.max(0, caretOffset));
-            setMentionQuery(null);
-            return;
-          }
-        }
-      }
-    }
-
-    if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') {
-      for (const node of el.childNodes) {
-        if (!node.dataset?.mention) continue;
-        if (e.key === 'ArrowLeft') {
-          const afterRange = document.createRange();
-          afterRange.setStartAfter(node);
-          afterRange.collapse(true);
-          if (range.collapsed && range.compareBoundaryPoints(Range.START_TO_START, afterRange) === 0) {
-            e.preventDefault();
-            const r = document.createRange();
-            r.setStartBefore(node);
-            r.collapse(true);
-            sel.removeAllRanges();
-            sel.addRange(r);
-            return;
-          }
-        } else {
-          const beforeRange = document.createRange();
-          beforeRange.setStartBefore(node);
-          beforeRange.collapse(true);
-          if (range.collapsed && range.compareBoundaryPoints(Range.START_TO_START, beforeRange) === 0) {
-            e.preventDefault();
-            const r = document.createRange();
-            r.setStartAfter(node);
-            r.collapse(true);
-            sel.removeAllRanges();
-            sel.addRange(r);
-            return;
-          }
-        }
-      }
-    }
-  }
-
-  function insertChar(name) {
-    const el = editorRef.current;
-    if (!el) return;
-    const caretOffset = getCaretOffset(el);
-    const raw = serializeEditor(el);
-    const textBefore = raw.slice(0, caretOffset);
-    const atIdx = textBefore.lastIndexOf('@');
-    const before = raw.slice(0, atIdx);
-    const after = raw.slice(caretOffset);
-    const newVal = `${before}@${name} ${after}`;
-    setMentionQuery(null);
-    suppressSyncRef.current = true;
-    requestAnimationFrame(() => {
-      if (!editorRef.current) return;
-      rebuildEditorDOM(editorRef.current, newVal, charSubjects);
-      setCaretOffset(editorRef.current, atIdx + name.length + 2);
-    });
-  }
-
-  function replaceChar(segIdx, newName) {
-    const next = segments.map((s, i) =>
-      i === segIdx ? { type: 'char', value: newName } : s
-    );
-    onChange(next);
-    setReplacingIdx(null);
-  }
-
-  const hasContent = segments.length > 0 && segments.some((s) => s.value.trim());
-
-  if (editing) {
-    return (
-      <div ref={wrapRef} style={{ position: 'relative', flex: 1, minHeight: 0, display: 'flex', flexDirection: 'column' }}>
-        {mentionQuery !== null && (
-          <CharMentionDropdown
-            chars={chars}
-            query={mentionQuery}
-            onSelect={insertChar}
-            onClose={() => setMentionQuery(null)}
-            triggerRef={wrapRef}
-          />
-        )}
-        <div
-          ref={editorRef}
-          contentEditable
-          suppressContentEditableWarning
-          onBlur={commit}
-          onKeyDown={handleKeyDown}
-          onInput={handleInput}
-          onCompositionStart={handleCompositionStart}
-          onCompositionEnd={handleCompositionEnd}
-          data-placeholder="输入台词，@ 指定角色…"
-          style={{
-            width: '100%',
-            flex: 1,
-            background: 'rgba(255,255,255,0.04)',
-            border: '1px solid rgba(45,195,225,0.60)',
-            borderRadius: '4px',
-            padding: '4px 6px',
-            fontSize: '14px',
-            lineHeight: '20px',
-            color: 'rgba(255,255,255,0.80)',
-            caretColor: 'rgba(255,255,255,0.80)',
-            outline: 'none',
-            fontFamily: '"Alibaba PuHuiTi 2.0", system-ui, sans-serif',
-            minHeight: '44px',
-            boxSizing: 'border-box',
-            wordBreak: 'break-all',
-            whiteSpace: 'pre-wrap',
-            overflowY: 'auto',
-          }}
-          className="[&:empty]:before:content-[attr(data-placeholder)] [&:empty]:before:text-[rgba(255,255,255,0.30)] [&:empty]:before:pointer-events-none"
-        />
-      </div>
-    );
-  }
-
-  if (!hasContent) {
-    return (
-      <AddSlotBtn onClick={activate} />
-    );
-  }
-
-  return (
-    <div
-      onClick={activate}
-      style={{
-        flex: 1,
-        fontSize: '14px',
-        lineHeight: '20px',
-        fontFamily: '"Alibaba PuHuiTi 2.0", system-ui, sans-serif',
-        cursor: 'text',
-        wordBreak: 'break-all',
-        overflowY: 'auto',
-        minHeight: 0,
-      }}
-    >
-      {segments.map((seg, i) =>
-        seg.type === 'char' ? (
-          <span key={i} ref={(el) => { labelRefs.current[i] = el; }} style={{ position: 'relative', display: 'inline-flex', verticalAlign: 'middle' }}>
-            <CharTag
-              name={seg.value}
-              onClick={(e) => { e.stopPropagation(); setReplacingIdx(replacingIdx === i ? null : i); }}
-            />
-            {replacingIdx === i && (
-              <CharReplaceDropdown
-                chars={chars}
-                current={seg.value}
-                onSelect={(name) => replaceChar(i, name)}
-                onClose={() => setReplacingIdx(null)}
-                triggerRef={{ current: labelRefs.current[i] }}
-              />
-            )}
-          </span>
-        ) : (
-          <span key={i} style={{ color: 'rgba(255,255,255,0.80)' }}>{seg.value}</span>
-        )
-      )}
-    </div>
-  );
-}
-
-// ─── 资产库选择弹窗（复用自主体页）─────────────────────────────────────────────
-
-function AssetPickerModal({ open, onClose, onConfirm, assets = [] }) {
-  const [selected, setSelected] = useState(new Set());
-  const [starOnly, setStarOnly] = useState(false);
-  const [closeHovered, setCloseHovered] = useState(false);
-  const [cancelHovered, setCancelHovered] = useState(false);
-  const [cancelPressed, setCancelPressed] = useState(false);
-  const [confirmHovered, setConfirmHovered] = useState(false);
-  const [confirmPressed, setConfirmPressed] = useState(false);
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [hoveredCard, setHoveredCard] = useState(null);
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [roleOpen]);
 
   if (!open) return null;
 
-  const toggle = (id) => setSelected((prev) => {
-    const next = new Set(prev);
-    next.has(id) ? next.delete(id) : next.add(id);
-    return next;
-  });
+  // 语速 thumb 位置：基于 SPEED_OPTIONS 索引精确对齐
+  const speedIdx = SPEED_OPTIONS.indexOf(speed);
+  const speedPct = speedIdx >= 0 ? (speedIdx / (SPEED_OPTIONS.length - 1)) * 100 : ((speed - 0.5) / 1.5) * 100;
 
-  const handleConfirm = () => {
-    onConfirm?.(Array.from(selected));
-    onClose?.();
-  };
+  // 坐标轴刻度：0.5 / 0.875 / 1.25 / 1.625 / 2.0 → 均匀 5 点
+  const SPEED_TICKS = [
+    { label: '0.5×', pct: 0 },
+    { label: '1.0×', pct: ((1.0 - 0.5) / 1.5) * 100 },
+    { label: '1.5×', pct: ((1.5 - 0.5) / 1.5) * 100 },
+    { label: '2.0×', pct: 100 },
+  ];
+
+  const labelStyle = { fontSize: '13px', lineHeight: '18px', color: 'rgba(255,255,255,0.60)', fontFamily: FONT };
+  const fieldWrap = { display: 'flex', flexDirection: 'column', gap: '8px', alignSelf: 'stretch' };
+  const inputBoxBase = { display: 'flex', alignItems: 'center', height: '36px', width: '100%', borderRadius: '8px', padding: '0 12px', gap: '8px', boxSizing: 'border-box', backgroundColor: '#1D1E1E', outline: '1px solid rgba(0,0,0,0.5)', position: 'relative' };
+
+  // 按钮外层（渐变边框壳）— hover 时边框加强，press 时整体降透明度
+  const btnShell = (hov, press) => ({
+    display: 'flex', flexDirection: 'column', height: '36px', flexShrink: 0,
+    borderRadius: '8px', padding: '1px',
+    boxShadow: '3px 3px 8px rgba(0,0,0,0.4)',
+    backgroundImage: hov
+      ? 'linear-gradient(in oklab 148.76deg, oklab(94.7% -0.078 -0.022 / 45%) 3.64%, oklab(75.5% -0.102 -0.072 / 0%) 42.81%), linear-gradient(in oklab 180deg, #FFFFFF1E, #FFFFFF1E)'
+      : 'linear-gradient(in oklab 148.76deg, oklab(94.7% -0.078 -0.022 / 30%) 3.64%, oklab(75.5% -0.102 -0.072 / 0%) 42.81%), linear-gradient(in oklab 180deg, #FFFFFF14, #FFFFFF14)',
+    outline: '1px solid rgba(0,0,0,0.5)',
+    opacity: press ? 0.75 : 1,
+    cursor: 'pointer',
+    transition: 'opacity 0.08s',
+  });
+  // 按钮内层
+  const btnInner = () => ({
+    display: 'flex', alignItems: 'center', justifyContent: 'center',
+    flexGrow: 1, flexShrink: 1, flexBasis: '0%',
+    borderRadius: '7px', paddingInline: '15px', gap: '4px',
+    backgroundColor: '#161616',
+  });
 
   return createPortal(
     <div
-      style={{ position: 'fixed', inset: 0, zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
+      style={{ position: 'fixed', inset: 0, zIndex: 1200, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
       onClick={onClose}
     >
       <div
-        style={{ width: '800px', height: '600px', borderRadius: '16px', overflow: 'hidden', display: 'flex', flexDirection: 'column', background: '#161616', border: '1px solid rgba(255,255,255,0.08)' }}
+        style={{ width: '400px', borderRadius: '16px', overflow: 'visible', display: 'flex', flexDirection: 'column', background: '#161616', border: '1px solid rgba(255,255,255,0.08)' }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 24px', background: '#161616', flexShrink: 0 }}>
-          <span style={{ fontFamily: FONT_MEDIUM, fontWeight: 500, fontSize: '16px', lineHeight: '20px', color: '#FFFFFF' }}>从资产中选择</span>
-          <button
-            type="button"
-            onClick={onClose}
-            onMouseEnter={() => setCloseHovered(true)}
-            onMouseLeave={() => setCloseHovered(false)}
-            style={{ background: closeHovered ? 'rgba(255,255,255,0.08)' : 'transparent', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', width: '28px', height: '28px', borderRadius: '6px', transition: 'background 100ms', flexShrink: 0 }}
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <path d="M12 4L4 12M4 4l8 8" stroke={closeHovered ? 'rgba(255,255,255,0.8)' : '#FFFFFF66'} strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 24px', borderTopLeftRadius: '16px', borderTopRightRadius: '16px', background: '#161616', flexShrink: 0 }}>
+          <span style={{ fontFamily: FONT_MEDIUM, fontWeight: 500, fontSize: '16px', lineHeight: '20px', color: '#FFFFFF' }}>配音设置</span>
+          <button type="button" onClick={onClose}
+            onMouseEnter={() => setCloseBtnHov(true)} onMouseLeave={() => setCloseBtnHov(false)}
+            style={{ background: closeBtnHov ? 'rgba(255,255,255,0.08)' : 'transparent', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', width: '28px', height: '28px', borderRadius: '6px', transition: 'background 0.1s' }}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none"><path d="M12 4L4 12M4 4l8 8" stroke={closeBtnHov ? 'rgba(255,255,255,0.8)' : 'rgba(255,255,255,0.4)'} strokeWidth="1.5" strokeLinecap="round" /></svg>
           </button>
         </div>
 
-        {/* toolbar */}
-        <div style={{ display: 'flex', alignItems: 'center', padding: '8px 24px', gap: '12px', justifyContent: 'space-between', background: '#161616', flexShrink: 0 }}>
-          <div
-            style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', flexShrink: 0 }}
-            onClick={() => setStarOnly((v) => !v)}
-          >
-            <div style={{ position: 'relative', width: '14px', height: '14px', borderRadius: '3px', flexShrink: 0, border: '1px solid rgba(255,255,255,0.2)', outline: '1px solid var(--color-stroke-outline)', background: starOnly ? 'var(--color-checkbox-bg-active)' : 'var(--color-checkbox-bg-normal)', transition: 'background 100ms' }}>
-              {starOnly && (
-                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{ position: 'absolute', left: '50%', top: '50%', translate: '-50% -50%' }}>
-                  <path d="M3.333 8L6.667 11.333L13.333 4.667" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
+        {/* content */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '8px 24px', background: '#161616' }}>
+
+          {/* 配音角色 */}
+          <div style={fieldWrap}>
+            <span style={labelStyle}>配音角色</span>
+            <div ref={roleDropdownRef} style={{ ...inputBoxBase, border: `1px solid ${roleOpen ? 'rgba(45,195,225,0.6)' : 'rgba(255,255,255,0.08)'}`, cursor: 'pointer' }}
+              onClick={() => setRoleOpen((v) => !v)}>
+              <span style={{ flex: 1, fontSize: '14px', lineHeight: '18px', color: role ? 'rgba(255,255,255,0.80)' : 'rgba(255,255,255,0.25)', fontFamily: FONT }}>{role || '请选择角色'}</span>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ transform: roleOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }}><path d="M4 6l4 4 4-4" stroke="rgba(255,255,255,0.4)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" /></svg>
+              {roleOpen && (
+                <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, background: '#1D1E1E', border: '1px solid rgba(255,255,255,0.10)', borderRadius: '8px', zIndex: 20, overflow: 'hidden', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}
+                  onClick={(e) => e.stopPropagation()}>
+                  {/* 置顶固定选项：旁白 */}
+                  <div
+                    onMouseEnter={() => setRoleHov('旁白')} onMouseLeave={() => setRoleHov(null)}
+                    onClick={() => { setRole('旁白'); setRoleOpen(false); }}
+                    style={{ padding: '9px 12px', fontSize: '14px', lineHeight: '18px', color: role === '旁白' ? '#2DC3E1' : 'rgba(255,255,255,0.80)', fontFamily: FONT, cursor: 'pointer', background: role === '旁白' ? 'rgba(45,195,225,0.08)' : roleHov === '旁白' ? 'rgba(255,255,255,0.05)' : 'transparent', transition: 'background 0.1s' }}>
+                    旁白
+                  </div>
+                  {chars.length === 0 && (
+                    <div style={{ padding: '10px 12px', fontSize: '13px', color: 'rgba(255,255,255,0.30)', fontFamily: FONT }}>暂无角色</div>
+                  )}
+                  {chars.map((c) => (
+                    <div key={c.id ?? c.name}
+                      onMouseEnter={() => setRoleHov(c.name)} onMouseLeave={() => setRoleHov(null)}
+                      onClick={() => { setRole(c.name); setRoleOpen(false); }}
+                      style={{ padding: '9px 12px', fontSize: '14px', lineHeight: '18px', color: c.name === role ? '#2DC3E1' : 'rgba(255,255,255,0.80)', fontFamily: FONT, cursor: 'pointer', background: c.name === role ? 'rgba(45,195,225,0.08)' : roleHov === c.name ? 'rgba(255,255,255,0.05)' : 'transparent', transition: 'background 0.1s' }}>
+                      {c.name}
+                    </div>
+                  ))}
+                </div>
               )}
             </div>
-            <span style={{ fontFamily: FONT, fontSize: '13px', lineHeight: '18px', color: '#FFFFFF66', whiteSpace: 'nowrap' }}>仅显示星标资产</span>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', height: '36px', width: '232px', paddingLeft: '12px', paddingRight: '6px', borderRadius: '8px', justifyContent: 'space-between', flexShrink: 0, background: searchFocused ? 'rgba(45,195,225,0.04)' : '#1D1E1E', border: `1px solid ${searchFocused ? 'rgba(45,195,225,0.6)' : 'rgba(255,255,255,0.08)'}`, outline: searchFocused ? '3px solid rgba(45,195,225,0.08)' : '1px solid #00000080', transition: 'border-color 120ms, background 120ms' }}>
-            <input
-              placeholder="搜索资产"
-              onFocus={() => setSearchFocused(true)}
-              onBlur={() => setSearchFocused(false)}
-              style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF', caretColor: '#2DC3E1' }}
-              className="placeholder:text-[rgba(255,255,255,0.4)]"
-            />
-            <div style={{ display: 'flex', alignItems: 'center', height: '24px', borderRadius: '6px', padding: '0 8px', gap: '4px' }}>
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <path d="M7 12.667C10.13 12.667 12.667 10.13 12.667 7C12.667 3.87 10.13 1.333 7 1.333C3.87 1.333 1.333 3.87 1.333 7C1.333 10.13 3.87 12.667 7 12.667Z" stroke={searchFocused ? '#FFFFFF' : '#FFFFFF99'} strokeLinejoin="round" />
-                <path d="M11.074 11.074L13.902 13.902" stroke={searchFocused ? '#FFFFFF' : '#FFFFFF99'} strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </div>
-          </div>
-        </div>
 
-        {/* grid / empty state */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '8px 24px', display: 'flex', flexDirection: 'column', gap: '12px', background: '#161616' }}>
-          {assets.length === 0 ? (
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>
-              <svg width="100" height="100" viewBox="0 0 100 100" fill="none">
-                <rect width="100" height="100" rx="16" fill="#FFFFFF05" />
-                <path d="M22 42C22 38.686 24.686 36 28 36H46L52 42H72C75.314 42 78 44.686 78 48V68C78 71.314 75.314 74 72 74H28C24.686 74 22 71.314 22 68V42Z" fill="#FFFFFF0A" stroke="#FFFFFF1A" strokeWidth="1.5" strokeLinejoin="round" />
-                <rect x="34" y="50" width="32" height="16" rx="3" fill="#FFFFFF0D" stroke="#FFFFFF14" strokeWidth="1" />
-                <path d="M34 66L42 56L48 62L54 55L66 66" stroke="#FFFFFF26" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                <circle cx="60" cy="54" r="2.5" stroke="#FFFFFF26" strokeWidth="1.5" />
-              </svg>
-              <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '20px', color: '#FFFFFF40' }}>资产库暂无资产</span>
+          {/* 语速 */}
+          <div style={fieldWrap}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <span style={labelStyle}>语速</span>
+              <span style={{ fontSize: '12px', lineHeight: '18px', color: '#2DC3E1', fontFamily: FONT }}>{speed.toFixed(1)}×</span>
             </div>
-          ) : (
-            Array.from({ length: Math.ceil(assets.length / 4) }, (_, rowIdx) => (
-              <div key={rowIdx} style={{ display: 'flex', gap: '12px' }}>
-                {assets.slice(rowIdx * 4, rowIdx * 4 + 4).map((asset) => {
-                  const isSelected = selected.has(asset.id);
-                  const isHovered = hoveredCard === asset.id;
-                  return (
-                    <div
-                      key={asset.id}
-                      onClick={() => toggle(asset.id)}
-                      onMouseEnter={() => setHoveredCard(asset.id)}
-                      onMouseLeave={() => setHoveredCard(null)}
-                      style={{ flex: 1, height: '124px', borderRadius: '8px', overflow: 'hidden', position: 'relative', cursor: 'pointer', border: `1px solid ${isSelected ? '#2EC2E1' : isHovered ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.05)'}`, transition: 'border-color 100ms' }}
-                    >
-                      <div style={{ backgroundImage: `url(${asset.url})`, backgroundSize: 'cover', backgroundPosition: '50%', width: '100%', height: '100%', transition: 'opacity 100ms', opacity: isHovered && !isSelected ? 0.85 : 1 }} />
-                      <div style={{ position: 'absolute', top: '6px', right: '6px', padding: '2px' }}>
-                        <div style={{ position: 'relative', width: '14px', height: '14px', borderRadius: '3px', flexShrink: 0, border: '1px solid rgba(255,255,255,0.2)', outline: '1px solid var(--color-stroke-outline)', background: isSelected ? 'var(--color-checkbox-bg-active)' : 'var(--color-checkbox-bg-normal)', transition: 'background 100ms' }}>
-                          {isSelected && (
-                            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{ position: 'absolute', left: '50%', top: '50%', translate: '-50% -50%' }}>
-                              <path d="M3.333 8L6.667 11.333L13.333 4.667" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
-                            </svg>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', borderRadius: '8px', padding: '10px 12px', boxSizing: 'border-box', backgroundColor: '#1D1E1E', border: '1px solid rgba(255,255,255,0.08)', outline: '1px solid rgba(0,0,0,0.5)' }}>
+              {/* track 区域，左右各留 7px 让 thumb 不超出 */}
+              <div ref={speedTrackRef} style={{ position: 'relative', height: '14px', margin: '0 7px', cursor: 'pointer' }}
+                onMouseDown={(e) => { e.preventDefault(); draggingSpeed.current = true; calcSpeedFromX(e.clientX); }}>
+                {/* 底轨 */}
+                <div style={{ position: 'absolute', left: 0, right: 0, top: '50%', transform: 'translateY(-50%)', height: '3px', borderRadius: '2px', background: 'rgba(255,255,255,0.10)' }} />
+                {/* 已填充 */}
+                <div style={{ position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', height: '3px', borderRadius: '2px', background: '#2DC3E1', width: `${speedPct}%` }} />
+                {/* thumb */}
+                <div style={{ position: 'absolute', left: `${speedPct}%`, top: '50%', transform: 'translate(-50%,-50%)', width: '14px', height: '14px', borderRadius: '50%', background: '#FFFFFF', boxShadow: '0 0 0 2px #2DC3E1, 0 2px 6px rgba(0,0,0,0.4)', zIndex: 1, pointerEvents: 'none' }} />
               </div>
-            ))
-          )}
+              {/* 刻度轴：相对于 track 区域（含 7px 边距）精确对齐 */}
+              <div style={{ position: 'relative', height: '16px', margin: '0 7px' }}>
+                {SPEED_TICKS.map(({ label, pct }) => (
+                  <span key={label} style={{ position: 'absolute', left: `${pct}%`, transform: 'translateX(-50%)', fontSize: '11px', lineHeight: '16px', color: 'rgba(255,255,255,0.25)', fontFamily: FONT, whiteSpace: 'nowrap' }}>{label}</span>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* 音量 */}
+          <div style={fieldWrap}>
+            <span style={labelStyle}>音量</span>
+            <div style={{ ...inputBoxBase, border: '1px solid rgba(255,255,255,0.08)', cursor: 'default', userSelect: 'none' }}>
+              <div
+                ref={volTrackRef}
+                style={{ flex: 1, height: '20px', display: 'flex', alignItems: 'center', position: 'relative', cursor: 'pointer' }}
+                onMouseDown={(e) => { e.preventDefault(); draggingVol.current = true; calcVolFromX(e.clientX); }}>
+                {/* 底轨 */}
+                <div style={{ position: 'absolute', left: 0, right: 0, top: '50%', transform: 'translateY(-50%)', height: '4px', borderRadius: '2px', background: 'rgba(255,255,255,0.10)', pointerEvents: 'none' }} />
+                {/* 填充段 */}
+                <div style={{ position: 'absolute', left: 0, top: '50%', transform: 'translateY(-50%)', height: '4px', borderRadius: '2px', background: '#2DC3E1', width: `${volume}%`, pointerEvents: 'none' }} />
+                {/* thumb */}
+                <div style={{ position: 'absolute', left: `${volume}%`, top: '50%', transform: 'translate(-50%,-50%)', width: '12px', height: '12px', borderRadius: '50%', background: '#FFFFFF', boxShadow: '0 0 0 2px #2DC3E1, 0 2px 6px rgba(0,0,0,0.4)', pointerEvents: 'none' }} />
+              </div>
+              <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.40)', fontFamily: FONT, flexShrink: 0, minWidth: '30px', textAlign: 'right' }}>{volume}%</span>
+            </div>
+          </div>
+
+          {/* 台词 */}
+          <div style={fieldWrap}>
+            <span style={labelStyle}>台词</span>
+            <textarea
+              value={lines}
+              onChange={(e) => setLines(e.target.value)}
+              onFocus={() => setTextareaFocus(true)}
+              onBlur={() => setTextareaFocus(false)}
+              placeholder="输入台词内容…"
+              style={{ width: '100%', minHeight: '100px', borderRadius: '8px', padding: '10px 12px', boxSizing: 'border-box', background: '#1D1E1E', border: `1px solid ${textareaFocus ? 'rgba(45,195,225,0.6)' : 'rgba(255,255,255,0.08)'}`, outline: '1px solid rgba(0,0,0,0.5)', resize: 'vertical', fontSize: '14px', lineHeight: '20px', color: 'rgba(255,255,255,0.80)', fontFamily: FONT, caretColor: 'rgba(255,255,255,0.80)', transition: 'border-color 0.1s' }}
+              className="placeholder:text-[rgba(255,255,255,0.25)]"
+            />
+          </div>
         </div>
 
         {/* footer */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', justifyContent: 'flex-end', padding: '16px 24px', background: '#161616', flexShrink: 0, borderRadius: '0 0 16px 16px' }}>
-          <button
-            type="button"
-            onClick={onClose}
-            onMouseEnter={() => setCancelHovered(true)}
-            onMouseLeave={() => { setCancelHovered(false); setCancelPressed(false); }}
-            onMouseDown={() => setCancelPressed(true)}
-            onMouseUp={() => setCancelHovered(true)}
-            style={{ display: 'flex', alignItems: 'center', height: '36px', borderRadius: '8px', padding: '0 16px', cursor: 'pointer', background: cancelPressed ? '#1A1A1A' : cancelHovered ? '#1D1D1D' : '#161616', border: '1px solid rgba(255,255,255,0.05)', outline: '1px solid #00000080', boxShadow: 'rgba(0,0,0,0.4) 3px 3px 8px', transition: 'background 100ms' }}
-          >
-            <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: cancelHovered ? '#FFFFFFCC' : '#FFFFFF99', whiteSpace: 'nowrap', transition: 'color 100ms' }}>取消</span>
-          </button>
-          <button
-            type="button"
-            onClick={handleConfirm}
-            onMouseEnter={() => setConfirmHovered(true)}
-            onMouseLeave={() => { setConfirmHovered(false); setConfirmPressed(false); }}
-            onMouseDown={() => setConfirmPressed(true)}
-            onMouseUp={() => setConfirmHovered(true)}
-            style={{ display: 'flex', flexDirection: 'column', height: '36px', borderRadius: '8px', outline: '1px solid #00000080', boxShadow: 'rgba(0,0,0,0.4) 3px 3px 8px', padding: '1px', backgroundImage: 'linear-gradient(in oklab 148.76deg, oklab(94.7% -0.078 -0.022 / 30%) 3.64%, oklab(75.5% -0.102 -0.072 / 0%) 42.81%), linear-gradient(in oklab 180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.08))', cursor: 'pointer', border: 'none', transition: 'opacity 100ms', opacity: confirmPressed ? 0.75 : 1 }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', flex: 1, borderRadius: '7px', padding: '0 15px', background: confirmPressed ? '#111111' : confirmHovered ? '#1A1A1A' : '#161616', transition: 'background 100ms' }}>
-              <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF', whiteSpace: 'nowrap' }}>确定</span>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px', padding: '16px 24px', borderBottomLeftRadius: '16px', borderBottomRightRadius: '16px', background: '#161616' }}>
+          {/* 全局应用 */}
+          <div role="button" style={{ position: 'relative' }}
+            onMouseEnter={() => setGlobalBtnHov(true)} onMouseLeave={() => { setGlobalBtnHov(false); setGlobalBtnPress(false); }}
+            onMouseDown={() => setGlobalBtnPress(true)} onMouseUp={() => setGlobalBtnPress(false)}
+            onClick={() => { onSaveGlobal?.({ role, speed, volume, lines }); onClose(); }}>
+            <div style={btnShell(globalBtnHov, globalBtnPress)}>
+              <div style={btnInner()}>
+                <span style={{ fontSize: '13px', lineHeight: '18px', color: '#FFFFFF', fontFamily: FONT, whiteSpace: 'nowrap' }}>全局应用</span>
+              </div>
             </div>
-          </button>
+            {globalBtnHov && !globalBtnPress && (
+              <div style={{ position: 'absolute', bottom: 'calc(100% + 8px)', left: '50%', transform: 'translateX(-50%)', background: '#2A2A2A', border: '1px solid rgba(255,255,255,0.10)', borderRadius: '6px', padding: '6px 10px', whiteSpace: 'nowrap', fontSize: '12px', lineHeight: '18px', color: 'rgba(255,255,255,0.70)', fontFamily: FONT, pointerEvents: 'none', zIndex: 10, boxShadow: '0 4px 12px rgba(0,0,0,0.5)' }}>
+                把该角色的语速和音量应用到全局
+              </div>
+            )}
+          </div>
+          {/* 保存到当前分镜 */}
+          <div role="button" style={{ position: 'relative' }}
+            onMouseEnter={() => setSaveBtnHov(true)} onMouseLeave={() => { setSaveBtnHov(false); setSaveBtnPress(false); }}
+            onMouseDown={() => setSaveBtnPress(true)} onMouseUp={() => setSaveBtnPress(false)}
+            onClick={() => { onSaveCurrent?.({ role, speed, volume, lines }); onClose(); }}>
+            <div style={btnShell(saveBtnHov, saveBtnPress)}>
+              <div style={btnInner()}>
+                <span style={{ fontSize: '13px', lineHeight: '18px', color: '#FFFFFF', fontFamily: FONT, whiteSpace: 'nowrap' }}>保存到当前分镜</span>
+              </div>
+            </div>
+            {saveBtnHov && !saveBtnPress && (
+              <div style={{ position: 'absolute', bottom: 'calc(100% + 8px)', left: '50%', transform: 'translateX(-50%)', background: '#2A2A2A', border: '1px solid rgba(255,255,255,0.10)', borderRadius: '6px', padding: '6px 10px', whiteSpace: 'nowrap', fontSize: '12px', lineHeight: '18px', color: 'rgba(255,255,255,0.70)', fontFamily: FONT, pointerEvents: 'none', zIndex: 10, boxShadow: '0 4px 12px rgba(0,0,0,0.5)' }}>
+                仅在当前分镜使用该角色的语速和音量
+              </div>
+            )}
+          </div>
         </div>
       </div>
     </div>,
@@ -2741,31 +2579,339 @@ function AssetPickerModal({ open, onClose, onConfirm, assets = [] }) {
   );
 }
 
+// ─── 旁白配音列 ───────────────────────────────────────────────────────────────
+
+function NarrationItem({ item, onEdit, onDelete }) {
+  const [hovered, setHovered] = useState(false);
+  const [closeBtnPos, setCloseBtnPos] = useState(null);
+  const labelRef = useRef(null);
+
+  function handleMouseEnter() {
+    setHovered(true);
+    if (labelRef.current) {
+      const r = labelRef.current.getBoundingClientRect();
+      setCloseBtnPos({ top: r.top - 4, left: r.right - 10 });
+    }
+  }
+
+  function handleMouseLeave() {
+    setHovered(false);
+    setCloseBtnPos(null);
+  }
+
+  return (
+    <div
+      onMouseEnter={handleMouseEnter}
+      onMouseLeave={handleMouseLeave}
+      style={{ cursor: 'pointer', textAlign: 'left', width: '100%' }}
+      onClick={onEdit}
+    >
+      {item.role && (
+        <span ref={labelRef} style={{ display: 'inline-flex', alignItems: 'center' }}>
+          {item.role === '旁白'
+            ? <span style={{ display: 'inline-flex', alignItems: 'center', paddingInline: '4px', paddingBlock: '0px', borderRadius: '6px', boxShadow: 'inset 0 0 0 1px #FFFFFF14', background: '#8870FF1A', fontFamily: '"AlibabaPuHuiTi 2 55 Regular","Alibaba PuHuiTi 2.0",system-ui,sans-serif', color: '#E8A1FF', fontSize: '14px', lineHeight: '18px', flexShrink: 0 }}>旁白</span>
+            : <CharTag name={item.role} />
+          }
+        </span>
+      )}
+      {item.lines && (
+        <span style={{ fontSize: '14px', lineHeight: '20px', color: 'rgba(255,255,255,0.80)', fontFamily: FONT, wordBreak: 'break-all' }}>
+          {item.role ? ' ' : ''}{item.lines}
+        </span>
+      )}
+      {hovered && closeBtnPos && createPortal(
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onDelete(); }}
+          style={{ position: 'fixed', top: closeBtnPos.top, left: closeBtnPos.left, display: 'flex', alignItems: 'center', justifyContent: 'center', width: '14px', height: '14px', borderRadius: '50%', background: 'rgba(60,60,60,0.95)', border: '1px solid rgba(255,255,255,0.20)', cursor: 'pointer', padding: 0, zIndex: 9999 }}
+        >
+          <svg width="7" height="7" viewBox="0 0 8 8" fill="none">
+            <path d="M6 2L2 6M2 2l4 4" stroke="rgba(255,255,255,0.85)" strokeWidth="1.2" strokeLinecap="round" />
+          </svg>
+        </button>,
+        document.body
+      )}
+    </div>
+  );
+}
+
+function AddNarrationBtn({ onClick }) {
+  const [hovered, setHovered] = useState(false);
+  const [tooltipPos, setTooltipPos] = useState(null);
+  const btnRef = useRef(null);
+
+  function handleMouseEnter() {
+    setHovered(true);
+    if (btnRef.current) {
+      const r = btnRef.current.getBoundingClientRect();
+      setTooltipPos({ x: r.left + r.width / 2, y: r.top });
+    }
+  }
+
+  return (
+    <div style={{ flexShrink: 0 }}>
+      <button
+        ref={btnRef}
+        type="button"
+        onClick={onClick}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={() => { setHovered(false); setTooltipPos(null); }}
+        style={{ width: '20px', height: '20px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: hovered ? 'rgba(255,255,255,0.10)' : 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.10)', borderRadius: '4px', cursor: 'pointer', padding: 0, transition: 'background 100ms' }}
+      >
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+          <path d="M5 2v6M2 5h6" stroke="rgba(255,255,255,0.60)" strokeWidth="1.2" strokeLinecap="round" />
+        </svg>
+      </button>
+      {hovered && tooltipPos && createPortal(
+        <div style={{ position: 'fixed', left: tooltipPos.x, top: tooltipPos.y, transform: 'translate(-50%, calc(-100% - 6px))', whiteSpace: 'nowrap', background: '#2A2A2A', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '6px', padding: '5px 8px', fontSize: '12px', lineHeight: '16px', color: 'rgba(255,255,255,0.80)', fontFamily: FONT, pointerEvents: 'none', zIndex: 9999, boxShadow: '0 4px 12px rgba(0,0,0,0.4)' }}>
+          新增角色台词
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+}
+
+function NarrationCol({ segments, onChange, chars, globalVoiceParams = {}, onSaveGlobalVoice }) {
+  // dubList: 多条角色+台词记录，每条 { role, speed, volume, lines }
+  const [dubList, setDubList] = useState(null);
+  // editingIdx: null=新增, number=编辑第几条
+  const [editingIdx, setEditingIdx] = useState(null);
+  const [modalOpen, setModalOpen] = useState(false);
+
+  // 初始化：从 segments 同步一条记录
+  useEffect(() => {
+    if (dubList === null && segments.length > 0 && segments.some((s) => s.value.trim())) {
+      const role = segments.find((s) => s.type === 'char')?.value ?? '';
+      const lines = segments.map((s) => s.value).join('');
+      const globalForRole = role ? (globalVoiceParams[role] ?? {}) : {};
+      setDubList([{ role, speed: globalForRole.speed ?? 1.0, volume: globalForRole.volume ?? 70, lines }]);
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const list = dubList ?? [];
+  const hasContent = list.length > 0;
+
+  function mergeWithGlobal(data) {
+    const globalForRole = data?.role ? (globalVoiceParams[data.role] ?? {}) : {};
+    return {
+      speed: data?.speed ?? globalForRole.speed ?? 1.0,
+      volume: data?.volume ?? globalForRole.volume ?? 70,
+      role: data?.role ?? '',
+      lines: data?.lines ?? '',
+    };
+  }
+
+  function openAdd() {
+    setEditingIdx(null);
+    setModalOpen(true);
+  }
+
+  function openEdit(idx) {
+    setEditingIdx(idx);
+    setModalOpen(true);
+  }
+
+  function buildNext(data, usesGlobal = false) {
+    const next = list.length > 0 ? [...list] : [];
+    const entry = usesGlobal ? { ...data, _usesGlobal: true } : data;
+    if (editingIdx === null) {
+      next.push(entry);
+    } else {
+      next[editingIdx] = entry;
+    }
+    return next;
+  }
+
+  function handleSaveCurrent(data) {
+    const next = buildNext(data);
+    setDubList(next);
+    onChange(next.map((d) => ({ type: 'text', value: d.lines })));
+    setModalOpen(false);
+  }
+
+  function handleSaveGlobal(data) {
+    const next = buildNext(data, true);
+    setDubList(next);
+    onChange(next.map((d) => ({ type: 'text', value: d.lines })));
+    if (data.role) {
+      onSaveGlobalVoice?.(data.role, { speed: data.speed, volume: data.volume });
+    }
+    setModalOpen(false);
+  }
+
+  function handleDelete(idx) {
+    const next = list.filter((_, i) => i !== idx);
+    setDubList(next.length > 0 ? next : null);
+    onChange(next.map((d) => ({ type: 'text', value: d.lines })));
+  }
+
+  const modalInitialData = editingIdx !== null && list[editingIdx]
+    ? mergeWithGlobal(list[editingIdx])
+    : { role: '', speed: 1.0, volume: 70, lines: '' };
+
+  return (
+    <div style={{
+      width: 'calc(10% - 1px)',
+      minWidth: '120px',
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '8px',
+      padding: '12px',
+      borderRight: '1px solid rgba(255,255,255,0.08)',
+      alignSelf: 'stretch',
+    }}>
+      {/* 标题行 */}
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+        <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.60)', fontFamily: FONT }}>旁白配音</span>
+        {hasContent && (
+          <AddNarrationBtn onClick={openAdd} />
+        )}
+      </div>
+
+      {/* 内容区 */}
+      {!hasContent ? (
+        <AddSlotBtn onClick={openAdd} />
+      ) : (
+        <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', minHeight: 0 }}>
+          {list.map((item, idx) => (
+            <NarrationItem
+              key={idx}
+              item={item}
+              onEdit={() => openEdit(idx)}
+              onDelete={() => handleDelete(idx)}
+            />
+          ))}
+        </div>
+      )}
+
+      <VoiceDubModal
+        open={modalOpen}
+        onClose={() => setModalOpen(false)}
+        chars={chars}
+        initialData={modalInitialData}
+        onSaveCurrent={handleSaveCurrent}
+        onSaveGlobal={handleSaveGlobal}
+      />
+    </div>
+  );
+}
+
+// ─── (旧版内联编辑已废弃，保留以备参考) ─────────────────────────────────────
+
 // ─── 主体参考列 ───────────────────────────────────────────────────────────────
+
+function AddSlotDropdown({ anchorRef, onUpload, onAssetPicker, onClose }) {
+  const menuRef = useRef(null);
+  const [hovIdx, setHovIdx] = useState(null);
+
+  useEffect(() => {
+    function onDown(e) {
+      if (menuRef.current && !menuRef.current.contains(e.target) &&
+          anchorRef.current && !anchorRef.current.contains(e.target)) {
+        onClose();
+      }
+    }
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [onClose, anchorRef]);
+
+  const items = [
+    { label: '本地上传', action: onUpload },
+    { label: '从资产库选择', action: onAssetPicker },
+  ];
+
+  const anchor = anchorRef.current?.getBoundingClientRect();
+  if (!anchor) return null;
+
+  return createPortal(
+    <div
+      ref={menuRef}
+      style={{
+        position: 'fixed',
+        top: anchor.bottom + 4,
+        left: anchor.left,
+        zIndex: 9999,
+        backgroundColor: '#1D1E1E',
+        border: '1px solid rgba(255,255,255,0.10)',
+        borderRadius: '8px',
+        padding: '4px',
+        boxShadow: '0px 4px 16px rgba(0,0,0,0.50)',
+        minWidth: '120px',
+        display: 'flex',
+        flexDirection: 'column',
+        gap: '2px',
+      }}
+    >
+      {items.map((item, i) => (
+        <div
+          key={i}
+          onMouseEnter={() => setHovIdx(i)}
+          onMouseLeave={() => setHovIdx(null)}
+          onMouseDown={(e) => { e.preventDefault(); item.action(); onClose(); }}
+          style={{
+            height: '32px',
+            display: 'flex',
+            alignItems: 'center',
+            paddingInline: '10px',
+            borderRadius: '6px',
+            cursor: 'pointer',
+            backgroundColor: hovIdx === i ? 'rgba(255,255,255,0.08)' : 'transparent',
+            fontSize: '13px',
+            color: hovIdx === i ? '#FFFFFF' : 'rgba(255,255,255,0.70)',
+            fontFamily: '"Alibaba PuHuiTi 2.0", system-ui, sans-serif',
+            whiteSpace: 'nowrap',
+            transition: 'background-color 0.10s, color 0.10s',
+          }}
+        >
+          {item.label}
+        </div>
+      ))}
+    </div>,
+    document.body
+  );
+}
 
 function MainRefCol({ refs, onChange, chars }) {
   const [hoveredIdx, setHoveredIdx] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [assetPickerOpen, setAssetPickerOpen] = useState(false);
-  const [pendingSlot, setPendingSlot] = useState(null);
+  const [dropdownOpen, setDropdownOpen] = useState(false);
+  const addBtnRef = useRef(null);
+  const fileInputRef = useRef(null);
 
   function handleDelete(idx) {
     onChange(refs.filter((_, i) => i !== idx));
+  }
+
+  function handleFileSelect(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    onChange([...refs, { id: url, url, name: file.name, type: file.type }]);
+    e.target.value = '';
   }
 
   function handleAssetConfirm(ids) {
     // ids are asset IDs — URL resolution handled by data layer when integrated
   }
 
-  const slots = [0, 1, 2, 3];
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', width: '92px', flexShrink: 0 }}>
+      <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFileSelect} />
       <AssetPickerModal
         open={assetPickerOpen}
         onClose={() => setAssetPickerOpen(false)}
         onConfirm={handleAssetConfirm}
       />
+      {dropdownOpen && (
+        <AddSlotDropdown
+          anchorRef={addBtnRef}
+          onUpload={() => fileInputRef.current?.click()}
+          onAssetPicker={() => setAssetPickerOpen(true)}
+          onClose={() => setDropdownOpen(false)}
+        />
+      )}
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
         {[0, 1].map((row) => (
@@ -2846,10 +2992,11 @@ function MainRefCol({ refs, onChange, chars }) {
 
               if (idx === refs.length && refs.length < 4) {
                 return (
-                  <AddSlotBtn
-                    key={idx}
-                    onClick={() => setAssetPickerOpen(true)}
-                  />
+                  <div key={idx} ref={addBtnRef} style={{ display: 'inline-flex', flexShrink: 0 }}>
+                    <AddSlotBtn
+                      onClick={() => setDropdownOpen((v) => !v)}
+                    />
+                  </div>
                 );
               }
 
@@ -3201,58 +3348,29 @@ function MediaCol({ media, onUpload, accept, isVideo, label, onAIGenerate, shotM
 
         {/* hover 时弹出按钮（仅空白虚线区域） */}
         {isEmpty && hovered && (
-          <div style={{
-            display: 'flex',
-            flexDirection: 'column',
-            alignItems: 'center',
-            gap: '8px',
-          }}>
-            <div
-              onMouseDown={(e) => { e.stopPropagation(); fileInputRef.current?.click(); }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                height: '24px',
-                paddingInline: '6px',
-                borderRadius: '6px',
-                backgroundColor: '#161616',
-                border: '1px solid rgba(255,255,255,0.08)',
-                outline: '1px solid rgba(0,0,0,0.50)',
-                cursor: 'pointer',
-                fontSize: '12px',
-                color: 'rgba(255,255,255,0.60)',
-                fontFamily: '"Alibaba PuHuiTi 2.0", system-ui, sans-serif',
-                animation: 'slideUpBounce 300ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards',
-                animationDelay: '50ms',
-                opacity: 0,
-              }}
-            >
-              本地上传
-            </div>
-            <div
-              onMouseDown={(e) => { e.stopPropagation(); onAIGenerate?.(); }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                height: '24px',
-                width: '62px',
-                borderRadius: '6px',
-                backgroundColor: '#2DC3E1',
-                border: '1px solid #FFFFFF33',
-                outline: '1px solid rgba(0,0,0,0.50)',
-                cursor: 'pointer',
-                fontSize: '12px',
-                color: '#090909',
-                fontFamily: '"Alibaba PuHuiTi 2.0", system-ui, sans-serif',
-                animation: 'slideUpBounce 300ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards',
-                animationDelay: '0ms',
-                opacity: 0,
-              }}
-            >
-              AI生成
-            </div>
+          <div
+            onMouseDown={(e) => { e.stopPropagation(); onAIGenerate?.(); }}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: '24px',
+              paddingInline: '8px',
+              borderRadius: '6px',
+              backgroundColor: '#2DC3E1',
+              border: '1px solid #FFFFFF33',
+              outline: '1px solid rgba(0,0,0,0.50)',
+              cursor: 'pointer',
+              fontSize: '12px',
+              color: '#090909',
+              fontFamily: '"Alibaba PuHuiTi 2.0", system-ui, sans-serif',
+              animation: 'slideUpBounce 300ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards',
+              animationDelay: '0ms',
+              opacity: 0,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {isVideo ? '创作视频' : '创作图片'}
           </div>
         )}
       </div>
@@ -3492,28 +3610,15 @@ function TextEditCol({ label, value, onChange, isLast = false }) {
 
 // ─── 旁白配音列容器 ───────────────────────────────────────────────────────────
 
-function NarrationColWrapper({ shot, onChange, chars }) {
+function NarrationColWrapper({ shot, onChange, chars, globalVoiceParams, onSaveGlobalVoice }) {
   return (
-    <div style={{
-      width: 'calc(10% - 1px)',
-      minWidth: '120px',
-      display: 'flex',
-      flexDirection: 'column',
-      gap: '8px',
-      padding: '12px',
-      borderRight: '1px solid rgba(255,255,255,0.08)',
-      overflow: 'hidden',
-      alignSelf: 'stretch',
-    }}>
-      <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.60)', fontFamily: '"Alibaba PuHuiTi 2.0", system-ui, sans-serif', flexShrink: 0 }}>
-        旁白配音
-      </span>
-      <NarrationCol
-        segments={shot.narration.segments}
-        onChange={(segs) => onChange({ ...shot, narration: { segments: segs } })}
-        chars={chars}
-      />
-    </div>
+    <NarrationCol
+      segments={shot.narration.segments}
+      onChange={(segs) => onChange({ ...shot, narration: { segments: segs } })}
+      chars={chars}
+      globalVoiceParams={globalVoiceParams}
+      onSaveGlobalVoice={onSaveGlobalVoice}
+    />
   );
 }
 
@@ -3574,7 +3679,7 @@ function MediaColWrapper({ label, media, onUpload, accept, isVideo, isLast = fal
 
 // ─── 分镜行 ───────────────────────────────────────────────────────────────────
 
-function ShotRow({ shot, onChange, onAdd, onCopy, onDelete, chars, isDragging, onDragStart, onDragOver, onDrop, insertBefore, insertAfter, onGenerateImage, onGenerateVideo }) {
+function ShotRow({ shot, onChange, onAdd, onCopy, onDelete, chars, isDragging, onDragStart, onDragOver, onDrop, insertBefore, insertAfter, onGenerateImage, onGenerateVideo, globalVoiceParams, onSaveGlobalVoice }) {
   const [hovered, setHovered] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
@@ -3624,7 +3729,7 @@ function ShotRow({ shot, onChange, onAdd, onCopy, onDelete, chars, isDragging, o
           value={shot.ambientSound}
           onChange={(v) => onChange({ ...shot, ambientSound: v })}
         />
-        <NarrationColWrapper shot={shot} onChange={onChange} chars={chars} />
+        <NarrationColWrapper shot={shot} onChange={onChange} chars={chars} globalVoiceParams={globalVoiceParams} onSaveGlobalVoice={onSaveGlobalVoice} />
         <MainRefColWrapper shot={shot} onChange={onChange} chars={chars} />
         <MediaColWrapper
           label="分镜图"
@@ -3714,6 +3819,7 @@ const EPISODES = ['第一集', '第二集', '第三集', '第四集', '第五集
 export default function StoryboardPage({ projectName = '两只老虎的奇遇', chars = [], scenes = [], props = [], episodes = EPISODES, onUnlockStep, onVideoGenerated }) {
   const activeEpisodes = episodes.length > 0 ? episodes : EPISODES;
   const [shots, setShots] = useState(INITIAL_SHOTS);
+  const [globalVoiceParams, setGlobalVoiceParams] = useState({});
   const [episode, setEpisode] = useState(() => activeEpisodes[0] ?? '第一集');
   const [dragId, setDragId] = useState(null);
   const [overId, setOverId] = useState(null);
@@ -3896,9 +4002,8 @@ export default function StoryboardPage({ projectName = '两只老虎的奇遇', 
           <EpisodeSelector episodes={activeEpisodes} value={episode} onChange={setEpisode} />
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          <GhostBtn icon={<IconBatchImage />} onClick={() => setShowImageModal(true)} loading={generatingImages} disabled={generatingImages || generatingVideos}>批量生成分镜图</GhostBtn>
-          <GhostBtn icon={<IconBatchVideo />} onClick={() => setShowVideoModal(true)} loading={generatingVideos} disabled={generatingImages || generatingVideos}>批量生成分镜视频</GhostBtn>
-          <GhostBtn icon={<IconDownload />} onClick={() => setShowDownloadModal(true)} disabled={generatingImages || generatingVideos}>批量下载素材</GhostBtn>
+          <GhostBtn icon={<IconBatchImage />} onClick={() => setShowImageModal(true)} loading={generatingImages || generatingVideos} disabled={generatingImages || generatingVideos}>批量生成</GhostBtn>
+          <GhostBtn icon={<IconDownload />} onClick={() => setShowDownloadModal(true)} disabled={generatingImages || generatingVideos}>批量下载</GhostBtn>
           <PrimaryBtn icon={<IconEdit />} onClick={handleStartEdit}>开始剪辑</PrimaryBtn>
         </div>
       </div>
@@ -3943,6 +4048,8 @@ export default function StoryboardPage({ projectName = '两只老虎的奇遇', 
             onDrop={() => handleDrop(shot.id)}
             onGenerateImage={() => setImagePanel({ shot })}
             onGenerateVideo={() => setVideoPanel({ shot })}
+            globalVoiceParams={globalVoiceParams}
+            onSaveGlobalVoice={(role, params) => setGlobalVoiceParams((prev) => ({ ...prev, [role]: params }))}
           />
         ))}
         {/* bottom sentinel — drop zone for placing after the last card */}

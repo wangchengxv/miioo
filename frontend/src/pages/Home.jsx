@@ -528,10 +528,10 @@ function StartCreationButton({ onClick }) {
 
   return (
     <div
-      className="left-[50%] bottom-[80px] absolute w-[200px] h-[52px]"
+      className="bottom-[80px] absolute w-[200px] h-[52px]"
       style={{
-        translate: '-50%',
-        transform: `scale(${scale})`,
+        left: '50vw',
+        transform: `translateX(-50%) scale(${scale})`,
         transformOrigin: '50% 50%',
         transition: 'transform 220ms cubic-bezier(0.34, 1.56, 0.64, 1)',
         cursor: 'pointer',
@@ -1105,8 +1105,8 @@ export default function Home({ onProjectCreated }) {
                 onScriptDraftContentChange={setScriptDraftContent}
                 scriptStreamingIndex={scriptStreamingIndex}
                 onScriptStreamingIndexChange={setScriptStreamingIndex}
-                onGoToSubject={() => {
-                  setSubjectInitialTab('char');
+                onGoToSubject={(tab) => {
+                  setSubjectInitialTab(tab ?? 'char');
                   handleUnlockStep('subject');
                   setActiveStep('subject');
                 }}
@@ -1116,6 +1116,7 @@ export default function Home({ onProjectCreated }) {
             {activeKey === 'project' && activeProject && activeStep === 'subject' && (
               <SubjectPage
                 projectName={activeProject.name}
+                onBack={() => setActiveProject(null)}
                 episodeName="第一集"
                 onUnlockStep={handleUnlockStep}
                 initialTab={subjectInitialTab}

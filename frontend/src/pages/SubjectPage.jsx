@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import BatchGenerateModal from '../components/BatchGenerateModal';
+import AssetPickerModal from '../components/AssetPickerModal';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
@@ -186,15 +187,22 @@ function EpisodeSelector({ episodes, value, onChange }) {
 
 // ── Toolbar ────────────────────────────────────────────────────────────────
 
-function Toolbar({ projectName, onAddChar, onBatchGen, onStartStoryboard, addLabel = '添加角色', tabLabel = '角色' }) {
+function Toolbar({ projectName, onBack, onAddChar, onBatchGen, onStartStoryboard, addLabel = '添加角色', tabLabel = '角色' }) {
+  const [arrowHovered, setArrowHovered] = useState(false);
   return (
     <div className="flex items-center justify-between self-stretch shrink-0">
       {/* breadcrumb */}
       <div className="flex items-center gap-[6px]">
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
-          <path d="M10 3L6 8L10 13" stroke="#FFFFFF73" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+        <svg
+          width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg"
+          style={{ flexShrink: 0, cursor: 'pointer', opacity: arrowHovered ? 1 : 0.7, transition: 'opacity 0.15s' }}
+          onMouseEnter={() => setArrowHovered(true)}
+          onMouseLeave={() => setArrowHovered(false)}
+          onClick={onBack}
+        >
+          <path d="M15 5L9 12L15 19" stroke="#FFFFFF" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
         </svg>
-        <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '20px', color: '#FFFFFF73' }}>
+        <span style={{ fontFamily: FONT_MEDIUM, fontSize: '16px', lineHeight: '22px', color: '#FFFFFF', fontWeight: 500 }}>
           {projectName}
         </span>
       </div>
@@ -971,178 +979,6 @@ function UploadBtn({ label, onClick }) {
 }
 
 // Upload card — only item shown by default; hover state on card
-// ── Asset picker modal ────────────────────────────────────────────────────
-
-function AssetPickerModal({ open, onClose, onConfirm, assets = [] }) {
-  const [selected, setSelected] = useState(new Set());
-  const [starOnly, setStarOnly] = useState(false);
-  const [closeHovered, setCloseHovered] = useState(false);
-  const [cancelHovered, setCancelHovered] = useState(false);
-  const [cancelPressed, setCancelPressed] = useState(false);
-  const [confirmHovered, setConfirmHovered] = useState(false);
-  const [confirmPressed, setConfirmPressed] = useState(false);
-  const [searchFocused, setSearchFocused] = useState(false);
-  const [hoveredCard, setHoveredCard] = useState(null);
-
-  if (!open) return null;
-
-  const toggle = (id) => setSelected((prev) => {
-    const next = new Set(prev);
-    next.has(id) ? next.delete(id) : next.add(id);
-    return next;
-  });
-
-  const handleConfirm = () => {
-    onConfirm?.(Array.from(selected));
-    onClose?.();
-  };
-
-  return (
-    <div
-      style={{ position: 'fixed', inset: 0, zIndex: 80, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
-      onClick={onClose}
-    >
-      <div
-        style={{ width: '800px', height: '600px', borderRadius: '16px', overflow: 'hidden', display: 'flex', flexDirection: 'column', background: '#161616', border: '1px solid rgba(255,255,255,0.08)' }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 24px', background: '#161616', flexShrink: 0 }}>
-          <span style={{ fontFamily: FONT_MEDIUM, fontWeight: 500, fontSize: '16px', lineHeight: '20px', color: '#FFFFFF' }}>从资产中选择</span>
-          <button
-            type="button"
-            onClick={onClose}
-            onMouseEnter={() => setCloseHovered(true)}
-            onMouseLeave={() => setCloseHovered(false)}
-            style={{ background: closeHovered ? 'rgba(255,255,255,0.08)' : 'transparent', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', width: '28px', height: '28px', borderRadius: '6px', transition: 'background 100ms', flexShrink: 0 }}
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-              <path d="M12 4L4 12M4 4l8 8" stroke={closeHovered ? 'rgba(255,255,255,0.8)' : '#FFFFFF66'} strokeWidth="1.5" strokeLinecap="round" />
-            </svg>
-          </button>
-        </div>
-
-        {/* toolbar */}
-        <div style={{ display: 'flex', alignItems: 'center', padding: '8px 24px', gap: '12px', justifyContent: 'space-between', background: '#161616', flexShrink: 0 }}>
-          {/* star filter checkbox */}
-          <div
-            style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', flexShrink: 0 }}
-            onClick={() => setStarOnly((v) => !v)}
-          >
-            <div style={{ position: 'relative', width: '14px', height: '14px', borderRadius: '3px', flexShrink: 0, border: '1px solid rgba(255,255,255,0.2)', outline: '1px solid var(--color-stroke-outline)', background: starOnly ? 'var(--color-checkbox-bg-active)' : 'var(--color-checkbox-bg-normal)', transition: 'background 100ms' }}>
-              {starOnly && (
-                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ position: 'absolute', left: '50%', top: '50%', translate: '-50% -50%' }}>
-                  <path d="M3.333 8L6.667 11.333L13.333 4.667" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              )}
-            </div>
-            <span style={{ fontFamily: FONT, fontSize: '13px', lineHeight: '18px', color: '#FFFFFF66', whiteSpace: 'nowrap' }}>仅显示星标资产</span>
-          </div>
-
-          {/* search box */}
-          <div style={{ display: 'flex', alignItems: 'center', height: '36px', width: '232px', paddingLeft: '12px', paddingRight: '6px', borderRadius: '8px', justifyContent: 'space-between', flexShrink: 0, background: searchFocused ? 'rgba(45,195,225,0.04)' : '#1D1E1E', border: `1px solid ${searchFocused ? 'rgba(45,195,225,0.6)' : 'rgba(255,255,255,0.08)'}`, outline: searchFocused ? '3px solid rgba(45,195,225,0.08)' : '1px solid #00000080', transition: 'border-color 120ms, background 120ms' }}>
-            <input
-              placeholder="搜索资产"
-              onFocus={() => setSearchFocused(true)}
-              onBlur={() => setSearchFocused(false)}
-              style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF', caretColor: '#2DC3E1' }}
-              className="placeholder:text-[rgba(255,255,255,0.4)]"
-            />
-            <div style={{ display: 'flex', alignItems: 'center', height: '24px', borderRadius: '6px', padding: '0 8px', gap: '4px' }}>
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <path d="M7 12.667C10.13 12.667 12.667 10.13 12.667 7C12.667 3.87 10.13 1.333 7 1.333C3.87 1.333 1.333 3.87 1.333 7C1.333 10.13 3.87 12.667 7 12.667Z" stroke={searchFocused ? '#FFFFFF' : '#FFFFFF99'} strokeLinejoin="round" />
-                <path d="M11.074 11.074L13.902 13.902" stroke={searchFocused ? '#FFFFFF' : '#FFFFFF99'} strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            </div>
-          </div>
-        </div>
-
-        {/* grid / empty state */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '8px 24px', display: 'flex', flexDirection: 'column', gap: '12px', background: '#161616' }}>
-          {assets.length === 0 ? (
-            <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '16px' }}>
-              <svg width="100" height="100" viewBox="0 0 100 100" fill="none" xmlns="http://www.w3.org/2000/svg">
-                <rect width="100" height="100" rx="16" fill="#FFFFFF05" />
-                {/* folder body */}
-                <path d="M22 42C22 38.686 24.686 36 28 36H46L52 42H72C75.314 42 78 44.686 78 48V68C78 71.314 75.314 74 72 74H28C24.686 74 22 71.314 22 68V42Z" fill="#FFFFFF0A" stroke="#FFFFFF1A" strokeWidth="1.5" strokeLinejoin="round" />
-                {/* image placeholder inside folder */}
-                <rect x="34" y="50" width="32" height="16" rx="3" fill="#FFFFFF0D" stroke="#FFFFFF14" strokeWidth="1" />
-                {/* mountain lines */}
-                <path d="M34 66L42 56L48 62L54 55L66 66" stroke="#FFFFFF26" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-                {/* small circle (sun) */}
-                <circle cx="60" cy="54" r="2.5" stroke="#FFFFFF26" strokeWidth="1.5" />
-                {/* dashed cross — "no content" hint */}
-                <path d="M50 28V32M50 28V32" stroke="#FFFFFF1A" strokeWidth="1.5" strokeLinecap="round" strokeDasharray="2 3" />
-              </svg>
-              <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '20px', color: '#FFFFFF40' }}>资产库暂无资产</span>
-            </div>
-          ) : (
-            Array.from({ length: Math.ceil(assets.length / 4) }, (_, rowIdx) => (
-              <div key={rowIdx} style={{ display: 'flex', gap: '12px' }}>
-                {assets.slice(rowIdx * 4, rowIdx * 4 + 4).map((asset) => {
-                  const isSelected = selected.has(asset.id);
-                  const isHovered = hoveredCard === asset.id;
-                  return (
-                    <div
-                      key={asset.id}
-                      onClick={() => toggle(asset.id)}
-                      onMouseEnter={() => setHoveredCard(asset.id)}
-                      onMouseLeave={() => setHoveredCard(null)}
-                      style={{
-                        flex: 1, height: '124px', borderRadius: '8px', overflow: 'hidden', position: 'relative', cursor: 'pointer',
-                        border: `1px solid ${isSelected ? '#2EC2E1' : isHovered ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.05)'}`,
-                        transition: 'border-color 100ms',
-                      }}
-                    >
-                      <div style={{ backgroundImage: `url(${asset.url})`, backgroundSize: 'cover', backgroundPosition: '50%', width: '100%', height: '100%', transition: 'opacity 100ms', opacity: isHovered && !isSelected ? 0.85 : 1 }} />
-                      <div style={{ position: 'absolute', top: '6px', right: '6px', padding: '2px' }}>
-                        <div style={{ position: 'relative', width: '14px', height: '14px', borderRadius: '3px', flexShrink: 0, border: '1px solid rgba(255,255,255,0.2)', outline: '1px solid var(--color-stroke-outline)', background: isSelected ? 'var(--color-checkbox-bg-active)' : 'var(--color-checkbox-bg-normal)', transition: 'background 100ms' }}>
-                          {isSelected && (
-                            <svg width="12" height="12" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ position: 'absolute', left: '50%', top: '50%', translate: '-50% -50%' }}>
-                              <path d="M3.333 8L6.667 11.333L13.333 4.667" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
-                            </svg>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            ))
-          )}
-        </div>
-
-        {/* footer */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', justifyContent: 'flex-end', padding: '16px 24px', background: '#161616', flexShrink: 0, borderRadius: '0 0 16px 16px' }}>
-          <button
-            type="button"
-            onClick={onClose}
-            onMouseEnter={() => setCancelHovered(true)}
-            onMouseLeave={() => { setCancelHovered(false); setCancelPressed(false); }}
-            onMouseDown={() => setCancelPressed(true)}
-            onMouseUp={() => setCancelHovered(true)}
-            style={{ display: 'flex', alignItems: 'center', height: '36px', borderRadius: '8px', padding: '0 16px', cursor: 'pointer', background: cancelPressed ? '#1A1A1A' : cancelHovered ? '#1D1D1D' : '#161616', border: '1px solid rgba(255,255,255,0.05)', outline: '1px solid #00000080', boxShadow: 'rgba(0,0,0,0.4) 3px 3px 8px', transition: 'background 100ms' }}
-          >
-            <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: cancelHovered ? '#FFFFFFCC' : '#FFFFFF99', whiteSpace: 'nowrap', transition: 'color 100ms' }}>取消</span>
-          </button>
-          <button
-            type="button"
-            onClick={handleConfirm}
-            onMouseEnter={() => setConfirmHovered(true)}
-            onMouseLeave={() => { setConfirmHovered(false); setConfirmPressed(false); }}
-            onMouseDown={() => setConfirmPressed(true)}
-            onMouseUp={() => setConfirmHovered(true)}
-            style={{ display: 'flex', flexDirection: 'column', height: '36px', borderRadius: '8px', outline: '1px solid #00000080', boxShadow: 'rgba(0,0,0,0.4) 3px 3px 8px', padding: '1px', backgroundImage: 'linear-gradient(in oklab 148.76deg, oklab(94.7% -0.078 -0.022 / 30%) 3.64%, oklab(75.5% -0.102 -0.072 / 0%) 42.81%), linear-gradient(in oklab 180deg, rgba(255,255,255,0.08), rgba(255,255,255,0.08))', cursor: 'pointer', border: 'none', transition: 'opacity 100ms', opacity: confirmPressed ? 0.75 : 1 }}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', flex: 1, borderRadius: '7px', padding: '0 15px', background: confirmPressed ? '#111111' : confirmHovered ? '#1A1A1A' : '#161616', transition: 'background 100ms' }}>
-              <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF', whiteSpace: 'nowrap' }}>确定</span>
-            </div>
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
 
 function ImageItemUpload({ onUpload }) {
   const [hovered, setHovered] = useState(false);
@@ -1775,7 +1611,7 @@ function EditSubjectPanel({ char, tabLabel = '角色', onClose, onCommit, onCove
 
 let _nextId = 100;
 
-export default function SubjectPage({ projectName = '两只老虎的奇遇', onUnlockStep, onStartStoryboard, initialTab = 'char', chars: externalChars, onCharsChange, scenes: externalScenes, onScenesChange, props: externalProps, onPropsChange }) {
+export default function SubjectPage({ projectName = '两只老虎的奇遇', onBack, onUnlockStep, onStartStoryboard, initialTab = 'char', chars: externalChars, onCharsChange, scenes: externalScenes, onScenesChange, props: externalProps, onPropsChange }) {
   const [activeTab, setActiveTab] = useState(initialTab);
   const [activeEpisode, setActiveEpisode] = useState(MOCK_EPISODES[0]);
   const [batchGenOpen, setBatchGenOpen] = useState(false);
@@ -1807,6 +1643,14 @@ export default function SubjectPage({ projectName = '两只老虎的奇遇', onU
   const [charVoices, setCharVoices] = useState(() =>
     Object.fromEntries(INITIAL_CHARS.map((c) => [c.id, c.voice]))
   );
+
+  // 初始化时把内部默认数据同步给父组件（仅当父组件尚未持有数据时）
+  useEffect(() => {
+    if (externalChars === null || externalChars === undefined) onCharsChange?.(INITIAL_CHARS);
+    if (externalScenes === null || externalScenes === undefined) onScenesChange?.([]);
+    if (externalProps === null || externalProps === undefined) onPropsChange?.([]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   const counts = {
     char: chars.length,
@@ -1845,6 +1689,7 @@ export default function SubjectPage({ projectName = '两只老虎的奇遇', onU
     >
       <Toolbar
         projectName={projectName}
+        onBack={onBack}
         addLabel={`添加${TABS.find((t) => t.key === activeTab)?.label ?? '主体'}`}
         onAddChar={handleAdd}
         onBatchGen={() => setBatchGenOpen(true)}

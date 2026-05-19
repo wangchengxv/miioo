@@ -1,6 +1,6 @@
 # miioo 项目进度管理文档
 
-> 最后更新：2026-05-18（API 接入审查完成）
+> 最后更新：2026-05-19（分镜页黑屏修复；剧本页 InputCard 响应式）
 
 ---
 
@@ -178,8 +178,18 @@ miioo/
 - [x] 项目工作流 — 主体页面（角色/场景/道具卡片列表；有内容时触发步骤解锁回调）
 - [x] 项目工作流 — 分镜页面（分镜卡片网格；集数切换；批量下载 BatchDownloadModal；镜头全屏查看 ShotViewerModal；Toggle 开关组件；从 Home 接收 chars/scenes/props 资产数据）
 - [x] 项目工作流 — 全局设定细节修正（StatCard 标题/数值移至顶部渐变遮罩；跳转按钮移至右下角）
+- [x] 项目工作流 — 全局设定资产概况卡片完善（2026-05-19）：
+  - 剧集结构卡片：pending 状态数字颜色改为 `#FFFFFF99`（60% 白），集数标签字号 10px → 12px，容器始终可见，无数据时显示空状态图标
+  - 角色/场景/道具卡片：有素材时展示 3×3 宫格（取 SubjectPage 定稿图 imageUrl，最多 9 张，均分父容器，gap 4px，圆角 4px，无图格子保留 `#FFFFFF08` 背景）；无素材时显示空状态图标
+  - 标题和数量统计移至卡片内顶部（position: relative + zIndex: 1，grid 用 flex: 1 + minHeight: 0 填充剩余空间）
+  - 点击场景/道具卡片直接跳转到主体页对应 Tab 激活态（onGoToSubject 接收 tab 参数）
+  - 修复角色数量显示为 0 的 BUG：SubjectPage 挂载时通过 useEffect 将 INITIAL_CHARS 同步到 Home.jsx 的 sharedChars（仅当 externalChars 为 null 时触发）
 - [x] 项目工作流 — 剧本流式动画 BUG 修复（离开页面再返回不再重播动画；streamingIndex 提升至 Home.jsx 持久化，通过 GlobalSettings → ScriptPage → ScriptPanel → AiStreamingContent 受控传递）
 - [x] 前端 API 接入审查（2026-05-18）— 扫描全部页面和组件，找出所有硬编码数据和缺失接口调用，逐一补全参数传递逻辑并用 mock 函数占位；详见 `API_AUDIT.md`
+- [x] 项目工作流 — 分镜页面 BUG 修复（2026-05-19）：
+  - 黑屏修复：`AssetPickerModal` 组件被多处引用但从未定义，导致 React 渲染崩溃；添加占位实现解除黑屏（待后续接入真实资产选择逻辑）
+  - 提示词输入框 `@` 标签颜色污染问题：同名但不同类型的标签（如场景和道具同名）会互相覆盖颜色；确认业务上保证 chars/scenes/props 之间不重名，原逻辑可正常工作，回滚至稳定版本
+- [x] 项目工作流 — 剧本页面响应式修复（2026-05-19）：屏幕宽度 < 1240px 时 InputCard 宽度跟随剧本框收缩（`width: min(700px, 100%)`，移除 `flexShrink: 0`）
 - [ ] 项目工作流 — 剪辑成片
 - [ ] 创作页（生图/生视频）
 - [ ] 资产库
