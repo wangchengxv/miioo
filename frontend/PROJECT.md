@@ -1,6 +1,6 @@
 # miioo 项目进度管理文档
 
-> 最后更新：2026-05-12
+> 最后更新：2026-05-19（生成分镜视频弹窗定稿；首尾帧快捷按钮；AssetPickerModal 音频支持）
 
 ---
 
@@ -22,8 +22,8 @@
 
 | 模块 | 核心功能 | 开发状态 |
 |------|----------|----------|
-| 首页 | 开始创作主按钮、登录/个人中心、设置、消息、社群二维码、创作手册、API 配置、Logo | 开发中 |
-| 项目 | 新建项目、项目列表（卡片式）、工作流（全局设定/剧本/主体/分镜/剪辑成片） | 待开发 |
+| 首页 | 开始创作主按钮、登录/个人中心、设置、消息、社群二维码、创作手册、API 配置、Logo | ✅ 已完成 |
+| 项目 | 新建项目、项目列表（卡片式）、工作流（全局设定/剧本/主体/分镜/剪辑成片） | 开发中 |
 | 创作 | AI 生图、AI 生视频（参考即梦 AI 交互模式） | 待开发 |
 | 资产库 | 项目资产、创作资产，可编辑 | 待开发 |
 
@@ -84,15 +84,31 @@ miioo/
 ├── public/                    # 静态资源
 ├── src/
 │   ├── assets/                # 图片、SVG 等资源
+│   │   ├── hero.png
+│   │   ├── home-bg.png
+│   │   └── project-default-cover.png
 │   ├── components/            # 通用组件
-│   │   ├── PrimaryNav.jsx     # 左侧一级导航（expanded / compact / vertical）
-│   │   ├── ApiConfigModal.jsx # API 配置弹窗（多服务商，最多 9 张卡片）
-│   │   └── LoginModal.jsx     # 登录弹窗（手机号 / 微信扫码 / 绑定手机）
+│   │   ├── PrimaryNav.jsx         # 左侧一级导航（expanded / compact / vertical）
+│   │   ├── ApiConfigModal.jsx     # API 配置弹窗（多服务商，最多 9 张卡片）
+│   │   ├── LoginModal.jsx         # 登录弹窗（手机号 / 微信扫码 / 绑定手机）
+│   │   ├── AccountMenu.jsx        # 账户菜单 popup
+│   │   ├── NewProjectModal.jsx    # 新建项目弹窗
+│   │   ├── ProfileModal.jsx       # 个人资料弹窗
+│   │   ├── BatchDownloadModal.jsx # 分镜批量下载弹窗
+│   │   ├── ShotViewerModal.jsx    # 分镜镜头全屏查看弹窗
+│   │   ├── Toggle.jsx             # 开关组件（分镜页使用）
+│   │   └── LiquidGlassDefs.jsx    # 液态玻璃 SVG filter 定义
 │   ├── layouts/               # 页面框架（侧边栏、顶栏）← 待建立
 │   ├── pages/                 # 业务页面
-│   │   ├── Home.jsx           # 首页（交互验收中）
-│   │   ├── ButtonShowcase.jsx # 按钮组件展示页（已有）
-│   │   └── InputShowcase.jsx  # 输入框组件展示页（已有）
+│   │   ├── Home.jsx               # 首页 + 项目工作流 shell（导航、页面切换）
+│   │   ├── ProjectList.jsx        # 项目列表页（卡片网格）
+│   │   ├── GlobalSettings.jsx     # 工作流 — 全局设定
+│   │   ├── ScriptPage.jsx         # 工作流 — 剧本（LLM 对话式创作）
+│   │   ├── SubjectPage.jsx        # 工作流 — 主体（角色/场景/道具）
+│   │   ├── StoryboardPage.jsx     # 工作流 — 分镜（分镜卡片、批量下载、镜头查看）
+│   │   ├── ButtonShowcase.jsx     # 按钮组件展示页
+│   │   └── InputShowcase.jsx      # 输入框组件展示页
+│   ├── ref/                   # 设计稿参考代码（只读，不引入业务）
 │   ├── App.jsx                # 根组件
 │   ├── main.jsx               # 入口文件
 │   └── index.css              # 全局样式 + Design Token 定义
@@ -149,12 +165,53 @@ miioo/
 - [x] 首页 — 登录弹窗原型（手机号登录 / 微信扫码 / 绑定手机号）
 - [x] 首页 — API 配置弹窗（推荐配置 / 多服务商卡片，最多 9 张，支持新增与编辑自定义服务商）
 - [x] 首页 — 交互验收（API 配置多服务商新增与编辑已手动验证通过）
-- [ ] 首页 — 细节收尾
-- [ ] 项目列表页
-- [ ] 项目工作流 — 全局设定
-- [ ] 项目工作流 — 剧本
-- [ ] 项目工作流 — 主体
-- [ ] 项目工作流 — 分镜
+- [x] 首页 — 细节收尾（通知详情弹窗、更多菜单补充选项、浮窗点击外部收起等）
+- [x] 项目列表页 — 架构调整（ProjectList 作为纯内容组件，Home.jsx 统一管理导航与页面切换）
+- [x] 项目列表页 — 内容区（卡片网格、搜索、新建、重命名、删除）
+- [x] 项目列表页 — 导航栏细节（gap、indicator radius、padding 收窄动画）
+- [x] 项目列表页 — 卡片交互（悬停边框高亮、hover 遮罩、点击缩放动效、点击进入工作流）
+- [x] 项目工作流 — 顶部工作流导航栏（进入项目后 headbar 替换为工作流专属布局：Logo + 右侧操作区 + 5步骤条绝对居中）
+- [x] 项目工作流 — 步骤条交互（全局设定/剧本始终可点击；主体/分镜/剪辑无内容时禁用；激活步骤 PulsingBorder 高亮；高度统一 32px）
+- [x] 项目工作流 — 步骤解锁逻辑（主体/分镜/剪辑步骤一旦有内容即永久解锁，不因内容清空而重新禁用）
+- [x] 项目工作流 — 全局设定页面（项目概况统计卡片、模型配置区含对话/图片/视频/配音模型 tab 与模型卡片）
+- [x] 项目工作流 — 剧本页面（单剧本工作区模型；InputCard 固定底部 700px；AI 思考动画 + 流式输出；左侧剧集目录（首发后常驻）；右侧剧本查看/编辑双态；编辑态富文本（Tiptap）+ 工具栏；左右联动滚动定位；定稿后解锁主体步骤）
+- [x] 项目工作流 — 主体页面（角色/场景/道具卡片列表；有内容时触发步骤解锁回调）
+- [x] 项目工作流 — 分镜页面（分镜卡片网格；集数切换；批量下载 BatchDownloadModal；镜头全屏查看 ShotViewerModal；Toggle 开关组件；从 Home 接收 chars/scenes/props 资产数据）
+- [x] 项目工作流 — 全局设定细节修正（StatCard 标题/数值移至顶部渐变遮罩；跳转按钮移至右下角）
+- [x] 项目工作流 — 全局设定资产概况卡片完善（2026-05-19）：
+  - 剧集结构卡片：pending 状态数字颜色改为 `#FFFFFF99`（60% 白），集数标签字号 10px → 12px，容器始终可见，无数据时显示空状态图标
+  - 角色/场景/道具卡片：有素材时展示 3×3 宫格（取 SubjectPage 定稿图 imageUrl，最多 9 张，均分父容器，gap 4px，圆角 4px，无图格子保留 `#FFFFFF08` 背景）；无素材时显示空状态图标
+  - 标题和数量统计移至卡片内顶部（position: relative + zIndex: 1，grid 用 flex: 1 + minHeight: 0 填充剩余空间）
+  - 点击场景/道具卡片直接跳转到主体页对应 Tab 激活态（onGoToSubject 接收 tab 参数）
+  - 修复角色数量显示为 0 的 BUG：SubjectPage 挂载时通过 useEffect 将 INITIAL_CHARS 同步到 Home.jsx 的 sharedChars（仅当 externalChars 为 null 时触发）
+- [x] 项目工作流 — 剧本流式动画 BUG 修复（离开页面再返回不再重播动画；streamingIndex 提升至 Home.jsx 持久化，通过 GlobalSettings → ScriptPage → ScriptPanel → AiStreamingContent 受控传递）
+- [x] 前端 API 接入审查（2026-05-18）— 扫描全部页面和组件，找出所有硬编码数据和缺失接口调用，逐一补全参数传递逻辑并用 mock 函数占位；详见 `API_AUDIT.md`
+- [x] 项目工作流 — 分镜页面 BUG 修复（2026-05-19）：
+  - 黑屏修复：`AssetPickerModal` 组件被多处引用但从未定义，导致 React 渲染崩溃；添加占位实现解除黑屏（待后续接入真实资产选择逻辑）
+  - 提示词输入框 `@` 标签颜色污染问题：同名但不同类型的标签（如场景和道具同名）会互相覆盖颜色；确认业务上保证 chars/scenes/props 之间不重名，原逻辑可正常工作，回滚至稳定版本
+- [x] 项目工作流 — 剧本页面响应式修复（2026-05-19）：屏幕宽度 < 1240px 时 InputCard 宽度跟随剧本框收缩（`width: min(700px, 100%)`，移除 `flexShrink: 0`）
+- [x] 项目工作流 — 分镜页面优化（2026-05-19）：
+  - 工具栏批量生成按钮合并：原「批量生成分镜图」+「批量生成分镜视频」两个按钮合并为单个「批量生成」按钮，点击打开 BatchImageModal
+  - 分镜卡片媒体列空状态悬停按钮优化：移除「本地上传」按钮，仅保留单个蓝色 AI 生成按钮（图片列显示「创作图片」，视频列显示「创作视频」），带 slideUpBounce 弹入动画
+  - 集数切换器宽度稳定：新增 `measureRef` 隐藏 span 动态测量最长集数文本宽度，切换开/关状态时容器宽度不再跳变
+- [x] 通用组件 — AssetPickerModal 项目切换下拉（2026-05-19）：
+  - 原「这是项目名称」静态 UI 改为真实可交互下拉菜单
+  - 新增 `projects`（项目名数组）、`activeProject`（当前选中）、`onProjectChange`（切换回调）三个 prop
+  - 下拉列表通过 `createPortal` 渲染到 `document.body`，`position: fixed` 锚定触发按钮下方，点击外部自动关闭
+  - 当前选中项右侧显示蓝色勾（`#2DC3E1`），悬停行背景 `#FFFFFF0F`，触发按钮打开时背景加深至 `#FFFFFF1A`，箭头图标旋转 180°
+- [x] 项目工作流 — 生成分镜视频弹窗定稿（2026-05-19）：
+  - 删除原「首尾帧生视频」/「多参生视频」Tab 分页，改为 radio 单选器「生成方式」（全能参考 / 首尾帧 / 多图参考）
+  - 全能参考字段：选择模型、参考主体、参考图、参考视频、参考音频、时长、分辨率、音效
+  - 首尾帧字段：选择模型、首帧图（含「使用当前分镜图」快捷块）、尾帧图可选（含「使用下一分镜图」快捷块）、时长、分辨率、音效
+  - 多图参考字段：选择模型、参考主体、参考图、时长、分辨率、音效
+  - 新增 `FrameUploadSlot` 组件：在标准双通道上传容器旁增加快捷块，有分镜图时显示缩略图（72×40，默认 60% 透明度，hover 100%）+ 文字，点击直接填入；无分镜图时显示灰色占位图标（不可点击）
+  - `setVideoPanel` 调用时同步传入 `nextShot`，`GenerateVideoPanel` 接收 `nextShot` prop 用于尾帧快捷块
+- [x] 通用组件 — AssetPickerModal 音频支持（2026-05-19）：
+  - 新增 `PROJECT_SUB_TABS_AUDIO = ['音频']`、`CREATIVE_SUB_TABS_AUDIO = ['配音']` 常量
+  - `accept === 'audio'` 时仅显示音频相关分页，屏蔽图片/视频分页
+  - mock 数据补充 `audio` / `dubbing` 数组；`SUB_TAB_KEY_MAP` 新增 `'音频': 'audio'`、`'配音': 'dubbing'`
+  - `AssetCard` 音频类型显示音符 SVG 占位图标
+  - `PanelUploadSlot` accept 映射修复：`audio/*` 正确传递 `accept='audio'` 给 AssetPickerModal（原先漏判导致音频 tab 不显示）
 - [ ] 项目工作流 — 剪辑成片
 - [ ] 创作页（生图/生视频）
 - [ ] 资产库
@@ -295,6 +352,18 @@ docs: 文档更新
 - 对接时机：后端接口就绪后，双方在各自分支开发完成，发 PR 合并后联调
 - 接口文档：待后端同学提供（补充链接）
 - 对接时间节点：待定
+
+### 前端 API 占位说明
+
+前端已完成 API 接入审查（2026-05-18），所有缺失接口均已用 mock 函数占位，参数传递逻辑已补全。
+后端接口就绪后，搜索以下关键词即可快速定位所有占位点：
+
+```
+[mock]                  — console.log 占位的 mock 函数
+TODO: 替换为真实接口    — 需要替换为真实 fetch 调用的位置
+```
+
+详细清单见 `API_AUDIT.md`，按 P0 → P1 → P2 → P3 优先级排列。
 
 ---
 

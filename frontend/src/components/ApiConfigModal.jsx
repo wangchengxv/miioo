@@ -1,4 +1,5 @@
 import { forwardRef, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import Toggle from './Toggle';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
@@ -319,34 +320,9 @@ function CardDeleteButton({ onClick, disabled = false }) {
   );
 }
 
-function StatusSwitch({ on, onClick, onLabel = '开启', offLabel = '关闭' }) {
-  if (on) {
-    return (
-      <button
-        type="button"
-        onClick={onClick}
-        className="group [font-synthesis:none] flex w-14 shrink-0 items-center justify-between gap-[2px] rounded-full bg-[#090909] p-[4px] antialiased transition-colors hover:bg-[#111111] active:bg-[#090909] [box-shadow:#FFFFFF14_0px_0px_0px_1px_inset]"
-      >
-        <div className="flex-1 text-center text-xs/4 text-[#52BF92]" style={{ fontFamily: FONT }}>
-          {onLabel}
-        </div>
-        <div className="h-[16px] w-[16px] grow-0 shrink basis-auto self-auto rounded-full border border-solid border-[#FFFFFF33] bg-[#52BF92] transition-colors group-hover:bg-[#7AE5B9] group-active:bg-[#52BF92] [outline:1px_solid_#00000080]" />
-      </button>
-    );
-  }
-
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="group [font-synthesis:none] flex w-14 shrink-0 items-center gap-[0px] rounded-full bg-[#090909] p-[4px] antialiased transition-colors hover:bg-[#111111] active:bg-[#090909] [box-shadow:#FFFFFF14_0px_0px_0px_1px_inset]"
-    >
-      <div className="h-[16px] w-[16px] grow-0 shrink basis-auto self-auto rounded-full bg-[#FFFFFF14] transition-colors group-hover:bg-[#FFFFFF29] group-active:bg-[#FFFFFF14]" />
-      <div className="flex-1 text-center text-xs/4 text-[#FFFFFF66]" style={{ fontFamily: FONT }}>
-        {offLabel}
-      </div>
-    </button>
-  );
+// StatusSwitch → 统一使用共享 Toggle，适配 on/onClick 接口
+function StatusSwitch({ on, onClick }) {
+  return <Toggle value={on} onChange={onClick} />;
 }
 
 function Tag({ children, roundedClassName = 'rounded-sm' }) {
@@ -997,7 +973,7 @@ function CustomProviderModal({ draft, onChange, onCancel, onAdd }) {
   );
 }
 
-export default function ApiConfigModal({ open, onClose }) {
+export default function ApiConfigModal({ open, onClose, onConfigured }) {
   const [state, setState] = useState(createDefaultState);
   const [toasts, setToasts] = useState([]);
   const [confirmDelete, setConfirmDelete] = useState(null);
@@ -1008,8 +984,11 @@ export default function ApiConfigModal({ open, onClose }) {
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3000);
   }, []);
 
-  const testConnection = useCallback(() => {
-    const success = Math.random() > 0.4;
+  const testConnection = useCallback(async () => {
+    // TODO: 替换为真实接口 POST /api-config/test  body: { apiKey, baseUrl, ... }
+    // const res = await fetch('/api/api-config/test', { method: 'POST', ... });
+    // const { success } = await res.json();
+    const success = Math.random() > 0.4; // mock
     if (success) {
       showToast('success', '连接成功！');
     } else {
@@ -1026,6 +1005,8 @@ export default function ApiConfigModal({ open, onClose }) {
   }
 
   function closeMain() {
+    // TODO: 替换为真实接口 POST /api-config  body: state（注意：API key 仅存本地，不上传云端）
+    // await fetch('/api/api-config', { method: 'POST', body: JSON.stringify(state) });
     resetState();
     onClose?.();
   }
@@ -1101,10 +1082,12 @@ export default function ApiConfigModal({ open, onClose }) {
       activeModelTab: '对话模型',
     }));
 
-  const saveOneLinkConfig = () =>
+  const saveOneLinkConfig = () => {
     setState((current) => ({ ...current, mainConfigured: true, onelinkEnabled: true, childView: null }));
+    onConfigured?.();
+  };
 
-  const saveCustomProviderModelConfig = () =>
+  const saveCustomProviderModelConfig = () => {
     setState((current) => ({
       ...current,
       childView: null,
@@ -1113,6 +1096,8 @@ export default function ApiConfigModal({ open, onClose }) {
         provider.id === current.activeCustomProviderId ? { ...provider, configured: true, enabled: true } : provider,
       ),
     }));
+    onConfigured?.();
+  };
 
   const addCustomProvider = () =>
     setState((current) => {

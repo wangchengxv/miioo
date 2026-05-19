@@ -32,6 +32,7 @@ design-system/
 src/
   components/
     PrimaryNav.jsx            ← 主导航组件（expanded / compact / vertical 三种变体）
+    Toggle.jsx                ← 开关组件（分镜页使用）
 ```
 
 ---
@@ -71,3 +72,4 @@ src/
 - [x] Checkbox & Radio 复选框和单选框
 - [x] Tab 标签页
 - [x] Navigation 导航（PrimaryNav 组件，三种变体：expanded / compact / vertical，液态玻璃 indicator）
+- [x] Toggle 开关（分镜页使用，Toggle.jsx）
