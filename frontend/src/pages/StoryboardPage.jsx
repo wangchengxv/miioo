@@ -602,7 +602,7 @@ function ImgUploadCard({ onUpload }) {
         <ImgUploadBtn label="本地上传" onClick={() => fileInputRef.current?.click()} />
         <ImgUploadBtn label="从资产库选择" onClick={() => setAssetPickerOpen(true)} />
       </div>
-      <AssetPickerModal open={assetPickerOpen} onClose={() => setAssetPickerOpen(false)} onConfirm={() => {}} />
+      <AssetPickerModal accept="image" open={assetPickerOpen} onClose={() => setAssetPickerOpen(false)} onConfirm={() => {}} />
     </>
   );
 }
@@ -802,7 +802,7 @@ function PanelUploadSlot({ label, onUpload, media, onRemove, accept = 'image/*' 
           )}
         </div>
       </div>
-      <AssetPickerModal open={assetPickerOpen} onClose={() => setAssetPickerOpen(false)} onConfirm={() => {}} />
+      <AssetPickerModal accept={accept.startsWith('video') ? 'video' : 'image'} open={assetPickerOpen} onClose={() => setAssetPickerOpen(false)} onConfirm={() => {}} />
     </>
   );
 }
@@ -1606,7 +1606,7 @@ function VideoUploadCard({ onUpload }) {
         <ImgUploadBtn label="本地上传" onClick={() => fileInputRef.current?.click()} />
         <ImgUploadBtn label="从资产库选择" onClick={() => setAssetPickerOpen(true)} />
       </div>
-      <AssetPickerModal open={assetPickerOpen} onClose={() => setAssetPickerOpen(false)} onConfirm={() => {}} />
+      <AssetPickerModal accept="video" open={assetPickerOpen} onClose={() => setAssetPickerOpen(false)} onConfirm={() => {}} />
     </>
   );
 }
@@ -3034,6 +3034,7 @@ function MainRefModal({ refs, onChange, onClose }) {
   return (
     <>
       <AssetPickerModal
+        accept="image"
         open={assetPickerOpen}
         onClose={() => setAssetPickerOpen(false)}
         onConfirm={handleAssetConfirm}

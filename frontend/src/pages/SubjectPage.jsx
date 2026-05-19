@@ -987,6 +987,7 @@ function ImageItemUpload({ onUpload }) {
   return (
     <>
       <AssetPickerModal
+        accept="image"
         open={assetPickerOpen}
         onClose={() => setAssetPickerOpen(false)}
         onConfirm={(ids) => { if (ids.length > 0) onUpload?.(ids[0]); }}
@@ -1237,6 +1238,7 @@ function RefImageField({ maxImages = 3 }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
       <AssetPickerModal
+        accept="image"
         open={assetPickerOpen}
         onClose={() => setAssetPickerOpen(false)}
         onConfirm={handleAssetConfirm}

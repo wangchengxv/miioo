@@ -528,7 +528,7 @@ function StartCreationButton({ onClick }) {
 
   return (
     <div
-      className="bottom-[80px] absolute w-[200px] h-[52px]"
+      className="bottom-[80px] fixed w-[200px] h-[52px]"
       style={{
         left: '50vw',
         transform: `translateX(-50%) scale(${scale})`,
