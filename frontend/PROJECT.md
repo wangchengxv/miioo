@@ -1,6 +1,6 @@
 # miioo 项目进度管理文档
 
-> 最后更新：2026-05-19（分镜页多项优化；AssetPickerModal 项目切换下拉）
+> 最后更新：2026-05-19（生成分镜视频弹窗定稿；首尾帧快捷按钮；AssetPickerModal 音频支持）
 
 ---
 
@@ -199,6 +199,19 @@ miioo/
   - 新增 `projects`（项目名数组）、`activeProject`（当前选中）、`onProjectChange`（切换回调）三个 prop
   - 下拉列表通过 `createPortal` 渲染到 `document.body`，`position: fixed` 锚定触发按钮下方，点击外部自动关闭
   - 当前选中项右侧显示蓝色勾（`#2DC3E1`），悬停行背景 `#FFFFFF0F`，触发按钮打开时背景加深至 `#FFFFFF1A`，箭头图标旋转 180°
+- [x] 项目工作流 — 生成分镜视频弹窗定稿（2026-05-19）：
+  - 删除原「首尾帧生视频」/「多参生视频」Tab 分页，改为 radio 单选器「生成方式」（全能参考 / 首尾帧 / 多图参考）
+  - 全能参考字段：选择模型、参考主体、参考图、参考视频、参考音频、时长、分辨率、音效
+  - 首尾帧字段：选择模型、首帧图（含「使用当前分镜图」快捷块）、尾帧图可选（含「使用下一分镜图」快捷块）、时长、分辨率、音效
+  - 多图参考字段：选择模型、参考主体、参考图、时长、分辨率、音效
+  - 新增 `FrameUploadSlot` 组件：在标准双通道上传容器旁增加快捷块，有分镜图时显示缩略图（72×40，默认 60% 透明度，hover 100%）+ 文字，点击直接填入；无分镜图时显示灰色占位图标（不可点击）
+  - `setVideoPanel` 调用时同步传入 `nextShot`，`GenerateVideoPanel` 接收 `nextShot` prop 用于尾帧快捷块
+- [x] 通用组件 — AssetPickerModal 音频支持（2026-05-19）：
+  - 新增 `PROJECT_SUB_TABS_AUDIO = ['音频']`、`CREATIVE_SUB_TABS_AUDIO = ['配音']` 常量
+  - `accept === 'audio'` 时仅显示音频相关分页，屏蔽图片/视频分页
+  - mock 数据补充 `audio` / `dubbing` 数组；`SUB_TAB_KEY_MAP` 新增 `'音频': 'audio'`、`'配音': 'dubbing'`
+  - `AssetCard` 音频类型显示音符 SVG 占位图标
+  - `PanelUploadSlot` accept 映射修复：`audio/*` 正确传递 `accept='audio'` 给 AssetPickerModal（原先漏判导致音频 tab 不显示）
 - [ ] 项目工作流 — 剪辑成片
 - [ ] 创作页（生图/生视频）
 - [ ] 资产库
