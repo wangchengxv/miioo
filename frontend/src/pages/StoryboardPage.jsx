@@ -717,6 +717,138 @@ function PanelSelect({ label, value, options, onChange, disabled = false }) {
   );
 }
 
+// ─── 首尾帧专用上传区（含快捷按钮）────────────────────────────────────────────────
+
+function FrameUploadSlot({ label, media, onUpload, onRemove, shortcutLabel, shortcutImage }) {
+  const fileRef = useRef(null);
+  const [hov, setHov] = useState(false);
+  const [btn1Hov, setBtn1Hov] = useState(false);
+  const [btn1Pressed, setBtn1Pressed] = useState(false);
+  const [btn2Hov, setBtn2Hov] = useState(false);
+  const [btn2Pressed, setBtn2Pressed] = useState(false);
+  const [btn3Hov, setBtn3Hov] = useState(false);
+  const [btn3Pressed, setBtn3Pressed] = useState(false);
+  const [assetPickerOpen, setAssetPickerOpen] = useState(false);
+
+  function handleFile(e) {
+    const file = e.target.files[0];
+    if (!file) return;
+    const url = URL.createObjectURL(file);
+    onUpload?.({ id: url, url, name: file.name, type: file.type });
+    e.target.value = '';
+  }
+
+  function handleShortcut() {
+    if (!shortcutImage) return;
+    onUpload?.(shortcutImage);
+  }
+
+  return (
+    <>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignSelf: 'stretch' }}>
+        {label && <span style={{ fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.60)', fontFamily: FONT }}>{label}</span>}
+        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+          <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFile} />
+          {media ? (
+            <div style={{ position: 'relative', width: '120px', height: '120px', borderRadius: '6px', overflow: 'hidden', flexShrink: 0, border: '1px solid rgba(255,255,255,0.12)' }}>
+              <img src={media.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              <div
+                onClick={onRemove}
+                style={{ position: 'absolute', top: '4px', right: '4px', width: '18px', height: '18px', borderRadius: '4px', backgroundColor: 'rgba(0,0,0,0.70)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+              >
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 2L8 8M8 2L2 8" stroke="#FFFFFF" strokeWidth="1.2" strokeLinecap="round"/></svg>
+              </div>
+            </div>
+          ) : (
+            <div
+              onMouseEnter={() => setHov(true)}
+              onMouseLeave={() => setHov(false)}
+              style={{
+                width: '120px', height: '120px', borderRadius: '6px', flexShrink: 0,
+                border: `1px dashed ${hov ? 'rgba(255,255,255,0.28)' : 'rgba(255,255,255,0.08)'}`,
+                backgroundColor: '#1D1E1E',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                transition: 'border-color 0.12s',
+              }}
+            >
+              <div
+                onClick={() => fileRef.current?.click()}
+                onMouseEnter={() => setBtn1Hov(true)}
+                onMouseLeave={() => { setBtn1Hov(false); setBtn1Pressed(false); }}
+                onMouseDown={() => setBtn1Pressed(true)}
+                onMouseUp={() => setBtn1Pressed(false)}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', height: '24px', paddingInline: '6px', borderRadius: '6px',
+                  backgroundColor: btn1Pressed ? '#1a1a1a' : btn1Hov ? '#222323' : '#161616',
+                  border: '1px solid rgba(255,255,255,0.08)', outline: '1px solid #00000080',
+                  cursor: 'pointer', fontSize: '12px', color: btn1Hov ? 'rgba(255,255,255,0.70)' : 'rgba(255,255,255,0.40)',
+                  fontFamily: FONT, whiteSpace: 'nowrap', transition: 'background-color 0.10s, color 0.10s',
+                }}
+              >
+                本地上传
+              </div>
+              <div
+                onClick={() => setAssetPickerOpen(true)}
+                onMouseEnter={() => setBtn2Hov(true)}
+                onMouseLeave={() => { setBtn2Hov(false); setBtn2Pressed(false); }}
+                onMouseDown={() => setBtn2Pressed(true)}
+                onMouseUp={() => setBtn2Pressed(false)}
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center', height: '24px', paddingInline: '6px', borderRadius: '6px',
+                  backgroundColor: btn2Pressed ? '#1a1a1a' : btn2Hov ? '#222323' : '#161616',
+                  border: '1px solid rgba(255,255,255,0.08)', outline: '1px solid #00000080',
+                  cursor: 'pointer', fontSize: '12px', color: btn2Hov ? 'rgba(255,255,255,0.70)' : 'rgba(255,255,255,0.40)',
+                  fontFamily: FONT, whiteSpace: 'nowrap', transition: 'background-color 0.10s, color 0.10s',
+                }}
+              >
+                从资产库选择
+              </div>
+            </div>
+          )}
+          {/* 快捷按钮：使用当前/下一分镜图 */}
+          {!media && (
+            <div
+              onClick={shortcutImage ? handleShortcut : undefined}
+              onMouseEnter={() => setBtn3Hov(true)}
+              onMouseLeave={() => { setBtn3Hov(false); setBtn3Pressed(false); }}
+              onMouseDown={() => shortcutImage ? setBtn3Pressed(true) : undefined}
+              onMouseUp={() => setBtn3Pressed(false)}
+              style={{
+                width: '120px', height: '120px', borderRadius: '6px', flexShrink: 0,
+                border: `1px dashed ${btn3Hov && shortcutImage ? 'rgba(255,255,255,0.28)' : 'rgba(255,255,255,0.08)'}`,
+                backgroundColor: '#1D1E1E',
+                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                cursor: shortcutImage ? 'pointer' : 'default',
+                transition: 'border-color 0.12s',
+                padding: '8px',
+              }}
+            >
+              {shortcutImage ? (
+                <>
+                  <div style={{ width: '72px', height: '40px', borderRadius: '4px', overflow: 'hidden', flexShrink: 0, border: '1px solid rgba(255,255,255,0.12)', opacity: btn3Hov ? 1 : 0.6, transition: 'opacity 0.12s' }}>
+                    <img src={shortcutImage.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  </div>
+                  <span style={{ fontSize: '12px', lineHeight: '16px', color: 'rgba(255,255,255,0.40)', fontFamily: FONT, textAlign: 'center' }}>{shortcutLabel}</span>
+                </>
+              ) : (
+                <>
+                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                    <rect x="2" y="4" width="16" height="12" rx="2" stroke="rgba(255,255,255,0.15)" strokeWidth="1.2"/>
+                    <circle cx="7" cy="8.5" r="1.5" stroke="rgba(255,255,255,0.15)" strokeWidth="1.2"/>
+                    <path d="M2 13l4-3 3 2.5 3-4 4 4.5" stroke="rgba(255,255,255,0.15)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+                  </svg>
+                  <span style={{ fontSize: '11px', lineHeight: '14px', color: 'rgba(255,255,255,0.20)', fontFamily: FONT, textAlign: 'center' }}>{shortcutLabel}</span>
+                </>
+              )}
+            </div>
+          )}
+        </div>
+      </div>
+      <AssetPickerModal accept="image" open={assetPickerOpen} onClose={() => setAssetPickerOpen(false)} onConfirm={() => {}} />
+    </>
+  );
+}
+
 // ─── 面板上传区（虚线框）────────────────────────────────────────────────────────
 
 function PanelUploadSlot({ label, onUpload, media, onRemove, accept = 'image/*' }) {
@@ -744,6 +876,11 @@ function PanelUploadSlot({ label, onUpload, media, onRemove, accept = 'image/*' 
             <div style={{ position: 'relative', width: '120px', height: '120px', borderRadius: '6px', overflow: 'hidden', flexShrink: 0, border: '1px solid rgba(255,255,255,0.12)' }}>
               {media.type?.startsWith('video') ? (
                 <video src={media.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted playsInline />
+              ) : media.type?.startsWith('audio') ? (
+                <div style={{ width: '100%', height: '100%', backgroundColor: '#1D1E1E', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M9 18V5l12-2v13" stroke="rgba(255,255,255,0.50)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><circle cx="6" cy="18" r="3" stroke="rgba(255,255,255,0.50)" strokeWidth="1.5"/><circle cx="18" cy="16" r="3" stroke="rgba(255,255,255,0.50)" strokeWidth="1.5"/></svg>
+                  <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.40)', fontFamily: FONT, maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingInline: '4px' }}>{media.name}</span>
+                </div>
               ) : (
                 <img src={media.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               )}
@@ -802,7 +939,7 @@ function PanelUploadSlot({ label, onUpload, media, onRemove, accept = 'image/*' 
           )}
         </div>
       </div>
-      <AssetPickerModal accept={accept.startsWith('video') ? 'video' : 'image'} open={assetPickerOpen} onClose={() => setAssetPickerOpen(false)} onConfirm={() => {}} />
+      <AssetPickerModal accept={accept.startsWith('video') ? 'video' : accept.startsWith('image') ? 'image' : accept.startsWith('audio') ? 'audio' : 'all'} open={assetPickerOpen} onClose={() => setAssetPickerOpen(false)} onConfirm={() => {}} />
     </>
   );
 }
@@ -1461,8 +1598,8 @@ function GenerateImagePanel({ shot, chars = [], scenes = [], props = [], onClose
   );
 }
 
-function GenerateVideoPanel({ shot, chars = [], scenes = [], props = [], onClose, onGenerate }) {
-  const [tab, setTab] = useState('first-last'); // 'first-last' | 'multi'
+function GenerateVideoPanel({ shot, nextShot = null, chars = [], scenes = [], props = [], onClose, onGenerate }) {
+  const [mode, setMode] = useState('all'); // 'all' | 'first-last' | 'multi'
   const [model, setModel] = useState('Doubao-Seed-2.0-Pro');
   const [resolution, setResolution] = useState('720P');
   const [duration, setDuration] = useState('自动匹配');
@@ -1471,6 +1608,7 @@ function GenerateVideoPanel({ shot, chars = [], scenes = [], props = [], onClose
   const [refSubject, setRefSubject] = useState(null);
   const [refImage, setRefImage] = useState(null);
   const [refVideo, setRefVideo] = useState(null);
+  const [refAudio, setRefAudio] = useState(null);
   const [refFirstFrame, setRefFirstFrame] = useState(null);
   const [refLastFrame, setRefLastFrame] = useState(null);
   const [loading, setLoading] = useState(false);
@@ -1530,36 +1668,69 @@ function GenerateVideoPanel({ shot, chars = [], scenes = [], props = [], onClose
               <span style={{ fontSize: '14px', lineHeight: '20px', color: '#FFFFFF', fontFamily: FONT, flexShrink: 0 }}>{String(shot?.number ?? 1).padStart(2, '0')}</span>
             </div>
 
-            {/* Tab 切换 */}
-            <div style={{ display: 'flex', gap: '24px' }}>
-              {[{ key: 'first-last', label: '首尾帧生视频' }, { key: 'multi', label: '多参生视频' }].map(({ key, label }) => (
-                <div
-                  key={key}
-                  onClick={() => setTab(key)}
-                  style={{ display: 'flex', flexDirection: 'column', gap: '4px', cursor: 'pointer' }}
-                >
-                  <span style={{ fontSize: '14px', lineHeight: '18px', color: tab === key ? '#FFFFFF' : 'rgba(255,255,255,0.60)', fontFamily: tab === key ? FONT_MEDIUM : FONT, fontWeight: tab === key ? 500 : 400, transition: 'color 0.12s' }}>
+            <PanelPromptInput value={prompt} onChange={setPrompt} chars={chars} scenes={scenes} props={props} />
+
+            {/* 模式 radio 单选器 */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <span style={{ fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.60)', fontFamily: FONT }}>生成方式</span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
+              {[{ key: 'all', label: '全能参考' }, { key: 'first-last', label: '首尾帧' }, { key: 'multi', label: '多图参考' }].map(({ key, label }) => (
+                <div key={key} onClick={() => setMode(key)} style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+                  <div style={{
+                    width: '16px', height: '16px', borderRadius: '50%', flexShrink: 0,
+                    border: `1.5px solid ${mode === key ? '#2DC3E1' : 'rgba(255,255,255,0.30)'}`,
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    transition: 'border-color 0.12s',
+                  }}>
+                    {mode === key && <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#2DC3E1' }} />}
+                  </div>
+                  <span style={{ fontSize: '14px', lineHeight: '18px', color: mode === key ? '#FFFFFF' : 'rgba(255,255,255,0.60)', fontFamily: mode === key ? FONT_MEDIUM : FONT, fontWeight: mode === key ? 500 : 400, transition: 'color 0.12s' }}>
                     {label}
                   </span>
-                  {tab === key && <div style={{ height: '2px', backgroundColor: '#DDDDDD', borderRadius: '1px' }} />}
                 </div>
               ))}
             </div>
+            </div>
 
-            <PanelPromptInput value={prompt} onChange={setPrompt} chars={chars} scenes={scenes} props={props} />
             <PanelSelect label="选择模型" value={model} options={['Doubao-Seed-2.0-Pro', 'Doubao-Seed-2.0-Lite', 'Kling 2.0']} onChange={setModel} />
 
-            {/* Tab 对应的上传字段 */}
-            {tab === 'first-last' ? (
-              <>
-                <PanelUploadSlot label="首帧图" accept="image/*" media={refFirstFrame} onUpload={setRefFirstFrame} onRemove={() => setRefFirstFrame(null)} />
-                <PanelUploadSlot label="尾帧图" accept="image/*" media={refLastFrame} onUpload={setRefLastFrame} onRemove={() => setRefLastFrame(null)} />
-              </>
-            ) : (
+            {/* 全能参考字段 */}
+            {mode === 'all' && (
               <>
                 <PanelUploadSlot label="参考主体" accept="image/*" media={refSubject} onUpload={setRefSubject} onRemove={() => setRefSubject(null)} />
                 <PanelUploadSlot label="参考图" accept="image/*" media={refImage} onUpload={setRefImage} onRemove={() => setRefImage(null)} />
                 <PanelUploadSlot label="参考视频" accept="video/*" media={refVideo} onUpload={setRefVideo} onRemove={() => setRefVideo(null)} />
+                <PanelUploadSlot label="参考音频" accept="audio/*" media={refAudio} onUpload={setRefAudio} onRemove={() => setRefAudio(null)} />
+              </>
+            )}
+
+            {/* 首尾帧字段 */}
+            {mode === 'first-last' && (
+              <>
+                <FrameUploadSlot
+                  label="首帧图"
+                  media={refFirstFrame}
+                  onUpload={setRefFirstFrame}
+                  onRemove={() => setRefFirstFrame(null)}
+                  shortcutLabel="使用当前分镜图"
+                  shortcutImage={shot?.storyboardImage ?? null}
+                />
+                <FrameUploadSlot
+                  label="尾帧图（可选）"
+                  media={refLastFrame}
+                  onUpload={setRefLastFrame}
+                  onRemove={() => setRefLastFrame(null)}
+                  shortcutLabel="使用下一分镜图"
+                  shortcutImage={nextShot?.storyboardImage ?? null}
+                />
+              </>
+            )}
+
+            {/* 多图参考字段 */}
+            {mode === 'multi' && (
+              <>
+                <PanelUploadSlot label="参考主体" accept="image/*" media={refSubject} onUpload={setRefSubject} onRemove={() => setRefSubject(null)} />
+                <PanelUploadSlot label="参考图" accept="image/*" media={refImage} onUpload={setRefImage} onRemove={() => setRefImage(null)} />
               </>
             )}
 
@@ -4141,7 +4312,7 @@ export default function StoryboardPage({ projectName = '两只老虎的奇遇', 
             onDragOver={() => { if (dragId && dragId !== shot.id) setOverId(shot.id); }}
             onDrop={() => handleDrop(shot.id)}
             onGenerateImage={() => setImagePanel({ shot })}
-            onGenerateVideo={() => setVideoPanel({ shot })}
+            onGenerateVideo={() => setVideoPanel({ shot, nextShot: shots[idx + 1] ?? null })}
             globalVoiceParams={globalVoiceParams}
             onSaveGlobalVoice={(role, params) => setGlobalVoiceParams((prev) => ({ ...prev, [role]: params }))}
           />
@@ -4252,6 +4423,7 @@ export default function StoryboardPage({ projectName = '两只老虎的奇遇', 
     {videoPanel && (
       <GenerateVideoPanel
         shot={videoPanel.shot}
+        nextShot={videoPanel.nextShot}
         chars={chars}
         scenes={scenes}
         props={props}

@@ -4,13 +4,15 @@ import { createPortal } from 'react-dom';
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
 
-// accept='image' → 只允许图片类资产；'video' → 只允许视频类资产；'all' → 不限制
+// accept='image' → 只允许图片类资产；'video' → 只允许视频类资产；'audio' → 只允许音频类资产；'all' → 不限制
 const PROJECT_SUB_TABS_ALL = ['角色', '场景', '道具', '分镜图', '分镜视频'];
 const PROJECT_SUB_TABS_IMAGE = ['角色', '场景', '道具', '分镜图'];
 const PROJECT_SUB_TABS_VIDEO = ['分镜视频'];
+const PROJECT_SUB_TABS_AUDIO = ['音频'];
 const CREATIVE_SUB_TABS_ALL = ['图片', '视频'];
 const CREATIVE_SUB_TABS_IMAGE = ['图片'];
 const CREATIVE_SUB_TABS_VIDEO = ['视频'];
+const CREATIVE_SUB_TABS_AUDIO = ['配音'];
 
 // ── Mock 数据（接口接入前使用）────────────────────────────────────────────────
 const MOCK_PROJECTS = [
@@ -48,6 +50,11 @@ const MOCK_PROJECT_ASSETS_MAP = {
       { id: 'sv1', name: '第1集_预览', bgColor: '#1A1E24' },
       { id: 'sv2', name: '第2集_预览', bgColor: '#1E1A24' },
     ],
+    audio: [
+      { id: 'au1', name: '背景音乐_森林.mp3', bgColor: '#1E2022', type: 'audio' },
+      { id: 'au2', name: '音效_风声.wav', bgColor: '#201E22', type: 'audio' },
+      { id: 'au3', name: '配乐_主题曲.mp3', bgColor: '#1E2020', type: 'audio' },
+    ],
   },
   p2: {
     chars: [
@@ -65,6 +72,9 @@ const MOCK_PROJECT_ASSETS_MAP = {
       { id: 'p2si1', name: '第1集_镜头01', bgColor: '#1E2022' },
     ],
     storyboard_video: [],
+    audio: [
+      { id: 'p2au1', name: '悬疑背景音.mp3', bgColor: '#1A1A20', type: 'audio' },
+    ],
   },
   p3: {
     chars: [
@@ -82,6 +92,7 @@ const MOCK_PROJECT_ASSETS_MAP = {
     storyboard_video: [
       { id: 'p3sv1', name: '第1集_预览', bgColor: '#1A1E24' },
     ],
+    audio: [],
   },
   p4: {
     chars: [],
@@ -93,6 +104,9 @@ const MOCK_PROJECT_ASSETS_MAP = {
     ],
     storyboard_img: [],
     storyboard_video: [],
+    audio: [
+      { id: 'p4au1', name: '科幻音效.wav', bgColor: '#1E1A24', type: 'audio' },
+    ],
   },
 };
 
@@ -110,6 +124,12 @@ const MOCK_CREATIVE_ASSETS = {
     { id: 'vid2', name: '第2集_预览.mp4', bgColor: '#1E1A24', starred: false },
     { id: 'vid3', name: '片头动画.mp4', bgColor: '#1A1A20', starred: false },
   ],
+  dubbing: [
+    { id: 'dub1', name: '旁白_第1集.mp3', bgColor: '#1E2022', starred: true, type: 'audio' },
+    { id: 'dub2', name: '角色配音_主角.wav', bgColor: '#201E22', starred: false, type: 'audio' },
+    { id: 'dub3', name: '旁白_第2集.mp3', bgColor: '#1E2020', starred: false, type: 'audio' },
+    { id: 'dub4', name: '角色配音_反派.wav', bgColor: '#1A1A20', starred: true, type: 'audio' },
+  ],
 };
 
 // 子 Tab → projectAssetsMap 的 key
@@ -119,8 +139,10 @@ const SUB_TAB_KEY_MAP = {
   '道具': 'props',
   '分镜图': 'storyboard_img',
   '分镜视频': 'storyboard_video',
+  '音频': 'audio',
   '图片': 'images',
   '视频': 'videos',
+  '配音': 'dubbing',
 };
 
 function Checkbox({ checked, hovered }) {
@@ -163,6 +185,12 @@ function AssetCard({ asset, isSelected, isHovered, onMouseEnter, onMouseLeave, o
       }}>
         {asset.url ? (
           <img src={asset.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: isHovered && !isSelected ? 0.85 : 1, transition: 'opacity 100ms' }} />
+        ) : asset.type === 'audio' ? (
+          <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
+            <path d="M12 26V8l16-3v18" stroke="#FFFFFF26" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
+            <circle cx="8" cy="26" r="4" stroke="#FFFFFF26" strokeWidth="1.5"/>
+            <circle cx="24" cy="23" r="4" stroke="#FFFFFF26" strokeWidth="1.5"/>
+          </svg>
         ) : (
           <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
             <rect x="3" y="6" width="26" height="20" rx="3" stroke="#FFFFFF26" strokeWidth="1.5" />
@@ -222,8 +250,8 @@ export default function AssetPickerModal({
   // creativeAssets: { images: [], videos: [] }  创作资产；未传时使用 mock 数据
   creativeAssets = MOCK_CREATIVE_ASSETS,
 }) {
-  const projectSubTabsAvail = accept === 'video' ? PROJECT_SUB_TABS_VIDEO : accept === 'image' ? PROJECT_SUB_TABS_IMAGE : PROJECT_SUB_TABS_ALL;
-  const creativeSubTabsAvail = accept === 'video' ? CREATIVE_SUB_TABS_VIDEO : accept === 'image' ? CREATIVE_SUB_TABS_IMAGE : CREATIVE_SUB_TABS_ALL;
+  const projectSubTabsAvail = accept === 'video' ? PROJECT_SUB_TABS_VIDEO : accept === 'image' ? PROJECT_SUB_TABS_IMAGE : accept === 'audio' ? PROJECT_SUB_TABS_AUDIO : PROJECT_SUB_TABS_ALL;
+  const creativeSubTabsAvail = accept === 'video' ? CREATIVE_SUB_TABS_VIDEO : accept === 'image' ? CREATIVE_SUB_TABS_IMAGE : accept === 'audio' ? CREATIVE_SUB_TABS_AUDIO : CREATIVE_SUB_TABS_ALL;
 
   const [activeTab, setActiveTab] = useState('project');
   const [projectSubTab, setProjectSubTab] = useState(projectSubTabsAvail[0]);
