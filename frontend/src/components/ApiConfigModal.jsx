@@ -1,5 +1,6 @@
 import { forwardRef, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Toggle from './Toggle';
+import { apiTestConnection, apiSaveApiConfig, apiGetApiConfig } from '../api/config';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
@@ -62,10 +63,7 @@ function createDefaultState() {
     customProviders: [],
     customProviderDraft: createCustomProviderDraft(),
     onelinkModelsByTab: {
-      '对话模型': [
-        { id: 'onelink-1', name: 'GPT5.1', description: MODEL_DESCRIPTION, enabled: true },
-        { id: 'onelink-2', name: 'GPT5.1', description: MODEL_DESCRIPTION, enabled: true },
-      ],
+      '对话模型': [],
       '图片模型': [],
       '视频模型': [],
       '配音模型': [],
@@ -985,15 +983,8 @@ export default function ApiConfigModal({ open, onClose, onConfigured }) {
   }, []);
 
   const testConnection = useCallback(async () => {
-    // TODO: 替换为真实接口 POST /api-config/test  body: { apiKey, baseUrl, ... }
-    // const res = await fetch('/api/api-config/test', { method: 'POST', ... });
-    // const { success } = await res.json();
-    const success = Math.random() > 0.4; // mock
-    if (success) {
-      showToast('success', '连接成功！');
-    } else {
-      showToast('error', '连接失败');
-    }
+    await apiTestConnection();
+    showToast('success', '连接成功！');
   }, [showToast]);
 
   const requestDelete = useCallback((type, id) => {
@@ -1005,8 +996,7 @@ export default function ApiConfigModal({ open, onClose, onConfigured }) {
   }
 
   function closeMain() {
-    // TODO: 替换为真实接口 POST /api-config  body: state（注意：API key 仅存本地，不上传云端）
-    // await fetch('/api/api-config', { method: 'POST', body: JSON.stringify(state) });
+    apiSaveApiConfig(state);
     resetState();
     onClose?.();
   }
@@ -1031,6 +1021,17 @@ export default function ApiConfigModal({ open, onClose, onConfigured }) {
 
   useEffect(() => {
     if (!open) return undefined;
+
+    apiGetApiConfig().then((config) => {
+      setState((current) => ({
+        ...current,
+        mainConfigured: config.mainConfigured ?? current.mainConfigured,
+        onelinkEnabled: config.onelinkEnabled ?? current.onelinkEnabled,
+        onelinkApiKey: config.onelinkApiKey ?? current.onelinkApiKey,
+        onelinkModelsByTab: config.onelinkModelsByTab ?? current.onelinkModelsByTab,
+        customProviders: config.customProviders ?? current.customProviders,
+      }));
+    });
 
     const handleKeyDown = (event) => {
       if (event.key !== 'Escape') return;

@@ -4,50 +4,8 @@ import BatchDownloadModal from '../components/BatchDownloadModal';
 import ShotViewerModal from '../components/ShotViewerModal';
 import Toggle from '../components/Toggle';
 import AssetPickerModal from '../components/AssetPickerModal';
-
-// ── API stubs (TODO: 替换为真实接口) ──────────────────────────────────────
-
-async function apiUploadFile(file) {
-  // TODO: POST /upload  body: FormData { file }
-  // returns: { url }
-  console.log('[mock] upload file', file.name);
-  return { url: URL.createObjectURL(file) };
-}
-
-async function apiGenerateImage(shotId, params) {
-  // TODO: POST /shots/:shotId/generate-image  body: params
-  // returns: { jobId, imageUrl }
-  console.log('[mock] generate image for shot', shotId, params);
-  return { jobId: `job-${Date.now()}`, imageUrl: null };
-}
-
-async function apiGenerateVideo(shotId, params) {
-  // TODO: POST /shots/:shotId/generate-video  body: params
-  // returns: { jobId, videoUrl }
-  console.log('[mock] generate video for shot', shotId, params);
-  return { jobId: `job-${Date.now()}`, videoUrl: null };
-}
-
-async function apiCreateShot(episodeId, data) {
-  // TODO: POST /episodes/:episodeId/shots  body: data
-  console.log('[mock] create shot', episodeId, data);
-  return { id: `shot-${Date.now()}-${Math.random()}` };
-}
-
-async function apiUpdateShot(shotId, data) {
-  // TODO: PATCH /shots/:shotId  body: data
-  console.log('[mock] update shot', shotId, data);
-}
-
-async function apiDeleteShot(shotId) {
-  // TODO: DELETE /shots/:shotId
-  console.log('[mock] delete shot', shotId);
-}
-
-async function apiReorderShots(episodeId, orderedIds) {
-  // TODO: PATCH /episodes/:episodeId/shots/reorder  body: { orderedIds }
-  console.log('[mock] reorder shots', episodeId, orderedIds);
-}
+import { apiUploadFile, apiGenerateImage, apiGenerateVideo, apiCreateShot, apiUpdateShot, apiDeleteShot, apiReorderShots, apiGetShots } from '../api/storyboard';
+import { apiGetEpisodes, apiGetModels } from '../api/subject';
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -400,8 +358,15 @@ const ModalToggle = Toggle;
 // ─── 批量生成分镜图弹窗 ───────────────────────────────────────────────────────
 
 function BatchImageModal({ shotCount, onClose, onConfirm }) {
-  const [model, setModel] = useState('Seedance 2.0-pro');
+  const [model, setModel] = useState('');
+  const [modelOptions, setModelOptions] = useState([]);
   const [resolution, setResolution] = useState('1K');
+  useEffect(() => {
+    apiGetModels().then((list) => {
+      setModelOptions(list);
+      setModel((prev) => prev || list[0] || '');
+    });
+  }, []);
   return (
     <ModalOverlay onClose={onClose}>
       <div style={{
@@ -420,7 +385,7 @@ function BatchImageModal({ shotCount, onClose, onConfirm }) {
             <span style={{ fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.60)', fontFamily: FONT, flexShrink: 0 }}>待生成的分镜图数量</span>
             <span style={{ fontSize: '14px', lineHeight: '18px', color: '#FFFFFF', fontFamily: FONT, flexShrink: 0 }}>{shotCount}个</span>
           </div>
-          <ModalSelect label="选择模型" value={model} options={['Seedance 2.0-pro', 'Seedance 2.0-lite', 'Flux 1.1 Pro']} onChange={setModel} />
+          <ModalSelect label="选择模型" value={model} options={modelOptions} onChange={setModel} />
           <ModalSelect label="分辨率" value={resolution} options={['1K', '2K', '4K']} onChange={setResolution} />
         </div>
         {/* 底部 */}
@@ -436,9 +401,16 @@ function BatchImageModal({ shotCount, onClose, onConfirm }) {
 // ─── 批量生成分镜视频弹窗 ─────────────────────────────────────────────────────
 
 function BatchVideoModal({ shotCount, onClose, onConfirm }) {
-  const [model, setModel] = useState('Seedance 2.0-pro');
+  const [model, setModel] = useState('');
+  const [modelOptions, setModelOptions] = useState([]);
   const [quality, setQuality] = useState('720P');
   const [sound, setSound] = useState(true);
+  useEffect(() => {
+    apiGetModels().then((list) => {
+      setModelOptions(list);
+      setModel((prev) => prev || list[0] || '');
+    });
+  }, []);
   return (
     <ModalOverlay onClose={onClose}>
       <div style={{
@@ -457,7 +429,7 @@ function BatchVideoModal({ shotCount, onClose, onConfirm }) {
             <span style={{ fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.60)', fontFamily: FONT, flexShrink: 0 }}>待生成的分镜视频数量</span>
             <span style={{ fontSize: '14px', lineHeight: '18px', color: '#FFFFFF', fontFamily: FONT, flexShrink: 0 }}>{shotCount}个</span>
           </div>
-          <ModalSelect label="选择模型" value={model} options={['Seedance 2.0-pro', 'Seedance 2.0-lite', 'Kling 2.0']} onChange={setModel} />
+          <ModalSelect label="选择模型" value={model} options={modelOptions} onChange={setModel} />
           {/* 时长（只读） */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignSelf: 'stretch' }}>
             <span style={{ fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.60)', fontFamily: FONT }}>时长</span>
@@ -719,7 +691,7 @@ function PanelSelect({ label, value, options, onChange, disabled = false }) {
 
 // ─── 首尾帧专用上传区（含快捷按钮）────────────────────────────────────────────────
 
-function FrameUploadSlot({ label, media, onUpload, onRemove, shortcutLabel, shortcutImage }) {
+function FrameUploadSlot({ label, media, onUpload, onRemove, shortcutLabel, shortcutImage, shortcutTooltip }) {
   const fileRef = useRef(null);
   const [hov, setHov] = useState(false);
   const [btn1Hov, setBtn1Hov] = useState(false);
@@ -807,38 +779,59 @@ function FrameUploadSlot({ label, media, onUpload, onRemove, shortcutLabel, shor
           )}
           {/* 快捷按钮：使用当前/下一分镜图 */}
           {!media && (
-            <div
-              onClick={shortcutImage ? handleShortcut : undefined}
-              onMouseEnter={() => setBtn3Hov(true)}
-              onMouseLeave={() => { setBtn3Hov(false); setBtn3Pressed(false); }}
-              onMouseDown={() => shortcutImage ? setBtn3Pressed(true) : undefined}
-              onMouseUp={() => setBtn3Pressed(false)}
-              style={{
-                width: '120px', height: '120px', borderRadius: '6px', flexShrink: 0,
-                border: `1px dashed ${btn3Hov && shortcutImage ? 'rgba(255,255,255,0.28)' : 'rgba(255,255,255,0.08)'}`,
-                backgroundColor: '#1D1E1E',
-                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                cursor: shortcutImage ? 'pointer' : 'default',
-                transition: 'border-color 0.12s',
-                padding: '8px',
-              }}
-            >
-              {shortcutImage ? (
-                <>
-                  <div style={{ width: '72px', height: '40px', borderRadius: '4px', overflow: 'hidden', flexShrink: 0, border: '1px solid rgba(255,255,255,0.12)', opacity: btn3Hov ? 1 : 0.6, transition: 'opacity 0.12s' }}>
-                    <img src={shortcutImage.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                  </div>
-                  <span style={{ fontSize: '12px', lineHeight: '16px', color: 'rgba(255,255,255,0.40)', fontFamily: FONT, textAlign: 'center' }}>{shortcutLabel}</span>
-                </>
-              ) : (
-                <>
-                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
-                    <rect x="2" y="4" width="16" height="12" rx="2" stroke="rgba(255,255,255,0.15)" strokeWidth="1.2"/>
-                    <circle cx="7" cy="8.5" r="1.5" stroke="rgba(255,255,255,0.15)" strokeWidth="1.2"/>
-                    <path d="M2 13l4-3 3 2.5 3-4 4 4.5" stroke="rgba(255,255,255,0.15)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
-                  </svg>
-                  <span style={{ fontSize: '11px', lineHeight: '14px', color: 'rgba(255,255,255,0.20)', fontFamily: FONT, textAlign: 'center' }}>{shortcutLabel}</span>
-                </>
+            <div style={{ position: 'relative' }}>
+              <div
+                onClick={shortcutImage ? handleShortcut : undefined}
+                onMouseEnter={() => setBtn3Hov(true)}
+                onMouseLeave={() => { setBtn3Hov(false); setBtn3Pressed(false); }}
+                onMouseDown={() => shortcutImage ? setBtn3Pressed(true) : undefined}
+                onMouseUp={() => setBtn3Pressed(false)}
+                style={{
+                  width: '120px', height: '120px', borderRadius: '6px', flexShrink: 0,
+                  border: `1px dashed ${btn3Hov && shortcutImage ? 'rgba(255,255,255,0.28)' : 'rgba(255,255,255,0.08)'}`,
+                  backgroundColor: '#1D1E1E',
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                  cursor: shortcutImage ? 'pointer' : 'default',
+                  transition: 'border-color 0.12s',
+                  padding: '8px',
+                }}
+              >
+                {shortcutImage ? (
+                  <>
+                    <div style={{ width: '72px', height: '40px', borderRadius: '4px', overflow: 'hidden', flexShrink: 0, border: '1px solid rgba(255,255,255,0.12)', opacity: btn3Hov ? 1 : 0.6, transition: 'opacity 0.12s' }}>
+                      <img src={shortcutImage.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    </div>
+                    <span style={{ fontSize: '12px', lineHeight: '16px', color: 'rgba(255,255,255,0.40)', fontFamily: FONT, textAlign: 'center' }}>{shortcutLabel}</span>
+                  </>
+                ) : (
+                  <>
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                      <rect x="2" y="4" width="16" height="12" rx="2" stroke="rgba(255,255,255,0.15)" strokeWidth="1.2"/>
+                      <circle cx="7" cy="8.5" r="1.5" stroke="rgba(255,255,255,0.15)" strokeWidth="1.2"/>
+                      <path d="M2 13l4-3 3 2.5 3-4 4 4.5" stroke="rgba(255,255,255,0.15)" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round"/>
+                    </svg>
+                    <span style={{ fontSize: '11px', lineHeight: '14px', color: 'rgba(255,255,255,0.20)', fontFamily: FONT, textAlign: 'center' }}>{shortcutLabel}</span>
+                  </>
+                )}
+              </div>
+              {/* tooltip：无分镜图时悬停提示 */}
+              {!shortcutImage && shortcutTooltip && btn3Hov && (
+                <div style={{
+                  position: 'absolute', bottom: 'calc(100% + 6px)', left: '50%', transform: 'translateX(-50%)',
+                  backgroundColor: '#2A2B2B', border: '1px solid rgba(255,255,255,0.10)', borderRadius: '6px',
+                  padding: '6px 10px', whiteSpace: 'nowrap', pointerEvents: 'none', zIndex: 9999,
+                  fontSize: '12px', lineHeight: '18px', color: 'rgba(255,255,255,0.60)', fontFamily: FONT,
+                  boxShadow: '0 4px 12px rgba(0,0,0,0.40)',
+                }}>
+                  {shortcutTooltip}
+                  {/* 小三角 */}
+                  <div style={{
+                    position: 'absolute', top: '100%', left: '50%', transform: 'translateX(-50%)',
+                    width: 0, height: 0,
+                    borderLeft: '5px solid transparent', borderRight: '5px solid transparent',
+                    borderTop: '5px solid #2A2B2B',
+                  }} />
+                </div>
               )}
             </div>
           )}
@@ -1605,7 +1598,7 @@ function GenerateVideoPanel({ shot, nextShot = null, chars = [], scenes = [], pr
   const [duration, setDuration] = useState('自动匹配');
   const [sound, setSound] = useState(true);
   const [prompt, setPrompt] = useState(shot?.description || '');
-  const [refSubject, setRefSubject] = useState(null);
+  const [refSubject, setRefSubject] = useState(shot?.mainRefs?.[0] ?? null);
   const [refImage, setRefImage] = useState(null);
   const [refVideo, setRefVideo] = useState(null);
   const [refAudio, setRefAudio] = useState(null);
@@ -1714,6 +1707,7 @@ function GenerateVideoPanel({ shot, nextShot = null, chars = [], scenes = [], pr
                   onRemove={() => setRefFirstFrame(null)}
                   shortcutLabel="使用当前分镜图"
                   shortcutImage={shot?.storyboardImage ?? null}
+                  shortcutTooltip="当前分镜尚未生成分镜图"
                 />
                 <FrameUploadSlot
                   label="尾帧图（可选）"
@@ -1722,6 +1716,7 @@ function GenerateVideoPanel({ shot, nextShot = null, chars = [], scenes = [], pr
                   onRemove={() => setRefLastFrame(null)}
                   shortcutLabel="使用下一分镜图"
                   shortcutImage={nextShot?.storyboardImage ?? null}
+                  shortcutTooltip="下一分镜尚未生成分镜图"
                 />
               </>
             )}
@@ -3135,8 +3130,9 @@ function MainRefCol({ refs, onChange, chars }) {
     e.target.value = '';
   }
 
-  function handleAssetConfirm(ids) {
-    // ids are asset IDs — URL resolution handled by data layer when integrated
+  function handleAssetConfirm(assets) {
+    const newRefs = assets.map(a => ({ id: a.id, url: a.url ?? null, name: a.name, type: a.type ?? 'image' }));
+    onChange([...refs, ...newRefs]);
   }
 
   return (
@@ -3180,7 +3176,10 @@ function MainRefCol({ refs, onChange, chars }) {
                       border: '1px solid rgba(255,255,255,0.06)',
                     }}
                   >
-                    <img src={refs[3].url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    {refs[3].url
+                      ? <img src={refs[3].url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      : <div style={{ width: '100%', height: '100%', backgroundColor: refs[3].bgColor ?? '#252525' }} />
+                    }
                     <div style={{
                       position: 'absolute', inset: 0,
                       backgroundColor: 'rgba(0,0,0,0.50)',
@@ -3211,7 +3210,12 @@ function MainRefCol({ refs, onChange, chars }) {
                       transition: 'border-color 150ms',
                     }}
                   >
-                    <img src={img.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                    {img.url
+                      ? <img src={img.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      : <div style={{ width: '100%', height: '100%', backgroundColor: img.bgColor ?? '#252525', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                          <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.50)', fontFamily: FONT }}>{(img.name ?? '?')[0]}</span>
+                        </div>
+                    }
                     {hoveredIdx === idx && (
                       <div
                         onClick={() => handleDelete(idx)}
@@ -3266,8 +3270,9 @@ function MainRefModal({ refs, onChange, onClose }) {
   const [hoveredIdx, setHoveredIdx] = useState(null);
   const [assetPickerOpen, setAssetPickerOpen] = useState(false);
 
-  function handleAssetConfirm(ids) {
-    // ids are asset IDs — URL resolution handled by data layer when integrated
+  function handleAssetConfirm(assets) {
+    const newRefs = assets.map(a => ({ id: a.id, url: a.url ?? null, name: a.name, type: a.type ?? 'image' }));
+    onChange([...refs, ...newRefs]);
   }
 
   function handleDelete(idx) {
@@ -4058,11 +4063,11 @@ const INITIAL_SHOTS = [
 
 // ─── 主页面 ───────────────────────────────────────────────────────────────────
 
-const EPISODES = ['第一集', '第二集', '第三集', '第四集', '第五集', '第六集'];
+const EPISODES = [];
 
 export default function StoryboardPage({ projectName = '两只老虎的奇遇', chars = [], scenes = [], props = [], episodes = EPISODES, onUnlockStep, onVideoGenerated }) {
   const activeEpisodes = episodes.length > 0 ? episodes : EPISODES;
-  const [shots, setShots] = useState(INITIAL_SHOTS);
+  const [shots, setShots] = useState([]);
   const [globalVoiceParams, setGlobalVoiceParams] = useState({});
   const [episode, setEpisode] = useState(() => activeEpisodes[0] ?? '第一集');
   const [dragId, setDragId] = useState(null);
@@ -4079,6 +4084,10 @@ export default function StoryboardPage({ projectName = '两只老虎的奇遇', 
   const [imagePanel, setImagePanel] = useState(null); // { shot }
   const [videoPanel, setVideoPanel] = useState(null); // { shot }
   const [genImageHistoryMap, setGenImageHistoryMap] = useState({}); // { [shotId]: generatedImages[] }
+
+  useEffect(() => {
+    apiGetShots(episode).then(setShots);
+  }, [episode]);
 
   useEffect(() => {
     if (activeEpisodes.length > 0 && !activeEpisodes.includes(episode)) {

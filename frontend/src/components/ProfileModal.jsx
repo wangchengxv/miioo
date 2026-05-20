@@ -1,23 +1,5 @@
-import { useState } from 'react';
-
-// ── API stubs (TODO: 替换为真实接口) ──────────────────────────────────────
-
-async function apiUpdateUser(data) {
-  // TODO: PATCH /users/me  body: { name?, email?, bio?, ... }
-  console.log('[mock] update user', data);
-}
-
-async function apiUploadAvatar(file) {
-  // TODO: POST /users/me/avatar  body: FormData { file }
-  // returns: { avatarUrl }
-  console.log('[mock] upload avatar', file?.name);
-  return { avatarUrl: null };
-}
-
-async function apiDeleteAccount() {
-  // TODO: DELETE /users/me
-  console.log('[mock] delete account');
-}
+import { useState, useRef } from 'react';
+import { apiUpdateUser, apiUploadAvatar, apiDeleteAccount } from '../api/user';
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -32,7 +14,18 @@ function CloseIcon() {
   );
 }
 
-function Avatar({ size = 64 }) {
+function Avatar({ size = 64, src }) {
+  if (src) {
+    return (
+      <img
+        src={src}
+        width={size}
+        height={size}
+        style={{ borderRadius: 'calc(infinity * 1px)', width: size, height: size, objectFit: 'cover', flexShrink: 0, display: 'block' }}
+        alt="头像"
+      />
+    );
+  }
   return (
     <svg width={size} height={size} viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ borderRadius: 'calc(infinity * 1px)', flexShrink: 0 }}>
       <rect width="28" height="28" rx="14" fill="#2DC3E1" />
@@ -47,19 +40,21 @@ function Avatar({ size = 64 }) {
 
 function ProfileField({ label, value, onChange, placeholder }) {
   const [focused, setFocused] = useState(false);
+  const [hovered, setHovered] = useState(false);
   return (
     <div
       className="flex items-center w-full rounded-[8px]"
       style={{ padding: '10px 16px', gap: '0' }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
     >
       <span
-        className="flex-shrink-0"
         style={{
           fontFamily: FONT_REGULAR,
           fontSize: '14px',
           lineHeight: '20px',
           color: 'rgba(255,255,255,0.4)',
-          width: '80px',
+          width: '60px',
           textAlign: 'left',
         }}
       >
@@ -68,7 +63,7 @@ function ProfileField({ label, value, onChange, placeholder }) {
       <div
         className="flex-1 flex items-center rounded-[6px]"
         style={{
-          border: `1px solid ${focused ? 'rgba(45,195,225,0.6)' : 'rgba(255,255,255,0.1)'}`,
+          border: `1px solid ${focused ? 'rgba(45,195,225,0.6)' : hovered ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.1)'}`,
           background: focused ? 'rgba(45,195,225,0.04)' : 'rgba(255,255,255,0.04)',
           padding: '5px 10px',
           transition: 'border-color 120ms, background 120ms',
@@ -236,6 +231,7 @@ export default function ProfileModal({ open, onClose, userId, phone, wechat, use
   const [phoneVal, setPhoneVal] = useState(phone || '');
   const [wechatVal, setWechatVal] = useState(wechat || '');
   const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [avatarUrl, setAvatarUrl] = useState(null);
 
   const handleClose = () => {
     apiUpdateUser({ name: nameVal, phone: phoneVal, wechat: wechatVal });
@@ -303,7 +299,7 @@ export default function ProfileModal({ open, onClose, userId, phone, wechat, use
             gap: '8px',
           }}
         >
-          <AvatarEditButton />
+          <AvatarEditButton avatarSrc={avatarUrl} onAvatarChange={setAvatarUrl} />
           <span style={{ fontFamily: FONT_MEDIUM, fontWeight: 500, fontSize: '14px', lineHeight: '20px', color: 'rgba(255,255,255,0.85)' }}>
             {userName}
           </span>
@@ -331,9 +327,19 @@ export default function ProfileModal({ open, onClose, userId, phone, wechat, use
   );
 }
 
-function AvatarEditButton() {
+function AvatarEditButton({ avatarSrc, onAvatarChange }) {
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
+  const fileInputRef = useRef(null);
+
+  const handleFileChange = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const result = await apiUploadAvatar(file);
+    // TODO: 接口就绪后 result.avatarUrl 为真实 URL，届时头像将实时更新
+    if (result?.avatarUrl) onAvatarChange(result.avatarUrl);
+    e.target.value = '';
+  };
 
   return (
     <button
@@ -344,10 +350,17 @@ function AvatarEditButton() {
       onMouseLeave={() => { setHovered(false); setPressed(false); }}
       onMouseDown={() => setPressed(true)}
       onMouseUp={() => setPressed(false)}
-      onClick={() => {}}
+      onClick={() => fileInputRef.current?.click()}
     >
+      <input
+        ref={fileInputRef}
+        type="file"
+        accept="image/jpeg,image/jpg,image/png,image/gif,image/webp"
+        style={{ display: 'none' }}
+        onChange={handleFileChange}
+      />
       <div style={{ position: 'relative', width: '64px', height: '64px' }}>
-        <Avatar size={64} />
+        <Avatar size={64} src={avatarSrc} />
         {/* Hover overlay */}
         <div
           style={{

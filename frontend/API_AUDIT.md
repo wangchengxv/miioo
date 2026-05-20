@@ -1,6 +1,6 @@
 # 前端 API 接入审查报告
 
-> 生成日期：2026-05-18  
+> 生成日期：2026-05-18（更新：2026-05-20）
 > 审查范围：`src/pages/` + `src/components/`  
 > 目的：找出所有"数据写死"或"应调接口但未调"的位置，逐一修复
 
@@ -17,7 +17,7 @@
 
 **缺失接口：** `POST /projects`  
 **涉及字段：** `name`, `desc`, `ratio`, `style`, `customStyleDesc`, `coverFile`  
-**状态：** ✅ 字段已补全，接口调用已用 TODO 注释占位（`Home.jsx:1157`）
+**状态：** ✅ `apiCreateProject(data)` 已封装至 `src/api/project.js`，Home.jsx 改为 import 引用
 
 ---
 
@@ -30,7 +30,7 @@
 - 绑定手机：无 `POST /auth/bind-phone`
 
 **缺失接口：** `POST /auth/send-code`、`POST /auth/login`、`POST /auth/bind-phone`  
-**状态：** ✅ mock 函数已占位，参数传递逻辑已补全（`LoginModal.jsx:164-186`）
+**状态：** ✅ mock 函数已迁移至 `src/api/auth.js`，LoginModal 改为 import 引用
 
 ---
 
@@ -46,7 +46,7 @@
 - 模型选项：`['Doubao-Seed-2.0-Pro', ...]` 硬编码，无 `GET /models`
 
 **缺失接口：** `GET /subjects/*`、`POST/PATCH/DELETE /subjects/*`、`POST /generate`、`GET /models`  
-**状态：** ✅ API stub 函数已占位（`SubjectPage.jsx:846-888`），增删改生成均已接入 mock
+**状态：** ✅ API stub 函数已迁移至 `src/api/subject.js`，SubjectPage 改为 import 引用
 
 ---
 
@@ -60,13 +60,34 @@
 - `PARAM_OPTIONS`（镜头类型/运镜/角度/构图/时长）：硬编码
 
 **缺失接口：** `POST /upload`、`POST /generate`、`PATCH/DELETE /shots/:id`  
-**状态：** ✅ API stub 函数已占位（`StoryboardPage.jsx:7-52`），增删改生成均已加 TODO 注释
+**状态：** ✅ API stub 函数已迁移至 `src/api/storyboard.js`，StoryboardPage 改为 import 引用
+
+---
+
+### 5. 分镜页面 — 初始镜头数据写死 `StoryboardPage.jsx`
+
+**问题：**
+- `INITIAL_SHOTS`（第 4028 行）：3 条硬编码镜头对象，页面加载时直接 `useState(INITIAL_SHOTS)` 而非调接口
+- `makeShot` 工厂函数（第 4014 行）用 `Date.now() + Math.random()` 生成 ID，新建镜头无法对应后端主键
+
+**缺失接口：** `GET /shots?episodeId=...`  
+**状态：** ⬜ 待修复
+
+---
+
+### 6. 主体页面 — 生成按钮未接通 `SubjectPage.jsx`
+
+**问题：**
+- `EditSubjectPanel` 生成按钮 `onClick`（第 1506–1510 行）只创建本地 placeholder，实际调用 `apiGenerateSubjectImage` 的代码被注释，逻辑未接通
+
+**缺失接口：** `POST /generate`  
+**状态：** ⬜ 待修复
 
 ---
 
 ## P1 — 用户数据（影响个人信息持久化）
 
-### 5. 个人资料 — `ProfileModal.jsx`
+### 7. 个人资料 — `ProfileModal.jsx`
 
 **问题：**
 - 保存编辑：无 `PATCH /users/me`
@@ -74,22 +95,22 @@
 - 注销账号：无 `DELETE /users/me`
 
 **缺失接口：** `PATCH /users/me`、`POST /users/me/avatar`、`DELETE /users/me`  
-**状态：** ✅ API stub 函数已占位（`ProfileModal.jsx:3-20`），关闭时保存、注销时删除均已接入 mock
+**状态：** ✅ API stub 函数已迁移至 `src/api/user.js`，ProfileModal 改为 import 引用
 
 ---
 
-### 6. 账户菜单 — `AccountMenu.jsx`
+### 8. 账户菜单 — `AccountMenu.jsx`
 
 **问题：**
 - 退出登录：无 `POST /auth/logout`
 - 默认 props：`userName='user-name'`、`userId='miioo_user'` 硬编码
 
 **缺失接口：** `POST /auth/logout`  
-**状态：** ✅ apiLogout mock 已占位（`AccountMenu.jsx:3-9`）
+**状态：** ✅ apiLogout 已迁移至 `src/api/auth.js`，AccountMenu 改为 import 引用
 
 ---
 
-### 7. 首页数据 — `Home.jsx`
+### 9. 首页数据 — `Home.jsx`
 
 **问题：**
 - `projects` 初始化为 `[]`，无 `useEffect` 拉取项目列表
@@ -97,24 +118,24 @@
 - `NOTIFICATION_ITEMS`：6 条通知硬编码
 
 **缺失接口：** `GET /projects`、`GET /users/me`、`GET /notifications`  
-**状态：** ✅ TODO 注释已标注（`Home.jsx:879`、`Home.jsx:778`）
+**状态：** ✅ `apiGetProjects()`、`apiGetCurrentUser()`、`apiGetNotifications()` 已封装至 `src/api/project.js` / `src/api/user.js`，Home.jsx 改为 import 引用
 
 ---
 
-### 8. 全局设定 — `GlobalSettings.jsx`
+### 10. 全局设定 — `GlobalSettings.jsx`
 
 **问题：**
 - 保存项目设置：无 `PATCH /projects/:id`
 - 默认项目名硬编码
 
 **缺失接口：** `PATCH /projects/:id`  
-**状态：** ✅ apiUpdateProject mock 已占位（`GlobalSettings.jsx:3-9`），TODO 注释已标注
+**状态：** ✅ apiUpdateProject 已迁移至 `src/api/project.js`，GlobalSettings 改为 import 引用
 
 ---
 
 ## P2 — 功能完整性
 
-### 9. API 配置弹窗 — `ApiConfigModal.jsx`
+### 11. API 配置弹窗 — `ApiConfigModal.jsx`
 
 **问题：**
 - `testConnection`：`Math.random() > 0.4` 模拟成功/失败
@@ -122,23 +143,65 @@
 - 硬编码：日期 "2026-01-01"、模型数量 23
 
 **缺失接口：** `POST /api-config/test`、`POST /api-config`  
-**状态：** ✅ testConnection 和 closeMain 均已加 TODO 注释（`ApiConfigModal.jsx:987`、`1007`）
+**状态：** ✅ `apiTestConnection()`、`apiSaveApiConfig(data)` 已封装至 `src/api/config.js`，ApiConfigModal.jsx 改为 import 引用
 
 ---
 
-### 10. 镜头查看器 — `ShotViewerModal.jsx`
+### 12. 镜头查看器 — `ShotViewerModal.jsx`
 
 **问题：**
 - 镜头"定稿"状态：无 `PATCH /shots/:id` 保存
 
 **缺失接口：** `PATCH /shots/:id`  
-**状态：** ✅ apiUpdateShotFinalized mock 已占位（`ShotViewerModal.jsx:5-10`）
+**状态：** ✅ apiUpdateShotFinalized 已迁移至 `src/api/storyboard.js`，ShotViewerModal 改为 import 引用
+
+---
+
+### 13. SubjectPage — apiGetEpisodes / apiGetModels 未调用
+
+**问题：**
+- `apiGetEpisodes`、`apiGetModels` 已 import 但页面内无调用点
+- 集数应在 `useEffect` 里调用 `apiGetEpisodes()` 初始化
+- `EditSubjectPanel` 模型列表硬编码，应替换为 `apiGetModels()` 返回值
+
+**缺失接口：** `GET /episodes`、`GET /models`  
+**状态：** ⬜ 待修复
+
+---
+
+### 14. StoryboardPage — PARAM_OPTIONS 硬编码
+
+**问题：**
+- 第 2050 行：景别/运镜/拍摄角度/构图/时长五组选项全部写死
+
+**缺失接口：** `GET /param-options`（需先与后端确认是否需要接口，或作为静态配置保留）  
+**状态：** ⬜ 待修复
+
+---
+
+### 15. StoryboardPage — EPISODES 兜底假数据
+
+**问题：**
+- 第 4051 行：`const EPISODES = ['第一集','第二集',...]` 作为 props 默认值，父组件未传时回退到写死集数
+
+**缺失接口：** `GET /episodes`  
+**状态：** ⬜ 待修复
+
+---
+
+### 16. BatchVideoModal / BatchImageModal — 模型列表硬编码
+
+**问题：**
+- StoryboardPage 第 380、417 行：两个批量生成弹窗的模型选项数组仍是写死字符串
+
+**缺失接口：** `GET /models`  
+**状态：** ⬜ 待修复
 
 ---
 
 ## P3 — 静态展示数据（低优先级）
 
-### 11. 资产页面 — `AssetsPage.jsx`
+### 17. 资产页面 — `AssetsPage.jsx`
 
 **硬编码数据：**
 - `MOCK_DETAIL`：资产详情（名称/描述/prompt/模型/比例/分辨率/生成时间/图片 URL）
@@ -156,16 +219,22 @@
 
 按 P0 → P1 → P2 → P3 逐条推进，每条修复前找 Suzy 确认接口字段和行为预期。
 
-| 顺序 | 条目 | 文件 |
-|------|------|------|
-| 1 | 新建项目 | `NewProjectModal.jsx` + `Home.jsx` |
-| 2 | 登录/注册 | `LoginModal.jsx` |
-| 3 | 主体页面 | `SubjectPage.jsx` |
-| 4 | 分镜页面 | `StoryboardPage.jsx` |
-| 5 | 个人资料 | `ProfileModal.jsx` |
-| 6 | 账户菜单 | `AccountMenu.jsx` |
-| 7 | 首页数据 | `Home.jsx` |
-| 8 | 全局设定 | `GlobalSettings.jsx` |
-| 9 | API 配置 | `ApiConfigModal.jsx` |
-| 10 | 镜头查看器 | `ShotViewerModal.jsx` |
-| 11 | 资产页面 | `AssetsPage.jsx` |
+| 顺序 | 优先级 | 条目 | 文件 | 状态 |
+|------|--------|------|------|------|
+| 1 | P0 | 新建项目 | `NewProjectModal.jsx` + `Home.jsx` | ✅ 函数已封装 |
+| 2 | P0 | 登录/注册 | `LoginModal.jsx` | ✅ 占位完成 |
+| 3 | P0 | 主体页面 | `SubjectPage.jsx` | ✅ 占位完成 |
+| 4 | P0 | 分镜页面 | `StoryboardPage.jsx` | ✅ 占位完成 |
+| 5 | P0 | 初始镜头数据写死 | `StoryboardPage.jsx` | ⬜ 待修复 |
+| 6 | P0 | 生成按钮未接通 | `SubjectPage.jsx` | ⬜ 待修复 |
+| 7 | P1 | 个人资料 | `ProfileModal.jsx` | ✅ 占位完成 |
+| 8 | P1 | 账户菜单 | `AccountMenu.jsx` | ✅ 占位完成 |
+| 9 | P1 | 首页数据 | `Home.jsx` | ✅ 函数已封装 |
+| 10 | P1 | 全局设定 | `GlobalSettings.jsx` | ✅ 占位完成 |
+| 11 | P2 | API 配置弹窗 | `ApiConfigModal.jsx` | ✅ 函数已封装 |
+| 12 | P2 | 镜头查看器 | `ShotViewerModal.jsx` | ✅ 占位完成 |
+| 13 | P2 | apiGetEpisodes/apiGetModels 未调用 | `SubjectPage.jsx` | ⬜ 待修复 |
+| 14 | P2 | PARAM_OPTIONS 硬编码 | `StoryboardPage.jsx` | ⬜ 待修复 |
+| 15 | P2 | EPISODES 兜底假数据 | `StoryboardPage.jsx` | ⬜ 待修复 |
+| 16 | P2 | 批量弹窗模型列表硬编码 | `StoryboardPage.jsx` | ⬜ 待修复 |
+| 17 | P3 | 资产页面 | `AssetsPage.jsx` | ⬜ 待修复 |

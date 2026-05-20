@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
+import { apiGetAssetDetail, apiGetShotDetail, apiGetShotVideoDetail, apiGetCreativeDays, apiGetProjectAssets } from '../api/assets';
+import { apiGetProjects } from '../api/project';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
@@ -1420,10 +1422,23 @@ function ShotVideoDetailModal({ onClose, onDownload, shotNumber, prompt, model, 
   );
 }
 
-function AssetCard({ name, bgColor = '#252525', starred = false, selected = false, batchMode = false, showStar = false, assetType = 'asset', onDownload, onDelete, onStar, onSelect }) {
+function AssetCard({ name, bgColor = '#252525', starred = false, selected = false, batchMode = false, showStar = false, assetType = 'asset', onDownload, onDelete, onStar, onSelect, asset = {} }) {
   const [hov, setHov] = useState(false);
   const [starAnim, setStarAnim] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
+  const [detailData, setDetailData] = useState(null);
+
+  function handleOpen() {
+    if (batchMode) { onSelect?.(); return; }
+    const id = asset.id;
+    if (assetType === 'shot_video') {
+      apiGetShotVideoDetail(id).then((d) => { setDetailData(d); setDetailOpen(true); });
+    } else if (assetType === 'shot') {
+      apiGetShotDetail(id).then((d) => { setDetailData(d); setDetailOpen(true); });
+    } else {
+      apiGetAssetDetail(id).then((d) => { setDetailData(d); setDetailOpen(true); });
+    }
+  }
 
   function handleStar(e) {
     e.stopPropagation();
@@ -1447,7 +1462,7 @@ function AssetCard({ name, bgColor = '#252525', starred = false, selected = fals
       }}
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
-      onClick={() => { if (batchMode) onSelect?.(); else setDetailOpen(true); }}
+      onClick={() => { if (batchMode) onSelect?.(); else handleOpen(); }}
     >
       <div style={{ width: '168px', height: '168px', backgroundColor: bgColor, position: 'relative' }}>
         {batchMode ? (
@@ -1515,13 +1530,23 @@ function AssetCard({ name, bgColor = '#252525', starred = false, selected = fals
       </div>
     </div>
     {detailOpen && assetType === 'shot_video' && (
-      <ShotVideoDetailModal onClose={() => setDetailOpen(false)} onDownload={onDownload} />
+      <ShotVideoDetailModal onClose={() => setDetailOpen(false)} onDownload={onDownload}
+        shotNumber={detailData?.shotNumber} prompt={detailData?.prompt} model={detailData?.model}
+        resolution={detailData?.resolution} duration={detailData?.duration} ratio={detailData?.ratio}
+        generatedAt={detailData?.generatedAt} frames={detailData?.frames} videoSrc={detailData?.videoSrc}
+      />
     )}
     {detailOpen && assetType === 'shot' && (
-      <ShotDetailModal onClose={() => setDetailOpen(false)} onDownload={onDownload} />
+      <ShotDetailModal onClose={() => setDetailOpen(false)} onDownload={onDownload}
+        shotNumber={detailData?.shotNumber} prompt={detailData?.prompt} model={detailData?.model}
+        resolution={detailData?.resolution} generatedAt={detailData?.generatedAt} images={detailData?.images}
+      />
     )}
     {detailOpen && assetType !== 'shot' && assetType !== 'shot_video' && (
-      <AssetDetailModal onClose={() => setDetailOpen(false)} onDownload={onDownload} />
+      <AssetDetailModal onClose={() => setDetailOpen(false)} onDownload={onDownload}
+        name={detailData?.name ?? name} description={detailData?.description} prompt={detailData?.prompt} model={detailData?.model}
+        ratio={detailData?.ratio} resolution={detailData?.resolution} generatedAt={detailData?.generatedAt} images={detailData?.images}
+      />
     )}
     </>
   );
@@ -1808,12 +1833,25 @@ function ProjectListItem({ project, active, onClick }) {
 }
 
 function ProjectAssetsPanel() {
-  const [activeProject, setActiveProject] = useState(MOCK_PROJECTS[0].id);
+  const [projects, setProjects] = useState([]);
+  const [activeProject, setActiveProject] = useState(null);
   const [activeCategory, setActiveCategory] = useState('chars');
   const [batchMode, setBatchMode] = useState(false);
   const [selected, setSelected] = useState(new Set());
   const [favOnly, setFavOnly] = useState(false);
-  const [assetsMap, setAssetsMap] = useState(MOCK_PROJECT_ASSETS);
+  const [assetsMap, setAssetsMap] = useState({});
+
+  useEffect(() => {
+    apiGetProjects().then((list) => {
+      setProjects(list);
+      setActiveProject((prev) => prev ?? list[0]?.id ?? null);
+    });
+  }, []);
+
+  useEffect(() => {
+    if (activeProject == null) return;
+    apiGetProjectAssets(activeProject).then(setAssetsMap);
+  }, [activeProject]);
 
   const categoryAssets = assetsMap[activeCategory] || [];
   const filtered = favOnly ? categoryAssets.filter((a) => a.starred) : categoryAssets;
@@ -1882,7 +1920,7 @@ function ProjectAssetsPanel() {
           color: '#FFFFFF99',
           letterSpacing: '0.02em',
         }}>项目列表</div>
-        {MOCK_PROJECTS.map((p) => (
+        {projects.map((p) => (
           <ProjectListItem
             key={p.id}
             project={p}
@@ -1979,6 +2017,7 @@ function ProjectAssetsPanel() {
                 onStar={() => toggleStar(asset.id)}
                 onDownload={() => {}}
                 onDelete={() => deleteAsset(asset.id)}
+                asset={asset}
               />
             )
           ))}
@@ -1992,8 +2031,12 @@ function CreativeAssetsPanel() {
   const [activeType, setActiveType] = useState('image');
   const [batchMode, setBatchMode] = useState(false);
   const [selected, setSelected] = useState(new Set());
-  const [allDays, setAllDays] = useState(CREATIVE_DAYS);
+  const [allDays, setAllDays] = useState({});
   const days = allDays[activeType] ?? [];
+
+  useEffect(() => {
+    apiGetCreativeDays().then(setAllDays);
+  }, []);
 
   function toggleSelect(id) {
     setSelected((prev) => {
@@ -2120,6 +2163,7 @@ function CreativeAssetsPanel() {
                     onStar={() => toggleStar(card.id)}
                     onDownload={() => {}}
                     onDelete={() => {}}
+                    asset={card}
                   />
                 )
               ))}

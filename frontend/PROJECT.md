@@ -1,6 +1,6 @@
 # miioo 项目进度管理文档
 
-> 最后更新：2026-05-19（生成分镜视频弹窗定稿；首尾帧快捷按钮；AssetPickerModal 音频支持）
+> 最后更新：2026-05-20（ProfileModal 交互补全 + ApiConfigModal 模型列表接入 API 规范）
 
 ---
 
@@ -108,6 +108,14 @@ miioo/
 │   │   ├── StoryboardPage.jsx     # 工作流 — 分镜（分镜卡片、批量下载、镜头查看）
 │   │   ├── ButtonShowcase.jsx     # 按钮组件展示页
 │   │   └── InputShowcase.jsx      # 输入框组件展示页
+│   ├── api/                   # 接口函数（按模块命名）
+│   │   ├── auth.js                # 登录/注册/登出
+│   │   ├── user.js                # 用户信息/头像/注销
+│   │   ├── project.js             # 项目增删改查
+│   │   ├── config.js              # API 配置读写（apiGetApiConfig / apiSaveApiConfig / apiTestConnection）
+│   │   ├── storyboard.js          # 分镜/镜头增删改生成
+│   │   ├── subject.js             # 主体（角色/场景/道具）增删改生成
+│   │   └── assets.js              # 资产库（项目资产/创作资产/详情）
 │   ├── ref/                   # 设计稿参考代码（只读，不引入业务）
 │   ├── App.jsx                # 根组件
 │   ├── main.jsx               # 入口文件
@@ -212,6 +220,33 @@ miioo/
   - mock 数据补充 `audio` / `dubbing` 数组；`SUB_TAB_KEY_MAP` 新增 `'音频': 'audio'`、`'配音': 'dubbing'`
   - `AssetCard` 音频类型显示音符 SVG 占位图标
   - `PanelUploadSlot` accept 映射修复：`audio/*` 正确传递 `accept='audio'` 给 AssetPickerModal（原先漏判导致音频 tab 不显示）
+- [x] API 层重构（2026-05-20）— 将各页面/组件顶部内联的 API stub 函数统一迁移至 `src/api/` 模块：
+  - 新建 `src/api/auth.js`：`sendVerificationCode`、`loginWithPhone`、`bindPhone`（来自 LoginModal）、`apiLogout`（来自 AccountMenu）
+  - 新建 `src/api/user.js`：`apiUpdateUser`、`apiUploadAvatar`、`apiDeleteAccount`（来自 ProfileModal）
+  - 新建 `src/api/project.js`：`apiUpdateProject`（来自 GlobalSettings）
+  - 新建 `src/api/storyboard.js`：`apiUpdateShotFinalized`（来自 ShotViewerModal）+ `apiUploadFile`、`apiGenerateImage`、`apiGenerateVideo`、`apiCreateShot`、`apiUpdateShot`、`apiDeleteShot`、`apiReorderShots`（来自 StoryboardPage）
+  - 新建 `src/api/subject.js`：`apiCreateSubject`、`apiUpdateSubject`、`apiDeleteSubject`、`apiGenerateSubjectImage`、`apiBatchGenerate`、`apiGetEpisodes`、`apiGetModels`（来自 SubjectPage，含 MOCK_EPISODES 常量迁移）
+  - 7 个原文件改为 import 引用，stub 函数块已删除
+- [x] API 接口补全（2026-05-20）— 在 `src/api/` 各模块补充缺失的读取类接口，并将页面硬编码数据替换为 API 调用：
+  - `src/api/project.js` 新增 `apiCreateProject`、`apiGetProjects`；Home.jsx 新建项目改为调用 `apiCreateProject`，项目列表初始化改为 `apiGetProjects`
+  - `src/api/user.js` 新增 `apiGetCurrentUser`、`apiGetNotifications`；Home.jsx AccountMenu 的用户信息改为从 `apiGetCurrentUser` 加载
+  - 新建 `src/api/config.js`：`apiTestConnection`、`apiSaveApiConfig`；ApiConfigModal.jsx 测试连接和保存配置改为调用真实 stub，移除 `Math.random()` mock
+  - `src/api/storyboard.js` 新增 `apiGetShots`；StoryboardPage 镜头列表改为 `useEffect` + `apiGetShots(episode)` 加载，初始值从 `INITIAL_SHOTS` 改为 `[]`
+  - SubjectPage 生成图片按钮 `onClick` 解注释，正式调用 `apiGenerateSubjectImage`
+  - StoryboardPage `EPISODES` 常量回退为 `[]`；BatchImageModal / BatchVideoModal 模型选项改为 `useEffect` + `apiGetModels()` 动态加载
+  - 新建 `src/api/assets.js`：`apiGetAssetDetail`、`apiGetShotDetail`、`apiGetShotVideoDetail`、`apiGetCreativeDays`、`apiGetProjectAssets`；AssetsPage.jsx 全部 MOCK_* 常量替换为 API 调用（ProjectAssetsPanel、CreativeAssetsPanel、AssetCard 详情弹窗均改为按需加载）
+  - 修复 AssetsPage.jsx 编辑过程中 `handleStar` 函数声明被误删导致的 parse error
+- [x] 通用组件 — ProfileModal 交互补全（2026-05-20）：
+  - 输入框（用户名/手机号/微信）补全 hover 状态：鼠标悬停时描边从 `rgba(255,255,255,0.1)` 变为 `rgba(255,255,255,0.2)`，hover 事件挂在外层 wrapper 上（含 label 区域）
+  - 头像可编辑：点击头像弹出系统文件选择窗口，限制格式为 jpg/jpeg/png/gif/webp
+  - 头像上传接入 `apiUploadAvatar`（`src/api/user.js`），上传成功后弹窗内实时更新头像显示；mock 返回 `{ avatarUrl: null }` 时保持默认 SVG 头像
+  - `Avatar` 组件支持 `src` prop：有 URL 时渲染 `<img>`，无 URL 时渲染默认 SVG
+  - `ProfileModal` 内部维护 `avatarUrl` state（初始 null），AccountMenu 头像同步待真实接口就绪后处理
+- [x] 通用组件 — ApiConfigModal 模型列表接入 API 规范（2026-05-20）：
+  - `createDefaultState()` 中 `onelinkModelsByTab` 硬编码模型列表已清空，移入 `src/api/config.js` 的 mock 数据
+  - `src/api/config.js` 新增 `apiGetApiConfig()`（mock 返回完整配置含预置模型列表，TODO: GET /api-config）
+  - `ApiConfigModal` 打开时调用 `apiGetApiConfig()` 初始化 state（mainConfigured / onelinkEnabled / onelinkApiKey / onelinkModelsByTab / customProviders）
+  - 真实接口就绪后只需修改 `config.js` 的 `apiGetApiConfig` 函数，页面代码不动
 - [ ] 项目工作流 — 剪辑成片
 - [ ] 创作页（生图/生视频）
 - [ ] 资产库

@@ -1,13 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import Toggle from './Toggle';
-
-// ── API stubs (TODO: 替换为真实接口) ──────────────────────────────────────
-
-async function apiUpdateShotFinalized(shotId, finalized) {
-  // TODO: PATCH /shots/:shotId  body: { finalized }
-  console.log('[mock] update shot finalized', shotId, finalized);
-}
+import { apiUpdateShotFinalized } from '../api/storyboard';
 
 // ─────────────────────────────────────────────────────────────────────────────
 

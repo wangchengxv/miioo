@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
 import { PulsingBorder } from '@paper-design/shaders-react';
 import bgImage from '../assets/home-bg.png';
+import { apiCreateProject, apiGetProjects } from '../api/project';
+import { apiGetCurrentUser, apiGetNotifications } from '../api/user';
 import PrimaryNav from '../components/PrimaryNav';
 import LoginModal from '../components/LoginModal';
 import ApiConfigModal from '../components/ApiConfigModal';
@@ -774,12 +776,11 @@ function WorkflowHeadbar({ activeStep, onStepChange, unlockedSteps, isLoggedIn, 
       <div className="flex items-center gap-24 p-0">
         <CreationManualButton />
         {isLoggedIn ? (
-          // TODO: userName/userId 替换为 GET /users/me 返回的数据
           <AccountMenu
-            userName="Suzy"
-            userId="miioo_suzy"
-            phone="178 **** 0361"
-            wechat="suzylee"
+            userName={currentUser.name ?? ''}
+            userId={currentUser.id ?? ''}
+            phone={currentUser.phone ?? ''}
+            wechat={currentUser.wechat ?? ''}
             onLogout={onLogout}
             onOpenProfile={onOpenProfile}
           />
@@ -894,6 +895,14 @@ export default function Home({ onProjectCreated }) {
   const [episodeStatuses, setEpisodeStatuses] = useState({});
   // Tracks which non-alwaysEnabled steps have ever had content — once unlocked, stays unlocked
   const [unlockedSteps, setUnlockedSteps] = useState(new Set());
+  const [currentUser, setCurrentUser] = useState({});
+  const [notifications, setNotifications] = useState([]);
+
+  useEffect(() => {
+    apiGetProjects().then(setProjects);
+    apiGetCurrentUser().then(setCurrentUser);
+    apiGetNotifications().then(setNotifications);
+  }, []);
 
   const handleUnlockStep = (stepKey) => {
     setUnlockedSteps((prev) => {
@@ -1170,18 +1179,9 @@ export default function Home({ onProjectCreated }) {
         onClose={() => setNewProjectOpen(false)}
         onConfirm={({ name, desc, ratio, style, customStyleDesc, coverFile }) => {
           setNewProjectOpen(false);
-          // TODO: 替换为真实接口 POST /projects
-          // const formData = new FormData();
-          // formData.append('name', name);
-          // formData.append('desc', desc);
-          // formData.append('ratio', ratio);
-          // formData.append('style', style);
-          // formData.append('customStyleDesc', customStyleDesc);
-          // if (coverFile) formData.append('cover', coverFile);
-          // const res = await fetch('/api/projects', { method: 'POST', body: formData });
-          // const project = await res.json();
-          // handleProjectCreated(project);
-          handleProjectCreated({ id: Date.now(), name, desc, ratio, style, customStyleDesc, date: '刚刚' });
+          apiCreateProject({ name, desc, ratio, style, customStyleDesc, coverFile }).then((project) => {
+            handleProjectCreated({ id: project.id, name, desc, ratio, style, customStyleDesc, date: '刚刚' });
+          });
         }}
       />
     </div>

@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import BatchGenerateModal from '../components/BatchGenerateModal';
 import AssetPickerModal from '../components/AssetPickerModal';
+import { apiCreateSubject, apiUpdateSubject, apiDeleteSubject, apiGenerateSubjectImage, apiBatchGenerate, apiGetEpisodes, apiGetModels } from '../api/subject';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
@@ -851,48 +852,6 @@ function AddCard({ onClick }) {
   );
 }
 
-// ── API stubs (TODO: 替换为真实接口) ──────────────────────────────────────
-
-async function apiCreateSubject(type, data) {
-  // TODO: POST /projects/:projectId/subjects  body: { type, ...data }
-  console.log('[mock] create subject', type, data);
-  return { id: Date.now() };
-}
-
-async function apiUpdateSubject(id, data) {
-  // TODO: PATCH /subjects/:id  body: data
-  console.log('[mock] update subject', id, data);
-}
-
-async function apiDeleteSubject(id) {
-  // TODO: DELETE /subjects/:id
-  console.log('[mock] delete subject', id);
-}
-
-async function apiGenerateSubjectImage(subjectId, params) {
-  // TODO: POST /subjects/:subjectId/generate  body: params
-  // returns: { jobId, imageUrl }
-  console.log('[mock] generate image for subject', subjectId, params);
-  return { jobId: `job-${Date.now()}`, imageUrl: null };
-}
-
-async function apiBatchGenerate(params) {
-  // TODO: POST /projects/:projectId/subjects/batch-generate  body: params
-  console.log('[mock] batch generate', params);
-}
-
-async function apiGetEpisodes(projectId) {
-  // TODO: GET /projects/:projectId/episodes
-  console.log('[mock] get episodes', projectId);
-  return MOCK_EPISODES;
-}
-
-async function apiGetModels() {
-  // TODO: GET /models?type=image
-  console.log('[mock] get models');
-  return ['Doubao-Seed-2.0-Pro', 'Doubao-Seed-1.6', 'FLUX.1-dev', 'Stable Diffusion XL'];
-}
-
 // ── Mock data ──────────────────────────────────────────────────────────────
 
 const INITIAL_CHARS = [
@@ -903,8 +862,6 @@ const INITIAL_CHARS = [
   { id: 5, name: '小松鼠', desc: '话多又热心的小松鼠，是森林里的消息灵通人士，喜欢收集各种坚果和秘密。', imageUrl: null, voice: '霸气威武' },
   { id: 6, name: '大灰狼', desc: '看似凶猛的反派，实则只是想找人一起玩，孤独是他最大的秘密。', imageUrl: null, voice: '霸气威武' },
 ];
-
-const MOCK_EPISODES = ['第一集', '第二集', '第三集', '第四集', '第五集', '第六集', '第七集', '第八集', '第九集', '第十集', '第十一集', '第十二集'];
 
 const MOCK_PROPS = [];
 
@@ -1548,9 +1505,8 @@ function EditSubjectPanel({ char, tabLabel = '角色', onClose, onCommit, onCove
               onClick={async () => {
                 const placeholder = `generated-${Date.now()}`;
                 setGeneratedImages((prev) => [{ url: null, settled: false, id: placeholder }, ...prev]);
-                // TODO: 替换为真实接口，用返回的 imageUrl 更新对应占位项
-                // const { imageUrl } = await apiGenerateSubjectImage(char.id, { model: selectedModel, referenceImages });
-                // setGeneratedImages((prev) => prev.map((img) => img.id === placeholder ? { ...img, url: imageUrl } : img));
+                const { imageUrl } = await apiGenerateSubjectImage(char.id, { model: selectedModel, referenceImages });
+                setGeneratedImages((prev) => prev.map((img) => img.id === placeholder ? { ...img, url: imageUrl, settled: true } : img));
               }}
               style={{
                 display: 'flex', alignItems: 'center', height: '36px', borderRadius: '8px', padding: '0 16px', gap: '4px', cursor: 'pointer', border: '1px solid rgba(255,255,255,0.2)',
@@ -1611,11 +1567,10 @@ function EditSubjectPanel({ char, tabLabel = '角色', onClose, onCommit, onCove
 
 // ── Main export ────────────────────────────────────────────────────────────
 
-let _nextId = 100;
-
 export default function SubjectPage({ projectName = '两只老虎的奇遇', onBack, onUnlockStep, onStartStoryboard, initialTab = 'char', chars: externalChars, onCharsChange, scenes: externalScenes, onScenesChange, props: externalProps, onPropsChange }) {
   const [activeTab, setActiveTab] = useState(initialTab);
-  const [activeEpisode, setActiveEpisode] = useState(MOCK_EPISODES[0]);
+  const [episodes, setEpisodes] = useState([]);
+  const [activeEpisode, setActiveEpisode] = useState('');
   const [batchGenOpen, setBatchGenOpen] = useState(false);
   const [selectedChar, setSelectedChar] = useState(null);
   const [selectedScene, setSelectedScene] = useState(null);
@@ -1645,6 +1600,13 @@ export default function SubjectPage({ projectName = '两只老虎的奇遇', onB
   const [charVoices, setCharVoices] = useState(() =>
     Object.fromEntries(INITIAL_CHARS.map((c) => [c.id, c.voice]))
   );
+
+  useEffect(() => {
+    apiGetEpisodes().then((list) => {
+      setEpisodes(list);
+      setActiveEpisode((prev) => prev || list[0] || '');
+    });
+  }, []);
 
   // 初始化时把内部默认数据同步给父组件（仅当父组件尚未持有数据时）
   useEffect(() => {

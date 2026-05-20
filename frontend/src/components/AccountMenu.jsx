@@ -1,11 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-
-// ── API stubs (TODO: 替换为真实接口) ──────────────────────────────────────
-
-async function apiLogout() {
-  // TODO: POST /auth/logout
-  console.log('[mock] logout');
-}
+import { apiLogout } from '../api/auth';
 
 // ─────────────────────────────────────────────────────────────────────────────
 

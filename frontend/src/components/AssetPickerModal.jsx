@@ -296,7 +296,14 @@ export default function AssetPickerModal({
   });
 
   const handleConfirm = () => {
-    onConfirm?.(Array.from(selected));
+    // 构建全量 id→asset map，供按 ID 查完整对象
+    const allAssets = [
+      ...Object.values(projectAssetsMap).flatMap(p => Object.values(p).flat()),
+      ...Object.values(creativeAssets).flat(),
+    ];
+    const assetMap = Object.fromEntries(allAssets.map(a => [a.id, a]));
+    const selectedAssets = Array.from(selected).map(id => assetMap[id]).filter(Boolean);
+    onConfirm?.(selectedAssets);
     onClose?.();
   };
 

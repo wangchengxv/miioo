@@ -1,12 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import ScriptPage from './ScriptPage';
-
-// ── API stubs (TODO: 替换为真实接口) ──────────────────────────────────────
-
-async function apiUpdateProject(projectId, data) {
-  // TODO: PATCH /projects/:projectId  body: { name?, description?, coverUrl?, ratio?, style? }
-  console.log('[mock] update project', projectId, data);
-}
+import { apiUpdateProject } from '../api/project';
 
 // ─────────────────────────────────────────────────────────────────────────────
 
