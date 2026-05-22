@@ -755,11 +755,11 @@ const STEP_TABS = [
   },
 ];
 
-function WorkflowHeadbar({ activeStep, onStepChange, unlockedSteps, isLoggedIn, currentUser, onLoginClick, onLogout, onOpenProfile }) {
+function WorkflowHeadbar({ activeStep, onStepChange, unlockedSteps, isLoggedIn, currentUser, onLoginClick, onLogout, onOpenProfile, onLogoClick }) {
   return (
     <div className="[font-synthesis:none] flex items-center justify-between gap-[37px] self-stretch h-[60px] relative shrink-0 antialiased px-24">
       {/* Logo */}
-      <svg width="80" height="25" viewBox="0 0 80 25" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+      <svg width="80" height="25" viewBox="0 0 80 25" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0, cursor: 'pointer' }} onClick={onLogoClick} role="button" aria-label="返回首页">
         <path d="M28.3 7.265H32.862V24.161H28.3V7.265Z" fill="#FFFFFF" />
         <path d="M35.903 7.265H40.465V24.161H35.903V7.265Z" fill="#FFFFFF" />
         <path d="M15.206 21.204C15.206 22.837 13.882 24.16 12.249 24.16C10.616 24.16 9.292 22.837 9.292 21.204C9.292 19.571 10.616 18.247 12.249 18.247C13.882 18.247 15.206 19.571 15.206 21.204Z" fill="#00D4FF" />
@@ -876,7 +876,8 @@ export default function Home({ onProjectCreated }) {
   const [bottomActiveKey, setBottomActiveKey] = useState(null);
   const [loginOpen, setLoginOpen] = useState(false);
   const [apiConfigOpen, setApiConfigOpen] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(() => !!localStorage.getItem('token'));
+  // mock 模式下跳过登录检查，方便前端独立研发
+  const [isLoggedIn, setIsLoggedIn] = useState(() => import.meta.env.VITE_USE_MOCK === 'true' || !!localStorage.getItem('token'));
   const [apiConfigured, setApiConfigured] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
@@ -924,6 +925,10 @@ export default function Home({ onProjectCreated }) {
   };
 
   const handleNavChange = (key) => {
+    if (!isLoggedIn && key !== 'home') {
+      setLoginOpen(true);
+      return;
+    }
     setActiveKey(key);
     setActiveProject(null);
   };
@@ -980,6 +985,10 @@ export default function Home({ onProjectCreated }) {
   });
 
   const handleBottomNavChange = (key) => {
+    if (!isLoggedIn) {
+      setLoginOpen(true);
+      return;
+    }
     if (key === 'api') {
       setBottomActiveKey(null);
       setApiConfigOpen(true);
@@ -1014,7 +1023,7 @@ export default function Home({ onProjectCreated }) {
         {/* headbar */}
         {!activeProject ? (
         <div className="flex items-center px-24 py-12 justify-between gap-[37px] self-stretch">
-          <svg width="66" height="19.92" viewBox="0 0 947 286" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flex: '0 1 auto', width: '66px' }} aria-label="miioo">
+          <svg width="66" height="19.92" viewBox="0 0 947 286" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flex: '0 1 auto', width: '66px', cursor: activeKey !== 'home' ? 'pointer' : 'default' }} aria-label="miioo" role={activeKey !== 'home' ? 'button' : undefined} onClick={activeKey !== 'home' ? () => setActiveKey('home') : undefined}>
             <path d="M335 86H389V286H335V86Z" fill="white"/>
             <path d="M425 86H479V286H425V86Z" fill="white"/>
             <path d="M180 251C180 270.33 164.33 286 145 286C125.67 286 110 270.33 110 251C110 231.67 125.67 216 145 216C164.33 216 180 231.67 180 251Z" fill="#00D4FF"/>
@@ -1054,6 +1063,7 @@ export default function Home({ onProjectCreated }) {
           onLoginClick={() => setLoginOpen(true)}
           onLogout={() => { localStorage.removeItem('token'); setIsLoggedIn(false); }}
           onOpenProfile={() => setProfileOpen(true)}
+          onLogoClick={() => { setActiveProject(null); setActiveKey('home'); }}
         />
         )}
 
