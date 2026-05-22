@@ -95,8 +95,36 @@ src/pages/        业务页面
 
 ### 开发流程
 1. 每次新建页面前，先确认需要哪些数据，去 `src/api/` 建好对应函数
-2. 接口未就绪时，函数内部返回假数据，加 `// TODO: 替换为真实接口` 注释
+2. 接口未就绪时，函数内部用 mock 数据占位（见下方 Mock 开关规范）
 3. 接口就绪后，只修改 `src/api/` 函数内部，页面代码不动
+
+### Mock 开关规范
+所有 api 函数必须支持 mock 开关，统一使用以下格式：
+
+```js
+export async function apiXxx(params) {
+  if (import.meta.env.VITE_USE_MOCK === 'true') {
+    // mock 数据，接口未就绪时返回假数据
+    return { ... }
+  }
+  const token = localStorage.getItem('token')
+  const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/xxx`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(params),
+  })
+  return res.json()
+}
+```
+
+- `VITE_USE_MOCK=true` 时返回假数据，用于本地独立开发
+- `VITE_USE_MOCK=false` 时调用真实接口
+- 需要登录的接口从 `localStorage.getItem('token')` 读取 token
+- 基础 URL 统一用 `import.meta.env.VITE_API_BASE_URL`
+- 环境变量配置在项目根目录 `.env.local`，不得提交到 Git
 
 ### 每次涉及数据读写时，自动检查以下场景
 发现问题后**立即找 Suzy 确认接口字段和行为预期，确认后再补充逻辑**，不可自行假设接口：

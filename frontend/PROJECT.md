@@ -1,6 +1,6 @@
 # miioo 项目进度管理文档
 
-> 最后更新：2026-05-22（ProfileModal 手机号解绑换绑流程完成）
+> 最后更新：2026-05-22（ProfileModal 细节收尾：二维码位置、用户名点击编辑、注销确认弹窗样式）
 
 ---
 
@@ -281,6 +281,12 @@ miioo/
   - 输入框样式遵循 input.md 规范：hover/focus/wrong 三态边框 + focus 青色发光阴影，内嵌「获取」按钮为 Secondary 小尺寸（h-[24px] rounded-[6px] px-[8px]）
   - `src/api/user.js` 新增 `apiSendPhoneCode`、`apiVerifyPhoneCode`、`apiRebindPhone` 三个 stub 函数
   - 所有 Tailwind 数字缩写转换为具体 px 值：`h-9` → `h-[36px]`、`h-6` → `h-[24px]`、`p-px` → `p-[1px]`
+- [x] 通用组件 — ProfileModal 细节收尾（2026-05-22）：
+  - WechatBindView 二维码与提示文字位置对调：二维码图片在上，「请使用微信扫码」/「请在微信端确认」文字在下
+  - 用户名字段改为点击编辑模式：默认展示态（文字 + 铅笔图标），点击铅笔图标切换为输入框并自动 focus，失焦后回到展示态
+  - 输入框 hover/focus 状态补全：hover 时描边切换为 `input-border-hover`，focus 时切换为 `input-border-focus` + 青色发光阴影
+  - DeleteConfirmDialog 样式对齐 AssetsPage 删除确认弹窗：宽 360px、背景 `#161616`、`boxShadow: '#00000099 0px 8px 32px'`、标题+描述竖排左对齐、右上角关闭按钮、操作按钮右对齐 gap 12px
+  - DeleteConfirmDialog 按钮交互补全：取消用 Secondary token（`hover:bg-btn-primary-bg-hover active:bg-btn-primary-bg-active`），确认注销用 Danger token（`hover:bg-btn-danger-bg-hover active:bg-btn-danger-bg-active`）
 - [ ] 项目工作流 — 剪辑成片
 - [ ] 创作页（生图/生视频）
 - [ ] 资产库

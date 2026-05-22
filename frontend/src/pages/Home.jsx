@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { PulsingBorder } from '@paper-design/shaders-react';
 import bgImage from '../assets/home-bg.png';
 import { apiCreateProject, apiGetProjects } from '../api/project';
@@ -875,7 +876,7 @@ export default function Home({ onProjectCreated }) {
   const [bottomActiveKey, setBottomActiveKey] = useState(null);
   const [loginOpen, setLoginOpen] = useState(false);
   const [apiConfigOpen, setApiConfigOpen] = useState(false);
-  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [isLoggedIn, setIsLoggedIn] = useState(() => !!localStorage.getItem('token'));
   const [apiConfigured, setApiConfigured] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
@@ -898,6 +899,14 @@ export default function Home({ onProjectCreated }) {
   const [unlockedSteps, setUnlockedSteps] = useState(new Set());
   const [currentUser, setCurrentUser] = useState({});
   const [notifications, setNotifications] = useState([]);
+  const [toast, setToast] = useState(null);
+  const toastTimerRef = useRef(null);
+
+  const showToast = (msg, type = 'warning') => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast({ msg, type });
+    toastTimerRef.current = setTimeout(() => setToast(null), 2500);
+  };
 
   useEffect(() => {
     apiGetProjects().then(setProjects);
@@ -1027,7 +1036,7 @@ export default function Home({ onProjectCreated }) {
                 userId="miioo_suzy"
                 phone="178 **** 0361"
                 wechat="suzylee"
-                onLogout={() => setIsLoggedIn(false)}
+                onLogout={() => { localStorage.removeItem('token'); setIsLoggedIn(false); }}
                 onOpenProfile={() => setProfileOpen(true)}
               />
             ) : (
@@ -1042,7 +1051,7 @@ export default function Home({ onProjectCreated }) {
           unlockedSteps={unlockedSteps}
           isLoggedIn={isLoggedIn}
           onLoginClick={() => setLoginOpen(true)}
-          onLogout={() => setIsLoggedIn(false)}
+          onLogout={() => { localStorage.removeItem('token'); setIsLoggedIn(false); }}
           onOpenProfile={() => setProfileOpen(true)}
         />
         )}
@@ -1116,6 +1125,10 @@ export default function Home({ onProjectCreated }) {
                 scriptStreamingIndex={scriptStreamingIndex}
                 onScriptStreamingIndexChange={setScriptStreamingIndex}
                 onGoToSubject={(tab) => {
+                  if (!unlockedSteps.has('subject')) {
+                    showToast('暂无主体资产，请从剧本开始提取主体');
+                    return;
+                  }
                   setSubjectInitialTab(tab ?? 'char');
                   handleUnlockStep('subject');
                   setActiveStep('subject');
@@ -1188,6 +1201,29 @@ export default function Home({ onProjectCreated }) {
           });
         }}
       />
+      {toast && createPortal(
+        <div style={{
+          position: 'fixed',
+          top: '25vh',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 9999,
+          pointerEvents: 'none',
+          animation: 'slideUpBounce 250ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards',
+        }}>
+          <div className="flex items-center gap-[8px] px-[16px] py-[8px] rounded-medium bg-toast-bg backdrop-blur-[20px]" style={{ whiteSpace: 'nowrap' }}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+              <path d="M8 14.667C9.841 14.667 11.508 13.921 12.714 12.714C13.921 11.508 14.667 9.841 14.667 8C14.667 6.159 13.921 4.492 12.714 3.286C11.508 2.08 9.841 1.333 8 1.333C6.159 1.333 4.492 2.08 3.286 3.286C2.08 4.492 1.333 6.159 1.333 8C1.333 9.841 2.08 11.508 3.286 12.714C4.492 13.921 6.159 14.667 8 14.667Z" fill="#EB8B14" stroke="#EB8B14" strokeWidth="1.333" strokeLinejoin="round" />
+              <path fillRule="evenodd" clipRule="evenodd" d="M8 12.333C8.46 12.333 8.833 11.96 8.833 11.5C8.833 11.04 8.46 10.667 8 10.667C7.54 10.667 7.167 11.04 7.167 11.5C7.167 11.96 7.54 12.333 8 12.333Z" fill="#FFFFFF" />
+              <path d="M8 4V9.333" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            <span className="text-text-primary text-font-size-16 font-font-weight-regular" style={{ fontFamily: "'AlibabaPuHuiTi 2 55 Regular','Alibaba PuHuiTi 2.0',system-ui,sans-serif" }}>
+              {toast.msg}
+            </span>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
