@@ -1,6 +1,6 @@
 # miioo 项目进度管理文档
 
-> 最后更新：2026-05-20（ProfileModal 交互补全 + ApiConfigModal 模型列表接入 API 规范）
+> 最后更新：2026-05-22（ProfileModal 手机号解绑换绑流程完成）
 
 ---
 
@@ -24,7 +24,7 @@
 |------|----------|----------|
 | 首页 | 开始创作主按钮、登录/个人中心、设置、消息、社群二维码、创作手册、API 配置、Logo | ✅ 已完成 |
 | 项目 | 新建项目、项目列表（卡片式）、工作流（全局设定/剧本/主体/分镜/剪辑成片） | 开发中 |
-| 创作 | AI 生图、AI 生视频（参考即梦 AI 交互模式） | 待开发 |
+| 创作 | AI 生图、AI 生视频（参考即梦 AI 交互模式） | 开发中 |
 | 资产库 | 项目资产、创作资产，可编辑 | 待开发 |
 
 ### 项目工作流详细说明
@@ -116,6 +116,7 @@ miioo/
 │   │   ├── storyboard.js          # 分镜/镜头增删改生成
 │   │   ├── subject.js             # 主体（角色/场景/道具）增删改生成
 │   │   └── assets.js              # 资产库（项目资产/创作资产/详情）
+│   │   └── creation.js            # 创作模块（模型列表/生成参数/提交生成）
 │   ├── ref/                   # 设计稿参考代码（只读，不引入业务）
 │   ├── App.jsx                # 根组件
 │   ├── main.jsx               # 入口文件
@@ -247,6 +248,39 @@ miioo/
   - `src/api/config.js` 新增 `apiGetApiConfig()`（mock 返回完整配置含预置模型列表，TODO: GET /api-config）
   - `ApiConfigModal` 打开时调用 `apiGetApiConfig()` 初始化 state（mainConfigured / onelinkEnabled / onelinkApiKey / onelinkModelsByTab / customProviders）
   - 真实接口就绪后只需修改 `config.js` 的 `apiGetApiConfig` 函数，页面代码不动
+- [x] 创作页开发启动（2026-05-21，feat/project 分支）：
+  - 新建 `src/api/creation.js`，包含三个 stub 函数：
+    - `apiGetCreationModels(genType)` — 按生成类型返回可用模型列表（TODO: GET /creation/models）
+    - `apiGetCreationParams(genType, model)` — 按类型+模型返回生成参数配置（TODO: GET /creation/params）
+    - `apiGenerateCreation(params)` — 提交生成请求（TODO: POST /creation/generate）
+  - `CreationPage.jsx` 删除所有硬编码选项常量（`MODEL_OPTIONS`、`RATIO_OPTIONS`、`VIDEO_RATIO_OPTIONS` 等 8 个），改为后端驱动
+  - `model` 状态提升至 `CreationPage`，genType 切换时重新请求模型列表并重置 model 为第一项
+  - model 变化时请求参数配置（`creationParams`），通过 `CreationEmptyState` → `InputCard` 逐层传入
+  - `InputCard` 内部 `useEffect` 监听 `creationParams` 变化，自动重置各参数选中值为第一项
+  - `ModelSelector`、`ParamsSelector`、`RefModeSelector`、`VideoParamsSelector` 全部改为接收 `options` props，不再内部硬编码
+  - `RatioIcon` 组件签名从 `{ ratio, selected }` 改为 `{ rw, rh, selected }`，直接接收宽高比数值
+  - 所有参数行加 `flexWrap: 'wrap'`，支持后端返回任意数量选项（不限制为固定 N 个）
+  - InputCard 宽度从 700px 改为 800px
+  - 两个 `useEffect` 均使用 `cancelled` flag 防止竞态条件（组件卸载或依赖变化时取消旧请求）
+- [x] 通用组件 — ProfileModal 样式对齐 + 交互补全（2026-05-22）：
+  - 样式全面对齐设计稿：背景色 `#161616`、边框 `0.555556px`、header padding `16px 24px`、avatar section padding `24px`、字段行 padding `12px 24px` gap `8px`、label 宽度 `44px`
+  - 微信行改为只读 `WechatUnboundRow`（未绑定）/ `WechatBoundRow`（已绑定）两态，未绑定时显示绿色「去绑定」链接，点击进入微信绑定二维码流程
+  - 微信绑定流程：`WechatBindView` 子视图，展示二维码（`apiGetWechatQrCode`），每 2 秒轮询绑定状态（`apiPollWechatBind`），扫码后显示「确认中」遮罩，绑定成功后返回个人信息视图并更新昵称
+  - 手机号行改为 `PhoneRow`，右侧显示号码 + 「解绑」按钮（`UnlinkButton`，hover 变红）
+  - 微信解绑调用 `apiUnbindWechat`，解绑后切回未绑定态
+  - 头像上传：点击头像弹出文件选择，选中后立即用 `createObjectURL` 本地预览，同时调 `apiUploadAvatar`；接口返回真实 URL 后替换并释放 object URL
+  - 用户名实时更新：输入框修改时同步更新 avatar section 的显示名称（`{nameVal || userName}`）
+  - 注销账号行：左侧「注销账号」为普通灰色文字，右侧「永久删除账号及所有数据」为红色可点击按钮，hover/pressed 有背景色反馈
+  - `src/api/user.js` 新增 `apiGetWechatQrCode`、`apiPollWechatBind`、`apiUnbindWechat` 三个 stub 函数
+- [x] 通用组件 — ProfileModal 手机号解绑换绑流程（2026-05-22）：
+  - 点击「解绑」按钮弹出弹窗1「手机号解绑」：显示当前手机号 + 验证码输入框（60 秒倒计时），点击「下一步」调 `apiVerifyPhoneCode` 验证旧手机验证码
+  - 验证通过后弹出弹窗2「更换手机号」：新手机号输入框（格式校验 `^1\d{10}$`）+ 验证码输入框，点击「绑定」调 `apiRebindPhone`，绑定成功后更新弹窗内手机号显示
+  - 两步弹窗通过 `phoneUnbindStep` 状态机（null → 'step1' → 'step2' → null）驱动，zIndex 70 叠在 ProfileModal（zIndex 60）之上
+  - 取消任意步骤不修改手机号，完整绑定新手机才算解绑成功（符合「解绑旧号必须先绑新号」业务规则）
+  - 按钮样式遵循 button.md 规范：取消用 Secondary 单层结构（token 类 `hover:bg-btn-primary-bg-hover active:bg-btn-primary-bg-active`），确认/绑定用 Primary 双层渐变边框
+  - 输入框样式遵循 input.md 规范：hover/focus/wrong 三态边框 + focus 青色发光阴影，内嵌「获取」按钮为 Secondary 小尺寸（h-[24px] rounded-[6px] px-[8px]）
+  - `src/api/user.js` 新增 `apiSendPhoneCode`、`apiVerifyPhoneCode`、`apiRebindPhone` 三个 stub 函数
+  - 所有 Tailwind 数字缩写转换为具体 px 值：`h-9` → `h-[36px]`、`h-6` → `h-[24px]`、`p-px` → `p-[1px]`
 - [ ] 项目工作流 — 剪辑成片
 - [ ] 创作页（生图/生视频）
 - [ ] 资产库

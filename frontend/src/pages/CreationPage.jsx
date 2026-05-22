@@ -1,0 +1,1802 @@
+import { useState, useRef, useEffect } from 'react';
+import { PulsingBorder } from '@paper-design/shaders-react';
+import { apiGenerateCreation, apiGetCreationModels, apiGetCreationParams } from '../api/creation';
+
+const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
+const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
+
+const ALLOWED_EXTS = ['.txt', '.md', '.pdf', '.docx'];
+const ALLOWED_IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff', '.tif', '.heic', '.heif'];
+
+function formatFileSize(bytes) {
+  if (bytes < 1024) return bytes + ' B';
+  if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' KB';
+  return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
+}
+
+function truncateFileName(name) {
+  const dotIndex = name.lastIndexOf('.');
+  if (dotIndex === -1) return name;
+  const base = name.slice(0, dotIndex);
+  const ext = name.slice(dotIndex);
+  const maxBase = 12;
+  if (base.length <= maxBase) return name;
+  return base.slice(0, maxBase) + '… ' + ext;
+}
+
+const ROTATE_STYLE_ID = 'creation-chatbox-rotate-style';
+const THINKING_STYLE_ID = 'creation-thinking-style';
+
+function ensureRotateKeyframe() {
+  if (document.getElementById(ROTATE_STYLE_ID)) return;
+  const style = document.createElement('style');
+  style.id = ROTATE_STYLE_ID;
+  style.textContent = `
+    @property --creation-chatbox-angle {
+      syntax: '<angle>';
+      initial-value: 161.1deg;
+      inherits: false;
+    }
+    @keyframes creation-chatbox-spin {
+      from { --creation-chatbox-angle: 161.1deg; }
+      to { --creation-chatbox-angle: 521.1deg; }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+function ensureThinkingStyle() {
+  if (document.getElementById(THINKING_STYLE_ID)) return;
+  const style = document.createElement('style');
+  style.id = THINKING_STYLE_ID;
+  style.textContent = `
+    @keyframes creation-thinking-dot {
+      0%, 60%, 100% { opacity: 0.2; transform: translateY(0px); }
+      30% { opacity: 1; transform: translateY(-4px); }
+    }
+    .creation-thinking-dot { animation: creation-thinking-dot 1.4s ease-in-out infinite; }
+    .creation-thinking-dot:nth-child(1) { animation-delay: 0s; }
+    .creation-thinking-dot:nth-child(2) { animation-delay: 0.2s; }
+    .creation-thinking-dot:nth-child(3) { animation-delay: 0.4s; }
+  `;
+  document.head.appendChild(style);
+}
+
+// ─── Generation type options (backend-driven in production) ───────────────────
+const GEN_TYPE_OPTIONS = [
+  { value: 'image', label: '图片生成',
+    iconSelected: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+        <path d="M3 5V3.188C3 2.891 3.029 2.783 3.083 2.674C3.138 2.566 3.218 2.481 3.32 2.422C3.422 2.364 3.523 2.333 3.801 2.333H12.199C12.477 2.333 12.578 2.364 12.68 2.422C12.782 2.481 12.862 2.566 12.916 2.674C12.971 2.783 13 2.891 13 3.188V5" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M1.667 5H14.333V13.667H1.667V5Z" stroke="#FFFFFF" strokeLinejoin="round" />
+        <path fillRule="evenodd" clipRule="evenodd" d="M4.333 8.667C4.886 8.667 5.333 8.219 5.333 7.667C5.333 7.114 4.886 6.667 4.333 6.667C3.781 6.667 3.333 7.114 3.333 7.667C3.333 8.219 3.781 8.667 4.333 8.667Z" fill="#FFFFFF" />
+        <path d="M1.856 13.463L5 10L6.667 11.333L8.667 9L14.131 13.463" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+    iconDefault: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+        <path d="M3 5V3.188C3 2.891 3.029 2.783 3.083 2.674C3.138 2.566 3.218 2.481 3.32 2.422C3.422 2.364 3.523 2.333 3.801 2.333H12.199C12.477 2.333 12.578 2.364 12.68 2.422C12.782 2.481 12.862 2.566 12.916 2.674C12.971 2.783 13 2.891 13 3.188V5" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M1.667 5H14.333V13.667H1.667V5Z" stroke="#FFFFFF99" strokeLinejoin="round" />
+        <path fillRule="evenodd" clipRule="evenodd" d="M4.333 8.667C4.886 8.667 5.333 8.219 5.333 7.667C5.333 7.114 4.886 6.667 4.333 6.667C3.781 6.667 3.333 7.114 3.333 7.667C3.333 8.219 3.781 8.667 4.333 8.667Z" fill="#FFFFFF99" />
+        <path d="M1.856 13.463L5 10L6.667 11.333L8.667 9L14.131 13.463" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+    triggerIcon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+        <path d="M3 5V3.188C3 2.891 3.029 2.783 3.083 2.674C3.138 2.566 3.218 2.481 3.32 2.422C3.422 2.364 3.523 2.333 3.801 2.333H12.199C12.477 2.333 12.578 2.364 12.68 2.422C12.782 2.481 12.862 2.566 12.916 2.674C12.971 2.783 13 2.891 13 3.188V5" stroke="#FFFFFFCC" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M1.667 5H14.333V13.667H1.667V5Z" stroke="#FFFFFFCC" strokeLinejoin="round" />
+        <path fillRule="evenodd" clipRule="evenodd" d="M4.333 8.667C4.886 8.667 5.333 8.219 5.333 7.667C5.333 7.114 4.886 6.667 4.333 6.667C3.781 6.667 3.333 7.114 3.333 7.667C3.333 8.219 3.781 8.667 4.333 8.667Z" fill="#FFFFFFCC" />
+        <path d="M1.856 13.463L5 10L6.667 11.333L8.667 9L14.131 13.463" stroke="#FFFFFFCC" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  { value: 'video', label: '视频生成',
+    iconSelected: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+        <path d="M13 2H3C2.448 2 2 2.448 2 3V13C2 13.552 2.448 14 3 14H13C13.552 14 14 13.552 14 13V3C14 2.448 13.552 2 13 2Z" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M6.833 9.333V7.313L8.583 8.323L10.333 9.333L8.583 10.344L6.833 11.354V9.333Z" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M2 5H14" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M11 2L9 5" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M7 2L5 5" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+    iconDefault: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+        <path d="M13 2H3C2.448 2 2 2.448 2 3V13C2 13.552 2.448 14 3 14H13C13.552 14 14 13.552 14 13V3C14 2.448 13.552 2 13 2Z" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M6.833 9.333V7.313L8.583 8.323L10.333 9.333L8.583 10.344L6.833 11.354V9.333Z" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M2 5H14" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M11 2L9 5" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M7 2L5 5" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+    triggerIcon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+        <path d="M13 2H3C2.448 2 2 2.448 2 3V13C2 13.552 2.448 14 3 14H13C13.552 14 14 13.552 14 13V3C14 2.448 13.552 2 13 2Z" stroke="#FFFFFFCC" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M6.833 9.333V7.313L8.583 8.323L10.333 9.333L8.583 10.344L6.833 11.354V9.333Z" stroke="#FFFFFFCC" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M2 5H14" stroke="#FFFFFFCC" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M11 2L9 5" stroke="#FFFFFFCC" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M7 2L5 5" stroke="#FFFFFFCC" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+  { value: 'dubbing', label: '配音生成',
+    iconSelected: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+        <path d="M8 2V11.667" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M3.333 12.013C3.333 11.085 4.086 10.333 5.013 10.333H8V12.32C8 13.248 7.248 14 6.32 14H5.013C4.086 14 3.333 13.248 3.333 12.32V12.013Z" stroke="#FFFFFF" strokeLinejoin="round" />
+        <path fillRule="evenodd" clipRule="evenodd" d="M8 4.689L12.294 5.707V3.004L8 2V4.689Z" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+    iconDefault: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+        <path d="M8 2V11.667" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M3.333 12.013C3.333 11.085 4.086 10.333 5.013 10.333H8V12.32C8 13.248 7.248 14 6.32 14H5.013C4.086 14 3.333 13.248 3.333 12.32V12.013Z" stroke="#FFFFFF99" strokeLinejoin="round" />
+        <path fillRule="evenodd" clipRule="evenodd" d="M8 4.689L12.294 5.707V3.004L8 2V4.689Z" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+    triggerIcon: (
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+        <path d="M8 2V11.667" stroke="#FFFFFFCC" strokeLinecap="round" strokeLinejoin="round" />
+        <path d="M3.333 12.013C3.333 11.085 4.086 10.333 5.013 10.333H8V12.32C8 13.248 7.248 14 6.32 14H5.013C4.086 14 3.333 13.248 3.333 12.32V12.013Z" stroke="#FFFFFFCC" strokeLinejoin="round" />
+        <path fillRule="evenodd" clipRule="evenodd" d="M8 4.689L12.294 5.707V3.004L8 2V4.689Z" stroke="#FFFFFFCC" strokeLinecap="round" strokeLinejoin="round" />
+      </svg>
+    ),
+  },
+];
+
+// Model/params options are backend-driven; see apiGetCreationModels / apiGetCreationParams in src/api/creation.js
+
+// ─── Upload placeholder ───────────────────────────────────────────────────────
+function UploadPlaceholder({ onFileSelect, disabled = false, allowedExts = ALLOWED_EXTS, acceptAttr = '.txt,.md,.pdf,.docx' }) {
+  const [hovered, setHovered] = useState(false);
+  const fileInputRef = useRef(null);
+
+  const defaultBack = { opacity: 0.6, bg: '#FFFFFF14', rotate: '0deg' };
+  const defaultFront = { bg: '#262626', rotate: '345deg', tx: 'calc(-50% - 7.015px)', ty: 'calc(-50% + 6.717px)' };
+  const defaultIcon = { stroke: '#FFFFFF33', tx: 'calc(-50% - 1.349px)', ty: 'calc(-50% + 1.757px)', rotate: '345deg' };
+
+  const hoverBack = { opacity: 0.6, bg: '#FFFFFF3D', rotate: '5deg' };
+  const hoverFront = { bg: '#3D3D3D', rotate: '351deg', tx: 'calc(-50% - 4.422px)', ty: 'calc(-50% + 3.811px)' };
+  const hoverIcon = { stroke: '#FFFFFF80', tx: 'calc(-50% - 0.865px)', ty: 'calc(-50% + 1.012px)', rotate: '351deg' };
+
+  const back = hovered ? hoverBack : defaultBack;
+  const front = hovered ? hoverFront : defaultFront;
+  const icon = hovered ? hoverIcon : defaultIcon;
+  const transition = 'all 0.35s cubic-bezier(0.4, 0, 0.2, 1)';
+
+  const handleChange = (e) => {
+    const selected = Array.from(e.target.files || []);
+    if (!selected.length) return;
+    const invalid = selected.filter((file) => {
+      const ext = '.' + file.name.split('.').pop().toLowerCase();
+      return !allowedExts.includes(ext);
+    });
+    if (invalid.length) {
+      alert(`仅支持 ${allowedExts.join('、')} 格式的文件`);
+      e.target.value = '';
+      return;
+    }
+    onFileSelect?.(selected);
+    e.target.value = '';
+  };
+
+  return (
+    <button
+      type="button"
+      onMouseEnter={() => !disabled && setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      onClick={() => !disabled && fileInputRef.current?.click()}
+      disabled={disabled}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '0px',
+        position: 'relative',
+        padding: 0,
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        background: 'transparent',
+        border: 'none',
+        opacity: disabled ? 0.45 : 1,
+        outline: 'none',
+        borderRadius: '8px',
+        flexShrink: 0,
+      }}
+    >
+      <input ref={fileInputRef} type="file" multiple accept={acceptAttr} className="hidden" onChange={handleChange} />
+      <div style={{ width: '44px', height: '60px', borderRadius: '4px', flexShrink: 0, boxShadow: '#FFFFFF14 0px 0px 0px 0.5px inset', opacity: back.opacity, background: back.bg, rotate: back.rotate, transition }} />
+      <div style={{ width: '44px', height: '60px', borderRadius: '4px', position: 'absolute', boxShadow: '#FFFFFF14 0px 0px 0px 0.5px inset', transformOrigin: 'top left', background: front.bg, rotate: front.rotate, left: '50%', top: '50%', translate: `${front.tx} ${front.ty}`, transition }} />
+      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"
+        style={{ position: 'absolute', left: '50%', top: '50%', translate: `${icon.tx} ${icon.ty}`, rotate: icon.rotate, transformOrigin: '0% 0%', transition }}>
+        <path d="M8 3v10M3 8h10" stroke={icon.stroke} strokeWidth="1.5" strokeLinecap="round" style={{ transition }} />
+      </svg>
+    </button>
+  );
+}
+
+// ─── File card ────────────────────────────────────────────────────────────────
+function FileCard({ file, onRemove, disabled = false }) {
+  const [hovered, setHovered] = useState(false);
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'flex-start',
+        gap: '2px',
+        paddingLeft: '8px',
+        paddingRight: '8px',
+        paddingTop: '6px',
+        paddingBottom: '6px',
+        borderRadius: '8px',
+        width: '100px',
+        height: '100px',
+        justifyContent: 'space-between',
+        flexShrink: 0,
+        position: 'relative',
+        background: '#1D1E1E',
+        border: `1px solid ${hovered ? '#FFFFFF33' : '#FFFFFF14'}`,
+        transition: 'border-color 0.15s',
+        opacity: disabled ? 0.45 : 1,
+      }}
+      onMouseEnter={() => !disabled && setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <div style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '150%', alignSelf: 'stretch', flex: 1, overflow: 'hidden', color: '#FFFFFF' }}>
+        {truncateFileName(file.name)}
+      </div>
+      <div style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '150%', alignSelf: 'stretch', color: '#FFFFFF66' }}>
+        {formatFileSize(file.size)}
+      </div>
+      {hovered && !disabled && (
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onRemove(); }}
+          style={{ position: 'absolute', display: 'flex', alignItems: 'center', justifyContent: 'center', top: '-5px', right: '-5px', width: '16px', height: '16px', borderRadius: '9999px', background: '#505151', border: 'none', cursor: 'pointer', padding: 0 }}
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+            <path d="M4.667 4.667L11.333 11.333" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M4.667 11.333L11.333 4.667" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ─── Dropdown ─────────────────────────────────────────────────────────────────
+function Dropdown({ trigger, children, open, onClose, dropUp = true }) {
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) onClose();
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open, onClose]);
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      {trigger}
+      {open && (
+        <div
+          style={{
+            position: 'absolute',
+            zIndex: 50,
+            left: 0,
+            [dropUp ? 'bottom' : 'top']: 'calc(100% + 4px)',
+            borderRadius: '8px',
+            overflow: 'hidden',
+            background: '#1D1E1E',
+            border: '1px solid #FFFFFF0D',
+            boxShadow: '0px 4px 16px #00000066',
+            minWidth: '112px',
+            padding: '4px',
+          }}
+        >
+          {children}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function GenTypeDropdownItem({ label, iconSelected, iconDefault, selected, onClick }) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '4px',
+        width: '100%',
+        paddingLeft: '12px',
+        paddingRight: '12px',
+        paddingTop: '8px',
+        paddingBottom: '8px',
+        borderRadius: '6px',
+        cursor: 'pointer',
+        border: 'none',
+        textAlign: 'left',
+        fontFamily: FONT,
+        fontSize: '14px',
+        lineHeight: '18px',
+        color: selected ? '#FFFFFF' : '#FFFFFF99',
+        background: selected ? '#FFFFFF0D' : hovered ? '#FFFFFF0A' : 'transparent',
+        transition: 'background 0.15s',
+      }}
+    >
+      {selected ? iconSelected : iconDefault}
+      {label}
+    </button>
+  );
+}
+
+function DropdownItem({ label, selected, onClick, icon }) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        width: '100%',
+        height: '32px',
+        paddingLeft: '12px',
+        paddingRight: '12px',
+        cursor: 'pointer',
+        border: 'none',
+        textAlign: 'left',
+        fontFamily: FONT,
+        fontSize: '12px',
+        lineHeight: '16px',
+        color: selected ? '#FFFFFF' : '#FFFFFFCC',
+        background: selected ? '#FFFFFF14' : hovered ? '#FFFFFF0A' : 'transparent',
+        transition: 'background 0.15s',
+      }}
+    >
+      {icon && icon}
+      {label}
+    </button>
+  );
+}
+
+// ─── Generation type selector ─────────────────────────────────────────────────
+function GenTypeSelector({ value, onChange, disabled }) {
+  const [open, setOpen] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const selected = GEN_TYPE_OPTIONS.find((o) => o.value === value) ?? GEN_TYPE_OPTIONS[0];
+  const isActive = open || hovered;
+
+  return (
+    <Dropdown
+      open={open}
+      onClose={() => setOpen(false)}
+      trigger={
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => !disabled && setOpen((v) => !v)}
+          onMouseEnter={() => !disabled && setHovered(true)}
+          onMouseLeave={() => setHovered(false)}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            height: '32px',
+            paddingLeft: '12px',
+            paddingRight: '6px',
+            borderRadius: '8px',
+            justifyContent: 'space-between',
+            flexShrink: 0,
+            border: '1px solid',
+            cursor: disabled ? 'not-allowed' : 'pointer',
+            background: open ? '#252525' : isActive ? '#222222' : '#1D1E1E',
+            borderColor: open ? '#2DC3E199' : '#FFFFFF14',
+            outline: open ? '1px solid #00000080' : '1px solid #00000080',
+            boxShadow: open ? '#2DC3E11A 0px 0px 10px' : 'none',
+            transition: 'background 0.2s, border-color 0.2s, box-shadow 0.2s',
+            opacity: disabled ? 0.45 : 1,
+            whiteSpace: 'nowrap',
+          }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+            {selected.triggerIcon}
+            <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: '#FFFFFFCC' }}>
+              {selected.label}
+            </span>
+          </div>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"
+            style={{ flexShrink: 0, transition: 'transform 0.2s', transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+            <path d="M12 6.333L8 10.333L4 6.333H12Z" fill="#FFFFFF" stroke="#FFFFFF" strokeWidth="1.333" strokeLinejoin="round" />
+          </svg>
+        </button>
+      }
+    >
+      {GEN_TYPE_OPTIONS.map((opt) => (
+        <GenTypeDropdownItem
+          key={opt.value}
+          label={opt.label}
+          iconSelected={opt.iconSelected}
+          iconDefault={opt.iconDefault}
+          selected={opt.value === value}
+          onClick={() => { onChange(opt.value); setOpen(false); }}
+        />
+      ))}
+    </Dropdown>
+  );
+}
+
+// ─── Model selector ───────────────────────────────────────────────────────────
+function ModelSelector({ value, onChange, options = [], disabled }) {
+  const [open, setOpen] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const isActive = open || hovered;
+
+  return (
+    <Dropdown
+      open={open}
+      onClose={() => setOpen(false)}
+      trigger={
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => !disabled && setOpen((v) => !v)}
+          onMouseEnter={() => !disabled && setHovered(true)}
+          onMouseLeave={() => setHovered(false)}
+          onFocus={() => setFocused(true)}
+          onBlur={() => setFocused(false)}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            height: '32px',
+            width: '180px',
+            paddingLeft: '12px',
+            paddingRight: '6px',
+            borderRadius: '8px',
+            justifyContent: 'space-between',
+            flexShrink: 0,
+            border: '1px solid',
+            cursor: disabled ? 'not-allowed' : 'pointer',
+            background: open ? '#252525' : isActive ? '#222222' : '#1D1E1E',
+            borderColor: open ? '#FFFFFF33' : '#FFFFFF14',
+            outline: focused || open ? '1px solid #2DC3E180' : '1px solid #00000080',
+            transition: 'background 0.2s, border-color 0.2s, outline 0.2s',
+            opacity: disabled ? 0.45 : 1,
+          }}
+        >
+          <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: '#FFFFFFCC', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, textAlign: 'left' }}>
+            {value}
+          </span>
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"
+            style={{ flexShrink: 0, transition: 'transform 0.2s', transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+            <path d="M12 6.333L8 10.333L4 6.333H12Z" fill="#FFFFFF" stroke="#FFFFFF" strokeWidth="1.333" strokeLinejoin="round" />
+          </svg>
+        </button>
+      }
+    >
+      {options.map((opt) => (
+        <DropdownItem key={opt.value} label={opt.label} selected={opt.value === value} onClick={() => { onChange(opt.value); setOpen(false); }} />
+      ))}
+    </Dropdown>
+  );
+}
+
+// ─── Ratio icon ───────────────────────────────────────────────────────────────
+function RatioIcon({ rw = 16, rh = 9, selected = false }) {
+  const maxW = 16, maxH = 12;
+  const scale = Math.min(maxW / rw, maxH / rh);
+  const w = Math.round(rw * scale);
+  const h = Math.round(rh * scale);
+  return (
+    <div style={{
+      width: `${w}px`,
+      height: `${h}px`,
+      borderRadius: '2px',
+      flexShrink: 0,
+      boxShadow: selected ? '#FFFFFF 0px 0px 0px 1px inset' : '#FFFFFF66 0px 0px 0px 1px inset',
+    }} />
+  );
+}
+
+// ─── Params selector (ratio + resolution + count) ─────────────────────────────
+function ParamsSelector({ ratio, resolution, count, onRatioChange, onResolutionChange, onCountChange, disabled,
+  ratioOptions = [], resolutionOptions = [], countOptions = [] }) {
+  const [open, setOpen] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const isActive = open || hovered;
+
+  const dropdownRef = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const cellStyle = (selected) => ({
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    paddingLeft: '12px',
+    paddingRight: '12px',
+    paddingTop: '8px',
+    paddingBottom: '8px',
+    borderRadius: '4px',
+    width: 'calc(25% - 3px)',
+    cursor: 'pointer',
+    border: 'none',
+    fontFamily: FONT,
+    fontSize: '12px',
+    lineHeight: '16px',
+    color: selected ? '#FFFFFF' : '#FFFFFF66',
+    background: selected ? '#FFFFFF14' : '#FFFFFF0D',
+    boxShadow: selected ? '#FFFFFF33 0px 0px 0px 1px inset' : 'none',
+    transition: 'background 0.15s, box-shadow 0.15s',
+    flexShrink: 0,
+  });
+
+  const simpleCellStyle = (selected) => ({
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '4px',
+    paddingLeft: '12px',
+    paddingRight: '12px',
+    paddingTop: '8px',
+    paddingBottom: '8px',
+    borderRadius: '4px',
+    width: 'calc(25% - 3px)',
+    cursor: 'pointer',
+    border: 'none',
+    fontFamily: FONT,
+    fontSize: '12px',
+    lineHeight: '16px',
+    color: selected ? '#FFFFFF' : '#FFFFFF66',
+    background: selected ? '#FFFFFF14' : '#FFFFFF0D',
+    boxShadow: selected ? '#FFFFFF33 0px 0px 0px 1px inset' : 'none',
+    transition: 'background 0.15s, box-shadow 0.15s',
+    flexShrink: 0,
+  });
+
+  return (
+    <div ref={dropdownRef} style={{ position: 'relative' }}>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => !disabled && setOpen((v) => !v)}
+        onMouseEnter={() => !disabled && setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          height: '36px',
+          paddingLeft: '12px',
+          paddingRight: '6px',
+          borderRadius: '8px',
+          justifyContent: 'space-between',
+          flexShrink: 0,
+          border: '1px solid',
+          cursor: disabled ? 'not-allowed' : 'pointer',
+          background: open ? '#252525' : isActive ? '#222222' : '#1D1E1E',
+          borderColor: open ? '#2DC3E199' : '#FFFFFF14',
+          outline: open ? '1px solid #00000080' : '1px solid #00000080',
+          boxShadow: open ? '#2DC3E11A 0px 0px 10px' : 'none',
+          transition: 'background 0.2s, border-color 0.2s, box-shadow 0.2s',
+          opacity: disabled ? 0.45 : 1,
+          whiteSpace: 'nowrap',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <RatioIcon rw={ratioOptions.find((r) => r.value === ratio)?.w ?? 16} rh={ratioOptions.find((r) => r.value === ratio)?.h ?? 9} selected />
+          <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: '#FFFFFFCC' }}>{ratio}</span>
+        </div>
+        <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: '#FFFFFFCC' }}>{resolution}</span>
+        <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: '#FFFFFFCC' }}>{count}</span>
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"
+          style={{ flexShrink: 0, transition: 'transform 0.2s', transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+          <path d="M12 6.333L8 10.333L4 6.333H12Z" fill="#FFFFFF" stroke="#FFFFFF" strokeWidth="1.333" strokeLinejoin="round" />
+        </svg>
+      </button>
+
+      {open && (
+        <div style={{
+          position: 'absolute',
+          zIndex: 50,
+          left: 0,
+          bottom: 'calc(100% + 4px)',
+          borderRadius: '8px',
+          background: '#1D1E1E',
+          border: '1px solid #FFFFFF0D',
+          boxShadow: '0px 4px 16px #00000066',
+          width: '320px',
+          padding: '8px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '8px',
+        }}>
+          {/* 比例 */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <div style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: '#FFFFFF66' }}>比例</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+              {ratioOptions.map((opt) => {
+                const sel = opt.value === ratio;
+                return (
+                  <button key={opt.value} type="button" style={cellStyle(sel)}
+                    onClick={() => { onRatioChange(opt.value); }}
+                    onMouseEnter={(e) => { if (!sel) e.currentTarget.style.background = '#FFFFFF14'; }}
+                    onMouseLeave={(e) => { if (!sel) e.currentTarget.style.background = '#FFFFFF0D'; }}
+                  >
+                    <RatioIcon rw={opt.w} rh={opt.h} selected={sel} />
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 分辨率 */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <div style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: '#FFFFFF66' }}>分辨率</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+              {resolutionOptions.map((opt) => {
+                const sel = opt === resolution;
+                return (
+                  <button key={opt} type="button" style={simpleCellStyle(sel)}
+                    onClick={() => { onResolutionChange(opt); }}
+                    onMouseEnter={(e) => { if (!sel) e.currentTarget.style.background = '#FFFFFF14'; }}
+                    onMouseLeave={(e) => { if (!sel) e.currentTarget.style.background = '#FFFFFF0D'; }}
+                  >
+                    {opt}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 数量 */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <div style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: '#FFFFFF66' }}>数量</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+              {countOptions.map((opt) => {
+                const sel = opt === count;
+                return (
+                  <button key={opt} type="button" style={simpleCellStyle(sel)}
+                    onClick={() => { onCountChange(opt); }}
+                    onMouseEnter={(e) => { if (!sel) e.currentTarget.style.background = '#FFFFFF14'; }}
+                    onMouseLeave={(e) => { if (!sel) e.currentTarget.style.background = '#FFFFFF0D'; }}
+                  >
+                    {opt}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Reference mode options ───────────────────────────────────────────────────
+const REF_MODE_ICON_ALL_SELECTED = (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+    <path d="M12.619 6.667V8V9.333" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M9.155 12.667L10.309 12L11.464 11.333" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M6.845 12.667L5.69 12L4.536 11.333" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M3.381 6.667V8V9.333" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M4.536 4.667L5.69 4L6.845 3.333" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M9.155 3.333L10.309 4L11.464 4.667" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M8 14.667C8.736 14.667 9.333 14.07 9.333 13.333C9.333 12.597 8.736 12 8 12C7.264 12 6.667 12.597 6.667 13.333C6.667 14.07 7.264 14.667 8 14.667Z" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M8 4C8.736 4 9.333 3.403 9.333 2.667C9.333 1.93 8.736 1.333 8 1.333C7.264 1.333 6.667 1.93 6.667 2.667C6.667 3.403 7.264 4 8 4Z" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M8 9.333C8.736 9.333 9.333 8.736 9.333 8C9.333 7.264 8.736 6.667 8 6.667C7.264 6.667 6.667 7.264 6.667 8C6.667 8.736 7.264 9.333 8 9.333Z" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M12.667 6.667C13.403 6.667 14 6.07 14 5.333C14 4.597 13.403 4 12.667 4C11.93 4 11.333 4.597 11.333 5.333C11.333 6.07 11.93 6.667 12.667 6.667Z" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M12.667 12C13.403 12 14 11.403 14 10.667C14 9.93 13.403 9.333 12.667 9.333C11.93 9.333 11.333 9.93 11.333 10.667C11.333 11.403 11.93 12 12.667 12Z" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M3.333 6.667C4.07 6.667 4.667 6.07 4.667 5.333C4.667 4.597 4.07 4 3.333 4C2.597 4 2 4.597 2 5.333C2 6.07 2.597 6.667 3.333 6.667Z" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M3.333 12C4.07 12 4.667 11.403 4.667 10.667C4.667 9.93 4.07 9.333 3.333 9.333C2.597 9.333 2 9.93 2 10.667C2 11.403 2.597 12 3.333 12Z" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+const REF_MODE_ICON_ALL_DEFAULT = (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+    <path d="M12.619 6.667V8V9.333" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M9.155 12.667L10.309 12L11.464 11.333" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M6.845 12.667L5.69 12L4.536 11.333" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M3.381 6.667V8V9.333" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M4.536 4.667L5.69 4L6.845 3.333" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M9.155 3.333L10.309 4L11.464 4.667" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M8 14.667C8.736 14.667 9.333 14.07 9.333 13.333C9.333 12.597 8.736 12 8 12C7.264 12 6.667 12.597 6.667 13.333C6.667 14.07 7.264 14.667 8 14.667Z" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M8 4C8.736 4 9.333 3.403 9.333 2.667C9.333 1.93 8.736 1.333 8 1.333C7.264 1.333 6.667 1.93 6.667 2.667C6.667 3.403 7.264 4 8 4Z" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M8 9.333C8.736 9.333 9.333 8.736 9.333 8C9.333 7.264 8.736 6.667 8 6.667C7.264 6.667 6.667 7.264 6.667 8C6.667 8.736 7.264 9.333 8 9.333Z" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M12.667 6.667C13.403 6.667 14 6.07 14 5.333C14 4.597 13.403 4 12.667 4C11.93 4 11.333 4.597 11.333 5.333C11.333 6.07 11.93 6.667 12.667 6.667Z" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M12.667 12C13.403 12 14 11.403 14 10.667C14 9.93 13.403 9.333 12.667 9.333C11.93 9.333 11.333 9.93 11.333 10.667C11.333 11.403 11.93 12 12.667 12Z" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M3.333 6.667C4.07 6.667 4.667 6.07 4.667 5.333C4.667 4.597 4.07 4 3.333 4C2.597 4 2 4.597 2 5.333C2 6.07 2.597 6.667 3.333 6.667Z" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M3.333 12C4.07 12 4.667 11.403 4.667 10.667C4.667 9.93 4.07 9.333 3.333 9.333C2.597 9.333 2 9.93 2 10.667C2 11.403 2.597 12 3.333 12Z" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+const REF_MODE_ICON_FRAME_DEFAULT = (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ width: '16px', height: '16px', flexShrink: 0 }}>
+    <path d="M9.446 1.733C9.888 1.733 10.246 2.092 10.246 2.533V21.855C10.246 22.297 9.888 22.655 9.447 22.655C9.005 22.655 8.646 22.297 8.646 21.855V2.533C8.646 2.092 9.005 1.733 9.447 1.733H9.446Z" fill="#FFFFFF99" />
+    <path d="M9.194 3.483V5.083H4.706C4.411 5.083 4.172 5.322 4.172 5.617V18.946C4.172 19.241 4.411 19.479 4.706 19.479H9.194V21.079H4.706C3.527 21.079 2.572 20.124 2.572 18.946V5.617C2.572 4.438 3.527 3.483 4.706 3.483H9.194Z" fill="#FFFFFF99" />
+    <path d="M3.814 8.787H9.446V7.187H3.814V8.787ZM3.814 17.402H9.446V15.802H3.814V17.402ZM14.706 1.733C14.264 1.733 13.906 2.092 13.906 2.533V21.855C13.906 22.297 14.264 22.655 14.706 22.655C15.148 22.655 15.506 22.297 15.506 21.855V2.533C15.506 2.092 15.148 1.733 14.706 1.733Z" fill="#FFFFFF99" />
+    <path d="M14.957 3.483V5.083H19.446C19.74 5.083 19.979 5.322 19.979 5.617V18.946C19.979 19.241 19.74 19.479 19.446 19.479H14.957V21.079H19.446C20.624 21.079 21.579 20.124 21.579 18.946V5.617C21.579 4.438 20.624 3.483 19.446 3.483H14.957Z" fill="#FFFFFF99" />
+    <path d="M20.339 8.787H14.707V7.187H20.339V8.787ZM20.339 17.402H14.707V15.802H20.339V17.402Z" fill="#FFFFFF99" />
+  </svg>
+);
+const REF_MODE_ICON_MULTI_DEFAULT = (
+  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+    <path d="M8 8V4M8 8L4.5 10.021M8 8L11.5 10.021" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M4.667 5.333C4.667 6.07 4.07 6.667 3.333 6.667C2.597 6.667 2 6.07 2 5.333C2 4.597 2.597 4 3.333 4C4.07 4 4.667 4.597 4.667 5.333Z" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M4.667 10.667C4.667 11.403 4.07 12 3.333 12C2.597 12 2 11.403 2 10.667C2 9.93 2.597 9.333 3.333 9.333C4.07 9.333 4.667 9.93 4.667 10.667Z" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M9.333 13.333C9.333 14.07 8.736 14.667 8 14.667C7.264 14.667 6.667 14.07 6.667 13.333C6.667 12.597 7.264 12 8 12C8.736 12 9.333 12.597 9.333 13.333Z" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M14 10.667C14 11.403 13.403 12 12.667 12C11.93 12 11.333 11.403 11.333 10.667C11.333 9.93 11.93 9.333 12.667 9.333C13.403 9.333 14 9.93 14 10.667Z" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M14 5.333C14 6.07 13.403 6.667 12.667 6.667C11.93 6.667 11.333 6.07 11.333 5.333C11.333 4.597 11.93 4 12.667 4C13.403 4 14 4.597 14 5.333Z" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
+    <path d="M9.333 2.667C9.333 3.403 8.736 4 8 4C7.264 4 6.667 3.403 6.667 2.667C6.667 1.93 7.264 1.333 8 1.333C8.736 1.333 9.333 1.93 9.333 2.667Z" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
+  </svg>
+);
+
+// Icon map for ref modes — icons are static frontend assets, not from backend
+const REF_MODE_ICON_MAP = {
+  all:   { iconSelected: REF_MODE_ICON_ALL_SELECTED,   iconDefault: REF_MODE_ICON_ALL_DEFAULT,   triggerIcon: REF_MODE_ICON_ALL_SELECTED   },
+  frame: { iconSelected: REF_MODE_ICON_FRAME_DEFAULT,  iconDefault: REF_MODE_ICON_FRAME_DEFAULT, triggerIcon: REF_MODE_ICON_FRAME_DEFAULT  },
+  multi: { iconSelected: REF_MODE_ICON_MULTI_DEFAULT,  iconDefault: REF_MODE_ICON_MULTI_DEFAULT, triggerIcon: REF_MODE_ICON_MULTI_DEFAULT  },
+};
+
+// ─── Reference mode selector ──────────────────────────────────────────────────
+function RefModeSelector({ value, onChange, disabled, options = [] }) {
+  const [open, setOpen] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const dropdownRef = useRef(null);
+  const selectedOpt = options.find((o) => o.value === value) ?? options[0];
+  const selectedIcons = REF_MODE_ICON_MAP[selectedOpt?.value] ?? REF_MODE_ICON_MAP.all;
+  const isActive = open || hovered;
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  return (
+    <div ref={dropdownRef} style={{ position: 'relative' }}>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => !disabled && setOpen((v) => !v)}
+        onMouseEnter={() => !disabled && setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          height: '32px',
+          paddingLeft: '12px',
+          paddingRight: '6px',
+          borderRadius: '8px',
+          justifyContent: 'space-between',
+          flexShrink: 0,
+          border: '1px solid',
+          cursor: disabled ? 'not-allowed' : 'pointer',
+          background: open ? '#252525' : isActive ? '#222222' : '#1D1E1E',
+          borderColor: open ? '#2DC3E199' : '#FFFFFF14',
+          outline: '1px solid #00000080',
+          boxShadow: open ? '#2DC3E11A 0px 0px 10px' : 'none',
+          transition: 'background 0.2s, border-color 0.2s, box-shadow 0.2s',
+          opacity: disabled ? 0.45 : 1,
+          whiteSpace: 'nowrap',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          {selectedIcons.triggerIcon}
+          <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: '#FFFFFFCC' }}>
+            {selectedOpt?.label}
+          </span>
+        </div>
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"
+          style={{ flexShrink: 0, transition: 'transform 0.2s', transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+          <path d="M12 6.333L8 10.333L4 6.333H12Z" fill="#FFFFFF" stroke="#FFFFFF" strokeWidth="1.333" strokeLinejoin="round" />
+        </svg>
+      </button>
+
+      {open && (
+        <div style={{
+          position: 'absolute',
+          zIndex: 50,
+          left: 0,
+          bottom: 'calc(100% + 4px)',
+          borderRadius: '8px',
+          background: '#1D1E1E',
+          border: '1px solid #FFFFFF0D',
+          boxShadow: '0px 4px 16px #00000066',
+          width: '112px',
+          padding: '4px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '0px',
+        }}>
+          {options.map((opt) => {
+            const sel = opt.value === value;
+            const icons = REF_MODE_ICON_MAP[opt.value] ?? REF_MODE_ICON_MAP.all;
+            return (
+              <RefModeDropdownItem
+                key={opt.value}
+                label={opt.label}
+                icon={sel ? icons.iconSelected : icons.iconDefault}
+                selected={sel}
+                onClick={() => { onChange(opt.value); setOpen(false); }}
+              />
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RefModeDropdownItem({ label, icon, selected, onClick }) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '4px',
+        width: '100%',
+        paddingLeft: '12px',
+        paddingRight: '12px',
+        paddingTop: '8px',
+        paddingBottom: '8px',
+        borderRadius: '6px',
+        cursor: 'pointer',
+        border: 'none',
+        textAlign: 'left',
+        fontFamily: FONT,
+        fontSize: '14px',
+        lineHeight: '18px',
+        color: selected ? '#FFFFFFCC' : '#FFFFFF99',
+        background: selected ? '#FFFFFF0D' : hovered ? '#FFFFFF0A' : 'transparent',
+        transition: 'background 0.15s',
+      }}
+    >
+      {icon}
+      <span style={{ flex: 1 }}>{label}</span>
+    </button>
+  );
+}
+
+// ─── Video params selector (ratio + resolution + duration) ────────────────────
+function VideoParamsSelector({ ratio, resolution, duration, onRatioChange, onResolutionChange, onDurationChange, disabled,
+  ratioOptions = [], resolutionOptions = [], durationOptions = [] }) {
+  const [open, setOpen] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const isActive = open || hovered;
+
+  const dropdownRef = useRef(null);
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => {
+      if (dropdownRef.current && !dropdownRef.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const cellStyle = (selected) => ({
+    display: 'flex',
+    alignItems: 'center',
+    gap: '6px',
+    paddingLeft: '12px',
+    paddingRight: '12px',
+    paddingTop: '8px',
+    paddingBottom: '8px',
+    borderRadius: '4px',
+    width: 'calc(25% - 3px)',
+    cursor: 'pointer',
+    border: 'none',
+    fontFamily: FONT,
+    fontSize: '12px',
+    lineHeight: '16px',
+    color: selected ? '#FFFFFF' : '#FFFFFF66',
+    background: selected ? '#FFFFFF14' : '#FFFFFF0D',
+    boxShadow: selected ? '#FFFFFF33 0px 0px 0px 1px inset' : 'none',
+    transition: 'background 0.15s, box-shadow 0.15s',
+    flexShrink: 0,
+  });
+
+  const simpleCellStyle = (selected) => ({
+    display: 'flex',
+    alignItems: 'center',
+    justifyContent: 'center',
+    gap: '4px',
+    paddingLeft: '12px',
+    paddingRight: '12px',
+    paddingTop: '8px',
+    paddingBottom: '8px',
+    borderRadius: '4px',
+    width: 'calc(25% - 3px)',
+    cursor: 'pointer',
+    border: 'none',
+    fontFamily: FONT,
+    fontSize: '12px',
+    lineHeight: '16px',
+    color: selected ? '#FFFFFF' : '#FFFFFF66',
+    background: selected ? '#FFFFFF14' : '#FFFFFF0D',
+    boxShadow: selected ? '#FFFFFF33 0px 0px 0px 1px inset' : 'none',
+    transition: 'background 0.15s, box-shadow 0.15s',
+    flexShrink: 0,
+  });
+
+  return (
+    <div ref={dropdownRef} style={{ position: 'relative' }}>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => !disabled && setOpen((v) => !v)}
+        onMouseEnter={() => !disabled && setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          height: '32px',
+          paddingLeft: '12px',
+          paddingRight: '6px',
+          borderRadius: '8px',
+          justifyContent: 'space-between',
+          flexShrink: 0,
+          border: '1px solid',
+          cursor: disabled ? 'not-allowed' : 'pointer',
+          background: open ? '#252525' : isActive ? '#222222' : '#1D1E1E',
+          borderColor: open ? '#2DC3E199' : '#FFFFFF14',
+          outline: '1px solid #00000080',
+          boxShadow: open ? '#2DC3E11A 0px 0px 10px' : 'none',
+          transition: 'background 0.2s, border-color 0.2s, box-shadow 0.2s',
+          opacity: disabled ? 0.45 : 1,
+          whiteSpace: 'nowrap',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+          <RatioIcon rw={ratioOptions.find((r) => r.value === ratio)?.w ?? 16} rh={ratioOptions.find((r) => r.value === ratio)?.h ?? 9} selected />
+          <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: '#FFFFFFCC' }}>{ratio}</span>
+        </div>
+        <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: '#FFFFFFCC' }}>{resolution}</span>
+        <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: '#FFFFFFCC' }}>{duration}</span>
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"
+          style={{ flexShrink: 0, transition: 'transform 0.2s', transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+          <path d="M12 6.333L8 10.333L4 6.333H12Z" fill="#FFFFFF" stroke="#FFFFFF" strokeWidth="1.333" strokeLinejoin="round" />
+        </svg>
+      </button>
+
+      {open && (
+        <div style={{
+          position: 'absolute',
+          zIndex: 50,
+          left: 0,
+          bottom: 'calc(100% + 4px)',
+          borderRadius: '8px',
+          background: '#1D1E1E',
+          border: '1px solid #FFFFFF0D',
+          boxShadow: '0px 4px 16px #00000066',
+          width: '320px',
+          padding: '8px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '8px',
+        }}>
+          {/* 比例 */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <div style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: '#FFFFFF66' }}>比例</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+              {ratioOptions.map((opt) => {
+                const sel = opt.value === ratio;
+                return (
+                  <button key={opt.value} type="button" style={cellStyle(sel)}
+                    onClick={() => { onRatioChange(opt.value); }}
+                    onMouseEnter={(e) => { if (!sel) e.currentTarget.style.background = '#FFFFFF14'; }}
+                    onMouseLeave={(e) => { if (!sel) e.currentTarget.style.background = '#FFFFFF0D'; }}
+                  >
+                    <RatioIcon rw={opt.w} rh={opt.h} selected={sel} />
+                    {opt.label}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 分辨率 */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <div style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: '#FFFFFF66' }}>分辨率</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+              {resolutionOptions.map((opt) => {
+                const sel = opt === resolution;
+                return (
+                  <button key={opt} type="button" style={simpleCellStyle(sel)}
+                    onClick={() => { onResolutionChange(opt); }}
+                    onMouseEnter={(e) => { if (!sel) e.currentTarget.style.background = '#FFFFFF14'; }}
+                    onMouseLeave={(e) => { if (!sel) e.currentTarget.style.background = '#FFFFFF0D'; }}
+                  >
+                    {opt}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* 时长 */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+            <div style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: '#FFFFFF66' }}>时长</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px' }}>
+              {durationOptions.map((opt) => {
+                const sel = opt === duration;
+                return (
+                  <button key={opt} type="button" style={simpleCellStyle(sel)}
+                    onClick={() => { onDurationChange(opt); }}
+                    onMouseEnter={(e) => { if (!sel) e.currentTarget.style.background = '#FFFFFF14'; }}
+                    onMouseLeave={(e) => { if (!sel) e.currentTarget.style.background = '#FFFFFF0D'; }}
+                  >
+                    {opt}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Sound toggle ─────────────────────────────────────────────────────────────
+function SoundToggle({ enabled, onChange, disabled }) {
+  const [hovered, setHovered] = useState(false);
+  const isActive = hovered && !disabled;
+
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onClick={() => !disabled && onChange(!enabled)}
+      onMouseEnter={() => !disabled && setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: '8px',
+        height: '32px',
+        paddingLeft: '12px',
+        paddingRight: '6px',
+        borderRadius: '8px',
+        justifyContent: 'space-between',
+        flexShrink: 0,
+        border: '1px solid #FFFFFF14',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        background: isActive ? '#222222' : '#1D1E1E',
+        outline: '1px solid #00000080',
+        transition: 'background 0.2s',
+        opacity: disabled ? 0.45 : 1,
+      }}
+    >
+      <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: '#FFFFFFCC' }}>声音</span>
+      <div style={{
+        width: '36px',
+        height: '20px',
+        display: 'flex',
+        alignItems: 'center',
+        borderRadius: '10px',
+        padding: '2px',
+        justifyContent: enabled ? 'flex-end' : 'flex-start',
+        flexShrink: 0,
+        background: enabled ? '#39BA69' : '#FFFFFF33',
+        transition: 'background 0.2s, justify-content 0.2s',
+      }}>
+        <div style={{ flexShrink: 0, borderRadius: '50%', background: 'white', width: '16px', height: '16px' }} />
+      </div>
+    </button>
+  );
+}
+
+// ─── Send button ──────────────────────────────────────────────────────────────
+function SendButton({ onClick, disabled = false, loading = false }) {
+  const [hovered, setHovered] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const scale = pressed ? 'scale(0.9)' : hovered ? 'scale(1.1)' : 'scale(1)';
+
+  return (
+    <button
+      type="button"
+      disabled={disabled}
+      onMouseEnter={() => !disabled && setHovered(true)}
+      onMouseLeave={() => { setHovered(false); setPressed(false); }}
+      onMouseDown={() => !disabled && setPressed(true)}
+      onMouseUp={() => setPressed(false)}
+      onFocus={() => setFocused(true)}
+      onBlur={() => setFocused(false)}
+      onClick={disabled ? undefined : onClick}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        borderRadius: '9999px',
+        position: 'relative',
+        flexShrink: 0,
+        boxShadow: '#2DC3E133 0px 0px 12px',
+        width: '40px',
+        height: '40px',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        transform: disabled ? 'scale(1)' : scale,
+        transition: 'transform 0.15s cubic-bezier(0.4,0,0.2,1), opacity 0.15s',
+        opacity: disabled ? 0.45 : 1,
+        background: 'transparent',
+        border: 'none',
+        outline: focused ? '1px solid #2DC3E180' : 'none',
+        outlineOffset: '4px',
+        padding: 0,
+      }}
+    >
+      <PulsingBorder
+        speed={loading ? 1.3 : 1}
+        roundness={1}
+        thickness={0.41}
+        softness={1}
+        intensity={0.4}
+        bloom={0.68}
+        spots={4}
+        spotSize={0.42}
+        pulse={0.37}
+        smoke={0.55}
+        smokeSize={0.18}
+        scale={0.94}
+        rotation={0}
+        aspectRatio="square"
+        frame={34362983.25087259}
+        colors={['#0DC1FDB3', '#E1F5FF', '#73FFE1']}
+        colorBack="#00000000"
+        className="rounded-full flex-1 w-full [box-shadow:#34DDFFB3_0px_0px_4px_2px_inset] bg-neutral-300"
+      />
+      {loading ? (
+        <div style={{ position: 'absolute', left: '50%', top: '50%', translate: '-50% -50%', display: 'flex', alignItems: 'center', gap: '3px' }}>
+          {[0, 1, 2].map((i) => (
+            <div key={i} className="creation-thinking-dot" style={{ width: '4px', height: '4px', borderRadius: '9999px', background: '#FFFFFF' }} />
+          ))}
+        </div>
+      ) : (
+        <svg width="20" height="20" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"
+          style={{ position: 'absolute', left: '50%', top: '50%', translate: '-50% -50%' }}>
+          <path d="M8.003 4.7V14" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M4 8.667L8 4.667L12 8.667" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M4 2H12" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )}
+    </button>
+  );
+}
+
+// ─── InputCard ────────────────────────────────────────────────────────────────
+function InputCard({ onGenerate, width = '800px', disabled = false, genType, onGenTypeChange,
+  model, onModelChange, modelOptions = [], creationParams }) {
+  const [text, setText] = useState('');
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const [ratio, setRatio] = useState('');
+  const [resolution, setResolution] = useState('');
+  const [count, setCount] = useState('');
+  const [refMode, setRefMode] = useState('');
+  const [videoRatio, setVideoRatio] = useState('');
+  const [videoResolution, setVideoResolution] = useState('');
+  const [videoDuration, setVideoDuration] = useState('');
+  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [files, setFiles] = useState([]);
+
+  // Reset param selections when creationParams changes (model or genType changed)
+  useEffect(() => {
+    if (!creationParams) return;
+    if (genType === 'image') {
+      setRatio(creationParams.ratios?.[0]?.value ?? '');
+      setResolution(creationParams.resolutions?.[0] ?? '');
+      setCount(creationParams.counts?.[0] ?? '');
+    } else {
+      setVideoRatio(creationParams.ratios?.[0]?.value ?? '');
+      setVideoResolution(creationParams.resolutions?.[0] ?? '');
+      setVideoDuration(creationParams.durations?.[0] ?? '');
+      setRefMode(creationParams.refModes?.[0]?.value ?? '');
+    }
+  }, [creationParams, genType]);
+
+  useEffect(() => {
+    setFiles([]);
+  }, [genType]);
+
+  useEffect(() => {
+    setFiles([]);
+  }, [genType]);
+
+  useEffect(() => {
+    ensureRotateKeyframe();
+    ensureThinkingStyle();
+  }, []);
+
+  const isImageGen = genType === 'image';
+  const uploadAllowedExts = isImageGen ? ALLOWED_IMAGE_EXTS : ALLOWED_EXTS;
+  const uploadAcceptAttr = isImageGen
+    ? '.jpg,.jpeg,.png,.webp,.gif,.bmp,.tiff,.tif,.heic,.heif'
+    : '.txt,.md,.pdf,.docx';
+
+  const handleFileSelect = (newFiles) => setFiles((prev) => [...prev, ...newFiles]);
+  const handleRemoveFile = (index) => setFiles((prev) => prev.filter((_, i) => i !== index));
+
+  const canSend = !disabled && (text.trim().length > 0 || files.length > 0);
+
+  const handleSend = () => {
+    if (!canSend) return;
+    onGenerate?.({
+      prompt: text.trim(),
+      genType,
+      model,
+      ...(genType === 'image' ? { ratio, resolution, count } : {}),
+      ...(genType === 'video' ? { refMode, videoRatio, videoResolution, videoDuration, soundEnabled } : {}),
+      files,
+    });
+    setText('');
+    setFiles([]);
+  };
+
+  const handleKeyDown = (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      handleSend();
+    }
+  };
+
+  const isTyping = focused || text.length > 0;
+  const hoverBg = 'conic-gradient(from var(--creation-chatbox-angle), oklab(86.8% -0.081 -0.057 / 30%) 0%, oklab(75.5% -0.102 -0.072 / 25%) 15%, oklab(75.5% -0.102 -0.072 / 0%) 50%, oklab(100% 0 0 / 5%) 55%, oklab(86.8% -0.081 -0.057 / 30%) 100%)';
+  const idleBg = 'linear-gradient(in oklab 161.1deg, oklab(86.8% -0.081 -0.057 / 30%) 9.06%, oklab(75.5% -0.102 -0.072 / 25%) 15.35%, oklab(75.5% -0.102 -0.072 / 0%) 52.98%, oklab(100% 0 0 / 5%) 56.39%)';
+
+  const wrapperStyle = (() => {
+    if (isTyping) return { background: '#2DC3E1', animation: 'none' };
+    if (hovered) return { backgroundImage: hoverBg, animation: 'creation-chatbox-spin 4s linear infinite' };
+    return { backgroundImage: idleBg, animation: 'none' };
+  })();
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'flex-start',
+        gap: '0px',
+        borderRadius: '20px',
+        justifyContent: 'flex-end',
+        padding: '1px',
+        width,
+        ...wrapperStyle,
+        boxShadow: '-5px -10px 50px #2DC3E11F',
+        opacity: disabled ? 0.72 : 1,
+        overflow: 'visible',
+      }}
+      onMouseEnter={() => !disabled && setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+    >
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'flex-start',
+          gap: '0px',
+          borderRadius: '19px',
+          paddingTop: '16px',
+          paddingBottom: '12px',
+          flex: 1,
+          alignSelf: 'stretch',
+          background: '#131313',
+          paddingLeft: '16px',
+          paddingRight: '16px',
+          overflow: 'visible',
+        }}
+      >
+        {/* Textarea row */}
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'flex-start',
+            gap: '16px',
+            alignSelf: 'stretch',
+            height: '110px',
+            flexShrink: 0,
+            padding: 0,
+            position: 'relative',
+            overflow: 'visible',
+          }}
+        >
+          {files.length > 0 && (
+            <div style={{ position: 'absolute', left: 0, display: 'flex', alignItems: 'flex-start', gap: '8px', bottom: 'calc(100% + 24px)' }}>
+              {files.map((file, index) => (
+                <FileCard key={index} file={file} onRemove={() => handleRemoveFile(index)} disabled={disabled} />
+              ))}
+            </div>
+          )}
+          <UploadPlaceholder onFileSelect={handleFileSelect} disabled={disabled} allowedExts={uploadAllowedExts} acceptAttr={uploadAcceptAttr} />
+          <textarea
+            disabled={disabled}
+            className="placeholder:text-[#FFFFFF66]"
+            style={{
+              flex: 1,
+              alignSelf: 'stretch',
+              resize: 'none',
+              background: 'transparent',
+              border: 'none',
+              outline: 'none',
+              fontFamily: FONT,
+              fontSize: '14px',
+              lineHeight: '18px',
+              color: text ? '#FFFFFFCC' : '#FFFFFF66',
+            }}
+            placeholder="描述你想生成的内容"
+            value={text}
+            onChange={(e) => setText(e.target.value)}
+            onKeyDown={handleKeyDown}
+            onFocus={() => setFocused(true)}
+            onBlur={() => setFocused(false)}
+          />
+        </div>
+        {/* Bottom controls */}
+        <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0px', justifyContent: 'space-between', alignSelf: 'stretch' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', padding: 0 }}>
+            <GenTypeSelector value={genType} onChange={onGenTypeChange} disabled={disabled} />
+            <ModelSelector value={model} onChange={onModelChange} options={modelOptions} disabled={disabled} />
+            {genType === 'image' && (
+              <ParamsSelector
+                ratio={ratio}
+                resolution={resolution}
+                count={count}
+                onRatioChange={setRatio}
+                onResolutionChange={setResolution}
+                onCountChange={setCount}
+                disabled={disabled}
+                ratioOptions={creationParams?.ratios ?? []}
+                resolutionOptions={creationParams?.resolutions ?? []}
+                countOptions={creationParams?.counts ?? []}
+              />
+            )}
+            {genType === 'video' && (
+              <>
+                <RefModeSelector value={refMode} onChange={setRefMode} disabled={disabled} options={creationParams?.refModes ?? []} />
+                <VideoParamsSelector
+                  ratio={videoRatio}
+                  resolution={videoResolution}
+                  duration={videoDuration}
+                  onRatioChange={setVideoRatio}
+                  onResolutionChange={setVideoResolution}
+                  onDurationChange={setVideoDuration}
+                  disabled={disabled}
+                  ratioOptions={creationParams?.ratios ?? []}
+                  resolutionOptions={creationParams?.resolutions ?? []}
+                  durationOptions={creationParams?.durations ?? []}
+                />
+                <SoundToggle enabled={soundEnabled} onChange={setSoundEnabled} disabled={disabled} />
+              </>
+            )}
+          </div>
+          <SendButton onClick={handleSend} disabled={!canSend} loading={disabled} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Empty state icons ────────────────────────────────────────────────────────
+function EmptyIconShell({ children }) {
+  return (
+    <svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+      <defs>
+        <linearGradient id="cei-bg" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#FFFFFF" stopOpacity="0.12" />
+          <stop offset="1" stopColor="#FFFFFF" stopOpacity="0.04" />
+        </linearGradient>
+        <linearGradient id="cei-stroke" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#FFFFFF" stopOpacity="0.24" />
+          <stop offset="1" stopColor="#FFFFFF" stopOpacity="0.08" />
+        </linearGradient>
+        <linearGradient id="cei-icon" x1="18" y1="20" x2="46" y2="44" gradientUnits="userSpaceOnUse">
+          <stop stopColor="#FFFFFF" />
+          <stop offset="1" stopColor="#B7C0CC" />
+        </linearGradient>
+      </defs>
+      <rect x="4" y="4" width="56" height="56" rx="28" fill="url(#cei-bg)" />
+      <rect x="4.5" y="4.5" width="55" height="55" rx="27.5" stroke="url(#cei-stroke)" />
+      {children}
+    </svg>
+  );
+}
+
+function CreationEmptyIconImage() {
+  return (
+    <EmptyIconShell>
+      {/* 图片边框 */}
+      <rect x="17" y="21" width="30" height="23" rx="2.5"
+        stroke="url(#cei-icon)" strokeWidth="1.5" strokeOpacity="0.9" />
+      {/* 太阳 */}
+      <circle cx="23.5" cy="27.5" r="2.5"
+        stroke="url(#cei-icon)" strokeWidth="1.5" strokeOpacity="0.9" />
+      {/* 山形折线 */}
+      <path d="M17 38 L24 31 L29 36 L34 29 L47 40"
+        stroke="url(#cei-icon)" strokeWidth="1.5"
+        strokeLinecap="round" strokeLinejoin="round" strokeOpacity="0.9" />
+      {/* Sparkle */}
+      <path d="M42 20L42.8 22.2L45 23L42.8 23.8L42 26L41.2 23.8L39 23L41.2 22.2L42 20Z"
+        fill="#2DC3E1" fillOpacity="0.85" />
+    </EmptyIconShell>
+  );
+}
+
+function CreationEmptyIconVideo() {
+  return (
+    <EmptyIconShell>
+      {/* 胶片外框 */}
+      <rect x="17" y="22" width="30" height="21" rx="2.5"
+        stroke="url(#cei-icon)" strokeWidth="1.5" strokeOpacity="0.9" />
+      {/* 顶部胶片孔横线 */}
+      <line x1="17" y1="27" x2="47" y2="27"
+        stroke="url(#cei-icon)" strokeWidth="1.5" strokeOpacity="0.6" />
+      {/* 底部胶片孔横线 */}
+      <line x1="17" y1="38" x2="47" y2="38"
+        stroke="url(#cei-icon)" strokeWidth="1.5" strokeOpacity="0.6" />
+      {/* 胶片孔 top */}
+      <line x1="22" y1="22" x2="22" y2="27" stroke="url(#cei-icon)" strokeWidth="1.5" strokeOpacity="0.6" />
+      <line x1="28" y1="22" x2="28" y2="27" stroke="url(#cei-icon)" strokeWidth="1.5" strokeOpacity="0.6" />
+      <line x1="36" y1="22" x2="36" y2="27" stroke="url(#cei-icon)" strokeWidth="1.5" strokeOpacity="0.6" />
+      <line x1="42" y1="22" x2="42" y2="27" stroke="url(#cei-icon)" strokeWidth="1.5" strokeOpacity="0.6" />
+      {/* 胶片孔 bottom */}
+      <line x1="22" y1="38" x2="22" y2="43" stroke="url(#cei-icon)" strokeWidth="1.5" strokeOpacity="0.6" />
+      <line x1="28" y1="38" x2="28" y2="43" stroke="url(#cei-icon)" strokeWidth="1.5" strokeOpacity="0.6" />
+      <line x1="36" y1="38" x2="36" y2="43" stroke="url(#cei-icon)" strokeWidth="1.5" strokeOpacity="0.6" />
+      <line x1="42" y1="38" x2="42" y2="43" stroke="url(#cei-icon)" strokeWidth="1.5" strokeOpacity="0.6" />
+      {/* 播放三角 */}
+      <path d="M28.5 29.5 L28.5 35.5 L34.5 32.5 Z"
+        stroke="url(#cei-icon)" strokeWidth="1.5"
+        strokeLinecap="round" strokeLinejoin="round" strokeOpacity="0.9" />
+      {/* Sparkle */}
+      <path d="M42 20L42.8 22.2L45 23L42.8 23.8L42 26L41.2 23.8L39 23L41.2 22.2L42 20Z"
+        fill="#2DC3E1" fillOpacity="0.85" />
+    </EmptyIconShell>
+  );
+}
+
+function CreationEmptyIconDubbing() {
+  return (
+    <EmptyIconShell>
+      {/* 麦克风主体 */}
+      <rect x="27" y="18" width="10" height="16" rx="5"
+        stroke="url(#cei-icon)" strokeWidth="1.5" strokeOpacity="0.9" />
+      {/* 麦克风支架弧线 */}
+      <path d="M22 31 C22 37 42 37 42 31"
+        stroke="url(#cei-icon)" strokeWidth="1.5"
+        strokeLinecap="round" strokeOpacity="0.9" />
+      {/* 支架竖线 */}
+      <line x1="32" y1="37" x2="32" y2="43"
+        stroke="url(#cei-icon)" strokeWidth="1.5"
+        strokeLinecap="round" strokeOpacity="0.9" />
+      {/* 底座横线 */}
+      <line x1="27" y1="43" x2="37" y2="43"
+        stroke="url(#cei-icon)" strokeWidth="1.5"
+        strokeLinecap="round" strokeOpacity="0.9" />
+      {/* Sparkle */}
+      <path d="M42 20L42.8 22.2L45 23L42.8 23.8L42 26L41.2 23.8L39 23L41.2 22.2L42 20Z"
+        fill="#2DC3E1" fillOpacity="0.85" />
+    </EmptyIconShell>
+  );
+}
+
+const EMPTY_ICON_MAP = {
+  image: CreationEmptyIconImage,
+  video: CreationEmptyIconVideo,
+  dubbing: CreationEmptyIconDubbing,
+};
+
+// ─── Empty state ──────────────────────────────────────────────────────────────
+function CreationEmptyState({ onGenerate, genType, onGenTypeChange, model, onModelChange, modelOptions, creationParams }) {
+  const EmptyIcon = EMPTY_ICON_MAP[genType] ?? CreationEmptyIconImage;
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flex: 1,
+        minHeight: 0,
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'flex-end',
+        alignSelf: 'stretch',
+        gap: '0px',
+        position: 'relative',
+      }}
+    >
+      {/* Center hint — fixed, centered in the space above InputCard */}
+      <div
+        style={{
+          position: 'fixed',
+          top: 'calc(50vh - 58px)',
+          left: '50%',
+          translate: '-50% -50%',
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'center',
+          pointerEvents: 'none',
+          zIndex: 0,
+          opacity: 0.5,
+        }}
+      >
+        <EmptyIcon />
+      </div>
+      {/* InputCard: absolute, centered horizontally, 16px from bottom */}
+      <div style={{ position: 'absolute', left: '50%', bottom: '16px', translate: '-50% 0', width: 'min(800px, 100%)' }}>
+        <InputCard onGenerate={onGenerate} width="100%" genType={genType} onGenTypeChange={onGenTypeChange}
+          model={model} onModelChange={onModelChange} modelOptions={modelOptions} creationParams={creationParams} />
+      </div>
+    </div>
+  );
+}
+
+// ─── Tab bar ──────────────────────────────────────────────────────────────────
+const CREATION_TABS = [
+  { key: 'image', label: '图片' },
+  { key: 'video', label: '视频' },
+  { key: 'dubbing', label: '配音' },
+];
+
+function CreationTabBar({ activeTab, onChange }) {
+  return (
+    <div style={{ display: 'flex', alignItems: 'baseline', gap: '24px', paddingTop: '16px', paddingLeft: '32px', flex: 1, alignSelf: 'stretch' }}>
+      {CREATION_TABS.map(({ key, label }) => {
+        const isActive = key === activeTab;
+        return (
+          <button
+            key={key}
+            type="button"
+            onClick={() => onChange(key)}
+            style={{
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '4px',
+              padding: 0,
+              border: 'none',
+              background: 'transparent',
+              cursor: 'pointer',
+              outline: 'none',
+            }}
+          >
+            <span
+              style={{
+                fontFamily: isActive ? FONT_MEDIUM : FONT,
+                fontWeight: isActive ? 500 : 400,
+                fontSize: '16px',
+                lineHeight: isActive ? '20px' : '18px',
+                color: isActive ? '#FFFFFF' : '#FFFFFF99',
+                transition: 'color 0.2s, font-weight 0.2s',
+                whiteSpace: 'pre',
+              }}
+            >
+              {label}
+            </span>
+            {isActive && (
+              <div style={{ height: '2px', alignSelf: 'stretch', backgroundColor: '#DDDDDD', borderRadius: '1px' }} />
+            )}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+// ─── Batch operation button ───────────────────────────────────────────────────
+function BatchButton({ onClick }) {
+  const [hovered, setHovered] = useState(false);
+  const [pressed, setPressed] = useState(false);
+
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => { setHovered(false); setPressed(false); }}
+      onMouseDown={() => setPressed(true)}
+      onMouseUp={() => setPressed(false)}
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        height: '36px',
+        flexShrink: 0,
+        borderRadius: '8px',
+        padding: '1px',
+        boxShadow: '#00000066 3px 3px 8px',
+        backgroundImage: pressed
+          ? 'linear-gradient(in oklab 148.76deg, oklab(94.7% -0.078 -0.022 / 50%) 3.64%, oklab(75.5% -0.102 -0.072 / 0%) 42.81%), linear-gradient(in oklab 180deg, #FFFFFF1E, #FFFFFF1E)'
+          : hovered
+          ? 'linear-gradient(in oklab 148.76deg, oklab(94.7% -0.078 -0.022 / 40%) 3.64%, oklab(75.5% -0.102 -0.072 / 0%) 42.81%), linear-gradient(in oklab 180deg, #FFFFFF1A, #FFFFFF1A)'
+          : 'linear-gradient(in oklab 148.76deg, oklab(94.7% -0.078 -0.022 / 30%) 3.64%, oklab(75.5% -0.102 -0.072 / 0%) 42.81%), linear-gradient(in oklab 180deg, #FFFFFF14, #FFFFFF14)',
+        outline: '1px solid #00000080',
+        border: 'none',
+        cursor: 'pointer',
+        transition: 'background-image 0.15s, transform 0.1s',
+        transform: pressed ? 'scale(0.97)' : 'scale(1)',
+      }}
+    >
+      <div
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          flex: 1,
+          borderRadius: '7px',
+          paddingLeft: '15px',
+          paddingRight: '15px',
+          gap: '4px',
+          backgroundColor: pressed ? '#1A1A1A' : hovered ? '#1C1C1C' : '#161616',
+          transition: 'background-color 0.15s',
+        }}
+      >
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+          <path d="M11.333 1.667H2.667C2.114 1.667 1.667 2.114 1.667 2.667V11.333C1.667 11.886 2.114 12.333 2.667 12.333H11.333C11.886 12.333 12.333 11.886 12.333 11.333V2.667C12.333 2.114 11.886 1.667 11.333 1.667Z" stroke="#FFFFFF" strokeLinejoin="round" />
+          <path d="M14.667 4.334V14C14.667 14.368 14.368 14.667 14 14.667H4.334" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M4.333 6.829L6.333 8.67L9.667 5.24" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+        <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF', whiteSpace: 'nowrap' }}>
+          批量操作
+        </span>
+      </div>
+    </button>
+  );
+}
+
+// ─── Main page ────────────────────────────────────────────────────────────────
+export default function CreationPage() {
+  const [activeTab, setActiveTab] = useState('image');
+  const [genType, setGenType] = useState('image');
+  const [generating, setGenerating] = useState(false);
+
+  // Models and params are backend-driven; loaded on genType change and model change
+  const [modelOptions, setModelOptions] = useState([]);
+  const [model, setModel] = useState('');
+  const [creationParams, setCreationParams] = useState(null); // { ratios, resolutions, counts/durations, refModes? }
+
+  // Load model list when genType changes; reset model to first option
+  useEffect(() => {
+    let cancelled = false;
+    apiGetCreationModels(genType).then((list) => {
+      if (cancelled) return;
+      setModelOptions(list);
+      setModel(list[0]?.value ?? '');
+    });
+    return () => { cancelled = true; };
+  }, [genType]);
+
+  // Load params when model changes (model is bound to genType)
+  useEffect(() => {
+    if (!model) return;
+    let cancelled = false;
+    apiGetCreationParams(genType, model).then((params) => {
+      if (cancelled) return;
+      setCreationParams(params);
+    });
+    return () => { cancelled = true; };
+  }, [genType, model]);
+
+  // Tab 和 genType 完全对应，切一个另一个跟着变
+  const handleTabChange = (tab) => {
+    setActiveTab(tab);
+    setGenType(tab);
+  };
+  const handleGenTypeChange = (type) => {
+    setGenType(type);
+    setActiveTab(type);
+  };
+
+  const handleGenerate = async (params) => {
+    setGenerating(true);
+    try {
+      await apiGenerateCreation(params);
+    } finally {
+      setGenerating(false);
+    }
+  };
+
+  return (
+    /* outer: fills the content column, adds pb/pr 24px per design spec */
+    <div
+      style={{
+        display: 'flex',
+        flexDirection: 'column',
+        flexGrow: 1,
+        flexShrink: 1,
+        flexBasis: '0%',
+        overflow: 'clip',
+        alignSelf: 'stretch',
+        height: '100%',
+        paddingBottom: '24px',
+        paddingRight: '24px',
+        fontSize: '12px',
+        lineHeight: '16px',
+        WebkitFontSmoothing: 'antialiased',
+      }}
+    >
+      {/* rounded card */}
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'flex-start',
+          flex: 1,
+          borderRadius: '16px',
+          overflow: 'clip',
+          alignSelf: 'stretch',
+          backgroundColor: '#161616',
+          border: '1px solid #FFFFFF14',
+        }}
+      >
+        {/* top bar: tabs + batch button */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignSelf: 'stretch' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            <CreationTabBar activeTab={activeTab} onChange={handleTabChange} />
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flex: 1, justifyContent: 'flex-end', paddingRight: '32px', paddingTop: '6px', paddingBottom: '6px' }}>
+              <BatchButton onClick={() => {}} />
+            </div>
+          </div>
+        </div>
+
+        {/* content area */}
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            flex: '1 1 0%',
+            padding: '0px',
+            overflow: 'clip',
+            gap: '32px',
+            alignSelf: 'stretch',
+            position: 'relative',
+          }}
+        >
+          {activeTab === 'image' && (
+            <CreationEmptyState onGenerate={handleGenerate} genType={genType} onGenTypeChange={handleGenTypeChange}
+              model={model} onModelChange={setModel} modelOptions={modelOptions} creationParams={creationParams} />
+          )}
+          {activeTab === 'video' && (
+            <CreationEmptyState onGenerate={handleGenerate} genType={genType} onGenTypeChange={handleGenTypeChange}
+              model={model} onModelChange={setModel} modelOptions={modelOptions} creationParams={creationParams} />
+          )}
+          {activeTab === 'dubbing' && (
+            <CreationEmptyState onGenerate={handleGenerate} genType={genType} onGenTypeChange={handleGenTypeChange}
+              model={model} onModelChange={setModel} modelOptions={modelOptions} creationParams={creationParams} />
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}

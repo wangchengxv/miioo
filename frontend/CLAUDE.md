@@ -80,15 +80,9 @@ src/pages/        业务页面
 
 详细进度见 `PROJECT.md`。
 
-- 首页 ✅ 已完成
-- 项目列表页 ✅ 已完成
-- 项目工作流 — 全局设定 ✅ 已完成
-- 项目工作流 — 剧本 ✅ 已完成（单剧本工作区；InputCard 700px；AI 思考/流式；左侧剧集目录；查看/编辑双态；Tiptap 富文本；左右联动定位）
-- 项目工作流 — 主体 ✅ 已完成（角色/场景/道具卡片，步骤解锁回调）
-- 项目工作流 — 分镜 ✅ 已完成（分镜卡片列表；集数选择；批量下载；镜头查看器；Toggle 开关；资产关联 chars/scenes/props；生成视频弹窗含 radio 生成方式选择器 + 首尾帧快捷块）
-- 通用组件 — AssetPickerModal ✅ 项目切换下拉 + 音频分页支持（accept='audio' 时显示音频/配音专属分页）
-- API 层重构 ✅ 已完成（2026-05-20）— 新建 src/api/ 目录，stub 函数从页面/组件迁移至 auth.js / user.js / project.js / storyboard.js / subject.js
-- 下一阶段：剪辑成片页面开发（feat/library 分支）
+- ✅ 已完成：首页、项目列表页、项目工作流（全局设定 / 剧本 / 主体 / 分镜）、AssetPickerModal、API 层重构（src/api/ 全模块）
+- 🚧 开发中（2026-05-21）：创作页 — CreationPage 框架完成，模型/参数后端驱动，InputCard 800px
+- 下一阶段：创作页持续开发 / 剪辑成片页面
 
 ---
 

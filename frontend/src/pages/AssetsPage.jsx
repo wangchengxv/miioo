@@ -1634,7 +1634,7 @@ function ModuleTabBar({ tabs, active, onChange }) {
               paddingBottom: '6px',
               cursor: 'pointer',
               fontFamily: isActive ? FONT_MEDIUM : FONT,
-              fontSize: '14px',
+              fontSize: '16px',
               color: isActive ? '#2DC3E1' : '#FFFFFF99',
               transition: 'color 0.12s',
             }}

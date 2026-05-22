@@ -14,6 +14,7 @@ import GlobalSettings from './GlobalSettings';
 import SubjectPage from './SubjectPage';
 import StoryboardPage from './StoryboardPage';
 import AssetsPage from './AssetsPage';
+import CreationPage from './CreationPage';
 
 const ICON_STYLE = { flexShrink: '0' };
 
@@ -1053,8 +1054,8 @@ export default function Home({ onProjectCreated }) {
             <div
               className="flex flex-col items-start py-24 flex-1"
               style={{
-                paddingLeft: (activeKey === 'project' || activeKey === 'assets') ? '12px' : '24px',
-                paddingRight: (activeKey === 'project' || activeKey === 'assets') ? '12px' : '24px',
+                paddingLeft: (activeKey === 'project' || activeKey === 'assets' || activeKey === 'create') ? '12px' : '24px',
+                paddingRight: (activeKey === 'project' || activeKey === 'assets' || activeKey === 'create') ? '12px' : '24px',
                 transition: 'padding-left 320ms cubic-bezier(0.4, 0, 0.2, 1), padding-right 320ms cubic-bezier(0.4, 0, 0.2, 1)',
               }}
             >
@@ -1065,8 +1066,8 @@ export default function Home({ onProjectCreated }) {
             <div
               className="py-24"
               style={{
-                paddingLeft: (activeKey === 'project' || activeKey === 'assets') ? '8px' : '32px',
-                paddingRight: (activeKey === 'project' || activeKey === 'assets') ? '8px' : '32px',
+                paddingLeft: (activeKey === 'project' || activeKey === 'assets' || activeKey === 'create') ? '8px' : '32px',
+                paddingRight: (activeKey === 'project' || activeKey === 'assets' || activeKey === 'create') ? '8px' : '32px',
                 alignSelf: 'stretch',
                 transition: 'padding-left 320ms cubic-bezier(0.4, 0, 0.2, 1), padding-right 320ms cubic-bezier(0.4, 0, 0.2, 1)',
               }}
@@ -1159,6 +1160,9 @@ export default function Home({ onProjectCreated }) {
             )}
             {activeKey === 'assets' && (
               <AssetsPage projects={projects} />
+            )}
+            {activeKey === 'create' && (
+              <CreationPage />
             )}
           </div>
         </div>

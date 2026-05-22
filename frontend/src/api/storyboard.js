@@ -1,52 +1,125 @@
-export async function apiUpdateShotFinalized(shotId, finalized) {
-  // TODO: PATCH /shots/:shotId  body: { finalized }
-  console.log('[mock] update shot finalized', shotId, finalized);
+const BASE = import.meta.env.VITE_API_BASE_URL;
+const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
+
+function authHeaders() {
+  const token = localStorage.getItem('token');
+  return {
+    'Content-Type': 'application/json',
+    ...(token ? { Authorization: `Bearer ${token}` } : {}),
+  };
 }
 
 export async function apiGetShots(episodeId) {
-  // TODO: GET /shots?episodeId=episodeId
-  console.log('[mock] get shots', episodeId);
-  return [];
-}
-
-export async function apiUploadFile(file) {
-  // TODO: POST /upload  body: FormData { file }
-  // returns: { url }
-  console.log('[mock] upload file', file.name);
-  return { url: URL.createObjectURL(file) };
-}
-
-export async function apiGenerateImage(shotId, params) {
-  // TODO: POST /shots/:shotId/generate-image  body: params
-  // returns: { jobId, imageUrl }
-  console.log('[mock] generate image for shot', shotId, params);
-  return { jobId: `job-${Date.now()}`, imageUrl: null };
-}
-
-export async function apiGenerateVideo(shotId, params) {
-  // TODO: POST /shots/:shotId/generate-video  body: params
-  // returns: { jobId, videoUrl }
-  console.log('[mock] generate video for shot', shotId, params);
-  return { jobId: `job-${Date.now()}`, videoUrl: null };
+  if (USE_MOCK) {
+    console.log('[mock] get shots', episodeId);
+    return [];
+  }
+  const res = await fetch(`${BASE}/api/episodes/${episodeId}/storyboards`, {
+    headers: authHeaders(),
+  });
+  return res.json();
 }
 
 export async function apiCreateShot(episodeId, data) {
-  // TODO: POST /episodes/:episodeId/shots  body: data
-  console.log('[mock] create shot', episodeId, data);
-  return { id: `shot-${Date.now()}-${Math.random()}` };
+  if (USE_MOCK) {
+    console.log('[mock] create shot', episodeId, data);
+    return { id: `shot-${Date.now()}-${Math.random()}` };
+  }
+  const res = await fetch(`${BASE}/api/episodes/${episodeId}/storyboards`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(data),
+  });
+  return res.json();
 }
 
 export async function apiUpdateShot(shotId, data) {
-  // TODO: PATCH /shots/:shotId  body: data
-  console.log('[mock] update shot', shotId, data);
+  if (USE_MOCK) {
+    console.log('[mock] update shot', shotId, data);
+    return;
+  }
+  const res = await fetch(`${BASE}/api/storyboards/${shotId}`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify(data),
+  });
+  return res.json();
 }
 
 export async function apiDeleteShot(shotId) {
-  // TODO: DELETE /shots/:shotId
-  console.log('[mock] delete shot', shotId);
+  if (USE_MOCK) {
+    console.log('[mock] delete shot', shotId);
+    return;
+  }
+  await fetch(`${BASE}/api/storyboards/${shotId}`, {
+    method: 'DELETE',
+    headers: authHeaders(),
+  });
+}
+
+export async function apiUploadFile(file) {
+  if (USE_MOCK) {
+    console.log('[mock] upload file', file.name);
+    return { url: URL.createObjectURL(file) };
+  }
+  const form = new FormData();
+  form.append('file', file);
+  const token = localStorage.getItem('token');
+  const res = await fetch(`${BASE}/api/upload`, {
+    method: 'POST',
+    headers: token ? { Authorization: `Bearer ${token}` } : {},
+    body: form,
+  });
+  return res.json();
+}
+
+export async function apiGenerateImage(shotId, params) {
+  if (USE_MOCK) {
+    console.log('[mock] generate image for shot', shotId, params);
+    return { jobId: `job-${Date.now()}`, imageUrl: null };
+  }
+  const res = await fetch(`${BASE}/api/storyboards/${shotId}/generate-image`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(params),
+  });
+  return res.json();
+}
+
+export async function apiGenerateVideo(shotId, params) {
+  if (USE_MOCK) {
+    console.log('[mock] generate video for shot', shotId, params);
+    return { jobId: `job-${Date.now()}`, videoUrl: null };
+  }
+  const res = await fetch(`${BASE}/api/storyboards/${shotId}/generate-video`, {
+    method: 'POST',
+    headers: authHeaders(),
+    body: JSON.stringify(params),
+  });
+  return res.json();
+}
+
+export async function apiUpdateShotFinalized(shotId, finalized) {
+  if (USE_MOCK) {
+    console.log('[mock] update shot finalized', shotId, finalized);
+    return;
+  }
+  const res = await fetch(`${BASE}/api/storyboards/${shotId}`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify({ finalized }),
+  });
+  return res.json();
 }
 
 export async function apiReorderShots(episodeId, orderedIds) {
-  // TODO: PATCH /episodes/:episodeId/shots/reorder  body: { orderedIds }
-  console.log('[mock] reorder shots', episodeId, orderedIds);
+  if (USE_MOCK) {
+    console.log('[mock] reorder shots', episodeId, orderedIds);
+    return;
+  }
+  await fetch(`${BASE}/api/episodes/${episodeId}/storyboards/reorder`, {
+    method: 'PATCH',
+    headers: authHeaders(),
+    body: JSON.stringify({ orderedIds }),
+  });
 }
