@@ -755,7 +755,7 @@ const STEP_TABS = [
   },
 ];
 
-function WorkflowHeadbar({ activeStep, onStepChange, unlockedSteps, isLoggedIn, onLoginClick, onLogout, onOpenProfile }) {
+function WorkflowHeadbar({ activeStep, onStepChange, unlockedSteps, isLoggedIn, currentUser, onLoginClick, onLogout, onOpenProfile }) {
   return (
     <div className="[font-synthesis:none] flex items-center justify-between gap-[37px] self-stretch h-[60px] relative shrink-0 antialiased px-24">
       {/* Logo */}
@@ -1050,6 +1050,7 @@ export default function Home({ onProjectCreated }) {
           onStepChange={setActiveStep}
           unlockedSteps={unlockedSteps}
           isLoggedIn={isLoggedIn}
+          currentUser={currentUser}
           onLoginClick={() => setLoginOpen(true)}
           onLogout={() => { localStorage.removeItem('token'); setIsLoggedIn(false); }}
           onOpenProfile={() => setProfileOpen(true)}
