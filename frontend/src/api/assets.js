@@ -56,23 +56,24 @@ export async function apiGetShotVideoDetail(shotId) {
 
 export async function apiGetCreativeDays() {
   // TODO: GET /users/me/creative-days
+  // TODO: 字段名 url 待后端确认（可能是 thumbnail / cover_url / image_url 等）
   console.log('[mock] get creative days');
   return {
     image: [
       {
         date: '今天',
         cards: [
-          { id: 'img1', name: '镜头_001.jpg' },
-          { id: 'img2', name: '场景草图.png' },
-          { id: 'img3', name: '角色设定.jpg' },
-          { id: 'img4', name: '道具参考.png' },
+          { id: 'img1', name: '镜头_001.jpg', url: null },
+          { id: 'img2', name: '场景草图.png', url: null },
+          { id: 'img3', name: '角色设定.jpg', url: null },
+          { id: 'img4', name: '道具参考.png', url: null },
         ],
       },
       {
         date: '昨天',
         cards: [
-          { id: 'img5', name: '分镜_A01.jpg' },
-          { id: 'img6', name: '背景板.png' },
+          { id: 'img5', name: '分镜_A01.jpg', url: null },
+          { id: 'img6', name: '背景板.png', url: null },
         ],
       },
     ],
@@ -80,14 +81,14 @@ export async function apiGetCreativeDays() {
       {
         date: '今天',
         cards: [
-          { id: 'vid1', name: '第1集_预览.mp4' },
-          { id: 'vid2', name: '第2集_预览.mp4' },
+          { id: 'vid1', name: '第1集_预览.mp4', url: null },
+          { id: 'vid2', name: '第2集_预览.mp4', url: null },
         ],
       },
       {
         date: '昨天',
         cards: [
-          { id: 'vid3', name: '片头动画.mp4' },
+          { id: 'vid3', name: '片头动画.mp4', url: null },
         ],
       },
     ],
@@ -106,39 +107,40 @@ export async function apiGetCreativeDays() {
 
 export async function apiGetProjectAssets(projectId) {
   // TODO: GET /projects/:id/assets
+  // TODO: 字段名 url 待后端确认（可能是 thumbnail / cover_url / image_url 等）
   console.log('[mock] get project assets', projectId);
   return {
     chars: [
-      { id: 'c1', name: '老虎主角', starred: true, bgColor: '#252525' },
-      { id: 'c2', name: '老虎姈姈', starred: false, bgColor: '#1F2320' },
-      { id: 'c3', name: '老虎弟弟', starred: false, bgColor: '#20201F' },
-      { id: 'c4', name: '老虎妹妹', starred: false, bgColor: '#202024' },
-      { id: 'c5', name: '小老虎 A', starred: false, bgColor: '#1F2020' },
-      { id: 'c6', name: '反派狼', starred: false, bgColor: '#1D2020' },
-      { id: 'c7', name: '猎人爷爷', starred: false, bgColor: '#21201D' },
-      { id: 'c8', name: '神秘猫咪', starred: false, bgColor: '#1E1E22' },
+      { id: 'c1', name: '老虎主角', starred: true, bgColor: '#252525', url: null },
+      { id: 'c2', name: '老虎姈姈', starred: false, bgColor: '#1F2320', url: null },
+      { id: 'c3', name: '老虎弟弟', starred: false, bgColor: '#20201F', url: null },
+      { id: 'c4', name: '老虎妹妹', starred: false, bgColor: '#202024', url: null },
+      { id: 'c5', name: '小老虎 A', starred: false, bgColor: '#1F2020', url: null },
+      { id: 'c6', name: '反派狼', starred: false, bgColor: '#1D2020', url: null },
+      { id: 'c7', name: '猎人爷爷', starred: false, bgColor: '#21201D', url: null },
+      { id: 'c8', name: '神秘猫咪', starred: false, bgColor: '#1E1E22', url: null },
     ],
     scenes: [
-      { id: 's1', name: '森林入口', starred: false, bgColor: '#1A2018' },
-      { id: 's2', name: '老虎洞穴', starred: true, bgColor: '#1E2020' },
-      { id: 's3', name: '山顶瞭望台', starred: false, bgColor: '#1C1E1A' },
-      { id: 's4', name: '村庄广场', starred: false, bgColor: '#201E1A' },
+      { id: 's1', name: '森林入口', starred: false, bgColor: '#1A2018', url: null },
+      { id: 's2', name: '老虎洞穴', starred: true, bgColor: '#1E2020', url: null },
+      { id: 's3', name: '山顶瞭望台', starred: false, bgColor: '#1C1E1A', url: null },
+      { id: 's4', name: '村庄广场', starred: false, bgColor: '#201E1A', url: null },
     ],
     props: [
-      { id: 'p1', name: '猎人陷阱', starred: false, bgColor: '#201E1A' },
-      { id: 'p2', name: '老虎项圈', starred: true, bgColor: '#1E1E22' },
-      { id: 'p3', name: '神秘宝箱', starred: false, bgColor: '#1A1E20' },
+      { id: 'p1', name: '猎人陷阱', starred: false, bgColor: '#201E1A', url: null },
+      { id: 'p2', name: '老虎项圈', starred: true, bgColor: '#1E1E22', url: null },
+      { id: 'p3', name: '神秘宝箱', starred: false, bgColor: '#1A1E20', url: null },
     ],
     storyboard_img: [
-      { id: 'si1', name: '第1集_镜头01', starred: false, bgColor: '#1E2022' },
-      { id: 'si2', name: '第1集_镜头02', starred: false, bgColor: '#201E22' },
-      { id: 'si3', name: '第1集_镜头03', starred: true, bgColor: '#1E2020' },
-      { id: 'si4', name: '第2集_镜头01', starred: false, bgColor: '#22201E' },
-      { id: 'si5', name: '第2集_镜头02', starred: false, bgColor: '#1E2220' },
+      { id: 'si1', name: '第1集_镜头01', starred: false, bgColor: '#1E2022', url: null },
+      { id: 'si2', name: '第1集_镜头02', starred: false, bgColor: '#201E22', url: null },
+      { id: 'si3', name: '第1集_镜头03', starred: true, bgColor: '#1E2020', url: null },
+      { id: 'si4', name: '第2集_镜头01', starred: false, bgColor: '#22201E', url: null },
+      { id: 'si5', name: '第2集_镜头02', starred: false, bgColor: '#1E2220', url: null },
     ],
     storyboard_video: [
-      { id: 'sv1', name: '第1集_预览', starred: false, bgColor: '#1A1E24' },
-      { id: 'sv2', name: '第2集_预览', starred: false, bgColor: '#1E1A24' },
+      { id: 'sv1', name: '第1集_预览', starred: false, bgColor: '#1A1E24', url: null },
+      { id: 'sv2', name: '第2集_预览', starred: false, bgColor: '#1E1A24', url: null },
     ],
     audio: [
       { id: 'au1', name: '主题曲_片头', starred: true, duration: '2:34' },
@@ -146,8 +148,8 @@ export async function apiGetProjectAssets(projectId) {
       { id: 'au3', name: '音效_老虎吼叫', starred: false, duration: '0:08' },
     ],
     final: [
-      { id: 'f1', name: '第1集_成片', starred: true, bgColor: '#1A1E22' },
-      { id: 'f2', name: '第2集_成片', starred: false, bgColor: '#1E1A22' },
+      { id: 'f1', name: '第1集_成片', starred: true, bgColor: '#1A1E22', url: null },
+      { id: 'f2', name: '第2集_成片', starred: false, bgColor: '#1E1A22', url: null },
     ],
   };
 }

@@ -1422,7 +1422,7 @@ function ShotVideoDetailModal({ onClose, onDownload, shotNumber, prompt, model, 
   );
 }
 
-function AssetCard({ name, bgColor = '#252525', starred = false, selected = false, batchMode = false, showStar = false, assetType = 'asset', onDownload, onDelete, onStar, onSelect, asset = {} }) {
+function AssetCard({ name, bgColor = '#252525', url = null, starred = false, selected = false, batchMode = false, showStar = false, assetType = 'asset', onDownload, onDelete, onStar, onSelect, asset = {} }) {
   const [hov, setHov] = useState(false);
   const [starAnim, setStarAnim] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -1464,7 +1464,10 @@ function AssetCard({ name, bgColor = '#252525', starred = false, selected = fals
       onMouseLeave={() => setHov(false)}
       onClick={() => { if (batchMode) onSelect?.(); else handleOpen(); }}
     >
-      <div style={{ width: '168px', height: '168px', backgroundColor: bgColor, position: 'relative' }}>
+      <div style={{ width: '168px', height: '168px', backgroundColor: url ? 'transparent' : bgColor, position: 'relative' }}>
+        {url && (
+          <img src={url} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+        )}
         {batchMode ? (
           <div style={{
             position: 'absolute',
@@ -2009,6 +2012,7 @@ function ProjectAssetsPanel() {
                 key={asset.id}
                 name={asset.name}
                 bgColor={asset.bgColor || '#252525'}
+                url={asset.url || null}
                 starred={asset.starred}
                 selected={batchMode && selected.has(asset.id)}
                 batchMode={batchMode}
@@ -2155,6 +2159,7 @@ function CreativeAssetsPanel() {
                     key={card.id}
                     name={card.name}
                     bgColor="#1F2324"
+                    url={card.url || null}
                     starred={card.starred || false}
                     selected={batchMode && selected.has(card.id)}
                     batchMode={batchMode}
