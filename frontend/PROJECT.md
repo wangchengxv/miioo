@@ -1,6 +1,6 @@
 # miioo 项目进度管理文档
 
-> 最后更新：2026-05-22（ProfileModal 细节收尾：二维码位置、用户名点击编辑、注销确认弹窗样式）
+> 最后更新：2026-05-25（创作页参考模式修正：全能参考/首尾帧/智能多帧，后端按模型能力动态返回）
 
 ---
 
@@ -109,6 +109,7 @@ miioo/
 │   │   ├── ButtonShowcase.jsx     # 按钮组件展示页
 │   │   └── InputShowcase.jsx      # 输入框组件展示页
 │   ├── api/                   # 接口函数（按模块命名）
+│   │   ├── request.js             # 统一请求层（authFetch / authFetchForm / clearTokens，含双 token 自动刷新）
 │   │   ├── auth.js                # 登录/注册/登出
 │   │   ├── user.js                # 用户信息/头像/注销
 │   │   ├── project.js             # 项目增删改查
@@ -287,6 +288,17 @@ miioo/
   - 输入框 hover/focus 状态补全：hover 时描边切换为 `input-border-hover`，focus 时切换为 `input-border-focus` + 青色发光阴影
   - DeleteConfirmDialog 样式对齐 AssetsPage 删除确认弹窗：宽 360px、背景 `#161616`、`boxShadow: '#00000099 0px 8px 32px'`、标题+描述竖排左对齐、右上角关闭按钮、操作按钮右对齐 gap 12px
   - DeleteConfirmDialog 按钮交互补全：取消用 Secondary token（`hover:bg-btn-primary-bg-hover active:bg-btn-primary-bg-active`），确认注销用 Danger token（`hover:bg-btn-danger-bg-hover active:bg-btn-danger-bg-active`）
+- [x] 认证层重构 — 双 Token 自动刷新（2026-05-25）：
+  - 新建 `src/api/request.js`：统一请求封装，`authFetch` 收到 401 时自动调 `POST /api/auth/refresh` 换新 token 并重放原请求；刷新失败则清除双 token 并触发全局 `auth:logout` 事件；Promise 锁防止并发请求同时触发多次刷新；`authFetchForm` 用于 FormData 上传场景
+  - `auth.js` 登录函数同时保存 `access_token` + `refresh_token`，导出 `clearTokens`（同时清除两个 token）
+  - 6 个 API 文件（`user.js`、`project.js`、`config.js`、`storyboard.js`、`assets.js`、`subject.js`）删除各自重复的 `authHeaders()` 函数，统一改用 `authFetch` / `authFetchForm`
+  - `Home.jsx` 登出改用 `clearTokens()`，新增监听 `auth:logout` 事件自动弹出登录框（处理 token 静默过期场景）
+  - mock 模式不受影响：`VITE_USE_MOCK=true` 时所有函数在 mock 分支直接 return，不走 `authFetch`
+- [x] 创作页 — 参考模式修正（2026-05-25）：
+  - 根本原因：mock 数据将参考模式误写为内容类型（全部参考/角色参考/风格参考/场景参考），实际上是视频生成的技术模式
+  - `src/api/creation.js` mock 数据改为正确三种：`all`（全能参考）、`frame`（首尾帧）、`multi`（智能多帧），去掉 `desc` 字段
+  - 后端根据前端选择的模型决定返回哪 1/2/3 种，前端只渲染，不硬编码数量
+  - `CreationPage.jsx` 补上 `REF_MODE_ICON_FRAME_SELECTED` 和 `REF_MODE_ICON_MULTI_SELECTED` 白色图标，修正 `REF_MODE_ICON_MAP` 使选中态与默认态图标正确区分
 - [ ] 项目工作流 — 剪辑成片
 - [ ] 创作页（生图/生视频）
 - [ ] 资产库

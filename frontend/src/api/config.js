@@ -1,13 +1,7 @@
 const BASE = import.meta.env.VITE_API_BASE_URL;
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
 
-function authHeaders() {
-  const token = localStorage.getItem('token');
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
+import { authFetch } from './request.js';
 
 export async function apiGetApiConfig() {
   if (USE_MOCK) {
@@ -28,8 +22,8 @@ export async function apiGetApiConfig() {
       customProviders: [],
     };
   }
-  const res = await fetch(`${BASE}/api/providers`, {
-    headers: authHeaders(),
+  const res = await authFetch(`${BASE}/api/providers`, {
+    headers: { 'Content-Type': 'application/json' },
   });
   return res.json();
 }
@@ -39,9 +33,9 @@ export async function apiTestConnection(providerId) {
     console.log('[mock] test connection', providerId);
     return;
   }
-  await fetch(`${BASE}/api/providers/${providerId}/test`, {
+  await authFetch(`${BASE}/api/providers/${providerId}/test`, {
     method: 'POST',
-    headers: authHeaders(),
+    headers: { 'Content-Type': 'application/json' },
   });
 }
 
@@ -50,9 +44,9 @@ export async function apiSaveApiConfig({ name, api_key, base_url, models }) {
     console.log('[mock] save api config', { name, base_url });
     return;
   }
-  await fetch(`${BASE}/api/providers`, {
+  await authFetch(`${BASE}/api/providers`, {
     method: 'POST',
-    headers: authHeaders(),
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, api_key, base_url, models }),
   });
 }

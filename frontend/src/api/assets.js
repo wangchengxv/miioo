@@ -1,13 +1,7 @@
 const BASE = import.meta.env.VITE_API_BASE_URL;
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
 
-function authHeaders() {
-  const token = localStorage.getItem('token');
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
+import { authFetch, authFetchForm } from './request.js';
 
 export async function apiGetAssetDetail(assetId) {
   if (USE_MOCK) {
@@ -27,7 +21,7 @@ export async function apiGetAssetDetail(assetId) {
       ],
     };
   }
-  const res = await fetch(`${BASE}/api/assets/${assetId}`, { headers: authHeaders() });
+  const res = await authFetch(`${BASE}/api/assets/${assetId}`, { headers: { 'Content-Type': 'application/json' } });
   return res.json();
 }
 
@@ -47,7 +41,7 @@ export async function apiGetShotDetail(shotId) {
       ],
     };
   }
-  const res = await fetch(`${BASE}/api/storyboards/${shotId}`, { headers: authHeaders() });
+  const res = await authFetch(`${BASE}/api/storyboards/${shotId}`, { headers: { 'Content-Type': 'application/json' } });
   return res.json();
 }
 
@@ -70,7 +64,7 @@ export async function apiGetShotVideoDetail(shotId) {
       ],
     };
   }
-  const res = await fetch(`${BASE}/api/storyboards/${shotId}/video`, { headers: authHeaders() });
+  const res = await authFetch(`${BASE}/api/storyboards/${shotId}/video`, { headers: { 'Content-Type': 'application/json' } });
   return res.json();
 }
 
@@ -123,7 +117,7 @@ export async function apiGetCreativeDays() {
       ],
     };
   }
-  const res = await fetch(`${BASE}/api/users/me/creative-days`, { headers: authHeaders() });
+  const res = await authFetch(`${BASE}/api/users/me/creative-days`, { headers: { 'Content-Type': 'application/json' } });
   return res.json();
 }
 
@@ -174,6 +168,6 @@ export async function apiGetProjectAssets(projectId) {
       ],
     };
   }
-  const res = await fetch(`${BASE}/api/projects/${projectId}/assets`, { headers: authHeaders() });
+  const res = await authFetch(`${BASE}/api/projects/${projectId}/assets`, { headers: { 'Content-Type': 'application/json' } });
   return res.json();
 }

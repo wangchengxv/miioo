@@ -29,7 +29,7 @@ export async function apiGetCreationModels(genType) {
  * @returns {Promise<ImageCreationParams | VideoCreationParams>}
  *
  * ImageCreationParams: { ratios: [{value, label, w, h}], resolutions: string[], counts: string[] }
- * VideoCreationParams: { ratios: [{value, label, w, h}], resolutions: string[], durations: string[], refModes: [{value, label, desc}] }
+ * VideoCreationParams: { ratios: [{value, label, w, h}], resolutions: string[], durations: string[], refModes: [{value, label}] }
  */
 export async function apiGetCreationParams(genType, model) {
   // TODO: GET /creation/params?genType=image|video&model=xxx
@@ -46,11 +46,12 @@ export async function apiGetCreationParams(genType, model) {
       ],
       resolutions: ['720P', '1080P', '2K', '4K'],
       durations: ['4s', '5s', '6s', '7s', '8s', '9s', '10s', '11s'],
+      // 后端根据模型能力决定返回哪 1/2/3 种，前端只渲染，不硬编码数量
+      // 三种可能值：all（全能参考）、frame（首尾帧）、multi（智能多帧）
       refModes: [
-        { value: 'all',   label: '全部参考', desc: '综合参考图片中所有元素'   },
-        { value: 'char',  label: '角色参考', desc: '只参考图片中人物角色样貌' },
-        { value: 'style', label: '风格参考', desc: '参考图片整体视觉风格'     },
-        { value: 'scene', label: '场景参考', desc: '只参考图片中的场景构图'   },
+        { value: 'all',   label: '全能参考' },
+        { value: 'frame', label: '首尾帧'   },
+        { value: 'multi', label: '智能多帧' },
       ],
     };
   }

@@ -1,22 +1,16 @@
 const BASE = import.meta.env.VITE_API_BASE_URL;
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
 
-function authHeaders() {
-  const token = localStorage.getItem('token');
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
+import { authFetch, authFetchForm } from './request.js';
 
 export async function apiUpdateProfile({ nickname, avatar_url }) {
   if (USE_MOCK) {
     console.log('[mock] update profile', { nickname, avatar_url });
     return {};
   }
-  const res = await fetch(`${BASE}/api/users/me`, {
+  const res = await authFetch(`${BASE}/api/users/me`, {
     method: 'PATCH',
-    headers: authHeaders(),
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ nickname, avatar_url }),
   });
   return res.json();
@@ -27,9 +21,9 @@ export async function apiDeleteAccount() {
     console.log('[mock] delete account');
     return;
   }
-  await fetch(`${BASE}/api/users/me`, {
+  await authFetch(`${BASE}/api/users/me`, {
     method: 'DELETE',
-    headers: authHeaders(),
+    headers: { 'Content-Type': 'application/json' },
   });
 }
 
@@ -40,8 +34,8 @@ export async function apiGetCurrentUser() {
     console.log('[mock] get current user');
     return {};
   }
-  const res = await fetch(`${BASE}/api/auth/me`, {
-    headers: authHeaders(),
+  const res = await authFetch(`${BASE}/api/auth/me`, {
+    headers: { 'Content-Type': 'application/json' },
   });
   return res.json();
 }
@@ -51,8 +45,8 @@ export async function apiGetNotifications() {
     console.log('[mock] get notifications');
     return [];
   }
-  const res = await fetch(`${BASE}/api/notifications`, {
-    headers: authHeaders(),
+  const res = await authFetch(`${BASE}/api/notifications`, {
+    headers: { 'Content-Type': 'application/json' },
   });
   return res.json();
 }
@@ -68,10 +62,8 @@ export async function apiUploadAvatar(file) {
   }
   const form = new FormData();
   form.append('file', file);
-  const token = localStorage.getItem('token');
-  const res = await fetch(`${BASE}/api/upload`, {
+  const res = await authFetchForm(`${BASE}/api/upload`, {
     method: 'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: form,
   });
   const data = await res.json();
@@ -83,8 +75,8 @@ export async function apiGetWechatQrCode() {
     console.log('[mock] get wechat qrcode');
     return { qrCodeUrl: null, ticket: 'mock_ticket' };
   }
-  const res = await fetch(`${BASE}/api/users/me/wechat/qrcode`, {
-    headers: authHeaders(),
+  const res = await authFetch(`${BASE}/api/users/me/wechat/qrcode`, {
+    headers: { 'Content-Type': 'application/json' },
   });
   return res.json();
 }
@@ -94,8 +86,8 @@ export async function apiPollWechatBind(ticket) {
     console.log('[mock] poll wechat bind', ticket);
     return { status: 'pending', wechatNickname: null };
   }
-  const res = await fetch(`${BASE}/api/users/me/wechat/status?ticket=${encodeURIComponent(ticket)}`, {
-    headers: authHeaders(),
+  const res = await authFetch(`${BASE}/api/users/me/wechat/status?ticket=${encodeURIComponent(ticket)}`, {
+    headers: { 'Content-Type': 'application/json' },
   });
   return res.json();
 }
@@ -105,9 +97,9 @@ export async function apiUnbindWechat() {
     console.log('[mock] unbind wechat');
     return;
   }
-  await fetch(`${BASE}/api/users/me/wechat`, {
+  await authFetch(`${BASE}/api/users/me/wechat`, {
     method: 'DELETE',
-    headers: authHeaders(),
+    headers: { 'Content-Type': 'application/json' },
   });
 }
 
@@ -116,9 +108,9 @@ export async function apiSendPhoneCode(phone) {
     console.log('[mock] send phone code', phone);
     return;
   }
-  await fetch(`${BASE}/api/users/me/phone/code`, {
+  await authFetch(`${BASE}/api/users/me/phone/code`, {
     method: 'POST',
-    headers: authHeaders(),
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ phone }),
   });
 }
@@ -128,9 +120,9 @@ export async function apiVerifyPhoneCode(phone, code) {
     console.log('[mock] verify phone code', phone, code);
     return { valid: true };
   }
-  const res = await fetch(`${BASE}/api/users/me/phone/verify`, {
+  const res = await authFetch(`${BASE}/api/users/me/phone/verify`, {
     method: 'POST',
-    headers: authHeaders(),
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ phone, code }),
   });
   return res.json();
@@ -141,9 +133,9 @@ export async function apiRebindPhone(newPhone, code) {
     console.log('[mock] rebind phone', newPhone, code);
     return;
   }
-  await fetch(`${BASE}/api/users/me/phone/rebind`, {
+  await authFetch(`${BASE}/api/users/me/phone/rebind`, {
     method: 'POST',
-    headers: authHeaders(),
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ phone: newPhone, code }),
   });
 }

@@ -1,21 +1,15 @@
 const BASE = import.meta.env.VITE_API_BASE_URL;
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
 
-function authHeaders() {
-  const token = localStorage.getItem('token');
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
+import { authFetch, authFetchForm } from './request.js';
 
 export async function apiGetShots(episodeId) {
   if (USE_MOCK) {
     console.log('[mock] get shots', episodeId);
     return [];
   }
-  const res = await fetch(`${BASE}/api/episodes/${episodeId}/storyboards`, {
-    headers: authHeaders(),
+  const res = await authFetch(`${BASE}/api/episodes/${episodeId}/storyboards`, {
+    headers: { 'Content-Type': 'application/json' },
   });
   return res.json();
 }
@@ -25,9 +19,9 @@ export async function apiCreateShot(episodeId, data) {
     console.log('[mock] create shot', episodeId, data);
     return { id: `shot-${Date.now()}-${Math.random()}` };
   }
-  const res = await fetch(`${BASE}/api/episodes/${episodeId}/storyboards`, {
+  const res = await authFetch(`${BASE}/api/episodes/${episodeId}/storyboards`, {
     method: 'POST',
-    headers: authHeaders(),
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
   return res.json();
@@ -38,9 +32,9 @@ export async function apiUpdateShot(shotId, data) {
     console.log('[mock] update shot', shotId, data);
     return;
   }
-  const res = await fetch(`${BASE}/api/storyboards/${shotId}`, {
+  const res = await authFetch(`${BASE}/api/storyboards/${shotId}`, {
     method: 'PATCH',
-    headers: authHeaders(),
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
   return res.json();
@@ -51,9 +45,9 @@ export async function apiDeleteShot(shotId) {
     console.log('[mock] delete shot', shotId);
     return;
   }
-  await fetch(`${BASE}/api/storyboards/${shotId}`, {
+  await authFetch(`${BASE}/api/storyboards/${shotId}`, {
     method: 'DELETE',
-    headers: authHeaders(),
+    headers: { 'Content-Type': 'application/json' },
   });
 }
 
@@ -64,10 +58,8 @@ export async function apiUploadFile(file) {
   }
   const form = new FormData();
   form.append('file', file);
-  const token = localStorage.getItem('token');
-  const res = await fetch(`${BASE}/api/upload`, {
+  const res = await authFetchForm(`${BASE}/api/upload`, {
     method: 'POST',
-    headers: token ? { Authorization: `Bearer ${token}` } : {},
     body: form,
   });
   return res.json();
@@ -78,9 +70,9 @@ export async function apiGenerateImage(shotId, params) {
     console.log('[mock] generate image for shot', shotId, params);
     return { jobId: `job-${Date.now()}`, imageUrl: null };
   }
-  const res = await fetch(`${BASE}/api/storyboards/${shotId}/generate-image`, {
+  const res = await authFetch(`${BASE}/api/storyboards/${shotId}/generate-image`, {
     method: 'POST',
-    headers: authHeaders(),
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
   });
   return res.json();
@@ -91,9 +83,9 @@ export async function apiGenerateVideo(shotId, params) {
     console.log('[mock] generate video for shot', shotId, params);
     return { jobId: `job-${Date.now()}`, videoUrl: null };
   }
-  const res = await fetch(`${BASE}/api/storyboards/${shotId}/generate-video`, {
+  const res = await authFetch(`${BASE}/api/storyboards/${shotId}/generate-video`, {
     method: 'POST',
-    headers: authHeaders(),
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(params),
   });
   return res.json();
@@ -104,9 +96,9 @@ export async function apiUpdateShotFinalized(shotId, finalized) {
     console.log('[mock] update shot finalized', shotId, finalized);
     return;
   }
-  const res = await fetch(`${BASE}/api/storyboards/${shotId}`, {
+  const res = await authFetch(`${BASE}/api/storyboards/${shotId}`, {
     method: 'PATCH',
-    headers: authHeaders(),
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ finalized }),
   });
   return res.json();
@@ -117,9 +109,9 @@ export async function apiReorderShots(episodeId, orderedIds) {
     console.log('[mock] reorder shots', episodeId, orderedIds);
     return;
   }
-  await fetch(`${BASE}/api/episodes/${episodeId}/storyboards/reorder`, {
+  await authFetch(`${BASE}/api/episodes/${episodeId}/storyboards/reorder`, {
     method: 'PATCH',
-    headers: authHeaders(),
+    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ orderedIds }),
   });
 }

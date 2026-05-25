@@ -1,17 +1,8 @@
 const BASE = import.meta.env.VITE_API_BASE_URL;
 const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
 
-function getToken() {
-  return localStorage.getItem('token');
-}
-
-function authHeaders() {
-  const token = getToken();
-  return {
-    'Content-Type': 'application/json',
-    ...(token ? { Authorization: `Bearer ${token}` } : {}),
-  };
-}
+import { setTokens, clearTokens as _clearTokens, authHeaders, authFetch } from './request.js';
+export { clearTokens } from './request.js';
 
 export async function apiSendCode(phone) {
   if (USE_MOCK) {
@@ -29,9 +20,8 @@ export async function apiSendCode(phone) {
 export async function apiLogin({ phone, password }) {
   if (USE_MOCK) {
     console.log('[mock] login', phone);
-    const token = 'mock-token';
-    localStorage.setItem('token', token);
-    return { access_token: token, refresh_token: 'mock-refresh', token_type: 'bearer' };
+    setTokens('mock-token', 'mock-refresh');
+    return { access_token: 'mock-token', refresh_token: 'mock-refresh', token_type: 'bearer' };
   }
   const res = await fetch(`${BASE}/api/auth/login`, {
     method: 'POST',
@@ -39,16 +29,15 @@ export async function apiLogin({ phone, password }) {
     body: JSON.stringify({ phone, password }),
   });
   const data = await res.json();
-  if (data.access_token) localStorage.setItem('token', data.access_token);
+  if (data.access_token) setTokens(data.access_token, data.refresh_token);
   return data;
 }
 
 export async function apiVerifyCodeLogin({ phone, code }) {
   if (USE_MOCK) {
     console.log('[mock] verify-code-login', phone, code);
-    const token = 'mock-token';
-    localStorage.setItem('token', token);
-    return { access_token: token, refresh_token: 'mock-refresh', token_type: 'bearer' };
+    setTokens('mock-token', 'mock-refresh');
+    return { access_token: 'mock-token', refresh_token: 'mock-refresh', token_type: 'bearer' };
   }
   const res = await fetch(`${BASE}/api/auth/verify-code-login`, {
     method: 'POST',
@@ -56,7 +45,7 @@ export async function apiVerifyCodeLogin({ phone, code }) {
     body: JSON.stringify({ phone, code }),
   });
   const data = await res.json();
-  if (data.access_token) localStorage.setItem('token', data.access_token);
+  if (data.access_token) setTokens(data.access_token, data.refresh_token);
   return data;
 }
 
@@ -78,9 +67,9 @@ export async function apiLogout() {
     console.log('[mock] logout');
     return;
   }
-  await fetch(`${BASE}/api/auth/logout`, {
+  await authFetch(`${BASE}/api/auth/logout`, {
     method: 'POST',
-    headers: authHeaders(),
+    headers: { 'Content-Type': 'application/json' },
   });
 }
 
@@ -89,8 +78,8 @@ export async function apiGetCurrentUser() {
     console.log('[mock] get current user');
     return {};
   }
-  const res = await fetch(`${BASE}/api/auth/me`, {
-    headers: authHeaders(),
+  const res = await authFetch(`${BASE}/api/auth/me`, {
+    headers: { 'Content-Type': 'application/json' },
   });
   return res.json();
 }

@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import { PulsingBorder } from '@paper-design/shaders-react';
 import bgImage from '../assets/home-bg.png';
 import { apiCreateProject, apiGetProjects } from '../api/project';
+import { clearTokens } from '../api/auth';
 import { apiGetCurrentUser, apiGetNotifications } from '../api/user';
 import PrimaryNav from '../components/PrimaryNav';
 import LoginModal from '../components/LoginModal';
@@ -915,6 +916,15 @@ export default function Home({ onProjectCreated }) {
     apiGetNotifications().then(setNotifications);
   }, []);
 
+  useEffect(() => {
+    const handleForceLogout = () => {
+      setIsLoggedIn(false);
+      setLoginOpen(true);
+    };
+    window.addEventListener('auth:logout', handleForceLogout);
+    return () => window.removeEventListener('auth:logout', handleForceLogout);
+  }, []);
+
   const handleUnlockStep = (stepKey) => {
     setUnlockedSteps((prev) => {
       if (prev.has(stepKey)) return prev;
@@ -1045,7 +1055,7 @@ export default function Home({ onProjectCreated }) {
                 userId="miioo_suzy"
                 phone="178 **** 0361"
                 wechat="suzylee"
-                onLogout={() => { localStorage.removeItem('token'); setIsLoggedIn(false); }}
+                onLogout={() => { clearTokens(); setIsLoggedIn(false); }}
                 onOpenProfile={() => setProfileOpen(true)}
               />
             ) : (
@@ -1061,7 +1071,7 @@ export default function Home({ onProjectCreated }) {
           isLoggedIn={isLoggedIn}
           currentUser={currentUser}
           onLoginClick={() => setLoginOpen(true)}
-          onLogout={() => { localStorage.removeItem('token'); setIsLoggedIn(false); }}
+          onLogout={() => { clearTokens(); setIsLoggedIn(false); }}
           onOpenProfile={() => setProfileOpen(true)}
           onLogoClick={() => { setActiveProject(null); setActiveKey('home'); }}
         />
