@@ -118,7 +118,7 @@ const NAV_ITEMS = [
   },
 ];
 
-function MenuPopupItem({ label }) {
+function MenuPopupItem({ label, onClick }) {
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
 
@@ -131,6 +131,7 @@ function MenuPopupItem({ label }) {
         backgroundColor: pressed ? '#FFFFFF14' : hovered ? '#FFFFFF0D' : 'transparent',
         transition: 'background-color 120ms ease, color 120ms ease',
       }}
+      onClick={onClick}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => {
         setHovered(false);
@@ -150,6 +151,8 @@ function MenuPopupItem({ label }) {
 }
 
 const COMMUNITY_QR_CODE_URL = 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KR8EAVS6CW9V257SBVP40T1A.png';
+
+const CREATION_MANUAL_URL = '';
 
 function QRCodePopup({ anchorLeft }) {
   return (
@@ -417,8 +420,12 @@ const BOTTOM_NAV_ITEMS = [
     tooltip: '更多选项',
     popup: ({ close, anchorLeft }) => (
       <div className="flex flex-col items-start w-max rounded-lg absolute left-10 bottom-0 [box-shadow:#00000066_0px_4px_16px] bg-[#161616] border border-solid border-[#FFFFFF0D] p-1" style={{ zIndex: 50 }}>
-        {['操作手册', '更新日志', '用户协议', '隐私政策', '商务合作', '关于我们'].map((label) => (
-          <MenuPopupItem key={label} label={label} />
+        {['创作手册', '更新日志', '用户协议', '隐私政策', '商务合作', '关于我们'].map((label) => (
+          <MenuPopupItem
+            key={label}
+            label={label}
+            onClick={label === '创作手册' && CREATION_MANUAL_URL ? () => window.open(CREATION_MANUAL_URL, '_blank') : undefined}
+          />
         ))}
       </div>
     ),
@@ -470,6 +477,7 @@ function CreationManualButton() {
     <button
       type="button"
       className="flex items-center rounded-[7px] gap-1 h-9 py-0 bg-transparent border-0 cursor-pointer"
+      onClick={() => { if (CREATION_MANUAL_URL) window.open(CREATION_MANUAL_URL, '_blank'); }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => { setHovered(false); setPressed(false); }}
       onMouseDown={() => setPressed(true)}
@@ -1078,7 +1086,7 @@ export default function Home({ onProjectCreated }) {
         )}
 
         {/* body: nav + content */}
-        <div className="flex flex-1 overflow-hidden self-stretch">
+        <div className="flex flex-1 min-h-0 overflow-hidden self-stretch">
           {/* primary navigation */}
           <div className="flex flex-col items-start gap-0">
             <div
@@ -1112,7 +1120,7 @@ export default function Home({ onProjectCreated }) {
           </div>
 
           {/* page content */}
-          <div className="flex-1 overflow-hidden relative">
+          <div className="flex-1 min-h-0 overflow-hidden relative">
             {activeKey === 'home' && (
               <StartCreationButton onClick={() => setNewProjectOpen(true)} />
             )}
@@ -1146,14 +1154,11 @@ export default function Home({ onProjectCreated }) {
                 scriptStreamingIndex={scriptStreamingIndex}
                 onScriptStreamingIndexChange={setScriptStreamingIndex}
                 onGoToSubject={(tab) => {
-                  if (!unlockedSteps.has('subject')) {
-                    showToast('暂无主体资产，请从剧本开始提取主体');
-                    return;
-                  }
                   setSubjectInitialTab(tab ?? 'char');
                   handleUnlockStep('subject');
                   setActiveStep('subject');
                 }}
+                isSubjectUnlocked={unlockedSteps.has('subject')}
                 episodeStatuses={episodeStatuses}
               />
             )}
@@ -1207,6 +1212,7 @@ export default function Home({ onProjectCreated }) {
       <ProfileModal
         open={profileOpen}
         onClose={() => setProfileOpen(false)}
+        onLogout={() => { clearTokens(); setIsLoggedIn(false); setProfileOpen(false); }}
         userName="Suzy"
         userId="miioo_suzy"
         phone="178 **** 0361"

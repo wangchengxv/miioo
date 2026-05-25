@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
 import { PulsingBorder } from '@paper-design/shaders-react';
 import { apiGenerateCreation, apiGetCreationModels, apiGetCreationParams } from '../api/creation';
+import AssetPickerModal from '../components/AssetPickerModal';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
@@ -26,6 +28,7 @@ function truncateFileName(name) {
 
 const ROTATE_STYLE_ID = 'creation-chatbox-rotate-style';
 const THINKING_STYLE_ID = 'creation-thinking-style';
+const SHIMMER_STYLE_ID = 'creation-shimmer-style';
 
 function ensureRotateKeyframe() {
   if (document.getElementById(ROTATE_STYLE_ID)) return;
@@ -58,6 +61,24 @@ function ensureThinkingStyle() {
     .creation-thinking-dot:nth-child(1) { animation-delay: 0s; }
     .creation-thinking-dot:nth-child(2) { animation-delay: 0.2s; }
     .creation-thinking-dot:nth-child(3) { animation-delay: 0.4s; }
+  `;
+  document.head.appendChild(style);
+}
+
+function ensureShimmerStyle() {
+  if (document.getElementById(SHIMMER_STYLE_ID)) return;
+  const style = document.createElement('style');
+  style.id = SHIMMER_STYLE_ID;
+  style.textContent = `
+    @keyframes creation-shimmer {
+      0% { background-position: -400px 0; }
+      100% { background-position: 400px 0; }
+    }
+    .creation-shimmer {
+      background: linear-gradient(90deg, #FFFFFF08 25%, #FFFFFF14 50%, #FFFFFF08 75%);
+      background-size: 800px 100%;
+      animation: creation-shimmer 1.6s ease-in-out infinite;
+    }
   `;
   document.head.appendChild(style);
 }
@@ -147,9 +168,20 @@ const GEN_TYPE_OPTIONS = [
 // Model/params options are backend-driven; see apiGetCreationModels / apiGetCreationParams in src/api/creation.js
 
 // ─── Upload placeholder ───────────────────────────────────────────────────────
-function UploadPlaceholder({ onFileSelect, disabled = false, allowedExts = ALLOWED_EXTS, acceptAttr = '.txt,.md,.pdf,.docx' }) {
+function UploadPlaceholder({ onFileSelect, onAssetPick, disabled = false, allowedExts = ALLOWED_EXTS, acceptAttr = '.txt,.md,.pdf,.docx' }) {
   const [hovered, setHovered] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
   const fileInputRef = useRef(null);
+  const wrapperRef = useRef(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    const handler = (e) => {
+      if (wrapperRef.current && !wrapperRef.current.contains(e.target)) setMenuOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [menuOpen]);
 
   const defaultBack = { opacity: 0.6, bg: '#FFFFFF14', rotate: '0deg' };
   const defaultFront = { bg: '#262626', rotate: '345deg', tx: 'calc(-50% - 7.015px)', ty: 'calc(-50% + 6.717px)' };
@@ -159,9 +191,10 @@ function UploadPlaceholder({ onFileSelect, disabled = false, allowedExts = ALLOW
   const hoverFront = { bg: '#3D3D3D', rotate: '351deg', tx: 'calc(-50% - 4.422px)', ty: 'calc(-50% + 3.811px)' };
   const hoverIcon = { stroke: '#FFFFFF80', tx: 'calc(-50% - 0.865px)', ty: 'calc(-50% + 1.012px)', rotate: '351deg' };
 
-  const back = hovered ? hoverBack : defaultBack;
-  const front = hovered ? hoverFront : defaultFront;
-  const icon = hovered ? hoverIcon : defaultIcon;
+  const isActive = hovered || menuOpen;
+  const back = isActive ? hoverBack : defaultBack;
+  const front = isActive ? hoverFront : defaultFront;
+  const icon = isActive ? hoverIcon : defaultIcon;
   const transition = 'all 0.35s cubic-bezier(0.4, 0, 0.2, 1)';
 
   const handleChange = (e) => {
@@ -181,41 +214,244 @@ function UploadPlaceholder({ onFileSelect, disabled = false, allowedExts = ALLOW
   };
 
   return (
+    <div ref={wrapperRef} style={{ position: 'relative', flexShrink: 0 }}>
+      <button
+        type="button"
+        onMouseEnter={() => !disabled && setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        onClick={() => { if (!disabled) setMenuOpen((v) => !v); }}
+        disabled={disabled}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '0px',
+          position: 'relative',
+          padding: 0,
+          cursor: disabled ? 'not-allowed' : 'pointer',
+          background: 'transparent',
+          border: 'none',
+          opacity: disabled ? 0.45 : 1,
+          outline: 'none',
+          borderRadius: '8px',
+          flexShrink: 0,
+        }}
+      >
+        <input ref={fileInputRef} type="file" multiple accept={acceptAttr} className="hidden" onChange={handleChange} onClick={(e) => e.stopPropagation()} />
+        <div style={{ width: '44px', height: '60px', borderRadius: '4px', flexShrink: 0, boxShadow: '#FFFFFF14 0px 0px 0px 0.5px inset', opacity: back.opacity, background: back.bg, rotate: back.rotate, transition }} />
+        <div style={{ width: '44px', height: '60px', borderRadius: '4px', position: 'absolute', boxShadow: '#FFFFFF14 0px 0px 0px 0.5px inset', transformOrigin: 'top left', background: front.bg, rotate: front.rotate, left: '50%', top: '50%', translate: `${front.tx} ${front.ty}`, transition }} />
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"
+          style={{ position: 'absolute', left: '50%', top: '50%', translate: `${icon.tx} ${icon.ty}`, rotate: icon.rotate, transformOrigin: '0% 0%', transition }}>
+          <path d="M8 3v10M3 8h10" stroke={icon.stroke} strokeWidth="1.5" strokeLinecap="round" style={{ transition }} />
+        </svg>
+      </button>
+
+      {menuOpen && (
+        <div style={{
+          position: 'absolute',
+          zIndex: 50,
+          left: 0,
+          bottom: 'calc(100% + 8px)',
+          borderRadius: '8px',
+          background: '#1D1E1E',
+          border: '1px solid #FFFFFF0D',
+          boxShadow: '0px 4px 16px #00000066',
+          padding: '4px',
+          minWidth: '140px',
+          display: 'flex',
+          flexDirection: 'column',
+        }}>
+          <UploadMenuItem
+            label="从资产库选择"
+            icon={
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+                <path d="M1.66663 2.66667C1.66663 2.29848 1.9651 2 2.33329 2H6.33329L7.99996 4H13.6666C14.0348 4 14.3333 4.29847 14.3333 4.66667V13.3333C14.3333 13.7015 14.0348 14 13.6666 14H2.33329C1.9651 14 1.66663 13.7015 1.66663 13.3333V2.66667Z" stroke="#FFFFFFCC" strokeLinejoin="round" />
+                <path d="M8.00003 6.66663L8.7477 8.30423L10.5362 8.50926L9.20977 9.72636L9.56747 11.4907L8.00003 10.6053L6.4326 11.4907L6.7903 9.72636L5.46387 8.50926L7.25237 8.30423L8.00003 6.66663Z" stroke="#FFFFFFCC" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            }
+            onClick={() => { setMenuOpen(false); onAssetPick?.(); }}
+          />
+          <UploadMenuItem
+            label="从本地上传"
+            icon={
+              <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+                <path d="M8 10.667V3.333" stroke="#FFFFFFCC" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M5.333 6L8 3.333L10.667 6" stroke="#FFFFFFCC" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M2.667 12H13.333" stroke="#FFFFFFCC" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            }
+            onClick={() => { setMenuOpen(false); fileInputRef.current?.click(); }}
+          />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function UploadMenuItem({ label, icon, onClick }) {
+  const [hovered, setHovered] = useState(false);
+  return (
     <button
       type="button"
-      onMouseEnter={() => !disabled && setHovered(true)}
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      onClick={() => !disabled && fileInputRef.current?.click()}
-      disabled={disabled}
       style={{
         display: 'flex',
         alignItems: 'center',
-        gap: '0px',
-        position: 'relative',
-        padding: 0,
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        background: 'transparent',
+        gap: '8px',
+        width: '100%',
+        height: '32px',
+        paddingLeft: '10px',
+        paddingRight: '10px',
+        borderRadius: '6px',
+        cursor: 'pointer',
         border: 'none',
-        opacity: disabled ? 0.45 : 1,
-        outline: 'none',
-        borderRadius: '8px',
-        flexShrink: 0,
+        textAlign: 'left',
+        fontFamily: FONT,
+        fontSize: '12px',
+        lineHeight: '16px',
+        color: '#FFFFFFCC',
+        background: hovered ? '#FFFFFF0A' : 'transparent',
+        transition: 'background 0.15s',
       }}
     >
-      <input ref={fileInputRef} type="file" multiple accept={acceptAttr} className="hidden" onChange={handleChange} />
-      <div style={{ width: '44px', height: '60px', borderRadius: '4px', flexShrink: 0, boxShadow: '#FFFFFF14 0px 0px 0px 0.5px inset', opacity: back.opacity, background: back.bg, rotate: back.rotate, transition }} />
-      <div style={{ width: '44px', height: '60px', borderRadius: '4px', position: 'absolute', boxShadow: '#FFFFFF14 0px 0px 0px 0.5px inset', transformOrigin: 'top left', background: front.bg, rotate: front.rotate, left: '50%', top: '50%', translate: `${front.tx} ${front.ty}`, transition }} />
-      <svg width="12" height="12" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"
-        style={{ position: 'absolute', left: '50%', top: '50%', translate: `${icon.tx} ${icon.ty}`, rotate: icon.rotate, transformOrigin: '0% 0%', transition }}>
-        <path d="M8 3v10M3 8h10" stroke={icon.stroke} strokeWidth="1.5" strokeLinecap="round" style={{ transition }} />
-      </svg>
+      {icon}
+      {label}
     </button>
   );
 }
 
+// ─── Image view modal ─────────────────────────────────────────────────────────
+function ImageViewModal({ imageUrl, onClose }) {
+  const [closeHovered, setCloseHovered] = useState(false);
+  const [doneHovered, setDoneHovered] = useState(false);
+  const [donePressed, setDonePressed] = useState(false);
+  return (
+    <div
+      style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
+      onClick={onClose}
+    >
+      <div
+        style={{ display: 'flex', flexDirection: 'column', width: '800px', borderRadius: '16px', overflow: 'hidden', height: '600px' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 24px', background: '#161616', borderRadius: '16px 16px 0 0', flexShrink: 0 }}>
+          <span style={{ fontFamily: FONT_MEDIUM, fontSize: '16px', lineHeight: '20px', color: '#FFFFFF' }}>查看</span>
+          <div
+            style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '24px', height: '24px', borderRadius: '6px', background: closeHovered ? '#FFFFFF14' : 'transparent', transition: 'background 120ms' }}
+            onClick={onClose}
+            onMouseEnter={() => setCloseHovered(true)}
+            onMouseLeave={() => setCloseHovered(false)}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <path d="M12 4L4 12M4 4l8 8" stroke={closeHovered ? '#FFFFFF' : '#FFFFFFCC'} strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          </div>
+        </div>
+        <div style={{ flex: 1, display: 'flex', padding: '8px 24px', overflow: 'hidden', gap: '12px', flexDirection: 'column', background: '#161616', minHeight: 0 }}>
+          <img src={imageUrl} alt="" style={{ width: '100%', flex: 1, borderRadius: '8px', objectFit: 'contain', minHeight: 0 }} />
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', justifyContent: 'flex-end', background: '#161616', borderRadius: '0 0 16px 16px', padding: '16px 24px', flexShrink: 0 }}>
+          <div
+            className="flex flex-col shrink-0 rounded-[8px] cursor-pointer"
+            style={{ height: '36px', padding: '1px', backgroundImage: doneHovered ? 'linear-gradient(in oklab 148.76deg, oklab(94.7% -0.078 -0.022 / 45%) 3.64%, oklab(75.5% -0.102 -0.072 / 0%) 42.81%), linear-gradient(in oklab 180deg, #FFFFFF1E, #FFFFFF1E)' : 'linear-gradient(in oklab 148.76deg, oklab(94.7% -0.078 -0.022 / 30%) 3.64%, oklab(75.5% -0.102 -0.072 / 0%) 42.81%), linear-gradient(in oklab 180deg, #FFFFFF14, #FFFFFF14)', boxShadow: '#00000066 3px 3px 8px', outline: '1px solid #00000080', transition: 'background-image 0.15s' }}
+            onClick={onClose}
+            onMouseEnter={() => setDoneHovered(true)}
+            onMouseLeave={() => { setDoneHovered(false); setDonePressed(false); }}
+            onMouseDown={() => setDonePressed(true)}
+            onMouseUp={() => setDonePressed(false)}
+          >
+            <div className="flex items-center flex-1 self-stretch rounded-[7px] gap-[4px] px-[15px]" style={{ backgroundColor: donePressed ? '#222222' : doneHovered ? '#1C1C1C' : '#161616', transition: 'background-color 0.1s' }}>
+              <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF' }}>完成</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ─── File card ────────────────────────────────────────────────────────────────
+const IMAGE_EXTS_SET = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff', '.tif', '.heic', '.heif']);
+
+function isImageFile(file) {
+  if (file.isAsset && file.url) return /\.(jpg|jpeg|png|webp|gif|bmp|tiff?|heic|heif)$/i.test(file.url);
+  const ext = '.' + (file.name || '').split('.').pop().toLowerCase();
+  return IMAGE_EXTS_SET.has(ext);
+}
+
 function FileCard({ file, onRemove, disabled = false }) {
   const [hovered, setHovered] = useState(false);
+  const [viewOpen, setViewOpen] = useState(false);
+  const [previewUrl, setPreviewUrl] = useState(null);
+  const isImage = isImageFile(file);
+
+  useEffect(() => {
+    if (!isImage) return;
+    if (file.isAsset && file.url) {
+      setPreviewUrl(file.url);
+      return;
+    }
+    const url = URL.createObjectURL(file);
+    setPreviewUrl(url);
+    return () => URL.revokeObjectURL(url);
+  }, [file, isImage]);
+
+  if (isImage) {
+    return (
+      <>
+        <div
+          style={{
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'flex-start',
+            gap: '2px',
+            borderRadius: '8px',
+            width: '100px',
+            height: '100px',
+            justifyContent: 'space-between',
+            flexShrink: 0,
+            position: 'relative',
+            background: '#1D1E1E',
+            border: '1px solid #FFFFFF14',
+            overflow: 'visible',
+            opacity: disabled ? 0.45 : 1,
+            cursor: disabled ? 'default' : 'pointer',
+          }}
+          onMouseEnter={() => !disabled && setHovered(true)}
+          onMouseLeave={() => setHovered(false)}
+          onClick={() => { if (!disabled && previewUrl) setViewOpen(true); }}
+        >
+          <div
+            style={{
+              flex: 1,
+              borderRadius: '7px',
+              alignSelf: 'stretch',
+              ...(previewUrl
+                ? { backgroundImage: `url(${previewUrl})`, backgroundSize: 'cover', backgroundPosition: '50%' }
+                : { background: '#FFFFFF14' }),
+            }}
+          />
+          {hovered && !disabled && (
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); onRemove(); }}
+              style={{ position: 'absolute', display: 'flex', alignItems: 'center', justifyContent: 'center', top: '-7px', right: '-7px', width: '16px', height: '16px', borderRadius: '9999px', background: '#505151', border: 'none', cursor: 'pointer', padding: 0 }}
+            >
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M4.667 4.667L11.333 11.333" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M4.667 11.333L11.333 4.667" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            </button>
+          )}
+        </div>
+        {viewOpen && previewUrl && createPortal(
+          <ImageViewModal imageUrl={previewUrl} onClose={() => setViewOpen(false)} />,
+          document.body
+        )}
+      </>
+    );
+  }
 
   return (
     <div
@@ -246,7 +482,7 @@ function FileCard({ file, onRemove, disabled = false }) {
         {truncateFileName(file.name)}
       </div>
       <div style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '150%', alignSelf: 'stretch', color: '#FFFFFF66' }}>
-        {formatFileSize(file.size)}
+        {file.isAsset ? '资产库' : formatFileSize(file.size)}
       </div>
       {hovered && !disabled && (
         <button
@@ -1221,11 +1457,20 @@ function SendButton({ onClick, disabled = false, loading = false }) {
 }
 
 // ─── InputCard ────────────────────────────────────────────────────────────────
+function formatMentionLabel(name) {
+  const dotIdx = name.lastIndexOf('.');
+  if (dotIdx === -1) return name.length > 9 ? name.slice(0, 9) + '…' : name;
+  const base = name.slice(0, dotIdx);
+  const ext = name.slice(dotIdx);
+  const truncBase = base.length > 9 ? base.slice(0, 9) + '…' : base;
+  return truncBase + ext;
+}
+
 function InputCard({ onGenerate, width = '800px', disabled = false, genType, onGenTypeChange,
   model, onModelChange, modelOptions = [], creationParams }) {
-  const [text, setText] = useState('');
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
+  const [hasContent, setHasContent] = useState(false);
   const [ratio, setRatio] = useState('');
   const [resolution, setResolution] = useState('');
   const [count, setCount] = useState('');
@@ -1235,6 +1480,13 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
   const [videoDuration, setVideoDuration] = useState('');
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [files, setFiles] = useState([]);
+  const [assetPickerOpen, setAssetPickerOpen] = useState(false);
+  const [mentionOpen, setMentionOpen] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState('');
+  const [mentionPos, setMentionPos] = useState({ top: 0, left: 0 });
+  const [mentionAnchorRange, setMentionAnchorRange] = useState(null);
+  const editorRef = useRef(null);
+  const mentionFromTagRef = useRef(false);
 
   // Reset param selections when creationParams changes (model or genType changed)
   useEffect(() => {
@@ -1264,39 +1516,239 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
     ensureThinkingStyle();
   }, []);
 
+  const mentionMenuRef = useRef(null);
+  useEffect(() => {
+    if (!mentionOpen) return;
+    const handleOutside = (e) => {
+      if (mentionMenuRef.current && mentionMenuRef.current.contains(e.target)) return;
+      if (editorRef.current && editorRef.current.contains(e.target)) return;
+      setMentionOpen(false);
+      setMentionTargetTag(null);
+      mentionFromTagRef.current = false;
+    };
+    document.addEventListener('mousedown', handleOutside);
+    return () => document.removeEventListener('mousedown', handleOutside);
+  }, [mentionOpen]);
+
   const isImageGen = genType === 'image';
   const uploadAllowedExts = isImageGen ? ALLOWED_IMAGE_EXTS : ALLOWED_EXTS;
   const uploadAcceptAttr = isImageGen
     ? '.jpg,.jpeg,.png,.webp,.gif,.bmp,.tiff,.tif,.heic,.heif'
     : '.txt,.md,.pdf,.docx';
 
-  const handleFileSelect = (newFiles) => setFiles((prev) => [...prev, ...newFiles]);
-  const handleRemoveFile = (index) => setFiles((prev) => prev.filter((_, i) => i !== index));
+  const handleFileSelect = (newFiles) => {
+    const enriched = newFiles.map((f) => {
+      if (isImageFile(f)) {
+        const previewUrl = URL.createObjectURL(f);
+        Object.defineProperty(f, 'previewUrl', { value: previewUrl, writable: true });
+      }
+      return f;
+    });
+    setFiles((prev) => [...prev, ...enriched]);
+  };
+  const handleRemoveFile = (index) => {
+    setFiles((prev) => {
+      const file = prev[index];
+      if (file && editorRef.current) {
+        const tags = editorRef.current.querySelectorAll('[data-file-ref]');
+        tags.forEach((tag) => {
+          if (tag.dataset.fileRef === file.name) tag.remove();
+        });
+        const content = editorRef.current.innerText ?? '';
+        setHasContent(content.trim().length > 0);
+      }
+      return prev.filter((_, i) => i !== index);
+    });
+  };
 
-  const canSend = !disabled && (text.trim().length > 0 || files.length > 0);
+  const handleAssetConfirm = (selectedAssets) => {
+    setAssetPickerOpen(false);
+    const assetFiles = selectedAssets.map((asset) => ({
+      name: asset.name || asset.id,
+      size: 0,
+      url: asset.url,
+      isAsset: true,
+    }));
+    setFiles((prev) => [...prev, ...assetFiles]);
+  };
+
+  const [mentionTargetTag, setMentionTargetTag] = useState(null);
+
+  const buildTagElement = (file) => {
+    const tag = document.createElement('span');
+    tag.contentEditable = 'false';
+    tag.dataset.fileRef = file.name;
+    tag.style.cssText = 'display:inline-flex;align-items:center;background:rgba(45,195,225,0.10);color:#2DC3E1;border-radius:6px;padding:0 4px;font-size:14px;line-height:22px;height:22px;box-shadow:inset 0 0 0 1px rgba(255,255,255,0.08);user-select:none;cursor:pointer;white-space:nowrap;font-family:' + FONT + ';';
+
+    const label = document.createElement('span');
+    label.textContent = formatMentionLabel(file.name);
+    label.style.cssText = 'pointer-events:none;';
+    tag.appendChild(label);
+
+    const closeBtn = document.createElement('span');
+    closeBtn.style.cssText = 'display:none;width:12px;height:12px;margin-left:3px;border-radius:50%;background:rgba(255,255,255,0.15);align-items:center;justify-content:center;cursor:pointer;flex-shrink:0;';
+    closeBtn.innerHTML = '<svg width="7" height="7" viewBox="0 0 8 8" fill="none" xmlns="http://www.w3.org/2000/svg"><path d="M1.5 1.5L6.5 6.5M6.5 1.5L1.5 6.5" stroke="#FFFFFFCC" stroke-width="1.2" stroke-linecap="round"/></svg>';
+    closeBtn.addEventListener('mousedown', (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      tag.remove();
+      const content = editorRef.current?.innerText ?? '';
+      setHasContent(content.trim().length > 0);
+    });
+    tag.appendChild(closeBtn);
+
+    tag.addEventListener('mouseenter', () => {
+      closeBtn.style.display = 'inline-flex';
+    });
+    tag.addEventListener('mouseleave', () => {
+      closeBtn.style.display = 'none';
+    });
+
+    return tag;
+  };
+
+  const insertMention = (file) => {
+    setMentionOpen(false);
+    const targetTag = mentionTargetTag;
+    if (targetTag) {
+      // replacing an existing tag via click
+      const newTag = buildTagElement(file);
+      newTag.addEventListener('click', (e) => handleTagClick(e, newTag));
+      targetTag.replaceWith(newTag);
+      setMentionTargetTag(null);
+      editorRef.current.focus();
+      setHasContent(true);
+      return;
+    }
+    const savedRange = mentionAnchorRange;
+    if (!savedRange) return;
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(savedRange);
+    const range = sel.getRangeAt(0);
+    const textNode = range.startContainer;
+    if (textNode.nodeType !== Node.TEXT_NODE) return;
+    const textBefore = textNode.textContent.slice(0, range.startOffset);
+    const atIdx = textBefore.lastIndexOf('@');
+    if (atIdx === -1) return;
+    const deleteRange = document.createRange();
+    deleteRange.setStart(textNode, atIdx);
+    deleteRange.setEnd(textNode, range.startOffset);
+    deleteRange.deleteContents();
+    const tag = buildTagElement(file);
+    tag.addEventListener('click', (e) => handleTagClick(e, tag));
+    deleteRange.insertNode(tag);
+    const afterRange = document.createRange();
+    afterRange.setStartAfter(tag);
+    afterRange.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(afterRange);
+    editorRef.current.focus();
+    setHasContent(true);
+  };
+
+  const handleTagClick = (e, tagEl) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (disabled) return;
+    mentionFromTagRef.current = true;
+    setMentionTargetTag(tagEl);
+    setMentionQuery('');
+    setMentionAnchorRange(null);
+    const rect = tagEl.getBoundingClientRect();
+    const editorRect = editorRef.current.getBoundingClientRect();
+    setMentionPos({ top: rect.bottom - editorRect.top + 4, left: Math.max(0, rect.left - editorRect.left) });
+    setMentionOpen(true);
+  };
+
+  const handleInput = () => {
+    const content = editorRef.current?.innerText ?? '';
+    setHasContent(content.trim().length > 0);
+    const sel = window.getSelection();
+    if (!sel || !sel.rangeCount) { setMentionOpen(false); return; }
+    const range = sel.getRangeAt(0);
+    if (range.startContainer.nodeType !== Node.TEXT_NODE) { setMentionOpen(false); return; }
+    const textBefore = range.startContainer.textContent.slice(0, range.startOffset);
+    const atIdx = textBefore.lastIndexOf('@');
+    if (atIdx !== -1) {
+      const query = textBefore.slice(atIdx + 1);
+      if (!query.includes(' ') && !query.includes('\n')) {
+        setMentionQuery(query);
+        setMentionOpen(true);
+        const rect = range.getBoundingClientRect();
+        const editorRect = editorRef.current.getBoundingClientRect();
+        setMentionPos({ top: rect.bottom - editorRect.top + 4, left: Math.max(0, rect.left - editorRect.left) });
+        setMentionAnchorRange(range.cloneRange());
+        return;
+      }
+    }
+    setMentionOpen(false);
+  };
+
+  const canSend = !disabled && (hasContent || files.length > 0);
 
   const handleSend = () => {
     if (!canSend) return;
+    const currentText = editorRef.current?.innerText?.trim() ?? '';
     onGenerate?.({
-      prompt: text.trim(),
+      prompt: currentText,
       genType,
       model,
       ...(genType === 'image' ? { ratio, resolution, count } : {}),
       ...(genType === 'video' ? { refMode, videoRatio, videoResolution, videoDuration, soundEnabled } : {}),
       files,
     });
-    setText('');
+    if (editorRef.current) editorRef.current.innerHTML = '';
+    setHasContent(false);
     setFiles([]);
   };
 
   const handleKeyDown = (e) => {
+    if (mentionOpen && e.key === 'Escape') {
+      e.preventDefault();
+      setMentionOpen(false);
+      return;
+    }
+    if (e.key === 'Backspace' || e.key === 'Delete') {
+      const sel = window.getSelection();
+      if (!sel || !sel.rangeCount) return;
+      const range = sel.getRangeAt(0);
+      if (!range.collapsed) return; // 有选区时让浏览器默认处理
+      let tagToRemove = null;
+      if (e.key === 'Backspace') {
+        // 光标前一个节点是 tag
+        const { startContainer, startOffset } = range;
+        if (startOffset === 0 && startContainer.previousSibling?.dataset?.fileRef) {
+          tagToRemove = startContainer.previousSibling;
+        } else if (startContainer.nodeType === Node.TEXT_NODE && startOffset === 0) {
+          const prev = startContainer.previousSibling;
+          if (prev?.dataset?.fileRef) tagToRemove = prev;
+        }
+      } else {
+        // Delete：光标后一个节点是 tag
+        const { startContainer, startOffset } = range;
+        if (startContainer.nodeType === Node.TEXT_NODE && startOffset === startContainer.textContent.length) {
+          const next = startContainer.nextSibling;
+          if (next?.dataset?.fileRef) tagToRemove = next;
+        } else if (startContainer.nextSibling?.dataset?.fileRef) {
+          tagToRemove = startContainer.nextSibling;
+        }
+      }
+      if (tagToRemove) {
+        e.preventDefault();
+        tagToRemove.remove();
+        const content = editorRef.current?.innerText ?? '';
+        setHasContent(content.trim().length > 0);
+        return;
+      }
+    }
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
       handleSend();
     }
   };
 
-  const isTyping = focused || text.length > 0;
+  const isTyping = focused;
   const hoverBg = 'conic-gradient(from var(--creation-chatbox-angle), oklab(86.8% -0.081 -0.057 / 30%) 0%, oklab(75.5% -0.102 -0.072 / 25%) 15%, oklab(75.5% -0.102 -0.072 / 0%) 50%, oklab(100% 0 0 / 5%) 55%, oklab(86.8% -0.081 -0.057 / 30%) 100%)';
   const idleBg = 'linear-gradient(in oklab 161.1deg, oklab(86.8% -0.081 -0.057 / 30%) 9.06%, oklab(75.5% -0.102 -0.072 / 25%) 15.35%, oklab(75.5% -0.102 -0.072 / 0%) 52.98%, oklab(100% 0 0 / 5%) 56.39%)';
 
@@ -1306,7 +1758,10 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
     return { backgroundImage: idleBg, animation: 'none' };
   })();
 
+  const assetPickerAccept = genType === 'image' ? 'image' : genType === 'video' ? 'video' : genType === 'dubbing' ? 'audio' : 'all';
+
   return (
+    <>
     <div
       style={{
         display: 'flex',
@@ -1363,29 +1818,106 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
               ))}
             </div>
           )}
-          <UploadPlaceholder onFileSelect={handleFileSelect} disabled={disabled} allowedExts={uploadAllowedExts} acceptAttr={uploadAcceptAttr} />
-          <textarea
-            disabled={disabled}
-            className="placeholder:text-[#FFFFFF66]"
-            style={{
-              flex: 1,
-              alignSelf: 'stretch',
-              resize: 'none',
-              background: 'transparent',
-              border: 'none',
-              outline: 'none',
-              fontFamily: FONT,
-              fontSize: '14px',
-              lineHeight: '18px',
-              color: text ? '#FFFFFFCC' : '#FFFFFF66',
-            }}
-            placeholder="描述你想生成的内容"
-            value={text}
-            onChange={(e) => setText(e.target.value)}
-            onKeyDown={handleKeyDown}
-            onFocus={() => setFocused(true)}
-            onBlur={() => setFocused(false)}
-          />
+          <UploadPlaceholder onFileSelect={handleFileSelect} onAssetPick={() => setAssetPickerOpen(true)} disabled={disabled} allowedExts={uploadAllowedExts} acceptAttr={uploadAcceptAttr} />
+          <div style={{ flex: 1, alignSelf: 'stretch', position: 'relative' }}>
+            {!hasContent && (
+              <span style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none', fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF66', userSelect: 'none' }}>
+                描述你想生成的内容
+              </span>
+            )}
+            <div
+              ref={editorRef}
+              contentEditable={!disabled}
+              suppressContentEditableWarning
+              style={{
+                width: '100%',
+                height: '100%',
+                resize: 'none',
+                background: 'transparent',
+                border: 'none',
+                outline: 'none',
+                fontFamily: FONT,
+                fontSize: '14px',
+                lineHeight: '18px',
+                color: '#FFFFFFCC',
+                overflowY: 'auto',
+                whiteSpace: 'pre-wrap',
+                wordBreak: 'break-word',
+                cursor: disabled ? 'not-allowed' : 'text',
+              }}
+              onInput={handleInput}
+              onKeyDown={handleKeyDown}
+              onFocus={() => setFocused(true)}
+              onBlur={() => {
+                setFocused(false);
+                if (mentionFromTagRef.current) {
+                  mentionFromTagRef.current = false;
+                } else {
+                  setMentionOpen(false);
+                  setMentionTargetTag(null);
+                }
+              }}
+            />
+            {mentionOpen && files.length > 0 && (() => {
+              const mentionFiles = files.filter(f =>
+                mentionQuery === '' || f.name.toLowerCase().includes(mentionQuery.toLowerCase())
+              );
+              if (mentionFiles.length === 0) return null;
+              return (
+                <div ref={mentionMenuRef} style={{
+                  position: 'absolute',
+                  top: mentionPos.top,
+                  left: mentionPos.left,
+                  zIndex: 100,
+                  width: '200px',
+                  borderRadius: '8px',
+                  boxShadow: '#00000066 0px 4px 16px',
+                  background: '#1D1E1E',
+                  border: '1px solid #FFFFFF0D',
+                  padding: '4px',
+                }}>
+                  {mentionFiles.map((file, i) => (
+                    <div
+                      key={i}
+                      onMouseDown={(e) => { e.preventDefault(); insertMention(file); }}
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: '8px',
+                        padding: '8px 12px',
+                        borderRadius: '6px',
+                        background: i === 0 ? '#FFFFFF0D' : 'transparent',
+                        cursor: 'pointer',
+                      }}
+                    >
+                      <div style={{
+                        width: '24px',
+                        height: '24px',
+                        borderRadius: '4px',
+                        flexShrink: 0,
+                        background: (file.previewUrl || file.url) ? 'transparent' : '#FFFFFF14',
+                        backgroundImage: (file.previewUrl || file.url) ? `url(${file.previewUrl || file.url})` : 'none',
+                        backgroundSize: 'cover',
+                        backgroundPosition: 'center',
+                      }} />
+                      <span style={{
+                        flex: 1,
+                        fontFamily: FONT,
+                        fontSize: '14px',
+                        lineHeight: '18px',
+                        color: i === 0 ? '#FFFFFF' : '#FFFFFF99',
+                        overflow: 'hidden',
+                        textOverflow: 'ellipsis',
+                        whiteSpace: 'nowrap',
+                      }}>
+                        {file.name}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              );
+            })()}
+          </div>
         </div>
         {/* Bottom controls */}
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0px', justifyContent: 'space-between', alignSelf: 'stretch' }}>
@@ -1429,6 +1961,13 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
         </div>
       </div>
     </div>
+    <AssetPickerModal
+      open={assetPickerOpen}
+      onClose={() => setAssetPickerOpen(false)}
+      onConfirm={handleAssetConfirm}
+      accept={assetPickerAccept}
+    />
+    </>
   );
 }
 
@@ -1540,6 +2079,96 @@ const EMPTY_ICON_MAP = {
   video: CreationEmptyIconVideo,
   dubbing: CreationEmptyIconDubbing,
 };
+
+// ─── Result state ─────────────────────────────────────────────────────────────
+function ImageResultCard({ status, imageUrl }) {
+  useEffect(() => { ensureShimmerStyle(); }, []);
+
+  return (
+    <div
+      style={{
+        width: '320px',
+        height: '180px',
+        flexShrink: 0,
+        borderRadius: '8px',
+        overflow: 'hidden',
+        backgroundColor: '#1A1A1A',
+      }}
+    >
+      {status === 'loading' ? (
+        <div className="creation-shimmer" style={{ width: '100%', height: '100%' }} />
+      ) : status === 'done' && imageUrl ? (
+        <img
+          src={imageUrl}
+          alt=""
+          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+        />
+      ) : (
+        <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <span style={{ color: '#FFFFFF33', fontSize: '12px', fontFamily: FONT }}>生成失败</span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function CreationResultState({ generations, onGenerate, genType, onGenTypeChange, model, onModelChange, modelOptions, creationParams }) {
+  const scrollRef = useRef(null);
+  const allCards = generations.flatMap((gen) => gen.cards.map((card, i) => ({ ...card, key: `${gen.id}-${i}` })));
+
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [allCards.length]);
+
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flex: 1,
+        minHeight: 0,
+        flexDirection: 'column',
+        alignSelf: 'stretch',
+      }}
+    >
+      {/* image grid: flex:1 fills remaining space, overflowY scrolls internally */}
+      <div
+        ref={scrollRef}
+        style={{
+          flex: 1,
+          minHeight: 0,
+          overflowY: 'auto',
+          paddingTop: '16px',
+          paddingLeft: '32px',
+          paddingRight: '32px',
+          paddingBottom: '16px',
+        }}
+      >
+        <div
+          style={{
+            display: 'flex',
+            flexWrap: 'wrap',
+            gap: '16px',
+            alignContent: 'flex-start',
+          }}
+        >
+          {allCards.map((card) => (
+            <ImageResultCard key={card.key} status={card.status} imageUrl={card.imageUrl} />
+          ))}
+        </div>
+      </div>
+
+      {/* InputCard: in flow, always at bottom */}
+      <div style={{ flexShrink: 0, display: 'flex', justifyContent: 'center', paddingLeft: '32px', paddingRight: '32px', paddingBottom: '16px', paddingTop: '8px' }}>
+        <div style={{ width: 'min(800px, 100%)' }}>
+          <InputCard onGenerate={onGenerate} width="100%" genType={genType} onGenTypeChange={onGenTypeChange}
+            model={model} onModelChange={onModelChange} modelOptions={modelOptions} creationParams={creationParams} />
+        </div>
+      </div>
+    </div>
+  );
+}
 
 // ─── Empty state ──────────────────────────────────────────────────────────────
 function CreationEmptyState({ onGenerate, genType, onGenTypeChange, model, onModelChange, modelOptions, creationParams }) {
@@ -1700,6 +2329,7 @@ export default function CreationPage() {
   const [activeTab, setActiveTab] = useState('image');
   const [genType, setGenType] = useState('image');
   const [generating, setGenerating] = useState(false);
+  const [generations, setGenerations] = useState([]); // array of { id, ratio, cards: [{status, imageUrl}] }
 
   // Models and params are backend-driven; loaded on genType change and model change
   const [modelOptions, setModelOptions] = useState([]);
@@ -1740,15 +2370,81 @@ export default function CreationPage() {
 
   const handleGenerate = async (params) => {
     setGenerating(true);
+    // Parse count: '2张' → 2, fallback to 1
+    const countNum = parseInt(params.count) || 1;
+    const genId = `gen-${Date.now()}`;
+    // Immediately add loading placeholders
+    setGenerations((prev) => [
+      ...prev,
+      {
+        id: genId,
+        ratio: params.ratio || '16:9',
+        cards: Array.from({ length: countNum }, () => ({ status: 'loading', imageUrl: null })),
+      },
+    ]);
     try {
-      await apiGenerateCreation(params);
+      const result = await apiGenerateCreation(params);
+      // result.images: array of URL strings (mock returns taskId only, so we simulate)
+      const images = result.images ?? [];
+      setGenerations((prev) =>
+        prev.map((gen) => {
+          if (gen.id !== genId) return gen;
+          return {
+            ...gen,
+            cards: gen.cards.map((_, i) => ({
+              status: images[i] ? 'done' : 'error',
+              imageUrl: images[i] ?? null,
+            })),
+          };
+        })
+      );
+    } catch {
+      setGenerations((prev) =>
+        prev.map((gen) => {
+          if (gen.id !== genId) return gen;
+          return { ...gen, cards: gen.cards.map(() => ({ status: 'error', imageUrl: null })) };
+        })
+      );
     } finally {
       setGenerating(false);
     }
   };
 
   return (
-    /* outer: fills the content column, adds pb/pr 24px per design spec */
+    /*
+     * ┌─ Home.jsx 右侧内容区 ──────────────────────────────────────────────────┐
+     * │  flex:1, overflow:hidden, position:relative                           │
+     * │                                                                        │
+     * │  ┌─ CreationPage 最外层 ──────────────────────────────────────────────┐│
+     * │  │  flex column, flex:1, overflow:clip, pb:24px pr:24px              ││
+     * │  │                                                                    ││
+     * │  │  ┌─ rounded card ───────────────────────────────────────────────┐ ││
+     * │  │  │  flex column, flex:1, borderRadius:16px, overflow:clip       │ ││
+     * │  │  │                                                               │ ││
+     * │  │  │  ┌─ top bar (tabs + batch btn) ──────────────────────────┐   │ ││
+     * │  │  │  │  flex row, flex-shrink:0, alignSelf:stretch           │   │ ││
+     * │  │  │  └───────────────────────────────────────────────────────┘   │ ││
+     * │  │  │                                                               │ ││
+     * │  │  │  ┌─ content area ────────────────────────────────────────┐   │ ││
+     * │  │  │  │  flex column, flex:1, overflow:clip                   │   │ ││
+     * │  │  │  │                                                        │   │ ││
+     * │  │  │  │  ┌─ CreationResultState / CreationEmptyState ───────┐ │   │ ││
+     * │  │  │  │  │  flex column, flex:1, minHeight:0                │ │   │ ││
+     * │  │  │  │  │                                                   │ │   │ ││
+     * │  │  │  │  │  ┌─ 图片滚动区 ──────────────────────────────┐   │ │   │ ││
+     * │  │  │  │  │  │  flex:1, minHeight:0, overflowY:auto      │   │ │   │ ││
+     * │  │  │  │  │  │  图片超出时在此区域内向上滚动              │   │ │   │ ││
+     * │  │  │  │  │  └───────────────────────────────────────────┘   │ │   │ ││
+     * │  │  │  │  │                                                   │ │   │ ││
+     * │  │  │  │  │  ┌─ InputCard ───────────────────────────────┐   │ │   │ ││
+     * │  │  │  │  │  │  flexShrink:0，flow 布局，始终在底部       │   │ │   │ ││
+     * │  │  │  │  │  └───────────────────────────────────────────┘   │ │   │ ││
+     * │  │  │  │  └─────────────────────────────────────────────────┘ │   │ ││
+     * │  │  │  └───────────────────────────────────────────────────────┘   │ ││
+     * │  │  └─────────────────────────────────────────────────────────────┘ ││
+     * │  └────────────────────────────────────────────────────────────────────┘│
+     * └────────────────────────────────────────────────────────────────────────┘
+     */
     <div
       style={{
         display: 'flex',
@@ -1756,9 +2452,10 @@ export default function CreationPage() {
         flexGrow: 1,
         flexShrink: 1,
         flexBasis: '0%',
+        minHeight: 0,
+        height: '100%',
         overflow: 'clip',
         alignSelf: 'stretch',
-        height: '100%',
         paddingBottom: '24px',
         paddingRight: '24px',
         fontSize: '12px',
@@ -1773,6 +2470,7 @@ export default function CreationPage() {
           flexDirection: 'column',
           alignItems: 'flex-start',
           flex: 1,
+          minHeight: 0,
           borderRadius: '16px',
           overflow: 'clip',
           alignSelf: 'stretch',
@@ -1781,7 +2479,7 @@ export default function CreationPage() {
         }}
       >
         {/* top bar: tabs + batch button */}
-        <div style={{ display: 'flex', flexDirection: 'column', alignSelf: 'stretch' }}>
+        <div style={{ display: 'flex', flexDirection: 'column', alignSelf: 'stretch', flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <CreationTabBar activeTab={activeTab} onChange={handleTabChange} />
             <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flex: 1, justifyContent: 'flex-end', paddingRight: '32px', paddingTop: '6px', paddingBottom: '6px' }}>
@@ -1796,22 +2494,25 @@ export default function CreationPage() {
             display: 'flex',
             flexDirection: 'column',
             flex: '1 1 0%',
+            minHeight: 0,
             padding: '0px',
             overflow: 'clip',
-            gap: '32px',
             alignSelf: 'stretch',
             position: 'relative',
           }}
         >
-          {activeTab === 'image' && (
-            <CreationEmptyState onGenerate={handleGenerate} genType={genType} onGenTypeChange={handleGenTypeChange}
-              model={model} onModelChange={setModel} modelOptions={modelOptions} creationParams={creationParams} />
-          )}
-          {activeTab === 'video' && (
-            <CreationEmptyState onGenerate={handleGenerate} genType={genType} onGenTypeChange={handleGenTypeChange}
-              model={model} onModelChange={setModel} modelOptions={modelOptions} creationParams={creationParams} />
-          )}
-          {activeTab === 'dubbing' && (
+          {generations.length > 0 ? (
+            <CreationResultState
+              generations={generations}
+              onGenerate={handleGenerate}
+              genType={genType}
+              onGenTypeChange={handleGenTypeChange}
+              model={model}
+              onModelChange={setModel}
+              modelOptions={modelOptions}
+              creationParams={creationParams}
+            />
+          ) : (
             <CreationEmptyState onGenerate={handleGenerate} genType={genType} onGenTypeChange={handleGenTypeChange}
               model={model} onModelChange={setModel} modelOptions={modelOptions} creationParams={creationParams} />
           )}
