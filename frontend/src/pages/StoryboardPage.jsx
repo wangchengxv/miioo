@@ -5,6 +5,7 @@ import ShotViewerModal from '../components/ShotViewerModal';
 import Toggle from '../components/Toggle';
 import AssetPickerModal from '../components/AssetPickerModal';
 import { apiUploadFile, apiGenerateImage, apiGenerateVideo, apiCreateShot, apiUpdateShot, apiDeleteShot, apiReorderShots, apiGetShots } from '../api/storyboard';
+import DotsLoading from '../components/DotsLoading';
 import { apiGetEpisodes, apiGetModels } from '../api/subject';
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -598,7 +599,7 @@ function ImgItem({ settled, imageUrl, onView, onSettledChange }) {
       <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         {imageUrl
           ? <img src={imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-          : <SpinnerIcon color="rgba(255,255,255,0.30)" />
+          : <DotsLoading size={4} color="#2DC3E1" gap={3} />
         }
       </div>
       {/* 顶部定稿 checkbox */}
@@ -1408,7 +1409,7 @@ function RefSlotBtn({ onClick, children }) {
   );
 }
 
-function GenerateImagePanel({ shot, chars = [], scenes = [], props = [], onClose, onGenerate, generatedImages = [], onSetGeneratedImages }) {
+function GenerateImagePanel({ shot, chars = [], scenes = [], props = [], onClose, onGenerate, onShowToast, generatedImages = [], onSetGeneratedImages }) {
   const [model, setModel] = useState('Doubao-Seed-2.0-Pro');
   const [resolution, setResolution] = useState('2K');
   const [prompt, setPrompt] = useState(shot?.description || '');
@@ -1437,11 +1438,18 @@ function GenerateImagePanel({ shot, chars = [], scenes = [], props = [], onClose
     setLoading(true);
     const placeholder = `pending-${Date.now()}`;
     onSetGeneratedImages((prev) => [{ url: null, settled: false, id: placeholder }, ...prev]);
-    const result = await onGenerate?.({ model, resolution, prompt, refImages });
-    onSetGeneratedImages((prev) =>
-      prev.map((item) => item.id === placeholder ? { ...item, url: result?.url ?? null } : item)
-    );
-    setLoading(false);
+    try {
+      const result = await onGenerate?.({ model, resolution, prompt, refImages });
+      onSetGeneratedImages((prev) =>
+        prev.map((item) => item.id === placeholder ? { ...item, url: result?.url ?? null } : item)
+      );
+      onShowToast?.('图片生成成功', 'success');
+    } catch {
+      onSetGeneratedImages((prev) => prev.filter((item) => item.id !== placeholder));
+      onShowToast?.('图片生成失败', 'error');
+    } finally {
+      setLoading(false);
+    }
   }
 
   const btnBg = loading ? 'rgba(45,195,225,0.60)' : btnPressed ? '#28b0cc' : btnHov ? '#32cde8' : '#2DC3E1';
@@ -1591,7 +1599,7 @@ function GenerateImagePanel({ shot, chars = [], scenes = [], props = [], onClose
   );
 }
 
-function GenerateVideoPanel({ shot, nextShot = null, chars = [], scenes = [], props = [], onClose, onGenerate }) {
+function GenerateVideoPanel({ shot, nextShot = null, chars = [], scenes = [], props = [], onClose, onGenerate, onShowToast }) {
   const [mode, setMode] = useState('all'); // 'all' | 'first-last' | 'multi'
   const [model, setModel] = useState('Doubao-Seed-2.0-Pro');
   const [resolution, setResolution] = useState('720P');
@@ -1615,11 +1623,18 @@ function GenerateVideoPanel({ shot, nextShot = null, chars = [], scenes = [], pr
     setLoading(true);
     const placeholder = `pending-${Date.now()}`;
     setGeneratedVideos((prev) => [{ url: null, settled: false, id: placeholder }, ...prev]);
-    const result = await onGenerate?.({ model, resolution, duration, sound, prompt });
-    setGeneratedVideos((prev) =>
-      prev.map((item) => item.id === placeholder ? { ...item, url: result?.url ?? null } : item)
-    );
-    setLoading(false);
+    try {
+      const result = await onGenerate?.({ model, resolution, duration, sound, prompt });
+      setGeneratedVideos((prev) =>
+        prev.map((item) => item.id === placeholder ? { ...item, url: result?.url ?? null } : item)
+      );
+      onShowToast?.('视频生成成功', 'success');
+    } catch {
+      setGeneratedVideos((prev) => prev.filter((item) => item.id !== placeholder));
+      onShowToast?.('视频生成失败', 'error');
+    } finally {
+      setLoading(false);
+    }
   }
 
   const btnBg = loading ? 'rgba(45,195,225,0.60)' : btnPressed ? '#28b0cc' : btnHov ? '#32cde8' : '#2DC3E1';
@@ -1868,7 +1883,7 @@ function VideoItem({ settled, videoUrl, onSettledChange, onView }) {
       <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         {videoUrl
           ? <video src={videoUrl} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted playsInline />
-          : <SpinnerIcon color="rgba(255,255,255,0.30)" />
+          : <DotsLoading size={4} color="#2DC3E1" gap={3} />
         }
       </div>
       {/* 顶部定稿 checkbox */}
@@ -4414,6 +4429,7 @@ export default function StoryboardPage({ projectName = '两只老虎的奇遇', 
           }));
         }}
         onClose={() => setImagePanel(null)}
+        onShowToast={showToast}
         onGenerate={async (params) => {
           const shot = imagePanel.shot;
           // TODO: 替换为真实接口 apiGenerateImage(shot.id, params)
@@ -4424,7 +4440,6 @@ export default function StoryboardPage({ projectName = '两只老虎的奇遇', 
             ? { ...s, storyboardImage: { id: mockUrl, url: mockUrl, name: 'generated.jpg', type: 'image/jpeg' } }
             : s
           ));
-          showToast('分镜图生成完成');
           return { url: mockUrl };
         }}
       />
@@ -4437,6 +4452,7 @@ export default function StoryboardPage({ projectName = '两只老虎的奇遇', 
         scenes={scenes}
         props={props}
         onClose={() => setVideoPanel(null)}
+        onShowToast={showToast}
         onGenerate={async (params) => {
           const shot = videoPanel.shot;
           // TODO: 替换为真实接口 apiGenerateVideo(shot.id, params)
@@ -4447,7 +4463,6 @@ export default function StoryboardPage({ projectName = '两只老虎的奇遇', 
             ? { ...s, storyboardVideo: { id: `vid-${shot.id}`, url: mockUrl, name: 'generated.mp4', type: 'video/mp4' } }
             : s
           ));
-          showToast('分镜视频生成完成');
           onVideoGenerated?.(activeEpisodes.indexOf(episode));
           return { url: mockUrl };
         }}
@@ -4475,6 +4490,12 @@ export default function StoryboardPage({ projectName = '两只老虎的奇遇', 
               <path d="M8 14.667C9.841 14.667 11.508 13.921 12.714 12.714C13.921 11.508 14.667 9.841 14.667 8C14.667 6.159 13.921 4.492 12.714 3.286C11.508 2.08 9.841 1.333 8 1.333C6.159 1.333 4.492 2.08 3.286 3.286C2.08 4.492 1.333 6.159 1.333 8C1.333 9.841 2.08 11.508 3.286 12.714C4.492 13.921 6.159 14.667 8 14.667Z" fill="#EB8B14" stroke="#EB8B14" strokeWidth="1.333" strokeLinejoin="round" />
               <path fillRule="evenodd" clipRule="evenodd" d="M8 12.333C8.46 12.333 8.833 11.96 8.833 11.5C8.833 11.04 8.46 10.667 8 10.667C7.54 10.667 7.167 11.04 7.167 11.5C7.167 11.96 7.54 12.333 8 12.333Z" fill="#FFFFFF" />
               <path d="M8 4V9.333" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          )}
+          {toast.type === 'error' && (
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+              <path d="M8 14.667C9.841 14.667 11.508 13.921 12.714 12.714C13.921 11.508 14.667 9.841 14.667 8C14.667 6.159 13.921 4.492 12.714 3.286C11.508 2.08 9.841 1.333 8 1.333C6.159 1.333 4.492 2.08 3.286 3.286C2.08 4.492 1.333 6.159 1.333 8C1.333 9.841 2.08 11.508 3.286 12.714C4.492 13.921 6.159 14.667 8 14.667Z" fill="#F75F5F" stroke="#F75F5F" strokeWidth="1.333" strokeLinejoin="round" />
+              <path d="M5.333 5.333L10.667 10.667M10.667 5.333L5.333 10.667" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" />
             </svg>
           )}
           <span className="text-text-primary text-font-size-16 font-font-weight-regular" style={{ fontFamily: FONT }}>

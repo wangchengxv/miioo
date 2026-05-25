@@ -4,6 +4,7 @@ import StarterKit from '@tiptap/starter-kit';
 import { Markdown } from 'tiptap-markdown';
 import ReactMarkdown from 'react-markdown';
 import { PulsingBorder } from '@paper-design/shaders-react';
+import DotsLoading from '../components/DotsLoading';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
@@ -513,24 +514,22 @@ function ModelSelector({ label, options, width, disabled = false }) {
   );
 }
 
-function SendButton({ onClick, disabled = false, loading = false }) {
+function SendButton({ onClick, disabled = false, loading = false, isGenerating = false }) {
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
-  const [focused, setFocused] = useState(false);
 
+  const isClickable = isGenerating || !disabled;
   const scale = pressed ? 'scale(0.9)' : hovered ? 'scale(1.1)' : 'scale(1)';
 
   return (
     <button
       type="button"
-      disabled={disabled}
-      onMouseEnter={() => !disabled && setHovered(true)}
+      disabled={!isClickable}
+      onMouseEnter={() => isClickable && setHovered(true)}
       onMouseLeave={() => { setHovered(false); setPressed(false); }}
-      onMouseDown={() => !disabled && setPressed(true)}
+      onMouseDown={() => isClickable && setPressed(true)}
       onMouseUp={() => setPressed(false)}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
-      onClick={disabled ? undefined : onClick}
+      onClick={isClickable ? onClick : undefined}
       style={{
         display: 'flex',
         flexDirection: 'column',
@@ -543,14 +542,13 @@ function SendButton({ onClick, disabled = false, loading = false }) {
         boxShadow: '#2DC3E133 0px 0px 12px',
         width: '40px',
         height: '40px',
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        transform: disabled ? 'scale(1)' : scale,
+        cursor: !isClickable ? 'not-allowed' : 'pointer',
+        transform: !isClickable ? 'scale(1)' : scale,
         transition: 'transform 0.15s cubic-bezier(0.4,0,0.2,1), opacity 0.15s',
-        opacity: disabled ? 0.45 : 1,
+        opacity: (!isClickable) ? 0.45 : 1,
         background: 'transparent',
         border: 'none',
-        outline: focused ? '1px solid #2DC3E180' : 'none',
-        outlineOffset: '4px',
+        outline: 'none',
         padding: 0,
       }}
     >
@@ -574,11 +572,14 @@ function SendButton({ onClick, disabled = false, loading = false }) {
         colorBack="#00000000"
         className="rounded-full flex-1 w-full [box-shadow:#34DDFFB3_0px_0px_4px_2px_inset] bg-neutral-300"
       />
-      {loading ? (
-        <div style={{ position: 'absolute', left: '50%', top: '50%', translate: '-50% -50%', display: 'flex', alignItems: 'center', gap: '3px' }}>
-          {[0, 1, 2].map((index) => (
-            <div key={index} className="thinking-dot" style={{ width: '4px', height: '4px', borderRadius: '9999px', background: '#FFFFFF' }} />
-          ))}
+      {isGenerating ? (
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ position: 'absolute', left: '50%', top: '50%', translate: '-50% -50%' }}>
+          <rect x="4" y="3" width="3" height="10" rx="1.5" fill="white" />
+          <rect x="9" y="3" width="3" height="10" rx="1.5" fill="white" />
+        </svg>
+      ) : loading ? (
+        <div style={{ position: 'absolute', left: '50%', top: '50%', translate: '-50% -50%' }}>
+          <DotsLoading size={4} color="#FFFFFF" gap={3} />
         </div>
       ) : (
         <svg width="20" height="20" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ position: 'absolute', left: '50%', top: '50%', translate: '-50% -50%' }}>
@@ -668,16 +669,25 @@ function FileCard({ file, onRemove, disabled = false }) {
   );
 }
 
-function InputCard({ onSend, width = '700px', disabled = false }) {
+function InputCard({ onSend, onStop, restoreText = '', restoreFiles = [], width = '700px', disabled = false }) {
   const [text, setText] = useState('');
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const [files, setFiles] = useState([]);
+  const prevDisabledRef = useRef(false);
 
   useEffect(() => {
     ensureRotateKeyframe();
     ensureThinkingStyle();
   }, []);
+
+  useEffect(() => {
+    if (prevDisabledRef.current && !disabled) {
+      setText(restoreText);
+      setFiles(restoreFiles);
+    }
+    prevDisabledRef.current = disabled;
+  }, [disabled, restoreText, restoreFiles]);
 
   const handleFileSelect = (newFiles) => setFiles((prev) => [...prev, ...newFiles]);
   const handleRemoveFile = (index) => setFiles((prev) => prev.filter((_, itemIndex) => itemIndex !== index));
@@ -691,6 +701,10 @@ function InputCard({ onSend, width = '700px', disabled = false }) {
     setFiles([]);
   };
 
+  const handleStop = () => {
+    onStop?.();
+  };
+
   const handleKeyDown = (e) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault();
@@ -698,7 +712,7 @@ function InputCard({ onSend, width = '700px', disabled = false }) {
     }
   };
 
-  const isTyping = focused || text.length > 0;
+  const isTyping = focused;
   const hoverBg = 'conic-gradient(from var(--chatbox-angle), oklab(86.8% -0.081 -0.057 / 30%) 0%, oklab(75.5% -0.102 -0.072 / 25%) 15%, oklab(75.5% -0.102 -0.072 / 0%) 50%, oklab(100% 0 0 / 5%) 55%, oklab(86.8% -0.081 -0.057 / 30%) 100%)';
   const idleBg = 'linear-gradient(in oklab 161.1deg, oklab(86.8% -0.081 -0.057 / 30%) 9.06%, oklab(75.5% -0.102 -0.072 / 25%) 15.35%, oklab(75.5% -0.102 -0.072 / 0%) 52.98%, oklab(100% 0 0 / 5%) 56.39%)';
 
@@ -793,7 +807,7 @@ function InputCard({ onSend, width = '700px', disabled = false }) {
             <ModelSelector label="Doubao-Seed-2.0-Pro" options={MODEL_OPTIONS_1} width="180px" disabled={disabled} />
             <ModelSelector label="集数：自动适应" options={MODEL_OPTIONS_2} width="140px" disabled={disabled} />
           </div>
-          <SendButton onClick={handleSend} disabled={!canSend} loading={disabled} />
+          <SendButton onClick={disabled ? handleStop : handleSend} disabled={!canSend && !disabled} loading={disabled && !onStop} isGenerating={disabled && !!onStop} />
         </div>
       </div>
     </div>
@@ -953,9 +967,7 @@ function AiThinkingMessage() {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', alignSelf: 'stretch', justifyContent: 'center' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '5px', height: '20px' }}>
-        {[0, 1, 2].map((index) => (
-          <div key={index} className="thinking-dot" style={{ width: '5px', height: '5px', borderRadius: '9999px', flexShrink: 0, background: '#2DC3E1' }} />
-        ))}
+        <DotsLoading size={5} color="#2DC3E1" gap={5} />
       </div>
       <div style={{ position: 'relative', height: '20px', minWidth: '120px', overflow: 'hidden' }}>
         <span
@@ -1442,8 +1454,11 @@ export default function ScriptPage({ onGoToSubject, onEpisodesChange, phase: pha
   const setScriptContent = isControlled ? onScriptContentChange : setScriptContentLocalRaw;
   const setDraftContent = isControlled ? onDraftContentChange : setDraftContentLocalRaw;
   const [selectedEpisode, setSelectedEpisode] = useState(0);
+  const [lastSentText, setLastSentText] = useState('');
+  const [lastSentFiles, setLastSentFiles] = useState([]);
   const renderedContentRef = useRef(null);
   const editorContentRef = useRef(null);
+  const stopTimerRef = useRef(null);
 
   useEffect(() => {
     ensureScrollbarStyle();
@@ -1460,9 +1475,34 @@ export default function ScriptPage({ onGoToSubject, onEpisodesChange, phase: pha
   const episodeRailLoading = hasStarted && (phase === 'thinking' || phase === 'streaming');
   const safeSelectedEpisode = outline.length > 0 ? Math.min(selectedEpisode, outline.length - 1) : 0;
 
+  const handleStop = useCallback(() => {
+    if (stopTimerRef.current) {
+      clearTimeout(stopTimerRef.current);
+      stopTimerRef.current = null;
+    }
+    if (scriptContent) {
+      setPhase('view');
+    } else {
+      setPhase('initial');
+      setHasStarted(false);
+    }
+  }, [scriptContent, setPhase, setHasStarted]);
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape' && (phase === 'thinking' || phase === 'streaming')) {
+        handleStop();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [phase, handleStop]);
+
   const handleSend = (text, files) => {
     if (!text && files.length === 0) return;
 
+    setLastSentText(text);
+    setLastSentFiles(files);
     setHasStarted(true);
     setPhase('thinking');
     setScriptContent('');
@@ -1470,7 +1510,8 @@ export default function ScriptPage({ onGoToSubject, onEpisodesChange, phase: pha
     setSelectedEpisode(0);
     setStreamingIndex(0);
 
-    setTimeout(() => {
+    stopTimerRef.current = setTimeout(() => {
+      stopTimerRef.current = null;
       setScriptContent(MOCK_SCRIPT_MARKDOWN);
       setPhase('streaming');
     }, 3000);
@@ -1565,7 +1606,7 @@ export default function ScriptPage({ onGoToSubject, onEpisodesChange, phase: pha
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'center', alignSelf: 'stretch', paddingTop: '8px', overflow: 'visible', flexShrink: 0 }}>
-              <InputCard onSend={handleSend} width="min(700px, 100%)" disabled={phase === 'thinking' || phase === 'streaming'} />
+              <InputCard onSend={handleSend} onStop={handleStop} restoreText={lastSentText} restoreFiles={lastSentFiles} width="min(700px, 100%)" disabled={phase === 'thinking' || phase === 'streaming'} />
             </div>
           </div>
         </div>

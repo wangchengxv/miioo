@@ -3,15 +3,91 @@ import { useRef, useState } from 'react';
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
 
-// coverImg: 前端写死的封面占位图路径，后期替换为真实图片资源
-// prompt: 传给后端的风格提示词，后端接入时直接读取此字段
 const VISUAL_STYLES = [
-  { value: 'realistic', label: '写实',    coverImg: null, prompt: 'photorealistic, cinematic lighting, high detail, 8k' },
-  { value: 'anime',     label: '动漫',    coverImg: null, prompt: 'anime style, cel shading, vibrant colors, studio ghibli' },
-  { value: 'ink',       label: '水墨',    coverImg: null, prompt: 'Chinese ink wash painting, monochrome, brush strokes, traditional' },
-  { value: 'cyber',     label: '赛博朋克', coverImg: null, prompt: 'cyberpunk, neon lights, rain, dark city, futuristic' },
-  { value: 'retro',     label: '复古胶片', coverImg: null, prompt: 'vintage film, grain, warm tones, 35mm, nostalgic' },
-  { value: 'custom',    label: '自定义',   coverImg: null, prompt: null },
+  {
+    value: 'custom',
+    label: '自定义',
+    coverImg: null,
+    gradient: null,
+    prompt: null,
+  },
+  {
+    value: 'oriental3d',
+    label: '3D东方仙侠',
+    coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF1YMA3KDCVA9GNPRN1912B.png',
+    gradient: 'linear-gradient(in oklab 135deg, oklab(34.8% 0 0) 0%, oklab(21.8% 0 0) 100%)',
+    prompt: '3D oriental xianxia style',
+  },
+  {
+    value: 'mystery2d',
+    label: '2D悬疑动漫',
+    coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF1ZTAX3W6NZKYMH0PYVYH7.png',
+    gradient: 'linear-gradient(in oklab 135deg, oklab(34.4% -0.009 -0.032) 0%, oklab(24.6% -0.001 -0.032) 100%)',
+    prompt: '2D mystery anime style',
+  },
+  {
+    value: 'cyberpunk3d',
+    label: '3D赛博朋克',
+    coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF212REFTJS0T5TX853C6PV.png',
+    gradient: 'linear-gradient(in oklab 135deg, oklab(26.4% 0 0) 0%, oklab(17.8% 0 0) 100%)',
+    prompt: '3D cyberpunk style',
+  },
+  {
+    value: 'pixar',
+    label: '皮克斯风格',
+    coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF21N68B569JWD37XGXMJHY.png',
+    gradient: 'linear-gradient(in oklab 135deg, oklab(22.8% 0.009 -0.037) 0%, oklab(16.6% 0.006 -0.026) 100%)',
+    prompt: 'Pixar animation style',
+  },
+  {
+    value: 'cgwuxia',
+    label: 'CG武侠',
+    coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF261TC70JTZ75NHHN40S7B.png',
+    gradient: 'linear-gradient(in oklab 135deg, oklab(22.8% 0.009 -0.037) 0%, oklab(16.6% 0.006 -0.026) 100%)',
+    prompt: 'CG wuxia martial arts style',
+  },
+  {
+    value: 'miyazaki',
+    label: '宫崎骏风格',
+    coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF26SR6DGWH3J83QYYG7YQ2.png',
+    gradient: 'linear-gradient(in oklab 135deg, oklab(22.8% 0.009 -0.037) 0%, oklab(16.6% 0.006 -0.026) 100%)',
+    prompt: 'Studio Ghibli Miyazaki style',
+  },
+  {
+    value: 'shinkai',
+    label: '新海诚风格',
+    coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/79F37XWHB4KFX7387QRVPJRGW2.png',
+    gradient: 'linear-gradient(in oklab 135deg, oklab(26.8% 0.007 0.027) 0%, oklab(18.9% 0.007 0.022) 100%)',
+    prompt: 'Makoto Shinkai anime style',
+  },
+  {
+    value: 'ancientrealistic',
+    label: '真人古风写实',
+    coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF2JXQECN3C3V6A1RSK2NAQ.png',
+    gradient: 'linear-gradient(in oklab 135deg, oklab(22.8% 0.009 -0.037) 0%, oklab(16.6% 0.006 -0.026) 100%)',
+    prompt: 'realistic ancient Chinese style',
+  },
+  {
+    value: 'urban',
+    label: '都市职场',
+    coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/2PWDW8VRNFGH4RWESGMQD6FQ11.png',
+    gradient: 'linear-gradient(in oklab 135deg, oklab(26.8% 0.007 0.027) 0%, oklab(18.9% 0.007 0.022) 100%)',
+    prompt: 'urban workplace realistic style',
+  },
+  {
+    value: 'wasteland',
+    label: '末日废土',
+    coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF2K6XQRPBT11ZHQ9E7GT2Q.png',
+    gradient: 'linear-gradient(in oklab 135deg, oklab(26.8% 0.007 0.027) 0%, oklab(18.9% 0.007 0.022) 100%)',
+    prompt: 'post-apocalyptic wasteland style',
+  },
+  {
+    value: 'mysterylive',
+    label: '真人悬疑',
+    coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF2KG4DMWE4165JR2K270R7.png',
+    gradient: 'linear-gradient(in oklab 135deg, oklab(22.8% 0.009 -0.037) 0%, oklab(16.6% 0.006 -0.026) 100%)',
+    prompt: 'live action mystery thriller style',
+  },
 ];
 
 const PRIMARY_BTN_GRADIENT =
@@ -45,33 +121,18 @@ function PlusIcon() {
   );
 }
 
-// 占位图背景色，后期 coverImg 有值时直接渲染 <img>
-const STYLE_PLACEHOLDER_BG = {
-  realistic: 'linear-gradient(135deg, #3a3a3a 0%, #1a1a1a 100%)',
-  anime:     'linear-gradient(135deg, #2d3a4a 0%, #1a2030 100%)',
-  ink:       'linear-gradient(135deg, #252525 0%, #111111 100%)',
-  cyber:     'linear-gradient(135deg, #1a1a2e 0%, #0d0d1a 100%)',
-  retro:     'linear-gradient(135deg, #2e2416 0%, #1a1208 100%)',
-};
-
 function StyleCard({ item, selected, customDesc, onClick }) {
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
 
   const isCustom = item.value === 'custom';
-  const placeholderBg = STYLE_PLACEHOLDER_BG[item.value];
-
-  // 自定义卡片无描述时不显示实线外框，有描述后与其他卡片一致
-  const hasCustomContent = isCustom && customDesc;
-  const showSolidBorder = !isCustom || hasCustomContent;
 
   let borderColor;
   if (selected) borderColor = '#2DC3E1';
-  else if (!showSolidBorder) borderColor = 'transparent';
   else if (hovered) borderColor = '#FFFFFF33';
   else borderColor = '#FFFFFF14';
 
-  const labelColor = selected ? 'text-text-accent' : isCustom && !customDesc ? 'text-text-disabled' : 'text-text-secondary';
+  const labelColor = selected ? '#2DC3E1' : isCustom && !customDesc ? '#FFFFFF33' : '#FFFFFF66';
 
   return (
     <button
@@ -88,43 +149,48 @@ function StyleCard({ item, selected, customDesc, onClick }) {
       }}
     >
       <div
-        className="w-full h-[88px] rounded-md overflow-hidden relative shrink-0"
+        className="w-full h-[88px] rounded-md overflow-hidden relative shrink-0 bg-[#2A2A2A]"
         style={{
-          border: `1.5px solid ${borderColor}`,
+          border: `1.5px solid ${isCustom ? (selected ? '#2DC3E1' : '#FFFFFF33') : borderColor}`,
+          borderStyle: isCustom && !customDesc ? 'dashed' : 'solid',
           transition: 'border-color 150ms ease',
           boxShadow: selected ? '0 0 8px rgba(45,195,225,0.25)' : hovered ? '0 0 6px rgba(255,255,255,0.06)' : 'none',
         }}
       >
         {isCustom ? (
-          // 自定义：有描述时显示文字预览，否则显示加号
           customDesc ? (
-            <div className="absolute inset-0 bg-input-bg-normal flex items-center justify-center p-[8px]">
-              <span className="text-text-secondary text-font-size-12 text-center line-clamp-3" style={{ fontFamily: FONT }}>
+            <div className="absolute inset-0 bg-[#1D1E1E] flex items-center justify-center p-[8px]">
+              <span className="text-[#FFFFFF99] text-[12px] leading-[16px] text-center line-clamp-3" style={{ fontFamily: FONT }}>
                 {customDesc}
               </span>
             </div>
           ) : (
-            <div className="absolute inset-0 bg-input-bg-normal flex items-center justify-center" style={{ border: '1px dashed #FFFFFF33' }}>
+            <div className="absolute inset-0 bg-[#1D1E1E] flex items-center justify-center">
               <PlusIcon />
             </div>
           )
-        ) : item.coverImg ? (
-          // 有真实封面图时渲染图片（后期替换 coverImg 路径即可）
-          <img src={item.coverImg} alt={item.label} className="absolute inset-0 w-full h-full object-cover" />
         ) : (
-          // 占位渐变背景
-          <div className="absolute inset-0" style={{ background: placeholderBg }} />
+          <>
+            {item.gradient && (
+              <div className="absolute inset-0" style={{ backgroundImage: item.gradient }} />
+            )}
+            {item.coverImg && (
+              <div
+                className="absolute inset-0 bg-cover"
+                style={{ backgroundImage: `url(${item.coverImg})`, backgroundPosition: '50%' }}
+              />
+            )}
+          </>
         )}
 
-        {/* hover 时叠加高亮遮罩（非选中态） */}
         {hovered && !selected && !isCustom && (
           <div
             className="absolute inset-0 pointer-events-none"
-            style={{ background: 'rgba(255,255,255,0.06)', transition: 'opacity 150ms ease' }}
+            style={{ background: 'rgba(255,255,255,0.06)' }}
           />
         )}
       </div>
-      <span className={`text-font-size-12 ${labelColor}`} style={{ fontFamily: FONT }}>
+      <span className="text-[12px] leading-[16px]" style={{ fontFamily: FONT, color: labelColor }}>
         {item.label}
       </span>
     </button>
@@ -231,7 +297,7 @@ export default function NewProjectModal({ open, onClose, onConfirm }) {
   const [name, setName] = useState('');
   const [desc, setDesc] = useState('');
   const [ratio, setRatio] = useState('16:9');
-  const [style, setStyle] = useState('realistic');
+  const [style, setStyle] = useState('oriental3d');
   const [customStyleDesc, setCustomStyleDesc] = useState('');
   const [customStyleOpen, setCustomStyleOpen] = useState(false);
   const [coverFile, setCoverFile] = useState(null);
@@ -267,7 +333,7 @@ export default function NewProjectModal({ open, onClose, onConfirm }) {
     setName('');
     setDesc('');
     setRatio('16:9');
-    setStyle('realistic');
+    setStyle('oriental3d');
     setCustomStyleDesc('');
     setCoverFile(null);
     setCoverPreview(null);
@@ -305,7 +371,12 @@ export default function NewProjectModal({ open, onClose, onConfirm }) {
     ? { boxShadow: '0px 0px 10px var(--color-glow)', mixBlendMode: 'lighten' }
     : {};
 
-  const styleRows = [VISUAL_STYLES.slice(0, 3), VISUAL_STYLES.slice(3)];
+  const styleRows = [
+    VISUAL_STYLES.slice(0, 3),
+    VISUAL_STYLES.slice(3, 6),
+    VISUAL_STYLES.slice(6, 9),
+    VISUAL_STYLES.slice(9, 12),
+  ];
 
   return (
     <>

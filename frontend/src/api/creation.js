@@ -74,8 +74,25 @@ export async function apiGetCreationParams(genType, model) {
  * @param {object} params
  */
 export async function apiGenerateCreation(params) {
-  // TODO: POST /creation/generate
-  // body: { prompt, genType, model, refMode?, soundEnabled?, ratio?, resolution?, count?, duration?, files? }
-  console.log('[mock] generate creation', params);
-  return { taskId: `task-${Date.now()}` };
+  if (import.meta.env.VITE_USE_MOCK === 'true') {
+    console.log('[mock] generate creation', params);
+    // Simulate network delay
+    await new Promise((r) => setTimeout(r, 2000));
+    const count = parseInt(params.count) || 1;
+    // Return placeholder images (picsum) for demo
+    const images = Array.from({ length: count }, (_, i) =>
+      `https://picsum.photos/seed/${Date.now() + i}/640/360`
+    );
+    return { taskId: `task-${Date.now()}`, images };
+  }
+  const token = localStorage.getItem('token');
+  const res = await fetch(`${import.meta.env.VITE_API_BASE_URL}/api/creation/generate`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify(params),
+  });
+  return res.json();
 }

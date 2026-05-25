@@ -1,4 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
+import DotsLoading from '../components/DotsLoading';
 import BatchGenerateModal from '../components/BatchGenerateModal';
 import AssetPickerModal from '../components/AssetPickerModal';
 import { apiCreateSubject, apiUpdateSubject, apiDeleteSubject, apiGenerateSubjectImage, apiBatchGenerate, apiGetEpisodes, apiGetModels } from '../api/subject';
@@ -1053,7 +1055,7 @@ function ImageItem({ settled, imageUrl, onView, onSettledChange }) {
       <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         {imageUrl
           ? <img src={imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-          : <div style={{ width: '93px', height: '144px', background: '#FFFFFF14', borderRadius: '4px' }} />
+          : <DotsLoading size={4} color="#2DC3E1" gap={3} />
         }
       </div>
 
@@ -1249,6 +1251,14 @@ function EditSubjectPanel({ char, tabLabel = '角色', onClose, onCommit, onCove
   const [genMode, setGenMode] = useState('main');
   const [generatedImages, setGeneratedImages] = useState([]);
   const [viewImageUrl, setViewImageUrl] = useState(null);
+  const [toast, setToast] = useState(null);
+  const toastTimerRef = useRef(null);
+
+  function showToast(msg, type = 'success') {
+    clearTimeout(toastTimerRef.current);
+    setToast({ msg, type });
+    toastTimerRef.current = setTimeout(() => setToast(null), 2500);
+  }
   const [charName, setCharName] = useState(char?.name ?? '');
   const [charDesc, setCharDesc] = useState(char?.desc ?? '');
   const [nameFocused, setNameFocused] = useState(false);
@@ -1267,6 +1277,7 @@ function EditSubjectPanel({ char, tabLabel = '角色', onClose, onCommit, onCove
   });
 
   return (
+    <>
     <div
       style={{
         position: 'fixed', top: '60px', right: '24px', bottom: '24px',
@@ -1505,8 +1516,14 @@ function EditSubjectPanel({ char, tabLabel = '角色', onClose, onCommit, onCove
               onClick={async () => {
                 const placeholder = `generated-${Date.now()}`;
                 setGeneratedImages((prev) => [{ url: null, settled: false, id: placeholder }, ...prev]);
-                const { imageUrl } = await apiGenerateSubjectImage(char.id, { model: selectedModel, referenceImages });
-                setGeneratedImages((prev) => prev.map((img) => img.id === placeholder ? { ...img, url: imageUrl, settled: true } : img));
+                try {
+                  const { imageUrl } = await apiGenerateSubjectImage(char.id, { model: selectedModel, referenceImages });
+                  setGeneratedImages((prev) => prev.map((img) => img.id === placeholder ? { ...img, url: imageUrl, settled: true } : img));
+                  showToast('图片生成成功', 'success');
+                } catch {
+                  setGeneratedImages((prev) => prev.filter((img) => img.id !== placeholder));
+                  showToast('图片生成失败', 'error');
+                }
               }}
               style={{
                 display: 'flex', alignItems: 'center', height: '36px', borderRadius: '8px', padding: '0 16px', gap: '4px', cursor: 'pointer', border: '1px solid rgba(255,255,255,0.2)',
@@ -1562,6 +1579,29 @@ function EditSubjectPanel({ char, tabLabel = '角色', onClose, onCommit, onCove
         </div>
       </div>
     </div>
+    {toast && createPortal(
+      <div style={{ position: 'fixed', top: '25vh', left: '50%', transform: 'translateX(-50%)', zIndex: 9999, pointerEvents: 'none' }}>
+        <div className="flex items-center gap-[8px] px-[16px] py-[8px] rounded-medium bg-toast-bg backdrop-blur-[20px]" style={{ whiteSpace: 'nowrap' }}>
+          {toast.type === 'success' && (
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+              <path d="M8 14.667C9.841 14.667 11.508 13.921 12.714 12.714C13.921 11.508 14.667 9.841 14.667 8C14.667 6.159 13.921 4.492 12.714 3.286C11.508 2.08 9.841 1.333 8 1.333C6.159 1.333 4.492 2.08 3.286 3.286C2.08 4.492 1.333 6.159 1.333 8C1.333 9.841 2.08 11.508 3.286 12.714C4.492 13.921 6.159 14.667 8 14.667Z" fill="#52BF92" stroke="#52BF92" strokeWidth="1.333" strokeLinejoin="round" />
+              <path d="M5.333 8L7.333 10L11.333 6" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          )}
+          {toast.type === 'error' && (
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+              <path d="M8 14.667C9.841 14.667 11.508 13.921 12.714 12.714C13.921 11.508 14.667 9.841 14.667 8C14.667 6.159 13.921 4.492 12.714 3.286C11.508 2.08 9.841 1.333 8 1.333C6.159 1.333 4.492 2.08 3.286 3.286C2.08 4.492 1.333 6.159 1.333 8C1.333 9.841 2.08 11.508 3.286 12.714C4.492 13.921 6.159 14.667 8 14.667Z" fill="#F75F5F" stroke="#F75F5F" strokeWidth="1.333" strokeLinejoin="round" />
+              <path d="M5.333 5.333L10.667 10.667M10.667 5.333L5.333 10.667" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" />
+            </svg>
+          )}
+          <span className="text-text-primary text-font-size-16 font-font-weight-regular" style={{ fontFamily: FONT }}>
+            {toast.msg}
+          </span>
+        </div>
+      </div>,
+      document.body
+    )}
+    </>
   );
 }
 

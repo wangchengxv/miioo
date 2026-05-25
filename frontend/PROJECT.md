@@ -1,6 +1,6 @@
 # miioo 项目进度管理文档
 
-> 最后更新：2026-05-25（创作页参考模式修正：全能参考/首尾帧/智能多帧，后端按模型能力动态返回）
+> 最后更新：2026-05-25（创作图片区滚动布局定稿）
 
 ---
 
@@ -299,8 +299,41 @@ miioo/
   - `src/api/creation.js` mock 数据改为正确三种：`all`（全能参考）、`frame`（首尾帧）、`multi`（智能多帧），去掉 `desc` 字段
   - 后端根据前端选择的模型决定返回哪 1/2/3 种，前端只渲染，不硬编码数量
   - `CreationPage.jsx` 补上 `REF_MODE_ICON_FRAME_SELECTED` 和 `REF_MODE_ICON_MULTI_SELECTED` 白色图标，修正 `REF_MODE_ICON_MAP` 使选中态与默认态图标正确区分
+- [x] 通用组件 — DotsLoading 加载动画全局应用（2026-05-25）：
+  - 提取三点跳动动画为独立组件 `DotsLoading`（`src/components/DotsLoading.jsx`），props：`size`、`color`、`gap`
+  - 主体页 `ImageItem` 生成等待状态：替换原灰色占位 div，改用 `<DotsLoading size={4} color="#2DC3E1" gap={3} />`
+  - 分镜页 `ImgItem` 和 `VideoItem` 生成等待状态：替换原 `SpinnerIcon`，改用 `<DotsLoading size={4} color="#2DC3E1" gap={3} />`
+  - 颜色统一使用品牌蓝 `#2DC3E1`（`--color-brand-main`）
+- [x] 项目工作流 — 生成图片/视频 Toast 反馈补全（2026-05-25）：
+  - 主体页 `EditSubjectPanel`：新增 toast 状态 + `showToast` 函数 + `createPortal` 渲染；生成图片 onClick 加 try/catch/finally，成功显示「图片生成成功」，失败显示「图片生成失败」并移除占位项
+  - 分镜页 `GenerateImagePanel`：新增 `onShowToast` prop，`handleGenerate` 加 try/catch/finally，成功/失败分别触发对应 toast；移除原 `onGenerate` 回调中的 `showToast` 调用
+  - 分镜页 `GenerateVideoPanel`：同上，成功显示「视频生成成功」，失败显示「视频生成失败」
+  - 分镜页 Toast JSX 补充 error 图标（红色 SVG），位置统一为 `top: 25vh` 居中
+  - Toast 规范：`bg-toast-bg`、`backdrop-blur-[20px]`、`rounded-medium`、`px-[16px] py-[8px]`、`gap-[8px]`、2500ms 自动消失
+- [x] 创作页 — InputCard `@` 引用文件功能（2026-05-25）：
+  - 将 `InputCard` 内 `<textarea>` 替换为 `contenteditable div`，支持 inline 富文本标签插入
+  - 输入 `@` 时弹出文件选择下拉菜单（200px 宽，`#1D1E1E` 背景，`border #FFFFFF0D`，`box-shadow #00000066 0px 4px 16px`）
+  - 下拉菜单列出已上传文件，每行含 24×24 缩略图 + 文件名（`line-clamp-1`），激活行背景 `#FFFFFF0D`
+  - `@` 后继续输入可实时过滤文件列表；按 `Escape` 关闭菜单
+  - 点击文件后在光标处插入蓝色标签（`background: #1B6FEB33; color: #5B9CF6`），同时删除 `@query` 文本
+  - 标签名称截断规则：主名最多9字符超出用 `…` 截断，后缀完整保留（如 `这里是图片名…1.jpg`）
+  - 标签 `contentEditable=false`，不可编辑；发送时 `innerText` 读取纯文本（标签名称作为文本一部分）
+  - Placeholder 用绝对定位 span 实现（`hasContent` state 控制显隐）
+- [x] 创作页 — 图片生成结果展示区（2026-05-25）：
+  - 新增 `CreationResultState` 组件：生成后替换 `CreationEmptyState`，顶部可滚动展示历史生成结果，底部 InputCard 绝对定位固定
+  - 新增 `ImageResultCard` 组件（固定 `320×180`，`flexShrink: 0`）：loading 态显示 shimmer 骨架屏动画，done 态显示图片，error 态显示「生成失败」
+  - Shimmer 动画通过 `ensureShimmerStyle()` 动态注入 `@keyframes creation-shimmer` CSS，避免全局样式污染
+  - 卡片横排展示（`display: flex; flexDirection: row; flexWrap: wrap; gap: 16px`），超出宽度自动换行
+  - `generations` state 数组管理多次生成历史，每次生成追加一组 cards（先 loading 后 done/error）
+  - `apiGenerateCreation` mock 模式：2s 延迟 + picsum 占位图，支持 `VITE_USE_MOCK=true` 本地验证
+- [x] 创作页 — 图片区滚动布局定稿（2026-05-25）：
+  - `CreationResultState` 重构：`generations.flatMap()` 展平所有批次为单一卡片列表，消除分批分组渲染
+  - 图片区 `flex: 1 + minHeight: 0 + overflowY: auto`，高度自动撑满剩余空间，内容超出时内部滚动
+  - InputCard 移出滚动容器，改为 in-flow 布局（`flexShrink: 0`），不再使用 `position: absolute`
+  - `useRef + useEffect` 监听 `allCards.length`，每次新卡片加入自动 `scrollTop = scrollHeight` 滚到最新
+  - 修复 flex 链路上 5 处缺失的 `minHeight: 0`（`CreationPage.jsx` 3 处 + `Home.jsx` 2 处），确保 overflow 生效
 - [ ] 项目工作流 — 剪辑成片
-- [ ] 创作页（生图/生视频）
+- [ ] 创作页（生视频）
 - [ ] 资产库
 
 ---

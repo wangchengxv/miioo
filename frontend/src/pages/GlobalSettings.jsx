@@ -452,7 +452,7 @@ function ProjectNameHeading({ value, onChange }) {
 
 // ── Main ───────────────────────────────────────────────────────────────────
 
-export default function GlobalSettings({ projectName = '这里是项目名称', projectId, onBack, activeStep, onStepChange, onGoToSubject, onEpisodesChange, chars = [], scenes = [], props = [], episodes = [], scriptPhase, onScriptPhaseChange, scriptHasStarted, onScriptHasStartedChange, scriptContent, onScriptContentChange, scriptDraftContent, onScriptDraftContentChange, scriptStreamingIndex, onScriptStreamingIndexChange, episodeStatuses = {} }) {
+export default function GlobalSettings({ projectName = '这里是项目名称', projectId, onBack, activeStep, onStepChange, onGoToSubject, isSubjectUnlocked = false, onEpisodesChange, chars = [], scenes = [], props = [], episodes = [], scriptPhase, onScriptPhaseChange, scriptHasStarted, onScriptHasStartedChange, scriptContent, onScriptContentChange, scriptDraftContent, onScriptDraftContentChange, scriptStreamingIndex, onScriptStreamingIndexChange, episodeStatuses = {} }) {
   const [name, setName] = useState(projectName);
   const [description, setDescription] = useState('');
   const [coverUrl, setCoverUrl] = useState('');
@@ -540,7 +540,7 @@ export default function GlobalSettings({ projectName = '这里是项目名称', 
                 label={label}
                 count={count}
                 images={items.map((it) => it.imageUrl).filter(Boolean)}
-                onClick={tab ? () => onGoToSubject?.(tab) : undefined}
+                onClick={tab ? (isSubjectUnlocked || count > 0 ? () => onGoToSubject?.(tab) : undefined) : undefined}
               />
             ))}
             <EpisodeGrid episodes={episodes} statuses={episodeStatuses} />

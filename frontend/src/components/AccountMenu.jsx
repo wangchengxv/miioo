@@ -147,9 +147,6 @@ export default function AccountMenu({
         aria-expanded={open}
       >
         <AvatarSvg size={28} />
-        <span style={{ fontFamily: FONT_MEDIUM, fontWeight: 500, fontSize: '14px', lineHeight: '20px', color: '#fff' }}>
-          {userName}
-        </span>
         <svg
           width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"
           style={{ flexShrink: 0, transition: 'transform 0.15s', transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }}

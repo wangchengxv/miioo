@@ -277,7 +277,7 @@ function DeleteConfirmDialog({ onConfirm, onCancel }) {
             onClick={onConfirm}
             className="[font-synthesis:none] flex items-center justify-center h-9 px-[16px] rounded-medium shrink-0 bg-btn-danger-bg-normal hover:bg-btn-danger-bg-hover active:bg-btn-danger-bg-active border border-btn-danger-border [outline:1px_solid_var(--color-stroke-outline)] outline-offset-0 cursor-pointer antialiased"
           >
-            <span className="text-btn-danger-text text-font-size-14 font-font-weight-medium shrink-0" style={{ fontFamily: FONT_MEDIUM }}>确认注销</span>
+            <span className="text-btn-danger-text text-font-size-14 font-font-weight-medium shrink-0" style={{ fontFamily: FONT_MEDIUM }}>继续注销</span>
           </button>
         </div>
       </div>
@@ -522,8 +522,76 @@ function PhoneUnbindStep2({ onBind, onCancel }) {
 }
 
 
+function DeleteVerifyDialog({ maskedPhone, onConfirm, onCancel }) {
+  const [code, setCode] = useState('');
+  const [codeError, setCodeError] = useState(false);
+  const [loading, setLoading] = useState(false);
+
+  const handleConfirm = async () => {
+    if (!code) { setCodeError(true); return; }
+    setLoading(true);
+    const res = await apiVerifyPhoneCode(maskedPhone, code);
+    setLoading(false);
+    if (!res.valid) { setCodeError(true); return; }
+    setCodeError(false);
+    await onConfirm();
+  };
+
+  return (
+    <div
+      style={{ position: 'fixed', inset: 0, zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
+      onClick={onCancel}
+    >
+      <div
+        style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', background: '#161616', border: '0.555556px solid rgba(255,255,255,0.08)', borderRadius: '16px', overflow: 'hidden', width: '400px' }}
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', justifyContent: 'space-between', width: '100%', padding: '16px 24px', boxSizing: 'border-box' }}>
+          <span style={{ flex: 1, fontFamily: FONT_MEDIUM, fontWeight: 500, color: '#FFFFFF', fontSize: '16px', lineHeight: '20px' }}>验证手机号</span>
+          <button type="button" onClick={onCancel} style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', flexShrink: 0 }}>
+            <CloseIcon />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '16px', padding: '8px 24px', width: '100%', boxSizing: 'border-box' }}>
+          {/* Phone display */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '8px', alignSelf: 'stretch' }}>
+            <span style={{ fontFamily: FONT_REGULAR, color: 'rgba(255,255,255,0.6)', fontSize: '14px', lineHeight: '18px' }}>手机号</span>
+            <span style={{ fontFamily: FONT_REGULAR, color: '#FFFFFF', fontSize: '14px', lineHeight: '18px' }}>{maskedPhone}</span>
+          </div>
+          {/* Code field */}
+          <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: '4px', alignSelf: 'stretch' }}>
+            <span style={{ fontFamily: FONT_REGULAR, color: 'rgba(255,255,255,0.6)', fontSize: '14px', lineHeight: '18px' }}>验证码</span>
+            <CodeInput value={code} onChange={e => { setCode(e.target.value); setCodeError(false); }} maskedPhone={maskedPhone} />
+            <div style={{ padding: '0 13px', opacity: codeError ? 1 : 0, transition: 'opacity 120ms' }}>
+              <span style={{ fontFamily: FONT_REGULAR, color: '#F75F5F', fontSize: '14px', lineHeight: '18px' }}>验证码错误</span>
+            </div>
+          </div>
+        </div>
+
+        {/* Footer */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', justifyContent: 'flex-end', width: '100%', padding: '16px 24px', boxSizing: 'border-box' }}>
+          <GhostBtn onClick={onCancel}>取消</GhostBtn>
+          <button
+            type="button"
+            disabled={loading || !code}
+            onClick={handleConfirm}
+            className="[font-synthesis:none] flex items-center justify-center h-9 px-[16px] rounded-medium shrink-0 bg-btn-danger-bg-normal hover:bg-btn-danger-bg-hover active:bg-btn-danger-bg-active border border-btn-danger-border [outline:1px_solid_var(--color-stroke-outline)] outline-offset-0 antialiased"
+            style={{ cursor: loading || !code ? 'default' : 'pointer', opacity: loading || !code ? 0.5 : 1 }}
+          >
+            <span className="text-btn-danger-text text-font-size-14 font-font-weight-medium shrink-0" style={{ fontFamily: FONT_MEDIUM }}>
+              {loading ? '注销中…' : '确认注销'}
+            </span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const SPIN_STYLE = `
-@keyframes profile-spin {
   from { transform: translate(-50%, -50%) rotate(0deg); }
   to   { transform: translate(-50%, -50%) rotate(360deg); }
 }
@@ -627,9 +695,18 @@ function WechatBindView({ onBack, onClose, onBindSuccess }) {
   );
 }
 
-export default function ProfileModal({ open, onClose, userId, phone, wechat, userName }) {
+export default function ProfileModal({
+  open,
+  userName = 'user-name',
+  userId = 'miioo_user',
+  phone = '未绑定',
+  wechat = '未绑定',
+  onLogout,
+  onClose,
+  onOpenProfile,
+}) {
   const [nameVal, setNameVal] = useState(userName || '');
-  const [deleteConfirm, setDeleteConfirm] = useState(false);
+  const [deleteStep, setDeleteStep] = useState(null); // null | 'confirm' | 'verify'
   const [avatarUrl, setAvatarUrl] = useState(null);
   const [wechatView, setWechatView] = useState('profile');
   const [boundWechat, setBoundWechat] = useState(wechat || null);
@@ -713,15 +790,26 @@ export default function ProfileModal({ open, onClose, userId, phone, wechat, use
               ) : (
                 <WechatUnboundRow onBind={() => setWechatView('qrcode')} />
               )}
-              <DangerRow label="注销账号" value="永久删除账号及所有数据" onClick={() => setDeleteConfirm(true)} />
+              <DangerRow label="注销账号" value="永久删除账号及所有数据" onClick={() => setDeleteStep('confirm')} />
             </div>
           </>
         )}
       </div>
-      {deleteConfirm && (
+      {deleteStep === 'confirm' && (
         <DeleteConfirmDialog
-          onConfirm={async () => { await apiDeleteAccount(); setDeleteConfirm(false); onClose?.(); }}
-          onCancel={() => setDeleteConfirm(false)}
+          onConfirm={() => setDeleteStep('verify')}
+          onCancel={() => setDeleteStep(null)}
+        />
+      )}
+      {deleteStep === 'verify' && (
+        <DeleteVerifyDialog
+          maskedPhone={boundPhone}
+          onConfirm={async () => {
+            await apiDeleteAccount();
+            setDeleteStep(null);
+            onLogout?.();
+          }}
+          onCancel={() => setDeleteStep(null)}
         />
       )}
       {phoneUnbindStep === 'step1' && (
