@@ -1,6 +1,6 @@
 # miioo 项目进度管理文档
 
-> 最后更新：2026-05-25（创作图片区滚动布局定稿）
+> 最后更新：2026-05-26（创作页分标签历史 + 多项 Bug 修复）
 
 ---
 
@@ -332,6 +332,27 @@ miioo/
   - InputCard 移出滚动容器，改为 in-flow 布局（`flexShrink: 0`），不再使用 `position: absolute`
   - `useRef + useEffect` 监听 `allCards.length`，每次新卡片加入自动 `scrollTop = scrollHeight` 滚到最新
   - 修复 flex 链路上 5 处缺失的 `minHeight: 0`（`CreationPage.jsx` 3 处 + `Home.jsx` 2 处），确保 overflow 生效
+- [x] 创作页 — 批量操作交互（2026-05-26）：
+  - 新增 `CreationGhostBtn` / `CreationPlainBtn` 两个内部按钮组件（样式与 AssetsPage 的 GhostBtn/PlainBtn 对齐）
+  - `CreationPage` 新增 `batchMode`、`selected`（Set）两个 state，新增 `exitBatch`、`selectAll`、`deleteSelected`、`downloadSelected`、`toggleSelect` 五个操作函数
+  - 顶部操作栏条件渲染：普通态显示「批量操作」按钮，批量态显示「已选N项 / 全选 / 下载 / 删除 / 取消」行
+  - `ImageResultCard` 批量模式下右上角显示复选框，选中态显示蓝色勾（`#2DC3E1`）；点击卡片切换选中，hover 遮罩批量模式下隐藏
+  - `selectAll` 仅选中 done 状态（有图片）的卡片，loading/error 卡片不参与全选
+  - 切换 tab / genType 时自动退出批量模式并清空选中
+- [x] 创作页 — Bug 修复 & 功能补全（2026-05-26）：
+  - `ImageDetailModal` 重复定义修复：删除旧的破损定义，保留一份完整实现
+  - 卡片 hover 按钮背景修正：悬停时背景加深（`#000000B3`），而非变浅
+  - `isImageFile()` 修复：URL 无扩展名时（如 picsum 链接）fallback 至 `file.name` 判断，修复「用作参考图」后显示文件名卡片而非缩略图的问题，同时修复重新编辑无法还原参考图的问题
+  - `StarIcon` 支持 `strokeColor` prop：卡片列表默认纯白，详情弹窗底部按钮传 `rgba(255,255,255,0.6)` 60% 白
+  - 详情弹窗去掉双层 `createPortal` 包裹，`ImageDetailModal` 自身已内部 portal，外层无需再包
+  - `InputCard` 新增 `prefillVersion` / `prefillData` props，重新编辑时回填 prompt / 参考图 / ratio / resolution；「用作参考图」时仅回填图片文件
+  - `src/api/creation.js` 新增 `apiSaveCreationAsset`（POST /api/users/me/creative-assets，mock 模式 localStorage）
+  - `handleGenerate` 成功后逐图 fire-and-forget 调用 `apiSaveCreationAsset`，所有生成图片自动存入创作资产库，无需手动保存按钮
+- [x] 创作页 — 分标签独立生成历史（2026-05-26）：
+  - `generations` 拆分为 `generationsByTab: { image, video, dubbing }` 三个独立列表
+  - `const generations = generationsByTab[activeTab]` 派生当前 tab 视图，所有下游组件不变
+  - `handleGenerate` 调用时捕获 `currentTab`，异步回调更新正确 tab 切片，防止生成中途切 tab 写错
+  - 效果：图片/视频/配音各自维护独立历史，切 tab 互不干扰；离开页面再回来三个 tab 均重置（已实时存入创作资产库）
 - [ ] 项目工作流 — 剪辑成片
 - [ ] 创作页（生视频）
 - [ ] 资产库

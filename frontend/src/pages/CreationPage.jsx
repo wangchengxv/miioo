@@ -1,11 +1,44 @@
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { PulsingBorder } from '@paper-design/shaders-react';
-import { apiGenerateCreation, apiGetCreationModels, apiGetCreationParams } from '../api/creation';
+import { apiGenerateCreation, apiGetCreationModels, apiGetCreationParams, apiSaveCreationAsset } from '../api/creation';
 import AssetPickerModal from '../components/AssetPickerModal';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
+
+// Matches AssetsPage StarIcon — golden fill when starred, configurable stroke otherwise
+function StarIcon({ filled = false, strokeColor = '#FFFFFF' }) {
+  return (
+    <svg width="16" height="16" viewBox="0 0 14 14" fill="none" style={{ flexShrink: 0 }}>
+      <path
+        d="M7 1.5l1.545 3.13 3.455.503-2.5 2.436.59 3.44L7 9.369l-3.09 1.64.59-3.44L2 5.133l3.455-.503L7 1.5z"
+        fill={filled ? '#F0B429' : 'none'}
+        stroke={filled ? '#F0B429' : strokeColor}
+        strokeWidth="1.1"
+        strokeLinejoin="round"
+      />
+    </svg>
+  );
+}
+
+async function downloadImage(url) {
+  if (!url) return;
+  try {
+    const res = await fetch(url);
+    const blob = await res.blob();
+    const objUrl = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = objUrl;
+    a.download = 'creation.png';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(objUrl);
+  } catch {
+    window.open(url, '_blank');
+  }
+}
 
 const ALLOWED_EXTS = ['.txt', '.md', '.pdf', '.docx'];
 const ALLOWED_IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff', '.tif', '.heic', '.heif'];
@@ -375,7 +408,10 @@ function ImageViewModal({ imageUrl, onClose }) {
 const IMAGE_EXTS_SET = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff', '.tif', '.heic', '.heif']);
 
 function isImageFile(file) {
-  if (file.isAsset && file.url) return /\.(jpg|jpeg|png|webp|gif|bmp|tiff?|heic|heif)$/i.test(file.url);
+  if (file.isAsset && file.url) {
+    if (/\.(jpg|jpeg|png|webp|gif|bmp|tiff?|heic|heif)$/i.test(file.url)) return true;
+    // URL has no extension (e.g. picsum.photos) — fall through to check file.name
+  }
   const ext = '.' + (file.name || '').split('.').pop().toLowerCase();
   return IMAGE_EXTS_SET.has(ext);
 }
@@ -1467,7 +1503,7 @@ function formatMentionLabel(name) {
 }
 
 function InputCard({ onGenerate, width = '800px', disabled = false, genType, onGenTypeChange,
-  model, onModelChange, modelOptions = [], creationParams }) {
+  model, onModelChange, modelOptions = [], creationParams, prefillVersion = 0, prefillData = null }) {
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const [hasContent, setHasContent] = useState(false);
@@ -1515,6 +1551,22 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
     ensureRotateKeyframe();
     ensureThinkingStyle();
   }, []);
+
+  // Apply prefill when version bumps (re-edit or use-as-ref)
+  useEffect(() => {
+    if (!prefillVersion || !prefillData) return;
+    if (prefillData.prompt !== undefined && editorRef.current) {
+      editorRef.current.innerHTML = '';
+      if (prefillData.prompt) {
+        editorRef.current.textContent = prefillData.prompt;
+      }
+      setHasContent((prefillData.prompt || '').trim().length > 0);
+    }
+    if (prefillData.files !== undefined) setFiles(prefillData.files);
+    if (prefillData.ratio !== undefined) setRatio(prefillData.ratio);
+    if (prefillData.resolution !== undefined) setResolution(prefillData.resolution);
+    if (prefillData.count !== undefined) setCount(prefillData.count);
+  }, [prefillVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const mentionMenuRef = useRef(null);
   useEffect(() => {
@@ -2080,69 +2132,528 @@ const EMPTY_ICON_MAP = {
   dubbing: CreationEmptyIconDubbing,
 };
 
-// ─── Result state ─────────────────────────────────────────────────────────────
-function ImageResultCard({ status, imageUrl }) {
-  useEffect(() => { ensureShimmerStyle(); }, []);
-
-  return (
+// ─── Confirm delete modal ────────────────────────────────────────────────────
+function ConfirmDeleteModal({ onConfirm, onCancel }) {
+  const [confirmHov, setConfirmHov] = useState(false);
+  const [cancelHov, setCancelHov] = useState(false);
+  return createPortal(
     <div
-      style={{
-        width: '320px',
-        height: '180px',
-        flexShrink: 0,
-        borderRadius: '8px',
-        overflow: 'hidden',
-        backgroundColor: '#1A1A1A',
-      }}
+      style={{ position: 'fixed', inset: 0, zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' }}
+      onClick={onCancel}
     >
-      {status === 'loading' ? (
-        <div className="creation-shimmer" style={{ width: '100%', height: '100%' }} />
-      ) : status === 'done' && imageUrl ? (
-        <img
-          src={imageUrl}
-          alt=""
-          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-        />
-      ) : (
-        <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <span style={{ color: '#FFFFFF33', fontSize: '12px', fontFamily: FONT }}>生成失败</span>
+      <div
+        style={{ width: '320px', borderRadius: '12px', border: '1px solid #FFFFFF14', backgroundColor: '#161616', padding: '24px 24px 20px', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '#00000099 0px 8px 32px' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ fontFamily: FONT_MEDIUM, fontSize: '16px', lineHeight: '20px', color: '#FFFFFF' }}>确认删除</div>
+        <div style={{ fontFamily: FONT, fontSize: '13px', lineHeight: '20px', color: '#FFFFFF99' }}>
+          删除后无法恢复，确定要删除这张图片吗？
+        </div>
+        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', paddingTop: '4px' }}>
+          <button
+            type="button"
+            onClick={onCancel}
+            onMouseEnter={() => setCancelHov(true)}
+            onMouseLeave={() => setCancelHov(false)}
+            style={{ height: '32px', padding: '0 16px', borderRadius: '8px', border: '1px solid #FFFFFF14', backgroundColor: cancelHov ? '#FFFFFF14' : '#FFFFFF0A', color: '#FFFFFFCC', fontFamily: FONT, fontSize: '13px', cursor: 'pointer', transition: 'background-color 0.15s' }}
+          >取消</button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            onMouseEnter={() => setConfirmHov(true)}
+            onMouseLeave={() => setConfirmHov(false)}
+            style={{ height: '32px', padding: '0 16px', borderRadius: '8px', border: 'none', backgroundColor: confirmHov ? '#E53E3E' : '#C53030', color: '#FFFFFF', fontFamily: FONT, fontSize: '13px', cursor: 'pointer', transition: 'background-color 0.15s' }}
+          >删除</button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+// ─── Card action button with tooltip ─────────────────────────────────────────
+function CardActionBtn({ icon, tooltip, onClick }) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <div style={{ position: 'relative', flexShrink: 0 }}>
+      {hovered && (
+        <div style={{
+          position: 'absolute',
+          bottom: 'calc(100% + 4px)',
+          left: '50%',
+          translate: '-50% 0',
+          backgroundColor: '#111111',
+          borderRadius: '4px',
+          padding: '2px 8px',
+          whiteSpace: 'nowrap',
+          pointerEvents: 'none',
+          zIndex: 10,
+        }}>
+          <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: '#FFFFFF' }}>{tooltip}</span>
         </div>
       )}
+      <button
+        type="button"
+        onClick={onClick}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        style={{
+          width: '24px',
+          height: '24px',
+          borderRadius: '6px',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          backgroundColor: hovered ? '#000000B3' : '#00000080',
+          border: 'none',
+          cursor: 'pointer',
+          flexShrink: 0,
+          transition: 'background-color 0.15s',
+        }}
+      >
+        {icon}
+      </button>
     </div>
   );
 }
 
-function CreationResultState({ generations, onGenerate, genType, onGenTypeChange, model, onModelChange, modelOptions, creationParams }) {
+// ─── Image detail modal ───────────────────────────────────────────────────────
+function formatCreationDate(isoString) {
+  if (!isoString) return '';
+  const d = new Date(isoString);
+  const pad = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+}
+
+function ModalActionBtn({ icon, label, onClick }) {
+  const [hovered, setHovered] = useState(false);
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => setHovered(false)}
+      style={{
+        flex: 1,
+        height: '40px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: '4px',
+        borderRadius: '8px',
+        border: '1px solid #FFFFFF1F',
+        backgroundColor: hovered ? '#FFFFFF1F' : '#FFFFFF14',
+        cursor: 'pointer',
+        transition: 'background-color 0.15s',
+      }}
+    >
+      {icon}
+      <span style={{ fontFamily: FONT, fontSize: '13px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFF99' }}>{label}</span>
+    </button>
+  );
+}
+
+const DETAIL_PANEL_DIVIDER = (
+  <div style={{ height: '1px', backgroundColor: '#FFFFFF0A', marginLeft: '20px', marginRight: '20px', flexShrink: 0 }} />
+);
+
+function ImageDetailModal({ card, onClose, onDelete, favorited, onToggleFavorite }) {
+  const [starAnim, setStarAnim] = useState(false);
+  const [closeHovered, setCloseHovered] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+
+  function handleStarClick() {
+    setStarAnim(true);
+    setTimeout(() => setStarAnim(false), 300);
+    onToggleFavorite?.();
+  }
+
+  return (
+    <>
+      {createPortal(
+        <div
+          style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
+          onClick={onClose}
+        >
+          <div
+            style={{ width: '960px', borderRadius: '16px', border: '1px solid #FFFFFF14', backgroundColor: '#161616', boxShadow: '#00000099 -10px 24px 64px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 24px', backgroundColor: '#161616', flexShrink: 0 }}>
+              <span style={{ fontFamily: FONT_MEDIUM, fontSize: '16px', fontWeight: 500, lineHeight: '20px', letterSpacing: '0.01em', color: '#FFFFFF' }}>查看详情</span>
+              <div
+                style={{ cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', width: '24px', height: '24px', borderRadius: '6px', background: closeHovered ? '#FFFFFF14' : 'transparent', transition: 'background 120ms' }}
+                onClick={onClose}
+                onMouseEnter={() => setCloseHovered(true)}
+                onMouseLeave={() => setCloseHovered(false)}
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path d="M12 4L4 12M4 4L12 12" stroke={closeHovered ? '#FFFFFF' : '#FFFFFF99'} strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+              </div>
+            </div>
+
+            {/* Body */}
+            <div style={{ display: 'flex', height: '540px' }}>
+              {/* Left: image viewer */}
+              <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#0A0A0A', position: 'relative', overflow: 'hidden' }}>
+                {card.imageUrl && (
+                  <div style={{
+                    position: 'absolute',
+                    left: 0,
+                    right: 0,
+                    top: '50%',
+                    transform: 'translateY(-50%)',
+                    height: '70%',
+                    backgroundImage: `url(${card.imageUrl})`,
+                    backgroundSize: 'contain',
+                    backgroundPosition: '50%',
+                    backgroundRepeat: 'no-repeat',
+                  }} />
+                )}
+              </div>
+
+              {/* Right: info panel */}
+              <div style={{ width: '280px', flexShrink: 0, backgroundColor: '#161616', borderLeft: '1px solid #FFFFFF0F', display: 'flex', flexDirection: 'column', height: '540px', overflowY: 'auto' }}>
+                {DETAIL_PANEL_DIVIDER}
+
+                {/* 提示词 */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '16px 20px', flexShrink: 0 }}>
+                  <div style={{ fontFamily: FONT, fontSize: '11px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>提示词</div>
+                  <div style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '20px', letterSpacing: '0.01em', color: '#FFFFFFCC' }}>{card.prompt || '—'}</div>
+                </div>
+
+                {/* 参考图 */}
+                {card.refImages && card.refImages.length > 0 && (
+                  <>
+                    {DETAIL_PANEL_DIVIDER}
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px 20px', flexShrink: 0 }}>
+                      <div style={{ fontFamily: FONT, fontSize: '11px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>参考图</div>
+                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+                        {card.refImages.map((img, i) => {
+                          const imgUrl = img.url || img.previewUrl || '';
+                          return (
+                            <div key={i} style={{
+                              width: 'calc(50% - 6px)',
+                              height: '84px',
+                              borderRadius: '6px',
+                              border: '1px solid #FFFFFF14',
+                              backgroundColor: '#FFFFFF14',
+                              overflow: 'hidden',
+                              flexShrink: 0,
+                              backgroundImage: imgUrl ? `url(${imgUrl})` : 'none',
+                              backgroundSize: 'cover',
+                              backgroundPosition: 'center',
+                            }} />
+                          );
+                        })}
+                      </div>
+                    </div>
+                  </>
+                )}
+
+                {DETAIL_PANEL_DIVIDER}
+
+                {/* 生成参数 */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px 20px', flexShrink: 0 }}>
+                  <div style={{ fontFamily: FONT, fontSize: '11px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>生成参数</div>
+                  {card.model && (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFF99' }}>模型</span>
+                      <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFFCC' }}>{card.model}</span>
+                    </div>
+                  )}
+                  {card.ratio && (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFF99' }}>画面比例</span>
+                      <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFFCC' }}>{card.ratio}</span>
+                    </div>
+                  )}
+                  {card.resolution && (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                      <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFF99' }}>分辨率</span>
+                      <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFFCC' }}>{card.resolution}</span>
+                    </div>
+                  )}
+                </div>
+
+                {DETAIL_PANEL_DIVIDER}
+
+                {/* AI生成时间 */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '16px 20px', flexShrink: 0 }}>
+                  <div style={{ fontFamily: FONT, fontSize: '11px', lineHeight: '14px', letterSpacing: '0.66px', textTransform: 'uppercase', color: '#FFFFFF99' }}>AI 生成时间</div>
+                  <div style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.12px', color: '#FFFFFF66' }}>{formatCreationDate(card.createdAt)}</div>
+                </div>
+
+                {DETAIL_PANEL_DIVIDER}
+
+                {/* Spacer */}
+                <div style={{ flex: 1 }} />
+
+                {/* Bottom actions */}
+                <div style={{ display: 'flex', gap: '8px', padding: '16px 20px 20px', flexShrink: 0 }}>
+                  <ModalActionBtn
+                    label="收藏"
+                    onClick={handleStarClick}
+                    icon={
+                      <div style={{ transform: starAnim ? 'scale(1.4)' : 'scale(1)', transition: 'transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1)', display: 'flex' }}>
+                        <StarIcon filled={favorited} strokeColor="rgba(255,255,255,0.6)" />
+                      </div>
+                    }
+                  />
+                  <ModalActionBtn
+                    label="下载"
+                    onClick={() => downloadImage(card.imageUrl)}
+                    icon={
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                        <path d="M8.003 11.3V2" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
+                        <path d="M4 7.333L8 11.333L12 7.333" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
+                        <path d="M4 14H12" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    }
+                  />
+                  <ModalActionBtn
+                    label="删除"
+                    onClick={() => setConfirmDelete(true)}
+                    icon={
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                        <path d="M3 3.333V14.667H13V3.333H3Z" stroke="#FFFFFF99" strokeLinejoin="round" />
+                        <path d="M6.667 6.667V11" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
+                        <path d="M9.333 6.667V11" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
+                        <path d="M1.333 3.333H14.667" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
+                        <path d="M5.333 3.333L6.43 1.333H9.592L10.667 3.333H5.333Z" stroke="#FFFFFF99" strokeLinejoin="round" />
+                      </svg>
+                    }
+                  />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+      {confirmDelete && (
+        <ConfirmDeleteModal
+          onConfirm={() => { setConfirmDelete(false); onDelete?.(); }}
+          onCancel={() => setConfirmDelete(false)}
+        />
+      )}
+    </>
+  );
+}
+
+// ─── Result state ─────────────────────────────────────────────────────────────
+function ImageResultCard({ status, imageUrl, prompt, model, ratio, resolution, refImages, createdAt, onReEdit, onUseAsRef, onDelete, onSave, batchMode = false, isSelected = false, onToggleSelect }) {
+  const [hovered, setHovered] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [favorited, setFavorited] = useState(false);
+  const [starAnim, setStarAnim] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  useEffect(() => { ensureShimmerStyle(); }, []);
+
+  const isDone = status === 'done' && imageUrl;
+
+  function handleStarClick(e) {
+    e.stopPropagation();
+    setStarAnim(true);
+    setTimeout(() => setStarAnim(false), 300);
+    setFavorited((v) => !v);
+  }
+
+  return (
+    <>
+      <div
+        style={{
+          width: '320px',
+          height: '180px',
+          flexShrink: 0,
+          borderRadius: '8px',
+          overflow: 'hidden',
+          backgroundColor: '#1A1A1A',
+          position: 'relative',
+          cursor: isDone ? 'pointer' : 'default',
+          outline: isSelected ? '2px solid #2DC3E1' : 'none',
+          outlineOffset: '-2px',
+        }}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        onClick={() => {
+          if (batchMode && isDone) { onToggleSelect?.(); return; }
+          if (isDone) setDetailOpen(true);
+        }}
+      >
+        {status === 'loading' ? (
+          <div className="creation-shimmer" style={{ width: '100%', height: '100%' }} />
+        ) : isDone ? (
+          <img src={imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+        ) : (
+          <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span style={{ color: '#FFFFFF33', fontSize: '12px', fontFamily: FONT }}>生成失败</span>
+          </div>
+        )}
+
+        {/* Batch mode: checkbox overlay */}
+        {batchMode && isDone && (
+          <div style={{
+            position: 'absolute', top: '8px', right: '8px',
+            width: '18px', height: '18px', borderRadius: '4px', zIndex: 1,
+            border: isSelected ? '1px solid #2DC3E1' : '1px solid rgba(255,255,255,0.5)',
+            backgroundColor: isSelected ? '#2DC3E1' : 'rgba(0,0,0,0.5)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+          }}>
+            {isSelected && (
+              <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
+                <path d="M1 4L3.5 6.5L9 1" stroke="#000" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            )}
+          </div>
+        )}
+
+        {/* Hover overlays */}
+        {hovered && isDone && !batchMode && (
+          <>
+            {/* Top-right: favorite */}
+            <button
+              type="button"
+              onClick={handleStarClick}
+              style={{
+                position: 'absolute', top: '8px', right: '8px',
+                width: '24px', height: '24px', borderRadius: '6px',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                backgroundColor: '#00000080', border: 'none', cursor: 'pointer',
+                transform: starAnim ? 'scale(1.4)' : 'scale(1)',
+                transition: 'transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1)',
+              }}
+            >
+              <StarIcon filled={favorited} />
+            </button>
+
+            {/* Bottom-right: action buttons */}
+            <div
+              style={{ position: 'absolute', bottom: '8px', right: '8px', display: 'flex', gap: '4px' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <CardActionBtn
+                tooltip="重新编辑"
+                onClick={() => onReEdit?.()}
+                icon={
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <path d="M2.333 14H14.333" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M3.667 8.907V11.333H6.106L13 4.436L10.565 2L3.667 8.907Z" stroke="#FFFFFF" strokeLinejoin="round" />
+                  </svg>
+                }
+              />
+              <CardActionBtn
+                tooltip="用作参考图"
+                onClick={() => onUseAsRef?.()}
+                icon={
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <path d="M12.667 7V13.333C12.667 13.702 12.368 14 12 14H2.667C2.298 14 2 13.702 2 13.333V4C2 3.632 2.298 3.333 2.667 3.333H8.788" stroke="#FFFFFF" strokeMiterlimit="10" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M4 10.344L6 7.667L7 8.667L8.167 6.833L10.667 10.344H4Z" stroke="#FFFFFF" strokeMiterlimit="10" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M11.334 3.333H14.001" stroke="#FFFFFF" strokeMiterlimit="10" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M12.664 1.932V4.598" stroke="#FFFFFF" strokeMiterlimit="10" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                }
+              />
+              <CardActionBtn
+                tooltip="下载"
+                onClick={() => downloadImage(imageUrl)}
+                icon={
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <path d="M8.003 11.3V2" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M4 7.333L8 11.333L12 7.333" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M4 14H12" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                }
+              />
+              <CardActionBtn
+                tooltip="删除"
+                onClick={() => setConfirmDelete(true)}
+                icon={
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <path d="M3 3.333V14.667H13V3.333H3Z" stroke="#FFFFFF" strokeLinejoin="round" />
+                    <path d="M6.667 6.667V11" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M9.333 6.667V11" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M1.333 3.333H14.667" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M5.333 3.333L6.43 1.333H9.592L10.667 3.333H5.333Z" stroke="#FFFFFF" strokeLinejoin="round" />
+                  </svg>
+                }
+              />
+            </div>
+          </>
+        )}
+      </div>
+
+      {detailOpen && (
+        <ImageDetailModal
+          card={{ imageUrl, prompt, model, ratio, resolution, refImages, createdAt }}
+          onClose={() => setDetailOpen(false)}
+          onDelete={() => { setDetailOpen(false); onDelete?.(); }}
+          favorited={favorited}
+          onToggleFavorite={() => { setStarAnim(true); setTimeout(() => setStarAnim(false), 300); setFavorited((v) => !v); }}
+        />
+      )}
+
+      {confirmDelete && createPortal(
+        <ConfirmDeleteModal
+          onConfirm={() => { setConfirmDelete(false); onDelete?.(); }}
+          onCancel={() => setConfirmDelete(false)}
+        />,
+        document.body
+      )}
+    </>
+  );
+}
+
+function CreationResultState({ generations, onGenerate, genType, onGenTypeChange, model, onModelChange, modelOptions, creationParams, onDeleteCard, batchMode = false, selected, onToggleSelect }) {
   const scrollRef = useRef(null);
-  const allCards = generations.flatMap((gen) => gen.cards.map((card, i) => ({ ...card, key: `${gen.id}-${i}` })));
+  const [prefillVersion, setPrefillVersion] = useState(0);
+  const [prefillData, setPrefillData] = useState(null);
+
+  // Newest generation first — index 0 is the most recently generated image
+  const allCards = [...generations].reverse().flatMap((gen) =>
+    gen.cards.map((card, i) => ({
+      ...card,
+      key: `${gen.id}-${i}`,
+      genId: gen.id,
+      cardIndex: i,
+      prompt: gen.prompt,
+      model: gen.model,
+      ratio: gen.ratio,
+      resolution: gen.resolution,
+      refImages: gen.refImages,
+      createdAt: gen.createdAt,
+    }))
+  );
 
   useEffect(() => {
     if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      scrollRef.current.scrollTop = 0;
     }
-  }, [allCards.length]);
+  }, [generations.length]);
 
   return (
     <div
       style={{
-        display: 'flex',
+        position: 'relative',
         flex: 1,
         minHeight: 0,
-        flexDirection: 'column',
         alignSelf: 'stretch',
+        overflow: 'hidden',
       }}
     >
-      {/* image grid: flex:1 fills remaining space, overflowY scrolls internally */}
+      {/* Image grid: absolutely fills the container, scrolls internally */}
       <div
         ref={scrollRef}
         style={{
-          flex: 1,
-          minHeight: 0,
+          position: 'absolute',
+          inset: 0,
           overflowY: 'auto',
           paddingTop: '16px',
           paddingLeft: '32px',
           paddingRight: '32px',
-          paddingBottom: '16px',
+          paddingBottom: '220px',
         }}
       >
         <div
@@ -2154,16 +2665,74 @@ function CreationResultState({ generations, onGenerate, genType, onGenTypeChange
           }}
         >
           {allCards.map((card) => (
-            <ImageResultCard key={card.key} status={card.status} imageUrl={card.imageUrl} />
+            <ImageResultCard
+              key={card.key}
+              {...card}
+              batchMode={batchMode}
+              isSelected={batchMode && selected?.has(card.key)}
+              onToggleSelect={() => onToggleSelect?.(card.key)}
+              onReEdit={() => {
+                setPrefillData({
+                  prompt: card.prompt,
+                  files: (card.refImages || []).map((img) => ({
+                    name: img.name || 'ref.png',
+                    url: img.url || img.previewUrl || '',
+                    previewUrl: img.url || img.previewUrl || '',
+                    isAsset: true,
+                    size: 0,
+                  })),
+                  ratio: card.ratio,
+                  resolution: card.resolution,
+                  count: undefined,
+                });
+                setPrefillVersion((v) => v + 1);
+              }}
+              onUseAsRef={() => {
+                setPrefillData({
+                  files: [{ name: 'creation.png', url: card.imageUrl, previewUrl: card.imageUrl, isAsset: true, size: 0 }],
+                });
+                setPrefillVersion((v) => v + 1);
+              }}
+              onDelete={() => onDeleteCard?.(card.genId, card.cardIndex)}
+            />
           ))}
         </div>
       </div>
 
-      {/* InputCard: in flow, always at bottom */}
-      <div style={{ flexShrink: 0, display: 'flex', justifyContent: 'center', paddingLeft: '32px', paddingRight: '32px', paddingBottom: '16px', paddingTop: '8px' }}>
+      {/* Gradient fade: bridges images and InputCard, does not intercept clicks */}
+      <div
+        style={{
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          height: '50%',
+          background: 'linear-gradient(to bottom, transparent, #161616)',
+          pointerEvents: 'none',
+          zIndex: 1,
+        }}
+      />
+
+      {/* InputCard: floating above the gradient */}
+      <div
+        style={{
+          position: 'absolute',
+          bottom: 0,
+          left: 0,
+          right: 0,
+          display: 'flex',
+          justifyContent: 'center',
+          paddingLeft: '32px',
+          paddingRight: '32px',
+          paddingBottom: '16px',
+          paddingTop: '8px',
+          zIndex: 2,
+        }}
+      >
         <div style={{ width: 'min(800px, 100%)' }}>
           <InputCard onGenerate={onGenerate} width="100%" genType={genType} onGenTypeChange={onGenTypeChange}
-            model={model} onModelChange={onModelChange} modelOptions={modelOptions} creationParams={creationParams} />
+            model={model} onModelChange={onModelChange} modelOptions={modelOptions} creationParams={creationParams}
+            prefillVersion={prefillVersion} prefillData={prefillData} />
         </div>
       </div>
     </div>
@@ -2324,17 +2893,62 @@ function BatchButton({ onClick }) {
   );
 }
 
+// ─── Batch action buttons ─────────────────────────────────────────────────────
+function CreationGhostBtn({ children, onClick }) {
+  const [hov, setHov] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      style={{ display: 'flex', flexDirection: 'column', height: '36px', flexShrink: 0, borderRadius: '8px', padding: '1px', boxShadow: '#00000066 3px 3px 8px', backgroundImage: 'linear-gradient(in oklab 148.76deg, oklab(94.7% -0.078 -0.022 / 30%) 3.64%, oklab(75.5% -0.102 -0.072 / 0%) 42.81%), linear-gradient(in oklab 180deg, #FFFFFF14, #FFFFFF14)', outline: '1px solid #00000080', border: 'none', cursor: 'pointer', opacity: pressed ? 0.75 : 1, transition: 'opacity 0.1s' }}
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => { setHov(false); setPressed(false); }}
+      onMouseDown={() => setPressed(true)}
+      onMouseUp={() => setPressed(false)}
+      onClick={onClick}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', flexGrow: 1, flexShrink: 1, flexBasis: '0%', borderRadius: '7px', paddingLeft: '15px', paddingRight: '15px', gap: '4px', backgroundColor: pressed ? '#252525' : hov ? '#1D1E1E' : '#161616', transition: 'background-color 0.12s' }}>
+        {children}
+      </div>
+    </div>
+  );
+}
+
+function CreationPlainBtn({ children, onClick }) {
+  const [hov, setHov] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  return (
+    <div
+      role="button"
+      tabIndex={0}
+      style={{ display: 'flex', alignItems: 'center', height: '36px', flexShrink: 0, borderRadius: '8px', paddingLeft: '16px', paddingRight: '16px', gap: '4px', boxShadow: '#00000066 3px 3px 8px', backgroundColor: pressed ? '#252525' : hov ? '#1D1E1E' : '#161616', border: '1px solid #FFFFFF0D', outline: '1px solid #00000080', cursor: 'pointer', transition: 'background-color 0.12s', opacity: pressed ? 0.8 : 1 }}
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => { setHov(false); setPressed(false); }}
+      onMouseDown={() => setPressed(true)}
+      onMouseUp={() => setPressed(false)}
+      onClick={onClick}
+    >
+      {children}
+    </div>
+  );
+}
+
 // ─── Main page ────────────────────────────────────────────────────────────────
 export default function CreationPage() {
   const [activeTab, setActiveTab] = useState('image');
   const [genType, setGenType] = useState('image');
   const [generating, setGenerating] = useState(false);
-  const [generations, setGenerations] = useState([]); // array of { id, ratio, cards: [{status, imageUrl}] }
+  const [generationsByTab, setGenerationsByTab] = useState({ image: [], video: [], dubbing: [] });
+  const generations = generationsByTab[activeTab] ?? [];
 
   // Models and params are backend-driven; loaded on genType change and model change
   const [modelOptions, setModelOptions] = useState([]);
   const [model, setModel] = useState('');
   const [creationParams, setCreationParams] = useState(null); // { ratios, resolutions, counts/durations, refModes? }
+
+  const [batchMode, setBatchMode] = useState(false);
+  const [selected, setSelected] = useState(new Set());
 
   // Load model list when genType changes; reset model to first option
   useEffect(() => {
@@ -2362,10 +2976,77 @@ export default function CreationPage() {
   const handleTabChange = (tab) => {
     setActiveTab(tab);
     setGenType(tab);
+    setBatchMode(false);
+    setSelected(new Set());
   };
   const handleGenTypeChange = (type) => {
     setGenType(type);
     setActiveTab(type);
+    setBatchMode(false);
+    setSelected(new Set());
+  };
+
+  function exitBatch() {
+    setBatchMode(false);
+    setSelected(new Set());
+  }
+
+  function selectAll() {
+    const allDoneKeys = [...generations].reverse().flatMap((gen) =>
+      gen.cards.map((card, i) => ({ key: `${gen.id}-${i}`, isDone: card.status === 'done' && !!card.imageUrl }))
+    ).filter(({ isDone }) => isDone).map(({ key }) => key);
+    const isAllSelected = allDoneKeys.length > 0 && allDoneKeys.every((k) => selected.has(k));
+    setSelected(isAllSelected ? new Set() : new Set(allDoneKeys));
+  }
+
+  function deleteSelected() {
+    const toDelete = {};
+    selected.forEach((key) => {
+      const lastDash = key.lastIndexOf('-');
+      const genId = key.slice(0, lastDash);
+      const cardIdx = parseInt(key.slice(lastDash + 1));
+      if (!toDelete[genId]) toDelete[genId] = new Set();
+      toDelete[genId].add(cardIdx);
+    });
+    setGenerationsByTab((prev) => ({
+      ...prev,
+      [activeTab]: prev[activeTab]
+        .map((gen) => {
+          if (!toDelete[gen.id]) return gen;
+          const indicesToDelete = toDelete[gen.id];
+          return { ...gen, cards: gen.cards.filter((_, i) => !indicesToDelete.has(i)) };
+        }).filter((gen) => gen.cards.length > 0),
+    }));
+    setSelected(new Set());
+  }
+
+  function downloadSelected() {
+    [...generations].reverse().forEach((gen) => {
+      gen.cards.forEach((card, i) => {
+        const key = `${gen.id}-${i}`;
+        if (selected.has(key) && card.imageUrl) downloadImage(card.imageUrl);
+      });
+    });
+  }
+
+  function toggleSelect(key) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key); else next.add(key);
+      return next;
+    });
+  }
+
+  const handleDeleteCard = (genId, cardIdx) => {
+    setGenerationsByTab((prev) => ({
+      ...prev,
+      [activeTab]: prev[activeTab]
+        .map((gen) => {
+          if (gen.id !== genId) return gen;
+          const newCards = gen.cards.filter((_, i) => i !== cardIdx);
+          return { ...gen, cards: newCards };
+        }).filter((gen) => gen.cards.length > 0),
+    }));
   };
 
   const handleGenerate = async (params) => {
@@ -2373,21 +3054,38 @@ export default function CreationPage() {
     // Parse count: '2张' → 2, fallback to 1
     const countNum = parseInt(params.count) || 1;
     const genId = `gen-${Date.now()}`;
+    const currentTab = activeTab;
     // Immediately add loading placeholders
-    setGenerations((prev) => [
+    setGenerationsByTab((prev) => ({
       ...prev,
-      {
-        id: genId,
-        ratio: params.ratio || '16:9',
-        cards: Array.from({ length: countNum }, () => ({ status: 'loading', imageUrl: null })),
-      },
-    ]);
+      [currentTab]: [
+        ...prev[currentTab],
+        {
+          id: genId,
+          ratio: params.ratio || '16:9',
+          resolution: params.resolution || '',
+          model: params.model || '',
+          prompt: params.prompt || '',
+          refImages: (params.files || []).filter((f) => isImageFile(f)),
+          createdAt: new Date().toISOString(),
+          cards: Array.from({ length: countNum }, () => ({ status: 'loading', imageUrl: null })),
+        },
+      ],
+    }));
     try {
       const result = await apiGenerateCreation(params);
-      // result.images: array of URL strings (mock returns taskId only, so we simulate)
       const images = result.images ?? [];
-      setGenerations((prev) =>
-        prev.map((gen) => {
+      const genMeta = {
+        prompt: params.prompt || '',
+        model: params.model || '',
+        ratio: params.ratio || '16:9',
+        resolution: params.resolution || '',
+        createdAt: new Date().toISOString(),
+        genType: params.genType || 'image',
+      };
+      setGenerationsByTab((prev) => ({
+        ...prev,
+        [currentTab]: prev[currentTab].map((gen) => {
           if (gen.id !== genId) return gen;
           return {
             ...gen,
@@ -2396,15 +3094,22 @@ export default function CreationPage() {
               imageUrl: images[i] ?? null,
             })),
           };
-        })
-      );
+        }),
+      }));
+      // Auto-save each successfully generated image to the asset library
+      images.forEach((imageUrl) => {
+        if (imageUrl) {
+          apiSaveCreationAsset({ ...genMeta, imageUrl }).catch(() => {});
+        }
+      });
     } catch {
-      setGenerations((prev) =>
-        prev.map((gen) => {
+      setGenerationsByTab((prev) => ({
+        ...prev,
+        [currentTab]: prev[currentTab].map((gen) => {
           if (gen.id !== genId) return gen;
           return { ...gen, cards: gen.cards.map(() => ({ status: 'error', imageUrl: null })) };
-        })
-      );
+        }),
+      }));
     } finally {
       setGenerating(false);
     }
@@ -2482,9 +3187,45 @@ export default function CreationPage() {
         <div style={{ display: 'flex', flexDirection: 'column', alignSelf: 'stretch', flexShrink: 0 }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
             <CreationTabBar activeTab={activeTab} onChange={handleTabChange} />
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flex: 1, justifyContent: 'flex-end', paddingRight: '32px', paddingTop: '6px', paddingBottom: '6px' }}>
-              <BatchButton onClick={() => {}} />
-            </div>
+            {batchMode ? (
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingLeft: '24px', paddingRight: '32px', gap: '16px', flex: 1, paddingTop: '6px', paddingBottom: '6px' }}>
+                <span style={{ fontFamily: FONT, fontSize: '14px', color: '#FFFFFF99' }}>已选 {selected.size} 项</span>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                  <CreationGhostBtn onClick={selectAll}>
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+                      <path d="M14 6.667V13C14 13.552 13.552 14 13 14H3C2.448 14 2 13.552 2 13V3C2 2.448 2.448 2 3 2H10" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M5.333 6.667L8.667 9.333L13.667 2.333" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                    <span style={{ fontFamily: FONT, fontSize: '14px', color: '#FFFFFF', whiteSpace: 'nowrap' }}>全选</span>
+                  </CreationGhostBtn>
+                  <CreationGhostBtn onClick={downloadSelected}>
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, rotate: '180deg', transformOrigin: '50% 50%' }}>
+                      <path d="M8.003 4.7V14" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M4 8.667L8 4.667L12 8.667" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M4 2H12" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+                    </svg>
+                    <span style={{ fontFamily: FONT, fontSize: '14px', color: '#FFFFFF', whiteSpace: 'nowrap' }}>下载</span>
+                  </CreationGhostBtn>
+                  <CreationPlainBtn onClick={deleteSelected}>
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+                      <path d="M3 3.333V14.667H13V3.333H3Z" stroke="#F75F5F" strokeLinejoin="round" />
+                      <path d="M6.667 6.667V11" stroke="#F75F5F" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M9.333 6.667V11" stroke="#F75F5F" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M1.333 3.333H14.667" stroke="#F75F5F" strokeLinecap="round" strokeLinejoin="round" />
+                      <path d="M5.333 3.333L6.43 1.333H9.592L10.667 3.333H5.333Z" stroke="#F75F5F" strokeLinejoin="round" />
+                    </svg>
+                    <span style={{ fontFamily: FONT, fontSize: '14px', color: '#F75F5F', whiteSpace: 'nowrap' }}>删除</span>
+                  </CreationPlainBtn>
+                  <CreationPlainBtn onClick={exitBatch}>
+                    <span style={{ fontFamily: FONT, fontSize: '14px', color: '#FFFFFFCC', whiteSpace: 'nowrap' }}>取消</span>
+                  </CreationPlainBtn>
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flex: 1, justifyContent: 'flex-end', paddingRight: '32px', paddingTop: '6px', paddingBottom: '6px' }}>
+                <BatchButton onClick={() => setBatchMode(true)} />
+              </div>
+            )}
           </div>
         </div>
 
@@ -2511,6 +3252,10 @@ export default function CreationPage() {
               onModelChange={setModel}
               modelOptions={modelOptions}
               creationParams={creationParams}
+              onDeleteCard={handleDeleteCard}
+              batchMode={batchMode}
+              selected={selected}
+              onToggleSelect={toggleSelect}
             />
           ) : (
             <CreationEmptyState onGenerate={handleGenerate} genType={genType} onGenTypeChange={handleGenTypeChange}
