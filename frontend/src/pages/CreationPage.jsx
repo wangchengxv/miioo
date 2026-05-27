@@ -1,7 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { PulsingBorder } from '@paper-design/shaders-react';
-import { apiGenerateCreation, apiGetCreationModels, apiGetCreationParams, apiSaveCreationAsset } from '../api/creation';
+import { apiGenerateCreation, apiSaveCreationAsset } from '../api/creation';
+import { getImageModelList, getVideoModelList, getImageModelParams, getVideoModelParams } from '../config';
 import AssetPickerModal from '../components/AssetPickerModal';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
@@ -42,6 +43,9 @@ async function downloadImage(url) {
 
 const ALLOWED_EXTS = ['.txt', '.md', '.pdf', '.docx'];
 const ALLOWED_IMAGE_EXTS = ['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff', '.tif', '.heic', '.heif'];
+const ALLOWED_VIDEO_EXTS = ['.mp4', '.mov', '.avi', '.webm', '.mkv', '.wmv', '.flv'];
+const ALLOWED_AUDIO_EXTS = ['.mp3', '.wav', '.aac', '.ogg', '.flac', '.m4a', '.wma'];
+const ALLOWED_MEDIA_EXTS = [...ALLOWED_IMAGE_EXTS, ...ALLOWED_VIDEO_EXTS, ...ALLOWED_AUDIO_EXTS];
 
 function formatFileSize(bytes) {
   if (bytes < 1024) return bytes + ' B';
@@ -320,6 +324,216 @@ function UploadPlaceholder({ onFileSelect, onAssetPick, disabled = false, allowe
   );
 }
 
+// ─── Frame uploader (首尾帧) ──────────────────────────────────────────────────
+function FrameUploader({ firstFile, lastFile, onFirstChange, onLastChange, onSwap, onFirstAssetPick, onLastAssetPick, disabled = false }) {
+  const firstInputRef = useRef(null);
+  const lastInputRef = useRef(null);
+  const firstWrapperRef = useRef(null);
+  const lastWrapperRef = useRef(null);
+  const [firstHovered, setFirstHovered] = useState(false);
+  const [lastHovered, setLastHovered] = useState(false);
+  const [swapHovered, setSwapHovered] = useState(false);
+  const [firstMenuOpen, setFirstMenuOpen] = useState(false);
+  const [lastMenuOpen, setLastMenuOpen] = useState(false);
+
+  useEffect(() => {
+    if (!firstMenuOpen && !lastMenuOpen) return;
+    const handler = (e) => {
+      if (firstWrapperRef.current && !firstWrapperRef.current.contains(e.target)) setFirstMenuOpen(false);
+      if (lastWrapperRef.current && !lastWrapperRef.current.contains(e.target)) setLastMenuOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [firstMenuOpen, lastMenuOpen]);
+
+  useEffect(() => {
+    return () => {
+      if (firstFile?.previewUrl) URL.revokeObjectURL(firstFile.previewUrl);
+      if (lastFile?.previewUrl) URL.revokeObjectURL(lastFile.previewUrl);
+    };
+  }, [firstFile, lastFile]);
+
+  const handleFile = (e, isFirst) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const ext = '.' + file.name.split('.').pop().toLowerCase();
+    if (!ALLOWED_IMAGE_EXTS.includes(ext)) {
+      alert(`仅支持 ${ALLOWED_IMAGE_EXTS.join('、')} 格式的图片`);
+      e.target.value = '';
+      return;
+    }
+    if (isFirst) onFirstChange(file);
+    else onLastChange(file);
+    e.target.value = '';
+  };
+
+  const firstPreview = firstFile ? (firstFile.previewUrl || URL.createObjectURL(firstFile)) : null;
+  const lastPreview = lastFile ? (lastFile.previewUrl || URL.createObjectURL(lastFile)) : null;
+
+  const renderSlot = ({ label, preview, hovered, setHovered, wrapperRef, inputRef, menuOpen, setMenuOpen, onChange, onAssetPick, isFirst }) => {
+    const hasImg = !!preview;
+    return (
+      <div ref={wrapperRef} style={{ position: 'relative', flexShrink: 0 }}>
+        <input ref={inputRef} type="file" accept={ALLOWED_IMAGE_EXTS.join(',')} className="hidden" onChange={(e) => { handleFile(e, isFirst); setMenuOpen(false); }} />
+        <button
+          type="button"
+          disabled={disabled}
+          onClick={() => { if (!disabled) setMenuOpen((v) => !v); }}
+          onMouseEnter={() => !disabled && setHovered(true)}
+          onMouseLeave={() => setHovered(false)}
+          style={{
+            width: '44px',
+            height: '60px',
+            borderRadius: '4px',
+            flexShrink: 0,
+            boxShadow: '#FFFFFF14 0px 0px 0px 0.5px inset',
+            background: hasImg ? `url(${preview}) center/cover no-repeat` : hovered ? '#3D3D3D' : '#262626',
+            cursor: disabled ? 'not-allowed' : 'pointer',
+            opacity: disabled ? 0.45 : 1,
+            position: 'relative',
+            border: 'none',
+            padding: 0,
+            outline: 'none',
+            overflow: 'visible',
+            transition: 'background 0.35s cubic-bezier(0.4, 0, 0.2, 1)',
+          }}
+        >
+          {!hasImg && (
+            <>
+              <svg width="12" height="12" viewBox="0 0 16 16" fill="none"
+                style={{ position: 'absolute', left: '50%', top: 'calc(50% - 9px)', translate: '-50% -50%' }}>
+                <path d="M8 3v10M3 8h10" stroke={hovered ? '#FFFFFFCC' : '#FFFFFF33'} strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+              <div style={{
+                position: 'absolute', left: '50%', top: 'calc(50% + 7px)', translate: '-50% -50%',
+                fontFamily: FONT, fontSize: '10px', lineHeight: '12px', color: hovered ? '#FFFFFFCC' : '#FFFFFF66',
+              }}>
+                {label}
+              </div>
+            </>
+          )}
+          {hasImg && hovered && (
+            <>
+              <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.4)', borderRadius: '4px' }} />
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); e.preventDefault(); onChange(null); }}
+                style={{
+                  position: 'absolute', top: '-7px', right: '-7px',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  width: '16px', height: '16px', borderRadius: '9999px',
+                  background: '#505151', border: 'none', cursor: 'pointer', padding: 0,
+                }}
+              >
+                <svg width="10" height="10" viewBox="0 0 16 16" fill="none">
+                  <path d="M4.667 4.667L11.333 11.333" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M4.667 11.333L11.333 4.667" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            </>
+          )}
+        </button>
+
+        {menuOpen && (
+          <div style={{
+            position: 'absolute',
+            zIndex: 50,
+            left: 0,
+            bottom: 'calc(100% + 8px)',
+            borderRadius: '8px',
+            background: '#1D1E1E',
+            border: '1px solid #FFFFFF0D',
+            boxShadow: '0px 4px 16px #00000066',
+            padding: '4px',
+            minWidth: '140px',
+            display: 'flex',
+            flexDirection: 'column',
+          }}>
+            <UploadMenuItem
+              label="从资产库选择"
+              icon={
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+                  <path d="M1.66663 2.66667C1.66663 2.29848 1.9651 2 2.33329 2H6.33329L7.99996 4H13.6666C14.0348 4 14.3333 4.29847 14.3333 4.66667V13.3333C14.3333 13.7015 14.0348 14 13.6666 14H2.33329C1.9651 14 1.66663 13.7015 1.66663 13.3333V2.66667Z" stroke="#FFFFFFCC" strokeLinejoin="round" />
+                  <path d="M8.00003 6.66663L8.7477 8.30423L10.5362 8.50926L9.20977 9.72636L9.56747 11.4907L8.00003 10.6053L6.4326 11.4907L6.7903 9.72636L5.46387 8.50926L7.25237 8.30423L8.00003 6.66663Z" stroke="#FFFFFFCC" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              }
+              onClick={() => { setMenuOpen(false); onAssetPick?.(); }}
+            />
+            <UploadMenuItem
+              label="从本地上传"
+              icon={
+                <svg width="14" height="14" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+                  <path d="M8 10.667V3.333" stroke="#FFFFFFCC" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M5.333 6L8 3.333L10.667 6" stroke="#FFFFFFCC" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M2.667 12H13.333" stroke="#FFFFFFCC" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              }
+              onClick={() => { setMenuOpen(false); inputRef.current?.click(); }}
+            />
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: '4px', flexShrink: 0 }}>
+      {renderSlot({
+        label: '首帧',
+        preview: firstPreview,
+        hovered: firstHovered,
+        setHovered: setFirstHovered,
+        wrapperRef: firstWrapperRef,
+        inputRef: firstInputRef,
+        menuOpen: firstMenuOpen,
+        setMenuOpen: setFirstMenuOpen,
+        onChange: onFirstChange,
+        onAssetPick: onFirstAssetPick,
+        isFirst: true,
+      })}
+
+      {/* 交换按钮 */}
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={onSwap}
+        onMouseEnter={() => setSwapHovered(true)}
+        onMouseLeave={() => setSwapHovered(false)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          borderRadius: '4px',
+          padding: '2px',
+          cursor: disabled ? 'not-allowed' : 'pointer',
+          background: swapHovered ? '#FFFFFF0A' : 'transparent',
+          border: 'none',
+          opacity: disabled ? 0.45 : 1,
+          transition: 'background 0.15s',
+        }}
+      >
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+          <path d="M8.5 5.5a1 1 0 0 0-1.707-.707l-3 3A1 1 0 0 0 4.5 9.5h15a1 1 0 0 0 0-2h-11v-2Zm7 13a1 1 0 0 0 1.707.707l3-3A1 1 0 0 0 19.5 14.5h-15a1 1 0 1 0 0 2h11v2Z" clipRule="evenodd" fillRule="evenodd" fill={swapHovered ? '#FFFFFF99' : '#515151'} />
+        </svg>
+      </button>
+
+      {renderSlot({
+        label: '尾帧',
+        preview: lastPreview,
+        hovered: lastHovered,
+        setHovered: setLastHovered,
+        wrapperRef: lastWrapperRef,
+        inputRef: lastInputRef,
+        menuOpen: lastMenuOpen,
+        setMenuOpen: setLastMenuOpen,
+        onChange: onLastChange,
+        onAssetPick: onLastAssetPick,
+        isFirst: false,
+      })}
+    </div>
+  );
+}
+
 function UploadMenuItem({ label, icon, onClick }) {
   const [hovered, setHovered] = useState(false);
   return (
@@ -406,6 +620,7 @@ function ImageViewModal({ imageUrl, onClose }) {
 
 // ─── File card ────────────────────────────────────────────────────────────────
 const IMAGE_EXTS_SET = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff', '.tif', '.heic', '.heif']);
+const VIDEO_EXTS_SET = new Set(['.mp4', '.mov', '.avi', '.webm', '.mkv', '.wmv', '.flv']);
 
 function isImageFile(file) {
   if (file.isAsset && file.url) {
@@ -416,24 +631,71 @@ function isImageFile(file) {
   return IMAGE_EXTS_SET.has(ext);
 }
 
+function isVideoFile(file) {
+  if (file.isAsset && file.url) {
+    if (/\.(mp4|mov|avi|webm|mkv|wmv|flv)$/i.test(file.url)) return true;
+  }
+  const ext = '.' + (file.name || '').split('.').pop().toLowerCase();
+  return VIDEO_EXTS_SET.has(ext);
+}
+
 function FileCard({ file, onRemove, disabled = false }) {
   const [hovered, setHovered] = useState(false);
   const [viewOpen, setViewOpen] = useState(false);
   const [previewUrl, setPreviewUrl] = useState(null);
   const isImage = isImageFile(file);
+  const isVideo = isVideoFile(file);
 
   useEffect(() => {
-    if (!isImage) return;
-    if (file.isAsset && file.url) {
-      setPreviewUrl(file.url);
-      return;
+    if (isImage) {
+      if (file.isAsset && file.url) {
+        setPreviewUrl(file.url);
+        return;
+      }
+      const url = URL.createObjectURL(file);
+      setPreviewUrl(url);
+      return () => URL.revokeObjectURL(url);
     }
-    const url = URL.createObjectURL(file);
-    setPreviewUrl(url);
-    return () => URL.revokeObjectURL(url);
-  }, [file, isImage]);
 
-  if (isImage) {
+    if (isVideo) {
+      // 提取视频首帧作为缩略图
+      const video = document.createElement('video');
+      video.preload = 'metadata';
+      video.muted = true;
+
+      const handleLoadedData = () => {
+        video.currentTime = 0.1; // 跳到 0.1 秒处获取首帧
+      };
+
+      const handleSeeked = () => {
+        const canvas = document.createElement('canvas');
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+        const thumbnail = canvas.toDataURL('image/jpeg', 0.8);
+        setPreviewUrl(thumbnail);
+        URL.revokeObjectURL(video.src);
+      };
+
+      video.addEventListener('loadeddata', handleLoadedData);
+      video.addEventListener('seeked', handleSeeked);
+
+      if (file.isAsset && file.url) {
+        video.src = file.url;
+      } else {
+        video.src = URL.createObjectURL(file);
+      }
+
+      return () => {
+        video.removeEventListener('loadeddata', handleLoadedData);
+        video.removeEventListener('seeked', handleSeeked);
+        if (video.src) URL.revokeObjectURL(video.src);
+      };
+    }
+  }, [file, isImage, isVideo]);
+
+  if (isImage || isVideo) {
     return (
       <>
         <div
@@ -863,20 +1125,19 @@ function ParamsSelector({ ratio, resolution, count, onRatioChange, onResolutionC
           display: 'flex',
           alignItems: 'center',
           gap: '8px',
-          height: '36px',
+          height: '32px',
           paddingLeft: '12px',
           paddingRight: '6px',
           borderRadius: '8px',
           justifyContent: 'space-between',
           flexShrink: 0,
-          border: '1px solid',
-          cursor: disabled ? 'not-allowed' : 'pointer',
-          background: open ? '#252525' : isActive ? '#222222' : '#1D1E1E',
-          borderColor: open ? '#2DC3E199' : '#FFFFFF14',
-          outline: open ? '1px solid #00000080' : '1px solid #00000080',
-          boxShadow: open ? '#2DC3E11A 0px 0px 10px' : 'none',
+          border: '1px solid rgba(255, 255, 255, 0.08)',
+          cursor: 'pointer',
+          background: 'rgb(29, 30, 30)',
+          outline: 'rgba(0, 0, 0, 0.5) solid 1px',
+          boxShadow: 'none',
           transition: 'background 0.2s, border-color 0.2s, box-shadow 0.2s',
-          opacity: disabled ? 0.45 : 1,
+          opacity: 1,
           whiteSpace: 'nowrap',
         }}
       >
@@ -1516,6 +1777,9 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
   const [videoDuration, setVideoDuration] = useState('');
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [files, setFiles] = useState([]);
+  const [firstFrameFile, setFirstFrameFile] = useState(null);
+  const [lastFrameFile, setLastFrameFile] = useState(null);
+  const [frameAssetTarget, setFrameAssetTarget] = useState(null);
   const [assetPickerOpen, setAssetPickerOpen] = useState(false);
   const [mentionOpen, setMentionOpen] = useState(false);
   const [mentionQuery, setMentionQuery] = useState('');
@@ -1528,24 +1792,29 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
   useEffect(() => {
     if (!creationParams) return;
     if (genType === 'image') {
-      setRatio(creationParams.ratios?.[0]?.value ?? '');
-      setResolution(creationParams.resolutions?.[0] ?? '');
-      setCount(creationParams.counts?.[0] ?? '');
+      setRatio(creationParams.defaults?.ratio || creationParams.ratios?.[0]?.value || '');
+      setResolution(creationParams.defaults?.resolution || creationParams.resolutions?.[0] || '');
+      setCount(creationParams.defaults?.count || creationParams.counts?.[0] || '');
     } else {
-      setVideoRatio(creationParams.ratios?.[0]?.value ?? '');
-      setVideoResolution(creationParams.resolutions?.[0] ?? '');
-      setVideoDuration(creationParams.durations?.[0] ?? '');
-      setRefMode(creationParams.refModes?.[0]?.value ?? '');
+      setVideoRatio(creationParams.defaults?.ratio || creationParams.ratios?.[0]?.value || '');
+      setVideoResolution(creationParams.defaults?.resolution || creationParams.resolutions?.[0] || '');
+      setVideoDuration(creationParams.defaults?.duration || creationParams.durations?.[0] || '');
+      setRefMode(creationParams.defaults?.refMode || creationParams.refModes?.[0]?.value || '');
     }
   }, [creationParams, genType]);
 
   useEffect(() => {
     setFiles([]);
+    setFirstFrameFile(null);
+    setLastFrameFile(null);
   }, [genType]);
 
   useEffect(() => {
-    setFiles([]);
-  }, [genType]);
+    if (refMode !== 'frame') {
+      setFirstFrameFile(null);
+      setLastFrameFile(null);
+    }
+  }, [refMode]);
 
   useEffect(() => {
     ensureRotateKeyframe();
@@ -1582,11 +1851,15 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
     return () => document.removeEventListener('mousedown', handleOutside);
   }, [mentionOpen]);
 
-  const isImageGen = genType === 'image';
-  const uploadAllowedExts = isImageGen ? ALLOWED_IMAGE_EXTS : ALLOWED_EXTS;
-  const uploadAcceptAttr = isImageGen
-    ? '.jpg,.jpeg,.png,.webp,.gif,.bmp,.tiff,.tif,.heic,.heif'
-    : '.txt,.md,.pdf,.docx';
+  const uploadAllowedExts =
+    genType === 'image' ? ALLOWED_IMAGE_EXTS
+    : genType === 'video'
+      ? (creationParams?.supportsAudio
+          ? ALLOWED_MEDIA_EXTS
+          : [...ALLOWED_IMAGE_EXTS, ...ALLOWED_VIDEO_EXTS])
+    : genType === 'dubbing' ? ALLOWED_AUDIO_EXTS
+    : ALLOWED_EXTS;
+  const uploadAcceptAttr = uploadAllowedExts.join(',');
 
   const handleFileSelect = (newFiles) => {
     const enriched = newFiles.map((f) => {
@@ -1615,6 +1888,14 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
 
   const handleAssetConfirm = (selectedAssets) => {
     setAssetPickerOpen(false);
+    if (frameAssetTarget && selectedAssets.length > 0) {
+      const asset = selectedAssets[0];
+      const assetFile = { name: asset.name || asset.id, size: 0, url: asset.url, isAsset: true };
+      if (frameAssetTarget === 'first') setFirstFrameFile(assetFile);
+      else setLastFrameFile(assetFile);
+      setFrameAssetTarget(null);
+      return;
+    }
     const assetFiles = selectedAssets.map((asset) => ({
       name: asset.name || asset.id,
       size: 0,
@@ -1737,7 +2018,7 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
     setMentionOpen(false);
   };
 
-  const canSend = !disabled && (hasContent || files.length > 0);
+  const canSend = !disabled && (hasContent || files.length > 0 || firstFrameFile || lastFrameFile);
 
   const handleSend = () => {
     if (!canSend) return;
@@ -1747,12 +2028,14 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
       genType,
       model,
       ...(genType === 'image' ? { ratio, resolution, count } : {}),
-      ...(genType === 'video' ? { refMode, videoRatio, videoResolution, videoDuration, soundEnabled } : {}),
+      ...(genType === 'video' ? { refMode, videoRatio, videoResolution, videoDuration, soundEnabled, firstFrameFile, lastFrameFile } : {}),
       files,
     });
     if (editorRef.current) editorRef.current.innerHTML = '';
     setHasContent(false);
     setFiles([]);
+    setFirstFrameFile(null);
+    setLastFrameFile(null);
   };
 
   const handleKeyDown = (e) => {
@@ -1810,7 +2093,7 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
     return { backgroundImage: idleBg, animation: 'none' };
   })();
 
-  const assetPickerAccept = genType === 'image' ? 'image' : genType === 'video' ? 'video' : genType === 'dubbing' ? 'audio' : 'all';
+  const assetPickerAccept = genType === 'image' ? 'image' : genType === 'video' ? (creationParams?.supportsAudio ? 'all' : 'image') : genType === 'dubbing' ? 'audio' : 'all';
 
   return (
     <>
@@ -1870,13 +2153,68 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
               ))}
             </div>
           )}
-          <UploadPlaceholder onFileSelect={handleFileSelect} onAssetPick={() => setAssetPickerOpen(true)} disabled={disabled} allowedExts={uploadAllowedExts} acceptAttr={uploadAcceptAttr} />
+          {genType === 'video' && refMode === 'frame' ? (
+            <FrameUploader
+              firstFile={firstFrameFile}
+              lastFile={lastFrameFile}
+              onFirstChange={setFirstFrameFile}
+              onLastChange={setLastFrameFile}
+              onSwap={() => { setFirstFrameFile(lastFrameFile); setLastFrameFile(firstFrameFile); }}
+              onFirstAssetPick={() => { setFrameAssetTarget('first'); setAssetPickerOpen(true); }}
+              onLastAssetPick={() => { setFrameAssetTarget('last'); setAssetPickerOpen(true); }}
+              disabled={disabled}
+            />
+          ) : (
+            <UploadPlaceholder onFileSelect={handleFileSelect} onAssetPick={() => setAssetPickerOpen(true)} disabled={disabled} allowedExts={uploadAllowedExts} acceptAttr={uploadAcceptAttr} />
+          )}
           <div style={{ flex: 1, alignSelf: 'stretch', position: 'relative' }}>
-            {!hasContent && (
-              <span style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none', fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF66', userSelect: 'none' }}>
-                描述你想生成的内容
-              </span>
-            )}
+            {!hasContent && (() => {
+              // 图片分页
+              if (genType === 'image') {
+                return (
+                  <span style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none', fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF66', userSelect: 'none', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                    <span>上传参考图，输入文字或</span>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', background: 'rgba(45,195,225,0.10)', color: '#2DC3E1', borderRadius: '6px', padding: '0 4px', fontSize: '14px', lineHeight: '18px', height: '18px', boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.08)' }}>@</span>
+                    <span>主体，描述你想生成的图片</span>
+                  </span>
+                );
+              }
+              // 视频分页
+              if (genType === 'video') {
+                // 全能参考
+                if (refMode === 'all') {
+                  return (
+                    <span style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none', fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF66', userSelect: 'none', display: 'flex', alignItems: 'center', gap: '4px', flexWrap: 'wrap' }}>
+                      <span>上传最多12个参考素材、输入文字或</span>
+                      <span style={{ display: 'inline-flex', alignItems: 'center', background: 'rgba(45,195,225,0.10)', color: '#2DC3E1', borderRadius: '6px', padding: '0 4px', fontSize: '14px', lineHeight: '18px', height: '18px', boxShadow: 'inset 0 0 0 1px rgba(255,255,255,0.08)' }}>@</span>
+                      <span>参考内容，自由组合图、文、音、视频多元素</span>
+                    </span>
+                  );
+                }
+                // 首尾帧
+                if (refMode === 'frame') {
+                  return (
+                    <span style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none', fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF66', userSelect: 'none' }}>
+                      输入文字，描述你想创作的画面内容
+                    </span>
+                  );
+                }
+                // 智能多帧
+                if (refMode === 'multi') {
+                  return (
+                    <span style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none', fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF66', userSelect: 'none' }}>
+                      请添加智能多帧分镜图
+                    </span>
+                  );
+                }
+              }
+              // 默认提示词
+              return (
+                <span style={{ position: 'absolute', top: 0, left: 0, pointerEvents: 'none', fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF66', userSelect: 'none' }}>
+                  描述你想生成的内容
+                </span>
+              );
+            })()}
             <div
               ref={editorRef}
               contentEditable={!disabled}
@@ -2005,7 +2343,9 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
                   resolutionOptions={creationParams?.resolutions ?? []}
                   durationOptions={creationParams?.durations ?? []}
                 />
-                <SoundToggle enabled={soundEnabled} onChange={setSoundEnabled} disabled={disabled} />
+                {creationParams?.supportsAudio && (
+                  <SoundToggle enabled={soundEnabled} onChange={setSoundEnabled} disabled={disabled} />
+                )}
               </>
             )}
           </div>
@@ -2015,9 +2355,9 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
     </div>
     <AssetPickerModal
       open={assetPickerOpen}
-      onClose={() => setAssetPickerOpen(false)}
+      onClose={() => { setAssetPickerOpen(false); setFrameAssetTarget(null); }}
       onConfirm={handleAssetConfirm}
-      accept={assetPickerAccept}
+      accept={frameAssetTarget ? 'image' : assetPickerAccept}
     />
     </>
   );
@@ -2952,24 +3292,18 @@ export default function CreationPage() {
 
   // Load model list when genType changes; reset model to first option
   useEffect(() => {
-    let cancelled = false;
-    apiGetCreationModels(genType).then((list) => {
-      if (cancelled) return;
-      setModelOptions(list);
-      setModel(list[0]?.value ?? '');
-    });
-    return () => { cancelled = true; };
+    const list = genType === 'image' ? getImageModelList() : getVideoModelList();
+    setModelOptions(list);
+    setModel(list[0]?.value ?? '');
   }, [genType]);
 
   // Load params when model changes (model is bound to genType)
   useEffect(() => {
     if (!model) return;
-    let cancelled = false;
-    apiGetCreationParams(genType, model).then((params) => {
-      if (cancelled) return;
-      setCreationParams(params);
-    });
-    return () => { cancelled = true; };
+    const params = genType === 'image'
+      ? getImageModelParams(model)
+      : getVideoModelParams(model);
+    setCreationParams(params);
   }, [genType, model]);
 
   // Tab 和 genType 完全对应，切一个另一个跟着变
