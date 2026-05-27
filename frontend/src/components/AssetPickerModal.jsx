@@ -5,11 +5,11 @@ const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba PuHuiTi 2.0',system-ui,sans
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
 
 // accept='image' → 只允许图片类资产；'video' → 只允许视频类资产；'audio' → 只允许音频类资产；'all' → 不限制
-const PROJECT_SUB_TABS_ALL = ['角色', '场景', '道具', '分镜图', '分镜视频'];
+const PROJECT_SUB_TABS_ALL = ['角色', '场景', '道具', '分镜图', '分镜视频', '音频', '成片'];
 const PROJECT_SUB_TABS_IMAGE = ['角色', '场景', '道具', '分镜图'];
 const PROJECT_SUB_TABS_VIDEO = ['分镜视频'];
 const PROJECT_SUB_TABS_AUDIO = ['音频'];
-const CREATIVE_SUB_TABS_ALL = ['图片', '视频'];
+const CREATIVE_SUB_TABS_ALL = ['图片', '视频', '配音'];
 const CREATIVE_SUB_TABS_IMAGE = ['图片'];
 const CREATIVE_SUB_TABS_VIDEO = ['视频'];
 const CREATIVE_SUB_TABS_AUDIO = ['配音'];
@@ -55,6 +55,10 @@ const MOCK_PROJECT_ASSETS_MAP = {
       { id: 'au2', name: '音效_风声.wav', bgColor: '#201E22', type: 'audio' },
       { id: 'au3', name: '配乐_主题曲.mp3', bgColor: '#1E2020', type: 'audio' },
     ],
+    final_cut: [
+      { id: 'fc1', name: '第1集_成片.mp4', bgColor: '#1A1E24', starred: true },
+      { id: 'fc2', name: '第2集_成片.mp4', bgColor: '#1E1A24', starred: false },
+    ],
   },
   p2: {
     chars: [
@@ -75,6 +79,9 @@ const MOCK_PROJECT_ASSETS_MAP = {
     audio: [
       { id: 'p2au1', name: '悬疑背景音.mp3', bgColor: '#1A1A20', type: 'audio' },
     ],
+    final_cut: [
+      { id: 'p2fc1', name: '暗夜追踪_成片.mp4', bgColor: '#1A1A24', starred: true },
+    ],
   },
   p3: {
     chars: [
@@ -93,6 +100,9 @@ const MOCK_PROJECT_ASSETS_MAP = {
       { id: 'p3sv1', name: '第1集_预览', bgColor: '#1A1E24' },
     ],
     audio: [],
+    final_cut: [
+      { id: 'p3fc1', name: '光影之间_成片.mp4', bgColor: '#1E1A20', starred: false },
+    ],
   },
   p4: {
     chars: [],
@@ -106,6 +116,9 @@ const MOCK_PROJECT_ASSETS_MAP = {
     storyboard_video: [],
     audio: [
       { id: 'p4au1', name: '科幻音效.wav', bgColor: '#1E1A24', type: 'audio' },
+    ],
+    final_cut: [
+      { id: 'p4fc1', name: '未来边界_成片.mp4', bgColor: '#1A1E20', starred: true },
     ],
   },
 };
@@ -140,6 +153,7 @@ const SUB_TAB_KEY_MAP = {
   '分镜图': 'storyboard_img',
   '分镜视频': 'storyboard_video',
   '音频': 'audio',
+  '成片': 'final_cut',
   '图片': 'images',
   '视频': 'videos',
   '配音': 'dubbing',
@@ -163,14 +177,16 @@ function Checkbox({ checked, hovered }) {
   );
 }
 
-function AssetCard({ asset, isSelected, isHovered, onMouseEnter, onMouseLeave, onClick }) {
+function AssetCard({ asset, isSelected, isHovered, onMouseEnter, onMouseLeave, onClick, compact = false }) {
   return (
     <div
       onClick={onClick}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
       style={{
-        width: '175px', height: '208px', borderRadius: '10px', overflow: 'hidden',
+        width: compact ? 'calc((100% - 32px) / 3)' : '175px',
+        height: compact ? '135px' : '208px',
+        borderRadius: '10px', overflow: 'hidden',
         flexShrink: 0, display: 'flex', flexDirection: 'column',
         background: '#1C1C1C',
         border: `1px solid ${isSelected ? '#FFFFFF33' : isHovered ? 'rgba(255,255,255,0.2)' : '#FFFFFF0F'}`,
@@ -179,7 +195,7 @@ function AssetCard({ asset, isSelected, isHovered, onMouseEnter, onMouseLeave, o
     >
       {/* 图片区 */}
       <div style={{
-        height: '168px', flexShrink: 0, position: 'relative',
+        height: compact ? '100%' : '168px', flexShrink: 0, position: 'relative',
         background: asset.url ? 'transparent' : (asset.bgColor || '#252525'),
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
@@ -212,12 +228,14 @@ function AssetCard({ asset, isSelected, isHovered, onMouseEnter, onMouseLeave, o
         )}
       </div>
       {/* 底部标签 */}
+      {!compact && (
       <div style={{ display: 'flex', alignItems: 'center', padding: '10px 12px', background: '#1C1C1C', flex: 1 }}>
         <span style={{
           fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF',
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%',
         }}>{asset.name || '未命名'}</span>
       </div>
+      )}
     </div>
   );
 }
@@ -314,6 +332,7 @@ export default function AssetPickerModal({
   };
 
   const getProjectBtnRect = () => projectBtnRef.current?.getBoundingClientRect() ?? null;
+  const isCompactCard = activeTab === 'creative' && (creativeSubTab === '图片' || creativeSubTab === '视频');
 
   // 获取当前内容区资产列表
   const getCurrentAssets = () => {
@@ -545,6 +564,7 @@ export default function AssetPickerModal({
                   onMouseEnter={() => setHoveredCard(asset.id)}
                   onMouseLeave={() => setHoveredCard(null)}
                   onClick={() => toggle(asset.id)}
+                  compact={isCompactCard}
                 />
               ))}
             </div>

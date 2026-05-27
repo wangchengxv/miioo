@@ -78,15 +78,6 @@ export async function apiGetEpisodes(projectId) {
   return res.json();
 }
 
-export async function apiGetModels() {
-  if (USE_MOCK) {
-    console.log('[mock] get models');
-    return ['Doubao-Seed-2.0-Pro', 'Doubao-Seed-1.6', 'FLUX.1-dev', 'Stable Diffusion XL'];
-  }
-  const res = await authFetch(`${BASE}/api/models`, { headers: { 'Content-Type': 'application/json' } });
-  return res.json();
-}
-
 export async function apiBatchGenerate(params) {
   if (USE_MOCK) {
     console.log('[mock] batch generate', params);

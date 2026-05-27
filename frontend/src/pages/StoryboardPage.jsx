@@ -6,7 +6,8 @@ import Toggle from '../components/Toggle';
 import AssetPickerModal from '../components/AssetPickerModal';
 import { apiUploadFile, apiGenerateImage, apiGenerateVideo, apiCreateShot, apiUpdateShot, apiDeleteShot, apiReorderShots, apiGetShots } from '../api/storyboard';
 import DotsLoading from '../components/DotsLoading';
-import { apiGetEpisodes, apiGetModels } from '../api/subject';
+import { apiGetEpisodes } from '../api/subject';
+import { getImageModelList, getVideoModelList, getImageModelParams, getVideoModelParams } from '../config';
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -363,10 +364,9 @@ function BatchImageModal({ shotCount, onClose, onConfirm }) {
   const [modelOptions, setModelOptions] = useState([]);
   const [resolution, setResolution] = useState('1K');
   useEffect(() => {
-    apiGetModels().then((list) => {
-      setModelOptions(list);
-      setModel((prev) => prev || list[0] || '');
-    });
+    const list = getImageModelList();
+    setModelOptions(list.map(m => m.value));
+    setModel((prev) => prev || list[0]?.value || '');
   }, []);
   return (
     <ModalOverlay onClose={onClose}>
@@ -407,10 +407,9 @@ function BatchVideoModal({ shotCount, onClose, onConfirm }) {
   const [quality, setQuality] = useState('720P');
   const [sound, setSound] = useState(true);
   useEffect(() => {
-    apiGetModels().then((list) => {
-      setModelOptions(list);
-      setModel((prev) => prev || list[0] || '');
-    });
+    const list = getVideoModelList();
+    setModelOptions(list.map(m => m.value));
+    setModel((prev) => prev || list[0]?.value || '');
   }, []);
   return (
     <ModalOverlay onClose={onClose}>
@@ -1410,7 +1409,8 @@ function RefSlotBtn({ onClick, children }) {
 }
 
 function GenerateImagePanel({ shot, chars = [], scenes = [], props = [], onClose, onGenerate, onShowToast, generatedImages = [], onSetGeneratedImages }) {
-  const [model, setModel] = useState('Doubao-Seed-2.0-Pro');
+  const imageModels = getImageModelList();
+  const [model, setModel] = useState(imageModels[0]?.value || 'doubao-seedream-5.0-lite');
   const [resolution, setResolution] = useState('2K');
   const [prompt, setPrompt] = useState(shot?.description || '');
   const [refImages, setRefImages] = useState([]);
@@ -1420,6 +1420,17 @@ function GenerateImagePanel({ shot, chars = [], scenes = [], props = [], onClose
   const [btnPressed, setBtnPressed] = useState(false);
   const [viewImageUrl, setViewImageUrl] = useState(null);
   const refFileRef = useRef(null);
+
+  // 获取当前模型支持的分辨率
+  const modelParams = getImageModelParams(model);
+  const availableResolutions = modelParams?.resolutions || ['1K', '2K', '4K'];
+
+  // 当模型切换时，使用 defaults 重置参数
+  useEffect(() => {
+    if (modelParams?.defaults) {
+      setResolution(modelParams.defaults.resolution);
+    }
+  }, [model, modelParams]);
 
   function handleRefFileChange(e) {
     const files = Array.from(e.target.files);
@@ -1493,7 +1504,7 @@ function GenerateImagePanel({ shot, chars = [], scenes = [], props = [], onClose
             </div>
 
             <PanelPromptInput value={prompt} onChange={setPrompt} chars={chars} scenes={scenes} props={props} />
-            <PanelSelect label="选择模型" value={model} options={['Doubao-Seed-2.0-Pro', 'Doubao-Seed-2.0-Lite', 'Flux 1.1 Pro']} onChange={setModel} />
+            <PanelSelect label="选择模型" value={model} options={imageModels.map(m => m.value)} onChange={setModel} />
 
             {/* 参考图 — 多张 */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignSelf: 'stretch' }}>
@@ -1529,7 +1540,7 @@ function GenerateImagePanel({ shot, chars = [], scenes = [], props = [], onClose
             </div>
             <AssetPickerModal accept="image" open={refImgPickerOpen} onClose={() => setRefImgPickerOpen(false)} onConfirm={() => {}} />
 
-            <PanelSelect label="分辨率" value={resolution} options={['1K', '2K', '4K']} onChange={setResolution} />
+            <PanelSelect label="分辨率" value={resolution} options={availableResolutions} onChange={setResolution} />
 
             {/* 生成按钮 */}
             <div style={{ flexShrink: 0 }}>
@@ -1600,9 +1611,10 @@ function GenerateImagePanel({ shot, chars = [], scenes = [], props = [], onClose
 }
 
 function GenerateVideoPanel({ shot, nextShot = null, chars = [], scenes = [], props = [], onClose, onGenerate, onShowToast }) {
+  const videoModels = getVideoModelList();
   const [mode, setMode] = useState('all'); // 'all' | 'first-last' | 'multi'
-  const [model, setModel] = useState('Doubao-Seed-2.0-Pro');
-  const [resolution, setResolution] = useState('720P');
+  const [model, setModel] = useState(videoModels[0]?.value || 'seedance-2.0');
+  const [resolution, setResolution] = useState('720p');
   const [duration, setDuration] = useState('自动匹配');
   const [sound, setSound] = useState(true);
   const [prompt, setPrompt] = useState(shot?.description || '');
@@ -1617,6 +1629,21 @@ function GenerateVideoPanel({ shot, nextShot = null, chars = [], scenes = [], pr
   const [btnPressed, setBtnPressed] = useState(false);
   const [generatedVideos, setGeneratedVideos] = useState([]);
   const [viewerShot, setViewerShot] = useState(null);
+
+  // 获取当前模型支持的参数
+  const modelParams = getVideoModelParams(model);
+  const availableResolutions = modelParams?.resolutions || ['720p', '1080p', '2K', '4K'];
+  const availableDurations = modelParams?.durations || ['4s', '5s', '6s', '7s', '8s', '9s', '10s'];
+  const availableRefModes = modelParams?.refModes || [];
+
+  // 当模型切换时，使用 defaults 重置参数
+  useEffect(() => {
+    if (modelParams?.defaults) {
+      setResolution(modelParams.defaults.resolution);
+      setMode(modelParams.defaults.refMode);
+      // duration 保持"自动匹配"，不使用 defaults
+    }
+  }, [model, modelParams]);
 
   async function handleGenerate() {
     if (loading) return;
@@ -1682,17 +1709,17 @@ function GenerateVideoPanel({ shot, nextShot = null, chars = [], scenes = [], pr
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
               <span style={{ fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.60)', fontFamily: FONT }}>生成方式</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-              {[{ key: 'all', label: '全能参考' }, { key: 'first-last', label: '首尾帧' }, { key: 'multi', label: '多图参考' }].map(({ key, label }) => (
-                <div key={key} onClick={() => setMode(key)} style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
+              {availableRefModes.map(({ value, label }) => (
+                <div key={value} onClick={() => setMode(value)} style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
                   <div style={{
                     width: '16px', height: '16px', borderRadius: '50%', flexShrink: 0,
-                    border: `1.5px solid ${mode === key ? '#2DC3E1' : 'rgba(255,255,255,0.30)'}`,
+                    border: `1.5px solid ${mode === value ? '#2DC3E1' : 'rgba(255,255,255,0.30)'}`,
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
                     transition: 'border-color 0.12s',
                   }}>
-                    {mode === key && <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#2DC3E1' }} />}
+                    {mode === value && <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#2DC3E1' }} />}
                   </div>
-                  <span style={{ fontSize: '14px', lineHeight: '18px', color: mode === key ? '#FFFFFF' : 'rgba(255,255,255,0.60)', fontFamily: mode === key ? FONT_MEDIUM : FONT, fontWeight: mode === key ? 500 : 400, transition: 'color 0.12s' }}>
+                  <span style={{ fontSize: '14px', lineHeight: '18px', color: mode === value ? '#FFFFFF' : 'rgba(255,255,255,0.60)', fontFamily: mode === value ? FONT_MEDIUM : FONT, fontWeight: mode === value ? 500 : 400, transition: 'color 0.12s' }}>
                     {label}
                   </span>
                 </div>
@@ -1700,7 +1727,7 @@ function GenerateVideoPanel({ shot, nextShot = null, chars = [], scenes = [], pr
             </div>
             </div>
 
-            <PanelSelect label="选择模型" value={model} options={['Doubao-Seed-2.0-Pro', 'Doubao-Seed-2.0-Lite', 'Kling 2.0']} onChange={setModel} />
+            <PanelSelect label="选择模型" value={model} options={videoModels.map(m => m.value)} onChange={setModel} />
 
             {/* 全能参考字段 */}
             {mode === 'all' && (
@@ -1744,8 +1771,8 @@ function GenerateVideoPanel({ shot, nextShot = null, chars = [], scenes = [], pr
               </>
             )}
 
-            <PanelSelect label="时长" value={duration} options={['自动匹配', '1s', '2s', '3s', '5s', '8s', '10s']} onChange={setDuration} />
-            <PanelSelect label="分辨率" value={resolution} options={['720P', '1080P', '4K']} onChange={setResolution} />
+            <PanelSelect label="时长" value={duration} options={['自动匹配', ...availableDurations]} onChange={setDuration} />
+            <PanelSelect label="分辨率" value={resolution} options={availableResolutions} onChange={setResolution} />
 
             {/* 音效 toggle */}
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>

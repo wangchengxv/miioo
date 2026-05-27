@@ -3,7 +3,8 @@ import { createPortal } from 'react-dom';
 import DotsLoading from '../components/DotsLoading';
 import BatchGenerateModal from '../components/BatchGenerateModal';
 import AssetPickerModal from '../components/AssetPickerModal';
-import { apiCreateSubject, apiUpdateSubject, apiDeleteSubject, apiGenerateSubjectImage, apiBatchGenerate, apiGetEpisodes, apiGetModels } from '../api/subject';
+import { apiCreateSubject, apiUpdateSubject, apiDeleteSubject, apiGenerateSubjectImage, apiBatchGenerate, apiGetEpisodes } from '../api/subject';
+import { getImageModelList, getImageModelParams } from '../config';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
@@ -1233,6 +1234,7 @@ function RefImageField({ maxImages = 3 }) {
 }
 
 function EditSubjectPanel({ char, tabLabel = '角色', onClose, onCommit, onCoverChange }) {
+  const imageModels = getImageModelList();
   const [closeHovered, setCloseHovered] = useState(false);
   const [genHovered, setGenHovered] = useState(false);
   const [genPressed, setGenPressed] = useState(false);
@@ -1241,7 +1243,7 @@ function EditSubjectPanel({ char, tabLabel = '角色', onClose, onCommit, onCove
   const [promptText, setPromptText] = useState('一只雄性成年孟加拉虎，大型健壮体型，肩背宽厚，四肢粗壮，橘黄色短毛，黑色条纹较粗且分布稳定，右眼上方有一道浅色旧疤，颈部一圈深棕色较长鬃毛，头部较大，口鼻宽，尾巴中等长度，站姿平稳，角色设定图。');
   const [modelHovered, setModelHovered] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
-  const [selectedModel, setSelectedModel] = useState('Doubao-Seed-2.0-Pro');
+  const [selectedModel, setSelectedModel] = useState(imageModels[0]?.value || 'doubao-seedream-5.0-lite');
   const [ratioHovered, setRatioHovered] = useState(false);
   const [ratioOpen, setRatioOpen] = useState(false);
   const [selectedRatio, setSelectedRatio] = useState('2:1');
@@ -1253,6 +1255,20 @@ function EditSubjectPanel({ char, tabLabel = '角色', onClose, onCommit, onCove
   const [viewImageUrl, setViewImageUrl] = useState(null);
   const [toast, setToast] = useState(null);
   const toastTimerRef = useRef(null);
+
+  // 获取当前模型支持的参数
+  const modelParams = getImageModelParams(selectedModel);
+  const availableRatios = modelParams?.ratios.map(r => r.value) || ['1:1', '2:1', '16:9', '4:3', '3:4', '9:16'];
+  const availableResolutions = modelParams?.resolutions || ['720P', '1K', '2K', '4K'];
+  const maxRefImages = modelParams ? (getImageModelParams(selectedModel)?.counts?.length || 4) : 4;
+
+  // 当模型切换时，使用 defaults 重置参数
+  useEffect(() => {
+    if (modelParams?.defaults) {
+      setSelectedRatio(modelParams.defaults.ratio);
+      setSelectedQuality(modelParams.defaults.resolution);
+    }
+  }, [selectedModel, modelParams]);
 
   function showToast(msg, type = 'success') {
     clearTimeout(toastTimerRef.current);
@@ -1401,20 +1417,20 @@ function EditSubjectPanel({ char, tabLabel = '角色', onClose, onCommit, onCove
             </div>
             {modelOpen && (
               <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 60, background: '#1D1E1E', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '8px', padding: '4px', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
-                {['Doubao-Seed-2.0-Pro', 'Doubao-Seed-1.6', 'FLUX.1-dev', 'Stable Diffusion XL'].map((opt) => (
+                {imageModels.map((model) => (
                   <div
-                    key={opt}
-                    onClick={() => { setSelectedModel(opt); setModelOpen(false); }}
+                    key={model.value}
+                    onClick={() => { setSelectedModel(model.value); setModelOpen(false); }}
                     style={{
                       padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', fontFamily: FONT, fontSize: '14px', lineHeight: '18px',
-                      color: selectedModel === opt ? '#2DC3E1' : '#FFFFFFCC',
-                      background: selectedModel === opt ? 'rgba(45,195,225,0.08)' : 'transparent',
+                      color: selectedModel === model.value ? '#2DC3E1' : '#FFFFFFCC',
+                      background: selectedModel === model.value ? 'rgba(45,195,225,0.08)' : 'transparent',
                       transition: 'background 80ms',
                     }}
-                    onMouseEnter={(e) => { if (selectedModel !== opt) e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = selectedModel === opt ? 'rgba(45,195,225,0.08)' : 'transparent'; }}
+                    onMouseEnter={(e) => { if (selectedModel !== model.value) e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = selectedModel === model.value ? 'rgba(45,195,225,0.08)' : 'transparent'; }}
                   >
-                    {opt}
+                    {model.label}
                   </div>
                 ))}
               </div>
@@ -1435,7 +1451,7 @@ function EditSubjectPanel({ char, tabLabel = '角色', onClose, onCommit, onCove
             </div>
             {ratioOpen && (
               <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 60, background: '#1D1E1E', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '8px', padding: '4px', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
-                {['1:1', '2:1', '16:9', '4:3', '3:4', '9:16'].map((opt) => (
+                {availableRatios.map((opt) => (
                   <div
                     key={opt}
                     onClick={() => { setSelectedRatio(opt); setRatioOpen(false); }}
@@ -1469,7 +1485,7 @@ function EditSubjectPanel({ char, tabLabel = '角色', onClose, onCommit, onCove
             </div>
             {qualityOpen && (
               <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 60, background: '#1D1E1E', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '8px', padding: '4px', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
-                {['720P', '1K', '2K', '4K'].map((opt) => (
+                {availableResolutions.map((opt) => (
                   <div
                     key={opt}
                     onClick={() => { setSelectedQuality(opt); setQualityOpen(false); }}

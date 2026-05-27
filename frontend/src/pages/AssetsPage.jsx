@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { apiGetAssetDetail, apiGetShotDetail, apiGetShotVideoDetail, apiGetCreativeDays, apiGetProjectAssets } from '../api/assets';
 import { apiGetProjects } from '../api/project';
+import ImageDetailModal from '../components/ImageDetailModal';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
@@ -1427,6 +1428,7 @@ function AssetCard({ name, bgColor = '#252525', url = null, starred = false, sel
   const [starAnim, setStarAnim] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailData, setDetailData] = useState(null);
+  const [favorited, setFavorited] = useState(starred);
 
   function handleOpen() {
     if (batchMode) { onSelect?.(); return; }
@@ -1451,7 +1453,8 @@ function AssetCard({ name, bgColor = '#252525', url = null, starred = false, sel
     <>
     <div
       style={{
-        width: '168px',
+        width: '320px',
+        height: '180px',
         borderRadius: '10px',
         backgroundColor: '#1C1C1C',
         border: selected ? '1px solid #2DC3E1' : hov ? '1px solid #FFFFFF33' : '1px solid #FFFFFF0F',
@@ -1459,12 +1462,13 @@ function AssetCard({ name, bgColor = '#252525', url = null, starred = false, sel
         flexShrink: 0,
         transition: 'border-color 0.15s',
         cursor: 'pointer',
+        position: 'relative',
       }}
       onMouseEnter={() => setHov(true)}
       onMouseLeave={() => setHov(false)}
       onClick={() => { if (batchMode) onSelect?.(); else handleOpen(); }}
     >
-      <div style={{ width: '168px', height: '168px', backgroundColor: url ? 'transparent' : bgColor, position: 'relative' }}>
+      <div style={{ width: '100%', height: '100%', backgroundColor: url ? 'transparent' : bgColor, position: 'relative' }}>
         {url && (
           <img src={url} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
         )}
@@ -1514,23 +1518,6 @@ function AssetCard({ name, bgColor = '#252525', url = null, starred = false, sel
           </button>
         )}
       </div>
-      <div style={{
-        paddingTop: '10px',
-        paddingBottom: '10px',
-        paddingLeft: '12px',
-        paddingRight: '12px',
-        backgroundColor: '#1C1C1C',
-      }}>
-        <span style={{
-          fontFamily: FONT,
-          fontSize: '14px',
-          color: '#FFFFFF',
-          display: 'block',
-          overflow: 'hidden',
-          textOverflow: 'ellipsis',
-          whiteSpace: 'nowrap',
-        }}>{name}</span>
-      </div>
     </div>
     {detailOpen && assetType === 'shot_video' && (
       <ShotVideoDetailModal onClose={() => setDetailOpen(false)} onDownload={onDownload}
@@ -1545,7 +1532,24 @@ function AssetCard({ name, bgColor = '#252525', url = null, starred = false, sel
         resolution={detailData?.resolution} generatedAt={detailData?.generatedAt} images={detailData?.images}
       />
     )}
-    {detailOpen && assetType !== 'shot' && assetType !== 'shot_video' && (
+    {detailOpen && assetType !== 'shot' && assetType !== 'shot_video' && showStar && (
+      <ImageDetailModal
+        card={{
+          imageUrl: url || detailData?.url,
+          prompt: detailData?.prompt,
+          model: detailData?.model,
+          ratio: detailData?.ratio,
+          resolution: detailData?.resolution,
+          refImages: detailData?.refImages,
+          generatedAt: detailData?.generatedAt,
+        }}
+        onClose={() => setDetailOpen(false)}
+        onDelete={() => { setDetailOpen(false); onDelete?.(); }}
+        favorited={favorited}
+        onToggleFavorite={() => { setFavorited((v) => !v); onStar?.(); }}
+      />
+    )}
+    {detailOpen && assetType !== 'shot' && assetType !== 'shot_video' && !showStar && (
       <AssetDetailModal onClose={() => setDetailOpen(false)} onDownload={onDownload}
         name={detailData?.name ?? name} description={detailData?.description} prompt={detailData?.prompt} model={detailData?.model}
         ratio={detailData?.ratio} resolution={detailData?.resolution} generatedAt={detailData?.generatedAt} images={detailData?.images}
