@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { PulsingBorder } from '@paper-design/shaders-react';
-import { apiGenerateCreation, apiSaveCreationAsset } from '../api/creation';
+import { apiGenerateCreation, apiGetVideoLastFrame, apiDeleteCreationImage, apiDeleteCreationVideo, apiToggleImageFavorite, apiToggleVideoFavorite, apiBatchDeleteImages, apiBatchDeleteVideos } from '../api/creation';
+import { useCreationStore } from '../stores/creationStore';
 import { getImageModelList, getVideoModelList, getImageModelParams, getVideoModelParams } from '../config';
 import AssetPickerModal from '../components/AssetPickerModal';
+import CreationVideoDetailModal from '../components/CreationVideoDetailModal';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
@@ -66,6 +68,7 @@ function truncateFileName(name) {
 const ROTATE_STYLE_ID = 'creation-chatbox-rotate-style';
 const THINKING_STYLE_ID = 'creation-thinking-style';
 const SHIMMER_STYLE_ID = 'creation-shimmer-style';
+const TOAST_STYLE_ID = 'creation-toast-style';
 
 function ensureRotateKeyframe() {
   if (document.getElementById(ROTATE_STYLE_ID)) return;
@@ -80,6 +83,19 @@ function ensureRotateKeyframe() {
     @keyframes creation-chatbox-spin {
       from { --creation-chatbox-angle: 161.1deg; }
       to { --creation-chatbox-angle: 521.1deg; }
+    }
+  `;
+  document.head.appendChild(style);
+}
+
+function ensureToastStyle() {
+  if (document.getElementById(TOAST_STYLE_ID)) return;
+  const style = document.createElement('style');
+  style.id = TOAST_STYLE_ID;
+  style.textContent = `
+    @keyframes toast-in {
+      from { opacity: 0; transform: translateY(-8px); }
+      to { opacity: 1; transform: translateY(0); }
     }
   `;
   document.head.appendChild(style);
@@ -118,6 +134,46 @@ function ensureShimmerStyle() {
     }
   `;
   document.head.appendChild(style);
+}
+
+// ─── Toast Component ──────────────────────────────────────────────────────────
+function Toast({ toasts }) {
+  return (
+    <div style={{ position: 'fixed', top: '25vh', left: '50%', transform: 'translateX(-50%)', zIndex: 9999, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+      {toasts.map((toast) => (
+        <div
+          key={toast.id}
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: '8px',
+            padding: '12px 16px',
+            borderRadius: '8px',
+            backgroundColor: '#1D1E1E',
+            border: '1px solid #FFFFFF14',
+            boxShadow: '0px 4px 16px #00000066',
+            animation: 'toast-in 0.2s ease',
+          }}
+        >
+          {toast.type === 'success' ? (
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <circle cx="8" cy="8" r="7" stroke="#52BF92" strokeWidth="1.5" />
+              <path d="M5 8L7 10L11 6" stroke="#52BF92" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          ) : (
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+              <circle cx="8" cy="8" r="7" stroke="#D13A3B" strokeWidth="1.5" />
+              <path d="M8 4.5V8.5" stroke="#D13A3B" strokeWidth="1.5" strokeLinecap="round" />
+              <circle cx="8" cy="11" r="0.5" fill="#D13A3B" />
+            </svg>
+          )}
+          <span style={{ fontFamily: FONT, fontSize: '13px', lineHeight: '16px', color: toast.type === 'success' ? '#52BF92' : '#D13A3B' }}>
+            {toast.message}
+          </span>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 // ─── Generation type options (backend-driven in production) ───────────────────
@@ -1819,9 +1875,10 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
   useEffect(() => {
     ensureRotateKeyframe();
     ensureThinkingStyle();
+    ensureToastStyle();
   }, []);
 
-  // Apply prefill when version bumps (re-edit or use-as-ref)
+  // Apply prefill when version bumps (re-edit or use-as-ref or use-as-first-frame)
   useEffect(() => {
     if (!prefillVersion || !prefillData) return;
     if (prefillData.prompt !== undefined && editorRef.current) {
@@ -1835,6 +1892,10 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
     if (prefillData.ratio !== undefined) setRatio(prefillData.ratio);
     if (prefillData.resolution !== undefined) setResolution(prefillData.resolution);
     if (prefillData.count !== undefined) setCount(prefillData.count);
+    if (prefillData.duration !== undefined) setVideoDuration(prefillData.duration);
+    if (prefillData.refMode !== undefined) setRefMode(prefillData.refMode);
+    if (prefillData.firstFrameFile !== undefined) setFirstFrameFile(prefillData.firstFrameFile);
+    if (prefillData.lastFrameFile !== undefined) setLastFrameFile(prefillData.lastFrameFile);
   }, [prefillVersion]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const mentionMenuRef = useRef(null);
@@ -2655,84 +2716,84 @@ function ImageDetailModal({ card, onClose, onDelete, favorited, onToggleFavorite
               </div>
 
               {/* Right: info panel */}
-              <div style={{ width: '280px', flexShrink: 0, backgroundColor: '#161616', borderLeft: '1px solid #FFFFFF0F', display: 'flex', flexDirection: 'column', height: '540px', overflowY: 'auto' }}>
-                {DETAIL_PANEL_DIVIDER}
+              <div style={{ width: '280px', flexShrink: 0, backgroundColor: '#161616', borderLeft: '1px solid #FFFFFF0F', display: 'flex', flexDirection: 'column', height: '540px', position: 'relative' }}>
+                {/* Scrollable content area */}
+                <div style={{ flex: 1, overflowY: 'auto', minHeight: 0, paddingBottom: '76px' }}>
+                  {DETAIL_PANEL_DIVIDER}
 
-                {/* 提示词 */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '16px 20px', flexShrink: 0 }}>
-                  <div style={{ fontFamily: FONT, fontSize: '11px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>提示词</div>
-                  <div style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '20px', letterSpacing: '0.01em', color: '#FFFFFFCC' }}>{card.prompt || '—'}</div>
-                </div>
+                  {/* 提示词 */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '16px 20px', flexShrink: 0 }}>
+                    <div style={{ fontFamily: FONT, fontSize: '11px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>提示词</div>
+                    <div style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '20px', letterSpacing: '0.01em', color: '#FFFFFFCC' }}>{card.prompt || '—'}</div>
+                  </div>
 
-                {/* 参考图 */}
-                {card.refImages && card.refImages.length > 0 && (
-                  <>
-                    {DETAIL_PANEL_DIVIDER}
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px 20px', flexShrink: 0 }}>
-                      <div style={{ fontFamily: FONT, fontSize: '11px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>参考图</div>
-                      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
-                        {card.refImages.map((img, i) => {
-                          const imgUrl = img.url || img.previewUrl || '';
-                          return (
-                            <div key={i} style={{
-                              width: 'calc(50% - 6px)',
-                              height: '84px',
-                              borderRadius: '6px',
-                              border: '1px solid #FFFFFF14',
-                              backgroundColor: '#FFFFFF14',
-                              overflow: 'hidden',
-                              flexShrink: 0,
-                              backgroundImage: imgUrl ? `url(${imgUrl})` : 'none',
-                              backgroundSize: 'cover',
-                              backgroundPosition: 'center',
-                            }} />
-                          );
-                        })}
+                  {/* 参考图 */}
+                  {card.refImages && card.refImages.length > 0 && (
+                    <>
+                      {DETAIL_PANEL_DIVIDER}
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px 20px', flexShrink: 0 }}>
+                        <div style={{ fontFamily: FONT, fontSize: '11px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>参考图</div>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
+                          {card.refImages.map((img, i) => {
+                            const imgUrl = img.url || img.previewUrl || '';
+                            return (
+                              <div key={i} style={{
+                                width: 'calc(50% - 6px)',
+                                height: '84px',
+                                borderRadius: '6px',
+                                border: '1px solid #FFFFFF14',
+                                backgroundColor: '#FFFFFF14',
+                                overflow: 'hidden',
+                                flexShrink: 0,
+                                backgroundImage: imgUrl ? `url(${imgUrl})` : 'none',
+                                backgroundSize: 'cover',
+                                backgroundPosition: 'center',
+                              }} />
+                            );
+                          })}
+                        </div>
                       </div>
-                    </div>
-                  </>
-                )}
+                    </>
+                  )}
 
-                {DETAIL_PANEL_DIVIDER}
+                  {DETAIL_PANEL_DIVIDER}
 
-                {/* 生成参数 */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px 20px', flexShrink: 0 }}>
-                  <div style={{ fontFamily: FONT, fontSize: '11px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>生成参数</div>
-                  {card.model && (
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFF99' }}>模型</span>
-                      <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFFCC' }}>{card.model}</span>
-                    </div>
-                  )}
-                  {card.ratio && (
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFF99' }}>画面比例</span>
-                      <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFFCC' }}>{card.ratio}</span>
-                    </div>
-                  )}
-                  {card.resolution && (
-                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                      <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFF99' }}>分辨率</span>
-                      <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFFCC' }}>{card.resolution}</span>
-                    </div>
-                  )}
+                  {/* 生成参数 */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px 20px', flexShrink: 0 }}>
+                    <div style={{ fontFamily: FONT, fontSize: '11px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>生成参数</div>
+                    {card.model && (
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFF99' }}>模型</span>
+                        <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFFCC' }}>{card.model}</span>
+                      </div>
+                    )}
+                    {card.ratio && (
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFF99' }}>画面比例</span>
+                        <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFFCC' }}>{card.ratio}</span>
+                      </div>
+                    )}
+                    {card.resolution && (
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFF99' }}>分辨率</span>
+                        <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFFCC' }}>{card.resolution}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {DETAIL_PANEL_DIVIDER}
+
+                  {/* AI生成时间 */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '16px 20px', flexShrink: 0 }}>
+                    <div style={{ fontFamily: FONT, fontSize: '11px', lineHeight: '14px', letterSpacing: '0.66px', textTransform: 'uppercase', color: '#FFFFFF99' }}>AI 生成时间</div>
+                    <div style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.12px', color: '#FFFFFF66' }}>{formatCreationDate(card.createdAt)}</div>
+                  </div>
+
+                  {DETAIL_PANEL_DIVIDER}
                 </div>
 
-                {DETAIL_PANEL_DIVIDER}
-
-                {/* AI生成时间 */}
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '16px 20px', flexShrink: 0 }}>
-                  <div style={{ fontFamily: FONT, fontSize: '11px', lineHeight: '14px', letterSpacing: '0.66px', textTransform: 'uppercase', color: '#FFFFFF99' }}>AI 生成时间</div>
-                  <div style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.12px', color: '#FFFFFF66' }}>{formatCreationDate(card.createdAt)}</div>
-                </div>
-
-                {DETAIL_PANEL_DIVIDER}
-
-                {/* Spacer */}
-                <div style={{ flex: 1 }} />
-
-                {/* Bottom actions */}
-                <div style={{ display: 'flex', gap: '8px', padding: '16px 20px 20px', flexShrink: 0 }}>
+                {/* Fixed bottom actions */}
+                <div style={{ position: 'absolute', bottom: 0, left: 0, width: '280px', display: 'flex', gap: '8px', padding: '16px 20px 20px', flexShrink: 0, backgroundColor: '#161616' }}>
                   <ModalActionBtn
                     label="收藏"
                     onClick={handleStarClick}
@@ -2784,6 +2845,192 @@ function ImageDetailModal({ card, onClose, onDelete, favorited, onToggleFavorite
 }
 
 // ─── Result state ─────────────────────────────────────────────────────────────
+function VideoResultCard({ status, videoUrl, prompt, model, ratio, resolution, duration, refImages, createdAt, onReEdit, onUseAsFirstFrame, onDelete, onCardClick, batchMode = false, isSelected = false, onToggleSelect, favorited = false, onToggleFavorite }) {
+  const [hovered, setHovered] = useState(false);
+  const [starAnim, setStarAnim] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const videoRef = useRef(null);
+  useEffect(() => { ensureShimmerStyle(); }, []);
+
+  const isDone = status === 'done' && videoUrl;
+
+  // 悬停时自动播放视频
+  useEffect(() => {
+    if (!videoRef.current) return;
+    if (hovered && isDone) {
+      videoRef.current.play().catch(() => {});
+    } else {
+      videoRef.current.pause();
+      videoRef.current.currentTime = 0;
+    }
+  }, [hovered, isDone]);
+
+  function handleStarClick(e) {
+    e.stopPropagation();
+    setStarAnim(true);
+    setTimeout(() => setStarAnim(false), 300);
+    onToggleFavorite?.();
+  }
+
+  async function downloadVideo(url) {
+    if (!url) return;
+    try {
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const objUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objUrl;
+      a.download = 'creation.mp4';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(objUrl);
+    } catch {
+      window.open(url, '_blank');
+    }
+  }
+
+  return (
+    <>
+      <div
+        style={{
+          width: '320px',
+          height: '180px',
+          flexShrink: 0,
+          borderRadius: '8px',
+          overflow: 'hidden',
+          backgroundColor: '#1A1A1A',
+          position: 'relative',
+          cursor: isDone ? 'pointer' : 'default',
+          outline: isSelected ? '2px solid #2DC3E1' : 'none',
+          outlineOffset: '-2px',
+        }}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        onClick={() => {
+          if (batchMode && isDone) { onToggleSelect?.(); return; }
+          if (!batchMode && isDone) { onCardClick?.(); }
+        }}
+      >
+        {status === 'loading' ? (
+          <div className="creation-shimmer" style={{ width: '100%', height: '100%' }} />
+        ) : isDone ? (
+          <video
+            ref={videoRef}
+            src={videoUrl}
+            loop
+            muted
+            playsInline
+            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+          />
+        ) : (
+          <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span style={{ color: '#FFFFFF33', fontSize: '12px', fontFamily: FONT }}>生成失败</span>
+          </div>
+        )}
+
+        {/* Batch mode: checkbox overlay */}
+        {batchMode && isDone && (
+          <div style={{
+            position: 'absolute', top: '8px', right: '8px',
+            width: '18px', height: '18px', borderRadius: '4px', zIndex: 1,
+            border: isSelected ? '1px solid #2DC3E1' : '1px solid rgba(255,255,255,0.5)',
+            backgroundColor: isSelected ? '#2DC3E1' : 'rgba(0,0,0,0.5)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+          }}>
+            {isSelected && (
+              <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
+                <path d="M1 4L3.5 6.5L9 1" stroke="#000" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            )}
+          </div>
+        )}
+
+        {/* Hover overlays */}
+        {hovered && isDone && !batchMode && (
+          <>
+            {/* Top-right: favorite */}
+            <button
+              type="button"
+              onClick={handleStarClick}
+              style={{
+                position: 'absolute', top: '8px', right: '8px',
+                width: '24px', height: '24px', borderRadius: '6px',
+                display: 'flex', alignItems: 'center', justifyContent: 'center',
+                backgroundColor: '#00000080', border: 'none', cursor: 'pointer',
+                transform: starAnim ? 'scale(1.4)' : 'scale(1)',
+                transition: 'transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1)',
+              }}
+            >
+              <StarIcon filled={favorited} />
+            </button>
+
+            {/* Bottom-right: action buttons */}
+            <div
+              style={{ position: 'absolute', bottom: '8px', right: '8px', display: 'flex', gap: '4px' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <CardActionBtn
+                tooltip="重新编辑"
+                onClick={() => onReEdit?.()}
+                icon={
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <path d="M2.333 14H14.333" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M3.667 8.907V11.333H6.106L13 4.436L10.565 2L3.667 8.907Z" stroke="#FFFFFF" strokeLinejoin="round" />
+                  </svg>
+                }
+              />
+              <CardActionBtn
+                tooltip="尾帧用作首帧参考"
+                onClick={() => onUseAsFirstFrame?.()}
+                icon={
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ width: '16px', height: '16px' }}>
+                    <path d="M9.446 1.733C9.888 1.733 10.246 2.092 10.246 2.533V21.855C10.246 22.297 9.888 22.655 9.447 22.655C9.005 22.655 8.646 22.297 8.646 21.855V2.533C8.646 2.092 9.005 1.733 9.447 1.733H9.446Z" fill="#FFFFFF" />
+                    <path d="M9.194 3.483V5.083H4.706C4.411 5.083 4.172 5.322 4.172 5.617V18.946C4.172 19.241 4.411 19.479 4.706 19.479H9.194V21.079H4.706C3.527 21.079 2.572 20.124 2.572 18.946V5.617C2.572 4.438 3.527 3.483 4.706 3.483H9.194Z" fill="#FFFFFF" />
+                    <path d="M3.814 8.787H9.446V7.187H3.814V8.787ZM3.814 17.402H9.446V15.802H3.814V17.402Z" fill="#FFFFFF" />
+                  </svg>
+                }
+              />
+              <CardActionBtn
+                tooltip="下载"
+                onClick={() => downloadVideo(videoUrl)}
+                icon={
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <path d="M8.003 11.3V2" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M4 7.333L8 11.333L12 7.333" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M4 14H12" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                }
+              />
+              <CardActionBtn
+                tooltip="删除"
+                onClick={() => setConfirmDelete(true)}
+                icon={
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <path d="M3 3.333V14.667H13V3.333H3Z" stroke="#FFFFFF" strokeLinejoin="round" />
+                    <path d="M6.667 6.667V11" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M9.333 6.667V11" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M1.333 3.333H14.667" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+                    <path d="M5.333 3.333L6.43 1.333H9.592L10.667 3.333H5.333Z" stroke="#FFFFFF" strokeLinejoin="round" />
+                  </svg>
+                }
+              />
+            </div>
+          </>
+        )}
+      </div>
+
+      {confirmDelete && createPortal(
+        <ConfirmDeleteModal
+          onConfirm={() => { setConfirmDelete(false); onDelete?.(); }}
+          onCancel={() => setConfirmDelete(false)}
+        />,
+        document.body
+      )}
+    </>
+  );
+}
+
 function ImageResultCard({ status, imageUrl, prompt, model, ratio, resolution, refImages, createdAt, onReEdit, onUseAsRef, onDelete, onSave, batchMode = false, isSelected = false, onToggleSelect }) {
   const [hovered, setHovered] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
@@ -2925,16 +3172,6 @@ function ImageResultCard({ status, imageUrl, prompt, model, ratio, resolution, r
         )}
       </div>
 
-      {detailOpen && (
-        <ImageDetailModal
-          card={{ imageUrl, prompt, model, ratio, resolution, refImages, createdAt }}
-          onClose={() => setDetailOpen(false)}
-          onDelete={() => { setDetailOpen(false); onDelete?.(); }}
-          favorited={favorited}
-          onToggleFavorite={() => { setStarAnim(true); setTimeout(() => setStarAnim(false), 300); setFavorited((v) => !v); }}
-        />
-      )}
-
       {confirmDelete && createPortal(
         <ConfirmDeleteModal
           onConfirm={() => { setConfirmDelete(false); onDelete?.(); }}
@@ -2942,16 +3179,34 @@ function ImageResultCard({ status, imageUrl, prompt, model, ratio, resolution, r
         />,
         document.body
       )}
+
+      {detailOpen && (
+        <ImageDetailModal
+          card={{
+            imageUrl,
+            prompt,
+            model,
+            ratio,
+            resolution,
+            refImages,
+            createdAt,
+          }}
+          onClose={() => setDetailOpen(false)}
+          onDelete={onDelete}
+          favorited={favorited}
+          onToggleFavorite={() => setFavorited(v => !v)}
+        />
+      )}
     </>
   );
 }
 
-function CreationResultState({ generations, onGenerate, genType, onGenTypeChange, model, onModelChange, modelOptions, creationParams, onDeleteCard, batchMode = false, selected, onToggleSelect }) {
+function CreationResultState({ generations, onGenerate, genType, onGenTypeChange, model, onModelChange, modelOptions, creationParams, onDeleteCard, batchMode = false, selected, onToggleSelect, onSwitchToFrameMode, onVideoCardClick, favorites, toggleFavorite, showToast }) {
   const scrollRef = useRef(null);
   const [prefillVersion, setPrefillVersion] = useState(0);
   const [prefillData, setPrefillData] = useState(null);
 
-  // Newest generation first — index 0 is the most recently generated image
+  // Newest generation first — index 0 is the most recently generated image/video
   const allCards = [...generations].reverse().flatMap((gen) =>
     gen.cards.map((card, i) => ({
       ...card,
@@ -2962,6 +3217,7 @@ function CreationResultState({ generations, onGenerate, genType, onGenTypeChange
       model: gen.model,
       ratio: gen.ratio,
       resolution: gen.resolution,
+      duration: gen.duration,
       refImages: gen.refImages,
       createdAt: gen.createdAt,
     }))
@@ -2973,6 +3229,8 @@ function CreationResultState({ generations, onGenerate, genType, onGenTypeChange
     }
   }, [generations.length]);
 
+  const isVideo = genType === 'video';
+
   return (
     <div
       style={{
@@ -2983,7 +3241,7 @@ function CreationResultState({ generations, onGenerate, genType, onGenTypeChange
         overflow: 'hidden',
       }}
     >
-      {/* Image grid: absolutely fills the container, scrolls internally */}
+      {/* Image/Video grid: absolutely fills the container, scrolls internally */}
       <div
         ref={scrollRef}
         style={{
@@ -3004,38 +3262,100 @@ function CreationResultState({ generations, onGenerate, genType, onGenTypeChange
             alignContent: 'flex-start',
           }}
         >
-          {allCards.map((card) => (
-            <ImageResultCard
-              key={card.key}
-              {...card}
-              batchMode={batchMode}
-              isSelected={batchMode && selected?.has(card.key)}
-              onToggleSelect={() => onToggleSelect?.(card.key)}
-              onReEdit={() => {
-                setPrefillData({
-                  prompt: card.prompt,
-                  files: (card.refImages || []).map((img) => ({
-                    name: img.name || 'ref.png',
-                    url: img.url || img.previewUrl || '',
-                    previewUrl: img.url || img.previewUrl || '',
-                    isAsset: true,
-                    size: 0,
-                  })),
-                  ratio: card.ratio,
-                  resolution: card.resolution,
-                  count: undefined,
-                });
-                setPrefillVersion((v) => v + 1);
-              }}
-              onUseAsRef={() => {
-                setPrefillData({
-                  files: [{ name: 'creation.png', url: card.imageUrl, previewUrl: card.imageUrl, isAsset: true, size: 0 }],
-                });
-                setPrefillVersion((v) => v + 1);
-              }}
-              onDelete={() => onDeleteCard?.(card.genId, card.cardIndex)}
-            />
-          ))}
+          {allCards.map((card) => {
+            const { key, ...cardProps } = card;
+            if (isVideo) {
+              return (
+                <VideoResultCard
+                  key={key}
+                  {...cardProps}
+                  batchMode={batchMode}
+                  isSelected={batchMode && selected?.has(key)}
+                  onToggleSelect={() => onToggleSelect?.(key)}
+                  onCardClick={() => onVideoCardClick?.(card)}
+                  favorited={favorites?.has(key)}
+                  onToggleFavorite={() => toggleFavorite?.(key)}
+                  onReEdit={() => {
+                    setPrefillData({
+                      prompt: card.prompt,
+                      files: (card.refImages || []).map((img) => ({
+                        name: img.name || 'ref.png',
+                        url: img.url || img.previewUrl || '',
+                        previewUrl: img.url || img.previewUrl || '',
+                        isAsset: true,
+                        size: 0,
+                      })),
+                      ratio: card.ratio,
+                      resolution: card.resolution,
+                      duration: card.duration,
+                    });
+                    setPrefillVersion((v) => v + 1);
+                  }}
+                  onUseAsFirstFrame={async () => {
+                    try {
+                      // 调用后端 API 获取视频尾帧
+                      const result = await apiGetVideoLastFrame(card.videoUrl);
+                      const lastFrameUrl = result.lastFrameUrl;
+
+                      // 切换到首尾帧模式
+                      onSwitchToFrameMode?.();
+
+                      // 将尾帧作为首帧参考传入
+                      setPrefillData({
+                        firstFrameFile: {
+                          name: 'last-frame.jpg',
+                          url: lastFrameUrl,
+                          previewUrl: lastFrameUrl,
+                          isAsset: false,
+                          size: 0
+                        },
+                        refMode: 'frame',
+                      });
+                      setPrefillVersion((v) => v + 1);
+
+                      showToast('success', '尾帧已添加为首帧参考');
+                    } catch (error) {
+                      console.error('Failed to get video last frame:', error);
+                      showToast('error', '获取尾帧失败，请重试');
+                    }
+                  }}
+                  onDelete={() => onDeleteCard?.(card.genId, card.cardIndex)}
+                />
+              );
+            }
+            return (
+              <ImageResultCard
+                key={key}
+                {...cardProps}
+                batchMode={batchMode}
+                isSelected={batchMode && selected?.has(key)}
+                onToggleSelect={() => onToggleSelect?.(key)}
+                onReEdit={() => {
+                  setPrefillData({
+                    prompt: card.prompt,
+                    files: (card.refImages || []).map((img) => ({
+                      name: img.name || 'ref.png',
+                      url: img.url || img.previewUrl || '',
+                      previewUrl: img.url || img.previewUrl || '',
+                      isAsset: true,
+                      size: 0,
+                    })),
+                    ratio: card.ratio,
+                    resolution: card.resolution,
+                    count: undefined,
+                  });
+                  setPrefillVersion((v) => v + 1);
+                }}
+                onUseAsRef={() => {
+                  setPrefillData({
+                    files: [{ name: 'creation.png', url: card.imageUrl, previewUrl: card.imageUrl, isAsset: true, size: 0 }],
+                  });
+                  setPrefillVersion((v) => v + 1);
+                }}
+                onDelete={() => onDeleteCard?.(card.genId, card.cardIndex)}
+              />
+            );
+          })}
         </div>
       </div>
 
@@ -3279,8 +3599,41 @@ export default function CreationPage() {
   const [activeTab, setActiveTab] = useState('image');
   const [genType, setGenType] = useState('image');
   const [generating, setGenerating] = useState(false);
-  const [generationsByTab, setGenerationsByTab] = useState({ image: [], video: [], dubbing: [] });
+  const {
+    generationsByTab, addGeneration, deleteCard: storeDeleteCard, deleteSelectedCards,
+    favorites, toggleFavorite: storeToggleFavorite,
+  } = useCreationStore();
   const generations = generationsByTab[activeTab] ?? [];
+
+  // Toast state
+  const [toasts, setToasts] = useState([]);
+  const showToast = (type, message) => {
+    const id = Date.now();
+    setToasts((prev) => [...prev, { id, type, message }]);
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3000);
+  };
+
+  // Video detail modal state
+  const [videoDetailModal, setVideoDetailModal] = useState(null);
+
+  // Toggle favorite with API linkage
+  function handleToggleFavorite(cardKey) {
+    const wasFav = favorites.has(cardKey);
+    storeToggleFavorite(cardKey);
+    // Find the card to get its backend ID and type
+    const lastDash = cardKey.lastIndexOf('-');
+    const genId = cardKey.slice(0, lastDash);
+    const cardIdx = parseInt(cardKey.slice(lastDash + 1));
+    const gen = generationsByTab[activeTab]?.find((g) => g.id === genId);
+    const card = gen?.cards?.[cardIdx];
+    if (card?.id) {
+      if (card.type === 'video') {
+        apiToggleVideoFavorite(card.id).catch(() => {});
+      } else {
+        apiToggleImageFavorite(card.id, !wasFav).catch(() => {});
+      }
+    }
+  }
 
   // Models and params are backend-driven; loaded on genType change and model change
   const [modelOptions, setModelOptions] = useState([]);
@@ -3306,6 +3659,18 @@ export default function CreationPage() {
     setCreationParams(params);
   }, [genType, model]);
 
+  // 切换到首尾帧模式的回调
+  const handleSwitchToFrameMode = () => {
+    if (genType === 'video' && creationParams?.refModes) {
+      const frameMode = creationParams.refModes.find((m) => m.value === 'frame');
+      if (frameMode) {
+        // 这里不需要手动设置 refMode，因为 InputCard 内部会通过 creationParams.defaults 或 refModes[0] 自动设置
+        // 但我们需要确保用户看到的是首尾帧模式，所以这里不做任何操作
+        // prefillData 中的 firstFrameFile 会在 InputCard 的 useEffect 中被应用
+      }
+    }
+  };
+
   // Tab 和 genType 完全对应，切一个另一个跟着变
   const handleTabChange = (tab) => {
     setActiveTab(tab);
@@ -3327,30 +3692,35 @@ export default function CreationPage() {
 
   function selectAll() {
     const allDoneKeys = [...generations].reverse().flatMap((gen) =>
-      gen.cards.map((card, i) => ({ key: `${gen.id}-${i}`, isDone: card.status === 'done' && !!card.imageUrl }))
+      gen.cards.map((card, i) => ({
+        key: `${gen.id}-${i}`,
+        isDone: card.status === 'done' && (!!card.imageUrl || !!card.videoUrl)
+      }))
     ).filter(({ isDone }) => isDone).map(({ key }) => key);
     const isAllSelected = allDoneKeys.length > 0 && allDoneKeys.every((k) => selected.has(k));
     setSelected(isAllSelected ? new Set() : new Set(allDoneKeys));
   }
 
   function deleteSelected() {
-    const toDelete = {};
+    // Collect backend IDs by type for API calls
+    const imageIds = [];
+    const videoIds = [];
     selected.forEach((key) => {
       const lastDash = key.lastIndexOf('-');
       const genId = key.slice(0, lastDash);
       const cardIdx = parseInt(key.slice(lastDash + 1));
-      if (!toDelete[genId]) toDelete[genId] = new Set();
-      toDelete[genId].add(cardIdx);
+      const gen = generationsByTab[activeTab]?.find((g) => g.id === genId);
+      const card = gen?.cards?.[cardIdx];
+      if (card?.id) {
+        if (card.type === 'video') videoIds.push(card.id);
+        else imageIds.push(card.id);
+      }
     });
-    setGenerationsByTab((prev) => ({
-      ...prev,
-      [activeTab]: prev[activeTab]
-        .map((gen) => {
-          if (!toDelete[gen.id]) return gen;
-          const indicesToDelete = toDelete[gen.id];
-          return { ...gen, cards: gen.cards.filter((_, i) => !indicesToDelete.has(i)) };
-        }).filter((gen) => gen.cards.length > 0),
-    }));
+    // Call backend APIs
+    if (imageIds.length > 0) apiBatchDeleteImages(imageIds).catch(() => {});
+    if (videoIds.length > 0) apiBatchDeleteVideos(videoIds).catch(() => {});
+    // Update local store
+    deleteSelectedCards(activeTab, selected);
     setSelected(new Set());
   }
 
@@ -3358,7 +3728,25 @@ export default function CreationPage() {
     [...generations].reverse().forEach((gen) => {
       gen.cards.forEach((card, i) => {
         const key = `${gen.id}-${i}`;
-        if (selected.has(key) && card.imageUrl) downloadImage(card.imageUrl);
+        if (selected.has(key)) {
+          if (card.imageUrl) downloadImage(card.imageUrl);
+          if (card.videoUrl) {
+            // 下载视频
+            fetch(card.videoUrl)
+              .then((res) => res.blob())
+              .then((blob) => {
+                const objUrl = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = objUrl;
+                a.download = 'creation.mp4';
+                document.body.appendChild(a);
+                a.click();
+                document.body.removeChild(a);
+                URL.revokeObjectURL(objUrl);
+              })
+              .catch(() => window.open(card.videoUrl, '_blank'));
+          }
+        }
       });
     });
   }
@@ -3372,15 +3760,16 @@ export default function CreationPage() {
   }
 
   const handleDeleteCard = (genId, cardIdx) => {
-    setGenerationsByTab((prev) => ({
-      ...prev,
-      [activeTab]: prev[activeTab]
-        .map((gen) => {
-          if (gen.id !== genId) return gen;
-          const newCards = gen.cards.filter((_, i) => i !== cardIdx);
-          return { ...gen, cards: newCards };
-        }).filter((gen) => gen.cards.length > 0),
-    }));
+    const gen = generationsByTab[activeTab]?.find((g) => g.id === genId);
+    const card = gen?.cards?.[cardIdx];
+    if (card?.id) {
+      if (card.type === 'video') {
+        apiDeleteCreationVideo(card.id).catch(() => {});
+      } else {
+        apiDeleteCreationImage(card.id).catch(() => {});
+      }
+    }
+    storeDeleteCard(activeTab, genId, cardIdx);
   };
 
   const handleGenerate = async (params) => {
@@ -3389,61 +3778,49 @@ export default function CreationPage() {
     const countNum = parseInt(params.count) || 1;
     const genId = `gen-${Date.now()}`;
     const currentTab = activeTab;
-    // Immediately add loading placeholders
-    setGenerationsByTab((prev) => ({
-      ...prev,
-      [currentTab]: [
-        ...prev[currentTab],
-        {
-          id: genId,
-          ratio: params.ratio || '16:9',
-          resolution: params.resolution || '',
-          model: params.model || '',
-          prompt: params.prompt || '',
-          refImages: (params.files || []).filter((f) => isImageFile(f)),
-          createdAt: new Date().toISOString(),
-          cards: Array.from({ length: countNum }, () => ({ status: 'loading', imageUrl: null })),
-        },
-      ],
-    }));
+    const isVideoGen = params.genType === 'video';
+
     try {
       const result = await apiGenerateCreation(params);
-      const images = result.images ?? [];
+      const mediaUrls = isVideoGen ? (result.videos ?? []) : (result.images ?? []);
+
+      // 如果生成失败，显示 Toast 提示，不添加占位卡片
+      if (!mediaUrls || mediaUrls.length === 0) {
+        showToast('error', '生成失败，请稍后重试');
+        setGenerating(false);
+        return;
+      }
+
       const genMeta = {
         prompt: params.prompt || '',
         model: params.model || '',
-        ratio: params.ratio || '16:9',
-        resolution: params.resolution || '',
+        ratio: params.ratio || (isVideoGen ? params.videoRatio : '') || '16:9',
+        resolution: params.resolution || (isVideoGen ? params.videoResolution : '') || '',
+        duration: isVideoGen ? params.videoDuration : undefined,
         createdAt: new Date().toISOString(),
         genType: params.genType || 'image',
       };
-      setGenerationsByTab((prev) => ({
-        ...prev,
-        [currentTab]: prev[currentTab].map((gen) => {
-          if (gen.id !== genId) return gen;
-          return {
-            ...gen,
-            cards: gen.cards.map((_, i) => ({
-              status: images[i] ? 'done' : 'error',
-              imageUrl: images[i] ?? null,
-            })),
-          };
-        }),
-      }));
-      // Auto-save each successfully generated image to the asset library
-      images.forEach((imageUrl) => {
-        if (imageUrl) {
-          apiSaveCreationAsset({ ...genMeta, imageUrl }).catch(() => {});
-        }
+
+      // 添加成功生成的卡片
+      addGeneration(currentTab, {
+        id: genId,
+        ratio: genMeta.ratio,
+        resolution: genMeta.resolution,
+        duration: genMeta.duration,
+        model: genMeta.model,
+        prompt: genMeta.prompt,
+        refImages: [],  // File 对象不可序列化，持久化时丢弃
+        createdAt: genMeta.createdAt,
+        cards: mediaUrls.map((url) => ({
+          id: null,  // 后端 ID，待轮询返回后回写
+          type: isVideoGen ? 'video' : 'image',
+          status: 'done',
+          imageUrl: isVideoGen ? null : url,
+          videoUrl: isVideoGen ? url : null,
+        })),
       });
-    } catch {
-      setGenerationsByTab((prev) => ({
-        ...prev,
-        [currentTab]: prev[currentTab].map((gen) => {
-          if (gen.id !== genId) return gen;
-          return { ...gen, cards: gen.cards.map(() => ({ status: 'error', imageUrl: null })) };
-        }),
-      }));
+    } catch (error) {
+      showToast('error', '生成失败，请稍后重试');
     } finally {
       setGenerating(false);
     }
@@ -3484,24 +3861,26 @@ export default function CreationPage() {
      * │  └────────────────────────────────────────────────────────────────────┘│
      * └────────────────────────────────────────────────────────────────────────┘
      */
-    <div
-      style={{
-        display: 'flex',
-        flexDirection: 'column',
-        flexGrow: 1,
-        flexShrink: 1,
-        flexBasis: '0%',
-        minHeight: 0,
-        height: '100%',
-        overflow: 'clip',
-        alignSelf: 'stretch',
-        paddingBottom: '24px',
-        paddingRight: '24px',
-        fontSize: '12px',
-        lineHeight: '16px',
-        WebkitFontSmoothing: 'antialiased',
-      }}
-    >
+    <>
+      <Toast toasts={toasts} />
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          flexGrow: 1,
+          flexShrink: 1,
+          flexBasis: '0%',
+          minHeight: 0,
+          height: '100%',
+          overflow: 'clip',
+          alignSelf: 'stretch',
+          paddingBottom: '24px',
+          paddingRight: '24px',
+          fontSize: '12px',
+          lineHeight: '16px',
+          WebkitFontSmoothing: 'antialiased',
+        }}
+      >
       {/* rounded card */}
       <div
         style={{
@@ -3590,6 +3969,11 @@ export default function CreationPage() {
               batchMode={batchMode}
               selected={selected}
               onToggleSelect={toggleSelect}
+              onSwitchToFrameMode={handleSwitchToFrameMode}
+              onVideoCardClick={(card) => setVideoDetailModal(card)}
+              favorites={favorites}
+              toggleFavorite={handleToggleFavorite}
+              showToast={showToast}
             />
           ) : (
             <CreationEmptyState onGenerate={handleGenerate} genType={genType} onGenTypeChange={handleGenTypeChange}
@@ -3598,5 +3982,45 @@ export default function CreationPage() {
         </div>
       </div>
     </div>
+    {videoDetailModal && createPortal(
+      <CreationVideoDetailModal
+        videoUrl={videoDetailModal.videoUrl}
+        prompt={videoDetailModal.prompt}
+        model={videoDetailModal.model}
+        ratio={videoDetailModal.ratio}
+        resolution={videoDetailModal.resolution}
+        duration={videoDetailModal.duration}
+        refMode={videoDetailModal.refMode}
+        refImages={videoDetailModal.refImages}
+        refVideos={videoDetailModal.refVideos}
+        refAudios={videoDetailModal.refAudios}
+        createdAt={videoDetailModal.createdAt}
+        onClose={() => setVideoDetailModal(null)}
+        onDownload={() => {
+          fetch(videoDetailModal.videoUrl)
+            .then((res) => res.blob())
+            .then((blob) => {
+              const objUrl = URL.createObjectURL(blob);
+              const a = document.createElement('a');
+              a.href = objUrl;
+              a.download = 'creation.mp4';
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+              URL.revokeObjectURL(objUrl);
+            })
+            .catch(() => window.open(videoDetailModal.videoUrl, '_blank'));
+        }}
+        onDelete={() => {
+          handleDeleteCard(videoDetailModal.genId, videoDetailModal.cardIndex);
+          setVideoDetailModal(null);
+        }}
+        favorited={favorites.has(videoDetailModal.key)}
+        onFavorite={() => handleToggleFavorite(videoDetailModal.key)}
+      />,
+      document.body
+    )}
+    <Toast toasts={toasts} />
+    </>
   );
 }

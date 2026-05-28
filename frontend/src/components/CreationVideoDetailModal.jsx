@@ -1,0 +1,530 @@
+import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
+
+const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
+const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
+
+// Confirm delete modal component
+function ConfirmDeleteModal({ onConfirm, onCancel }) {
+  const [confirmHov, setConfirmHov] = useState(false);
+  const [cancelHov, setCancelHov] = useState(false);
+  return createPortal(
+    <div
+      style={{ position: 'fixed', inset: 0, zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' }}
+      onClick={onCancel}
+    >
+      <div
+        style={{ width: '320px', borderRadius: '12px', border: '1px solid #FFFFFF14', backgroundColor: '#161616', padding: '24px 24px 20px', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '#00000099 0px 8px 32px' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ fontFamily: FONT_MEDIUM, fontSize: '16px', lineHeight: '20px', color: '#FFFFFF' }}>确认删除</div>
+        <div style={{ fontFamily: FONT, fontSize: '13px', lineHeight: '20px', color: '#FFFFFF99' }}>
+          删除后无法恢复，确定要删除这个视频吗？
+        </div>
+        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', paddingTop: '4px' }}>
+          <button
+            type="button"
+            style={{
+              height: '32px', padding: '0 16px', borderRadius: '8px', border: '1px solid #FFFFFF1F',
+              backgroundColor: cancelHov ? '#FFFFFF14' : '#FFFFFF0A',
+              color: '#FFFFFF99', fontFamily: FONT, fontSize: '13px', cursor: 'pointer',
+              transition: 'background-color 120ms'
+            }}
+            onMouseEnter={() => setCancelHov(true)}
+            onMouseLeave={() => setCancelHov(false)}
+            onClick={onCancel}
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            style={{
+              height: '32px', padding: '0 16px', borderRadius: '8px', border: 'none',
+              backgroundColor: confirmHov ? '#E53E3E' : '#C53030',
+              color: '#FFFFFF', fontFamily: FONT, fontSize: '13px', cursor: 'pointer',
+              transition: 'background-color 120ms'
+            }}
+            onMouseEnter={() => setConfirmHov(true)}
+            onMouseLeave={() => setConfirmHov(false)}
+            onClick={onConfirm}
+          >
+            确认删除
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+}
+
+/**
+ * 创作页视频详情弹窗
+ * @param {Object} props
+ * @param {Function} props.onClose - 关闭弹窗
+ * @param {string} props.videoUrl - 视频地址
+ * @param {string} props.prompt - 提示词
+ * @param {string} props.model - 模型名称
+ * @param {string} props.ratio - 画面比例
+ * @param {string} props.resolution - 分辨率
+ * @param {string} props.duration - 时长
+ * @param {string} props.refMode - 参考模式
+ * @param {Array} props.refImages - 参考图片数组
+ * @param {Array} props.refVideos - 参考视频数组
+ * @param {Array} props.refAudios - 参考音频数组
+ * @param {string} props.createdAt - 生成时间
+ * @param {Function} props.onDownload - 下载回调
+ * @param {Function} props.onDelete - 删除回调
+ * @param {Function} props.onFavorite - 收藏回调
+ */
+export default function CreationVideoDetailModal({
+  onClose,
+  videoUrl,
+  prompt = '',
+  model = '',
+  ratio = '16:9',
+  resolution = '',
+  duration = '',
+  refMode = '',
+  refImages = [],
+  refVideos = [],
+  refAudios = [],
+  createdAt = '',
+  onDownload,
+  onDelete,
+  favorited = false,
+  onFavorite,
+}) {
+  console.log('CreationVideoDetailModal props:', { videoUrl, prompt, model, ratio, resolution, duration });
+
+  if (!videoUrl) {
+    console.error('CreationVideoDetailModal: videoUrl is missing!');
+  }
+
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [starAnim, setStarAnim] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const [currentTime, setCurrentTime] = useState(0);
+  const [videoDuration, setVideoDuration] = useState(0);
+  const [volume, setVolume] = useState(0.7);
+  const [hovClose, setHovClose] = useState(false);
+  const videoRef = useRef(null);
+  const progressBarRef = useRef(null);
+  const volumeBarRef = useRef(null);
+  const isDraggingRef = useRef(false);
+
+  function fmtTime(secs) {
+    if (!isFinite(secs) || secs < 0) return '0:00';
+    const m = Math.floor(secs / 60);
+    const s = Math.floor(secs % 60);
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  }
+
+  useEffect(() => {
+    const vid = videoRef.current;
+    if (!vid) return;
+
+    const onTimeUpdate = () => setCurrentTime(vid.currentTime);
+    const onLoaded = () => {
+      setVideoDuration(vid.duration);
+      vid.volume = volume;
+      console.log('Video loaded:', vid.duration, vid.videoWidth, vid.videoHeight);
+    };
+    const onEnded = () => setIsPlaying(false);
+    const onError = (e) => {
+      console.error('Video error:', e, vid.error);
+    };
+
+    vid.addEventListener('timeupdate', onTimeUpdate);
+    vid.addEventListener('loadedmetadata', onLoaded);
+    vid.addEventListener('ended', onEnded);
+    vid.addEventListener('error', onError);
+
+    return () => {
+      vid.removeEventListener('timeupdate', onTimeUpdate);
+      vid.removeEventListener('loadedmetadata', onLoaded);
+      vid.removeEventListener('ended', onEnded);
+      vid.removeEventListener('error', onError);
+    };
+  }, [volume, videoUrl]);
+
+  function togglePlay() {
+    const vid = videoRef.current;
+    if (!vid) return;
+    if (vid.paused) { vid.play(); setIsPlaying(true); }
+    else { vid.pause(); setIsPlaying(false); }
+  }
+
+  function seekFromEvent(e, bar) {
+    const rect = bar.getBoundingClientRect();
+    const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const vid = videoRef.current;
+    if (vid && isFinite(vid.duration)) {
+      vid.currentTime = ratio * vid.duration;
+      setCurrentTime(vid.currentTime);
+    }
+  }
+
+  function handleProgressMouseDown(e) {
+    isDraggingRef.current = true;
+    seekFromEvent(e, progressBarRef.current);
+    const onMove = (ev) => { if (isDraggingRef.current) seekFromEvent(ev, progressBarRef.current); };
+    const onUp = () => { isDraggingRef.current = false; document.removeEventListener('mousemove', onMove); document.removeEventListener('mouseup', onUp); };
+    document.addEventListener('mousemove', onMove);
+    document.addEventListener('mouseup', onUp);
+  }
+
+  function handleVolumeClick(e) {
+    if (!volumeBarRef.current) return;
+    const rect = volumeBarRef.current.getBoundingClientRect();
+    const v = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    setVolume(v);
+    if (videoRef.current) {
+      videoRef.current.volume = v;
+      console.log('Volume set to:', v);
+    }
+  }
+
+  const progressPct = videoDuration > 0 ? (currentTime / videoDuration) * 100 : 0;
+
+  return (
+    <>
+    <div
+      style={{
+        position: 'fixed', inset: 0, zIndex: 200,
+        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+      }}
+      onClick={onClose}
+    >
+      <div
+        className="flex flex-col w-[960px] rounded-2xl h-fit [box-shadow:#00000099_-10px_24px_64px] bg-[#161616] border border-solid border-[#FFFFFF14]"
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between shrink-0 py-[20px] px-[24px] bg-[#161616]">
+          <div className="tracking-[0.01em] inline-block font-['AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] font-medium text-white text-base/5">
+            查看详情
+          </div>
+          <button
+            type="button"
+            style={{
+              width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: hovClose ? '#FFFFFF14' : 'transparent', border: 'none', cursor: 'pointer',
+              borderRadius: '6px', padding: 0, flexShrink: 0, transition: 'background 0.12s',
+            }}
+            onMouseEnter={() => setHovClose(true)}
+            onMouseLeave={() => setHovClose(false)}
+            onClick={onClose}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: '0' }}>
+              <path d="M12 4L4 12M4 4L12 12" stroke="#FFFFFF99" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="flex grow shrink basis-[0%] h-[540px]">
+          {/* Left: video player */}
+          <div className="flex flex-col grow shrink basis-[0%] min-w-0 min-h-0 bg-[#0D0D0D]">
+            <div className="grow shrink basis-[0%] flex items-center justify-center min-h-0 bg-[#0A0A0A]">
+              <div className="w-full aspect-video flex items-center justify-center overflow-clip self-stretch relative" style={{ backgroundImage: 'linear-gradient(in oklab 135deg, oklab(21.8% 0 0) 0%, oklab(17.8% 0 0) 100%)' }}>
+                {/* Real video element */}
+                {videoUrl ? (
+                  <video
+                    ref={videoRef}
+                    src={videoUrl}
+                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain' }}
+                    preload="metadata"
+                    playsInline
+                  />
+                ) : (
+                  <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFFFFF66', fontFamily: FONT, fontSize: '14px' }}>
+                    视频加载失败
+                  </div>
+                )}
+                <div className="absolute inset-0" style={{ backgroundImage: 'linear-gradient(in oklab 180deg, oklab(0% 0 0 / 0%) 40%, oklab(0% 0 0 / 40%) 100%)' }} />
+                <button
+                  type="button"
+                  className="flex items-center justify-center rounded-[50%] relative shrink-0 [backdrop-filter:blur(8px)] bg-[#FFFFFF1F] border border-solid border-[#FFFFFF33] size-[56px]"
+                  style={{ cursor: 'pointer' }}
+                  onClick={togglePlay}
+                >
+                  {isPlaying ? (
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" style={{ flexShrink: 0 }}>
+                      <rect x="4" y="4" width="4" height="12" rx="1" fill="#FFFFFF" />
+                      <rect x="12" y="4" width="4" height="12" rx="1" fill="#FFFFFF" />
+                    </svg>
+                  ) : (
+                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" style={{ flexShrink: '0' }}>
+                      <path d="M7 5L16 10L7 15V5Z" fill="#FFFFFF" />
+                    </svg>
+                  )}
+                </button>
+              </div>
+            </div>
+            {/* Controls bar */}
+            <div className="flex flex-col shrink-0 pt-[14px] pb-[16px] gap-[10px] bg-[#111111] px-[16px]">
+              <div className="flex items-center justify-between gap-[24px]">
+                <div className="flex items-center gap-[16px]">
+                  <button
+                    type="button"
+                    className="flex items-center justify-center rounded-[50%] shrink-0 bg-[#FFFFFF1A] border border-solid border-[#FFFFFF26] size-[32px]"
+                    style={{ cursor: 'pointer' }}
+                    onClick={togglePlay}
+                  >
+                    {isPlaying ? (
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ flexShrink: 0 }}>
+                        <rect x="2" y="2" width="3" height="10" rx="0.5" fill="#FFFFFF" />
+                        <rect x="9" y="2" width="3" height="10" rx="0.5" fill="#FFFFFF" />
+                      </svg>
+                    ) : (
+                      <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ flexShrink: '0' }}>
+                        <path d="M5 3L12 7L5 11V3Z" fill="#FFFFFF" />
+                      </svg>
+                    )}
+                  </button>
+                </div>
+                <div className="flex items-center gap-[10px] flex-1">
+                  <div className="tracking-[0.01em] shrink-0 w-[36px] inline-block font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFF99] text-xs/4">
+                    {fmtTime(currentTime)}
+                  </div>
+                  <div
+                    ref={progressBarRef}
+                    className="grow shrink basis-[0%] h-[3px] rounded-xs bg-[#FFFFFF1F]"
+                    style={{ cursor: 'pointer' }}
+                    onMouseDown={handleProgressMouseDown}
+                  >
+                    <div className="h-full rounded-xs relative bg-[#FFFFFFB3]" style={{ width: `${progressPct}%` }}>
+                      <div className="-right-[5px] top-[50%] rounded-[50%] absolute [box-shadow:#00000080_0px_0px_4px] bg-white size-[10px]" style={{ translate: '0px -50%' }} />
+                    </div>
+                  </div>
+                  <div className="tracking-[0.01em] shrink-0 w-[36px] text-right inline-block font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFF40] text-xs/4">
+                    {fmtTime(videoDuration)}
+                  </div>
+                </div>
+                <div className="flex items-center gap-[8px]">
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ opacity: '0.4', flexShrink: '0' }}>
+                    <path d="M3 6H1V10H3L7 13V3L3 6Z" fill="#FFFFFF" />
+                    <path d="M10 5C11.1 6.1 11.1 9.9 10 11M12.5 3C14.7 5.2 14.7 10.8 12.5 13" stroke="#FFFFFF" strokeWidth="1.2" strokeLinecap="round" />
+                  </svg>
+                  <div
+                    ref={volumeBarRef}
+                    className="w-[60px] h-[3px] rounded-xs shrink-0 bg-[#FFFFFF1F]"
+                    style={{ cursor: 'pointer' }}
+                    onClick={handleVolumeClick}
+                  >
+                    <div className="h-full rounded-xs bg-[#FFFFFF99]" style={{ width: `${volume * 100}%` }} />
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Right: params panel */}
+          <div className="w-[280px] flex flex-col min-h-[unset] h-[540px] shrink-0 bg-[#161616] border-l border-l-solid border-l-[#FFFFFF0F]">
+            {/* Scrollable content area */}
+            <div className="flex-1 overflow-y-auto min-h-0">
+              <div className="h-px shrink-0 bg-[#FFFFFF0A] my-0 mx-[20px]" />
+            {/* Prompt */}
+            <div className="flex flex-col py-[16px] px-[20px] gap-[10px]">
+              <div className="tracking-[0.66px] uppercase inline-block font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFF99] text-[11px]/[14px]">
+                提示词
+              </div>
+              <div className="tracking-[0.12px] font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFFCC] text-xs/5 m-0">
+                {prompt || '无'}
+              </div>
+            </div>
+
+            {/* Reference */}
+            {(refImages.length > 0 || refVideos.length > 0 || refAudios.length > 0) && (
+              <>
+                <div className="h-px shrink-0 bg-[#FFFFFF0A] my-0 mx-[20px]" />
+                <div className="flex flex-col py-[16px] px-[20px] gap-[12px]">
+                  <div className="tracking-[0.66px] uppercase inline-block font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFF99] text-[11px]/[14px]">
+                    参考
+                  </div>
+                  <div className="flex items-start gap-[12px] self-stretch flex-wrap">
+                    {refImages.map((img, i) => {
+                      const imgUrl = typeof img === 'string' ? img : (img.url || img.previewUrl || '');
+                      return (
+                        <div key={i} className="rounded-md overflow-clip flex flex-col items-center gap-0 justify-center h-[84px] w-[calc(47.49%)] bg-[#FFFFFF14] border border-solid border-[#FFFFFF14] p-0">
+                          <div className="w-[93px] h-[144px] shrink-0 bg-cover bg-[center]" style={{ backgroundImage: `url(${imgUrl})` }} />
+                        </div>
+                      );
+                    })}
+                    {refVideos.map((vid, i) => {
+                      const vidUrl = typeof vid === 'string' ? vid : (vid.url || vid.previewUrl || '');
+                      return (
+                        <div key={i} className="rounded-md overflow-clip flex flex-col items-center gap-0 justify-center h-[84px] w-[calc(47.49%)] relative bg-[#FFFFFF14] border border-solid border-[#FFFFFF14] p-0">
+                          <video src={vidUrl} className="w-[93px] h-[144px] shrink-0 object-cover" />
+                          <div className="flex items-center justify-center rounded-[50%] absolute left-[50%] top-[50%] [backdrop-filter:blur(8px)] bg-[#0000001F] border border-solid border-[#FFFFFF33] size-[32px]" style={{ translate: '-50% -50%' }}>
+                            <svg width="20" height="20" viewBox="0 0 20 20" fill="none" style={{ flexShrink: '0' }}>
+                              <path d="M7 5L16 10L7 15V5Z" fill="#FFFFFF" />
+                            </svg>
+                          </div>
+                        </div>
+                      );
+                    })}
+                    {refAudios.map((audio, i) => (
+                      <div key={i} className="flex flex-col items-start gap-[2px] px-[8px] py-[6px] overflow-clip rounded-lg w-[calc(47.699%)] h-[84px] justify-between bg-[#1D1E1E] border border-solid border-[#FFFFFF14]">
+                        <div className="text-[14px] leading-[150%] self-stretch flex-1 font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-white">
+                          {(typeof audio === 'string' ? 'audio.mp3' : (audio.name || 'audio.mp3'))}
+                        </div>
+                        <div className="text-[12px] leading-[150%] self-stretch font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFF66]">
+                          {(typeof audio === 'string' ? '' : (audio.size || '2M'))}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* Generation params */}
+            <div className="h-px shrink-0 bg-[#FFFFFF0A] my-0 mx-[20px]" />
+            <div className="flex flex-col py-[16px] px-[20px] gap-[12px] bg-[#161616]">
+              <div className="tracking-[0.66px] uppercase inline-block font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFF99] text-[11px]/[14px]">
+                生成参数
+              </div>
+              {model && (
+                <div className="flex items-center justify-between">
+                  <div className="tracking-[0.12px] inline-block font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFF99] text-xs/4">
+                    模型
+                  </div>
+                  <div className="tracking-[0.12px] inline-block font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFFCC] text-xs/4">
+                    {model}
+                  </div>
+                </div>
+              )}
+              {refMode && (
+                <div className="flex items-center justify-between">
+                  <div className="tracking-[0.12px] inline-block font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFF99] text-xs/4">
+                    参考模式
+                  </div>
+                  <div className="tracking-[0.12px] inline-block font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFFCC] text-xs/4">
+                    {refMode}
+                  </div>
+                </div>
+              )}
+              {ratio && (
+                <div className="flex items-center justify-between">
+                  <div className="tracking-[0.12px] inline-block font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFF99] text-xs/4">
+                    画面比例
+                  </div>
+                  <div className="tracking-[0.12px] inline-block font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFFCC] text-xs/4">
+                    {ratio}
+                  </div>
+                </div>
+              )}
+              {resolution && (
+                <div className="flex items-center justify-between">
+                  <div className="tracking-[0.12px] inline-block font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFF99] text-xs/4">
+                    分辨率
+                  </div>
+                  <div className="tracking-[0.12px] inline-block font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFFCC] text-xs/4">
+                    {resolution}
+                  </div>
+                </div>
+              )}
+              {duration && (
+                <div className="flex items-center justify-between">
+                  <div className="tracking-[0.12px] inline-block font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFF99] text-xs/4">
+                    时长
+                  </div>
+                  <div className="tracking-[0.12px] inline-block font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFFCC] text-xs/4">
+                    {duration}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* AI generation time */}
+            {createdAt && (
+              <>
+                <div className="h-px shrink-0 bg-[#FFFFFF0A] my-0 mx-[20px]" />
+                <div className="flex flex-col w-[280px] h-[66px] py-[16px] px-[20px] gap-[4px] shrink-0 bg-[#161616]">
+                  <div className="tracking-[0.66px] uppercase font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFF99] text-[11px]/[14px]">
+                    AI 生成时间
+                  </div>
+                  <div className="tracking-[0.12px] font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFF66] text-xs/4">
+                    {createdAt}
+                  </div>
+                </div>
+              </>
+            )}
+
+            <div className="h-px shrink-0 bg-[#FFFFFF0A] my-0 mx-[20px]" />
+            </div>
+
+            {/* Fixed action buttons at bottom */}
+            <div className="pb-[20px] flex items-start gap-[16px] w-[280px] bg-[#161616] px-[20px] shrink-0">
+              <button
+                type="button"
+                className="flex items-center justify-center w-full h-[40px] rounded-lg gap-[4px] bg-[#FFFFFF14] border border-solid border-[#FFFFFF1F]"
+                style={{ cursor: 'pointer', transform: starAnim ? 'scale(1.1)' : 'scale(1)', transition: 'transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1)' }}
+                onClick={() => {
+                  setStarAnim(true);
+                  setTimeout(() => setStarAnim(false), 300);
+                  onFavorite?.();
+                }}
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: '0' }}>
+                  <path d="M8 1.667L5.962 5.826L1.333 6.497L4.686 9.775L3.885 14.333L8 12.14L12.115 14.333L11.32 9.775L14.667 6.497L10.064 5.826L8 1.667Z"
+                    fill={favorited ? '#F0B429' : 'none'}
+                    stroke={favorited ? '#F0B429' : '#FFFFFF99'}
+                    strokeLinejoin="round" />
+                </svg>
+                <div className="tracking-[0.13px] inline-block font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFF99] text-[13px]/4">
+                  收藏
+                </div>
+              </button>
+              <button
+                type="button"
+                className="flex items-center justify-center w-full h-[40px] rounded-lg gap-[4px] bg-[#FFFFFF14] border border-solid border-[#FFFFFF1F]"
+                style={{ cursor: 'pointer' }}
+                onClick={onDownload}
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: '0' }}>
+                  <path d="M8.003 11.3V2" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M4 7.333L8 11.333L12 7.333" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M4 14H12" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                <div className="tracking-[0.13px] inline-block font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFF99] text-[13px]/4">
+                  下载
+                </div>
+              </button>
+              <button
+                type="button"
+                className="flex items-center justify-center w-full h-[40px] rounded-lg gap-[4px] bg-[#FFFFFF14] border border-solid border-[#FFFFFF1F]"
+                style={{ cursor: 'pointer' }}
+                onClick={() => setConfirmDelete(true)}
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: '0' }}>
+                  <path d="M3 3.333V14.667H13V3.333H3Z" stroke="#FFFFFF99" strokeLinejoin="round" />
+                  <path d="M6.667 6.667V11" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M9.333 6.667V11" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M1.333 3.333H14.667" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M5.333 3.333L6.43 1.333H9.592L10.667 3.333H5.333Z" stroke="#FFFFFF99" strokeLinejoin="round" />
+                </svg>
+                <div className="tracking-[0.13px] inline-block font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFF99] text-[13px]/4">
+                  删除
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    {confirmDelete && (
+      <ConfirmDeleteModal
+        onConfirm={() => {
+          setConfirmDelete(false);
+          onDelete?.();
+        }}
+        onCancel={() => setConfirmDelete(false)}
+      />
+    )}
+    </>
+  );
+}

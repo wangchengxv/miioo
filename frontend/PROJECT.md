@@ -1,6 +1,6 @@
 # miioo 项目进度管理文档
 
-> 最后更新：2026-05-26（创作页分标签历史 + 多项 Bug 修复）
+> 最后更新：2026-05-27（创作页图片详情弹窗交互完成）
 
 ---
 
@@ -353,6 +353,29 @@ miioo/
   - `const generations = generationsByTab[activeTab]` 派生当前 tab 视图，所有下游组件不变
   - `handleGenerate` 调用时捕获 `currentTab`，异步回调更新正确 tab 切片，防止生成中途切 tab 写错
   - 效果：图片/视频/配音各自维护独立历史，切 tab 互不干扰；离开页面再回来三个 tab 均重置（已实时存入创作资产库）
+- [x] 创作页 — 视频模型能力配置 + 音频过滤（2026-05-27）：
+  - 新建 `src/config/imageModelCapabilities.js` 和 `videoModelCapabilities.js`：图片/视频模型完整能力表（分辨率、比例、时长、输入输出格式、特性开关等）
+  - 新建 `src/config/index.js`：`getImageModelParams` / `getVideoModelParams` 工具函数，返回 UI 渲染所需参数（ratios / resolutions / durations / refModes / supportsAudio）
+  - 视频模型音频能力明确：Seedance 2.0 支持音频输入（mp3/wav）和输出，Kling 3.0/O3/Vidu Q3 仅支持音频输出
+  - 参考模式统一：所有视频模型支持「全能参考」和「首尾帧」两种模式
+  - `CreationPage.jsx` 音频过滤逻辑：`uploadAllowedExts` 和 `assetPickerAccept` 根据 `creationParams.supportsAudio` 动态过滤音频文件，不支持音频输入的模型隐藏音频 Tab 和文件类型
+  - 声音 toggle 所有视频模型均显示（控制音频输出，与音频输入能力无关）
+- [x] 创作页 — InputCard 提示词优化 + 视频缩略图（2026-05-27）：
+  - 图片 tab 提示词：「上传参考图，输入文字或 @ 主体，描述你想生成的图片」，`@` 字符用蓝色标签高亮
+  - 视频 tab 提示词根据 refMode 动态切换：全能参考「上传最多12个参考素材、输入文字或 @ 参考内容，自由组合图、文、音、视频多元素」/ 首尾帧「输入文字，描述你想创作的画面内容」/ 智能多帧「请添加智能多帧分镜图」
+  - 视频文件卡片改为缩略图样式：提取首帧（0.1s）通过 Canvas 转 base64，与图片卡片样式统一（100×100px）
+- [x] 创作页 — 视频首尾帧上传组件（2026-05-27）：
+  - 新增 `FrameUploader` 组件：首帧/尾帧双槽位上传（44×60px），支持本地上传和资产库选择，中间交换按钮
+  - 每个槽位独立下拉菜单（从资产库选择/从本地上传），点击外部自动关闭
+  - 已上传图片 hover 显示关闭按钮（右上角 -7px 偏移），点击删除图片
+  - 交换按钮 hover 背景变化（`transparent` → `#FFFFFF0A`），图标颜色变化（`#515151` → `#FFFFFF99`）
+  - `refMode === 'frame'` 时替换 `UploadPlaceholder`，状态独立管理（`firstFrameFile` / `lastFrameFile`），通过 `frameAssetTarget` 路由资产库选择结果
+- [x] 创作页 — 图片详情弹窗交互完成（2026-05-27）：
+  - 修复点击图片卡片无法弹出详情弹窗的问题：`ImageResultCard` 组件已有 `detailOpen` 状态和点击触发逻辑，但缺少条件渲染 `ImageDetailModal` 的代码
+  - 删除重复组件 `src/components/CreationImageDetailModal.jsx`，使用 `CreationPage.jsx` 中已存在的 `ImageDetailModal` 组件（第 2660-2844 行）
+  - 在 `ImageResultCard` 组件末尾添加条件渲染：`detailOpen` 为 true 时渲染 `ImageDetailModal`，传递图片数据和回调
+  - 右侧信息面板布局优化：外层容器 `position: relative`，内容区 `flex: 1 + overflowY: auto + paddingBottom: 76px` 可滚动，底部按钮区 `position: absolute` 固定在底部，避免遮挡内容
+  - 交互流程：点击图片卡片 → 弹出详情弹窗 → 左侧图片预览（70% 高度居中）+ 右侧参数信息可滚动 + 底部收藏/下载/删除按钮固定
 - [ ] 项目工作流 — 剪辑成片
 - [ ] 创作页（生视频）
 - [ ] 资产库
