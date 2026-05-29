@@ -2,9 +2,11 @@ import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { PulsingBorder } from '@paper-design/shaders-react';
 import bgImage from '../assets/home-bg.png';
-import { apiCreateProject, apiGetProjects } from '../api/project';
+import { apiCreateProject, apiGetProjects, apiUpdateProject, apiDeleteProject, apiGetProject } from '../api/project';
 import { clearTokens } from '../api/auth';
 import { apiGetCurrentUser, apiGetNotifications } from '../api/user';
+import { apiGetSubjects, apiGetEpisodes, apiGetScriptWorkspace } from '../api/subject';
+import { apiGetStoryboards } from '../api/storyboard';
 import PrimaryNav from '../components/PrimaryNav';
 import LoginModal from '../components/LoginModal';
 import ApiConfigModal from '../components/ApiConfigModal';
@@ -881,7 +883,14 @@ function WorkflowHeadbar({ activeStep, onStepChange, unlockedSteps, isLoggedIn, 
 }
 
 export default function Home({ onProjectCreated }) {
-  const [activeKey, setActiveKey] = useState('home');
+  const [activeKey, setActiveKey] = useState(() => {
+    // 如果有激活的项目，恢复为 'project'
+    const savedProjectId = localStorage.getItem('miioo_active_project_id');
+    if (savedProjectId) return 'project';
+
+    // 否则尝试恢复上次的 activeKey
+    return localStorage.getItem('miioo_active_key') || 'home';
+  });
   const [bottomActiveKey, setBottomActiveKey] = useState(null);
   const [loginOpen, setLoginOpen] = useState(false);
   const [apiConfigOpen, setApiConfigOpen] = useState(false);
@@ -893,7 +902,13 @@ export default function Home({ onProjectCreated }) {
   // TODO: 替换为真实接口 GET /projects，在 useEffect 中拉取并 setProjects
   const [projects, setProjects] = useState([]);
   const [activeProject, setActiveProject] = useState(null);
-  const [activeStep, setActiveStep] = useState('script');
+  const [isLoadingProject, setIsLoadingProject] = useState(false);
+  const [activeProjectId, setActiveProjectId] = useState(() => {
+    return localStorage.getItem('miioo_active_project_id') || null;
+  });
+  const [activeStep, setActiveStep] = useState(() => {
+    return localStorage.getItem('miioo_active_step') || 'script';
+  });
   const [subjectInitialTab, setSubjectInitialTab] = useState('char');
   const [sharedChars, setSharedChars] = useState(null);
   const [sharedScenes, setSharedScenes] = useState(null);
@@ -918,8 +933,125 @@ export default function Home({ onProjectCreated }) {
     toastTimerRef.current = setTimeout(() => setToast(null), 2500);
   };
 
+  // 监听项目切换并保存 ID
   useEffect(() => {
-    apiGetProjects().then(setProjects);
+    if (activeProject?.id) {
+      localStorage.setItem('miioo_active_project_id', activeProject.id);
+    } else {
+      localStorage.removeItem('miioo_active_project_id');
+      localStorage.removeItem('miioo_active_key');
+    }
+  }, [activeProject?.id]);
+
+  // 监听步骤切换并保存
+  useEffect(() => {
+    if (activeProject?.id) {
+      localStorage.setItem('miioo_active_step', activeStep);
+    }
+  }, [activeStep, activeProject?.id]);
+
+  // 监听 activeKey 变化并保存
+  useEffect(() => {
+    if (activeKey !== 'home') {
+      localStorage.setItem('miioo_active_key', activeKey);
+    }
+  }, [activeKey]);
+
+  // 监听解锁状态变化并保存（按项目 ID）
+  useEffect(() => {
+    if (activeProject?.id && unlockedSteps.size > 0) {
+      const key = `miioo_unlocked_steps_${activeProject.id}`;
+      localStorage.setItem(key, JSON.stringify([...unlockedSteps]));
+    }
+  }, [unlockedSteps, activeProject?.id]);
+
+  // 统一的项目数据加载函数
+  const loadProjectDetails = async (projectId) => {
+    setIsLoadingProject(true);
+    try {
+      // 1. 加载项目基本信息
+      const projectData = await apiGetProject(projectId);
+      setActiveProject(projectData);
+
+      // 2. 恢复步骤解锁状态（从 localStorage）
+      const savedUnlocked = localStorage.getItem(`miioo_unlocked_steps_${projectId}`);
+      if (savedUnlocked) {
+        setUnlockedSteps(new Set(JSON.parse(savedUnlocked)));
+      } else {
+        setUnlockedSteps(new Set());
+      }
+
+      // 3. 并行加载所有数据
+      const [scriptData, charsData, scenesData, propsData, episodesData] = await Promise.all([
+        apiGetScriptWorkspace(projectId).catch(err => {
+          console.error('加载剧本数据失败:', err);
+          return { content: '', episodes: [], phase: 'initial' };
+        }),
+        apiGetSubjects(projectId, { type: 'character' }).catch(() => []),
+        apiGetSubjects(projectId, { type: 'scene' }).catch(() => []),
+        apiGetSubjects(projectId, { type: 'prop' }).catch(() => []),
+        apiGetEpisodes(projectId).catch(() => [])
+      ]);
+
+      // 4. 更新状态
+      setScriptContent(scriptData.content || '');
+      setScriptEpisodes(scriptData.episodes || episodesData || []);
+      setScriptPhase(scriptData.phase || 'initial');
+      setScriptHasStarted(!!scriptData.content);
+
+      setSharedChars(charsData);
+      setSharedScenes(scenesData);
+      setSharedProps(propsData);
+
+      // 5. 加载分镜数据（需要剧集 ID）
+      if (episodesData.length > 0) {
+        const storyboardsData = await apiGetStoryboards(projectId, {
+          episode_id: episodesData[0].id
+        }).catch(() => []);
+
+        // 根据分镜数据判断是否解锁分镜步骤
+        if (storyboardsData.length > 0) {
+          setUnlockedSteps(prev => new Set([...prev, 'storyboard']));
+        }
+      }
+
+    } catch (error) {
+      console.error('加载项目详情失败:', error);
+      // 加载失败时清除缓存
+      localStorage.removeItem('miioo_active_project_id');
+      localStorage.removeItem('miioo_active_step');
+      localStorage.removeItem('miioo_active_key');
+      setActiveProject(null);
+      setActiveProjectId(null);
+    } finally {
+      setIsLoadingProject(false);
+    }
+  };
+
+  useEffect(() => {
+    apiGetProjects().then((data) => {
+      // 按创建时间倒序排列，最新的在前
+      const sorted = [...data].sort((a, b) => {
+        const timeA = new Date(a.created_at || 0).getTime();
+        const timeB = new Date(b.created_at || 0).getTime();
+        return timeB - timeA;
+      });
+      setProjects(sorted);
+
+      // 刷新后恢复激活项目
+      if (activeProjectId) {
+        const exists = sorted.some(p => p.id === activeProjectId);
+        if (exists) {
+          loadProjectDetails(activeProjectId);
+        } else {
+          // 项目已被删除，清除缓存
+          localStorage.removeItem('miioo_active_project_id');
+          localStorage.removeItem('miioo_active_step');
+          localStorage.removeItem('miioo_active_key');
+          setActiveProjectId(null);
+        }
+      }
+    });
     apiGetCurrentUser().then(setCurrentUser);
     apiGetNotifications().then(setNotifications);
   }, []);
@@ -949,6 +1081,10 @@ export default function Home({ onProjectCreated }) {
     }
     setActiveKey(key);
     setActiveProject(null);
+    setActiveProjectId(null);
+    localStorage.removeItem('miioo_active_project_id');
+    localStorage.removeItem('miioo_active_step');
+          localStorage.removeItem('miioo_active_key');
   };
 
   const showApiBubble = !apiConfigOpen && (!isLoggedIn || (isLoggedIn && !apiConfigured));
@@ -1017,7 +1153,8 @@ export default function Home({ onProjectCreated }) {
   };
 
   const handleProjectCreated = (project) => {
-    setProjects((prev) => [...prev, project]);
+    // 新项目插入到列表最前面
+    setProjects((prev) => [project, ...prev]);
     setActiveKey('project');
   };
 
@@ -1081,19 +1218,26 @@ export default function Home({ onProjectCreated }) {
           onLoginClick={() => setLoginOpen(true)}
           onLogout={() => { clearTokens(); setIsLoggedIn(false); }}
           onOpenProfile={() => setProfileOpen(true)}
-          onLogoClick={() => { setActiveProject(null); setActiveKey('home'); }}
+          onLogoClick={() => {
+            setActiveProject(null);
+            setActiveProjectId(null);
+            setActiveKey('home');
+            localStorage.removeItem('miioo_active_project_id');
+            localStorage.removeItem('miioo_active_step');
+          localStorage.removeItem('miioo_active_key');
+          }}
         />
         )}
 
         {/* body: nav + content */}
-        <div className="flex flex-1 min-h-0 overflow-hidden self-stretch">
+        <div className="flex flex-1 min-h-0 overflow-hidden self-stretch w-auto">
           {/* primary navigation */}
-          <div className="flex flex-col items-start gap-0">
+          <div className="flex flex-col items-start gap-0 px-[16px] self-stretch w-auto">
             <div
-              className="flex flex-col items-start py-24 flex-1"
+              className="flex flex-col items-start justify-center py-24 flex-1"
               style={{
-                paddingLeft: (activeKey === 'project' || activeKey === 'assets' || activeKey === 'create') ? '12px' : '24px',
-                paddingRight: (activeKey === 'project' || activeKey === 'assets' || activeKey === 'create') ? '12px' : '24px',
+                paddingLeft: '0px',
+                paddingRight: '0px',
                 transition: 'padding-left 320ms cubic-bezier(0.4, 0, 0.2, 1), padding-right 320ms cubic-bezier(0.4, 0, 0.2, 1)',
               }}
             >
@@ -1104,8 +1248,8 @@ export default function Home({ onProjectCreated }) {
             <div
               className="py-24"
               style={{
-                paddingLeft: (activeKey === 'project' || activeKey === 'assets' || activeKey === 'create') ? '8px' : '32px',
-                paddingRight: (activeKey === 'project' || activeKey === 'assets' || activeKey === 'create') ? '8px' : '32px',
+                paddingLeft: '0px',
+                paddingRight: '0px',
                 alignSelf: 'stretch',
                 transition: 'padding-left 320ms cubic-bezier(0.4, 0, 0.2, 1), padding-right 320ms cubic-bezier(0.4, 0, 0.2, 1)',
               }}
@@ -1124,17 +1268,54 @@ export default function Home({ onProjectCreated }) {
             {activeKey === 'home' && (
               <StartCreationButton onClick={() => setNewProjectOpen(true)} />
             )}
-            {activeKey === 'project' && !activeProject && (
+            {activeKey === 'project' && !activeProject && !isLoadingProject && (
               <ProjectList
                 projects={projects}
                 onNewProject={() => setNewProjectOpen(true)}
-                onOpenProject={(p) => setActiveProject(p)}
+                onOpenProject={(p) => {
+                  loadProjectDetails(p.id);
+                  setActiveKey('project');
+                }}
+                onRenameProject={(projectId, newName) => {
+                  apiUpdateProject(projectId, { name: newName }).then(() => {
+                    setProjects((prev) => prev.map((p) => (p.id === projectId ? { ...p, name: newName } : p)));
+                  });
+                }}
+                onDeleteProject={(projectId) => {
+                  apiDeleteProject(projectId).then(() => {
+                    setProjects((prev) => prev.filter((p) => p.id !== projectId));
+                  });
+                }}
               />
             )}
             {activeKey === 'project' && activeProject && activeStep !== 'subject' && activeStep !== 'storyboard' && (
               <GlobalSettings
+                projectId={activeProject.id}
                 projectName={activeProject.name}
-                onBack={() => setActiveProject(null)}
+                projectDescription={activeProject.description || activeProject.desc}
+                projectCoverUrl={activeProject.cover_url || activeProject.cover}
+                projectRatio={activeProject.aspect_ratio || activeProject.ratio}
+                projectStyle={activeProject.visual_style || activeProject.style}
+                onProjectUpdate={(updates) => {
+                  return apiUpdateProject(activeProject.id, updates).then(() => {
+                    // 字段映射：cover_url -> cover
+                    const mappedUpdates = { ...updates };
+                    if (updates.cover_url !== undefined) {
+                      mappedUpdates.cover = updates.cover_url;
+                      showToast('封面保存成功', 'success');
+                    }
+                    setActiveProject((prev) => ({ ...prev, ...mappedUpdates }));
+                    setProjects((prev) => prev.map((p) => (p.id === activeProject.id ? { ...p, ...mappedUpdates } : p)));
+                  });
+                }}
+                onBack={() => {
+                  setActiveProject(null);
+                  setActiveProjectId(null);
+                  localStorage.removeItem('miioo_active_project_id');
+                  localStorage.removeItem('miioo_active_step');
+          localStorage.removeItem('miioo_active_key');
+                }}
+                showToast={showToast}
                 activeStep={activeStep}
                 onStepChange={setActiveStep}
                 onUnlockStep={handleUnlockStep}
@@ -1164,8 +1345,15 @@ export default function Home({ onProjectCreated }) {
             )}
             {activeKey === 'project' && activeProject && activeStep === 'subject' && (
               <SubjectPage
+                projectId={activeProject.id}
                 projectName={activeProject.name}
-                onBack={() => setActiveProject(null)}
+                onBack={() => {
+                  setActiveProject(null);
+                  setActiveProjectId(null);
+                  localStorage.removeItem('miioo_active_project_id');
+                  localStorage.removeItem('miioo_active_step');
+          localStorage.removeItem('miioo_active_key');
+                }}
                 episodeName="第一集"
                 onUnlockStep={handleUnlockStep}
                 initialTab={subjectInitialTab}
@@ -1183,6 +1371,7 @@ export default function Home({ onProjectCreated }) {
             )}
             {activeKey === 'project' && activeProject && activeStep === 'storyboard' && (
               <StoryboardPage
+                projectId={activeProject.id}
                 projectName={activeProject.name}
                 chars={sharedChars ?? []}
                 scenes={sharedScenes ?? []}
@@ -1224,7 +1413,17 @@ export default function Home({ onProjectCreated }) {
         onConfirm={({ name, desc, ratio, style, customStyleDesc, coverFile }) => {
           setNewProjectOpen(false);
           apiCreateProject({ name, desc, ratio, style, customStyleDesc, coverFile }).then((project) => {
-            handleProjectCreated({ id: project.id, name, desc, ratio, style, customStyleDesc, date: '刚刚' });
+            handleProjectCreated({
+              id: project.id,
+              name,
+              desc,
+              ratio,
+              style,
+              customStyleDesc,
+              cover: project.cover_url,
+              created_at: project.created_at,
+              updated_at: project.updated_at,
+            });
           });
         }}
       />
@@ -1239,11 +1438,18 @@ export default function Home({ onProjectCreated }) {
           animation: 'slideUpBounce 250ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards',
         }}>
           <div className="flex items-center gap-[8px] px-[16px] py-[8px] rounded-medium bg-toast-bg backdrop-blur-[20px]" style={{ whiteSpace: 'nowrap' }}>
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
-              <path d="M8 14.667C9.841 14.667 11.508 13.921 12.714 12.714C13.921 11.508 14.667 9.841 14.667 8C14.667 6.159 13.921 4.492 12.714 3.286C11.508 2.08 9.841 1.333 8 1.333C6.159 1.333 4.492 2.08 3.286 3.286C2.08 4.492 1.333 6.159 1.333 8C1.333 9.841 2.08 11.508 3.286 12.714C4.492 13.921 6.159 14.667 8 14.667Z" fill="#EB8B14" stroke="#EB8B14" strokeWidth="1.333" strokeLinejoin="round" />
-              <path fillRule="evenodd" clipRule="evenodd" d="M8 12.333C8.46 12.333 8.833 11.96 8.833 11.5C8.833 11.04 8.46 10.667 8 10.667C7.54 10.667 7.167 11.04 7.167 11.5C7.167 11.96 7.54 12.333 8 12.333Z" fill="#FFFFFF" />
-              <path d="M8 4V9.333" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
+            {toast.type === 'success' ? (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+                <path d="M8 14.667C9.841 14.667 11.508 13.921 12.714 12.714C13.921 11.508 14.667 9.841 14.667 8C14.667 6.159 13.921 4.492 12.714 3.286C11.508 2.08 9.841 1.333 8 1.333C6.159 1.333 4.492 2.08 3.286 3.286C2.08 4.492 1.333 6.159 1.333 8C1.333 9.841 2.08 11.508 3.286 12.714C4.492 13.921 6.159 14.667 8 14.667Z" fill="#52C41A" stroke="#52C41A" strokeWidth="1.333" strokeLinejoin="round" />
+                <path d="M5.333 8L7.333 10L10.667 6" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+                <path d="M8 14.667C9.841 14.667 11.508 13.921 12.714 12.714C13.921 11.508 14.667 9.841 14.667 8C14.667 6.159 13.921 4.492 12.714 3.286C11.508 2.08 9.841 1.333 8 1.333C6.159 1.333 4.492 2.08 3.286 3.286C2.08 4.492 1.333 6.159 1.333 8C1.333 9.841 2.08 11.508 3.286 12.714C4.492 13.921 6.159 14.667 8 14.667Z" fill="#EB8B14" stroke="#EB8B14" strokeWidth="1.333" strokeLinejoin="round" />
+                <path fillRule="evenodd" clipRule="evenodd" d="M8 12.333C8.46 12.333 8.833 11.96 8.833 11.5C8.833 11.04 8.46 10.667 8 10.667C7.54 10.667 7.167 11.04 7.167 11.5C7.167 11.96 7.54 12.333 8 12.333Z" fill="#FFFFFF" />
+                <path d="M8 4V9.333" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            )}
             <span className="text-text-primary text-font-size-16 font-font-weight-regular" style={{ fontFamily: "'AlibabaPuHuiTi 2 55 Regular','Alibaba PuHuiTi 2.0',system-ui,sans-serif" }}>
               {toast.msg}
             </span>

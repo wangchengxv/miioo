@@ -3,6 +3,7 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { Markdown } from 'tiptap-markdown';
 import ReactMarkdown from 'react-markdown';
+import { apiSaveScriptWorkspace } from '../api/subject';
 import { PulsingBorder } from '@paper-design/shaders-react';
 import DotsLoading from '../components/DotsLoading';
 
@@ -1434,7 +1435,7 @@ function ScriptPanel({
   );
 }
 
-export default function ScriptPage({ onGoToSubject, onEpisodesChange, phase: phaseProp, onPhaseChange, hasStarted: hasStartedProp, onHasStartedChange, scriptContent: scriptContentProp, onScriptContentChange, draftContent: draftContentProp, onDraftContentChange, streamingIndex: streamingIndexProp, onStreamingIndexChange }) {
+export default function ScriptPage({ projectId, onGoToSubject, onEpisodesChange, phase: phaseProp, onPhaseChange, hasStarted: hasStartedProp, onHasStartedChange, scriptContent: scriptContentProp, onScriptContentChange, draftContent: draftContentProp, onDraftContentChange, streamingIndex: streamingIndexProp, onStreamingIndexChange }) {
   const [phaseLocal, setPhaseLocalRaw] = useState('initial');
   const [hasStartedLocal, setHasStartedLocalRaw] = useState(false);
   const [scriptContentLocal, setScriptContentLocalRaw] = useState('');
@@ -1526,8 +1527,19 @@ export default function ScriptPage({ onGoToSubject, onEpisodesChange, phase: pha
     setPhase('edit');
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!draftContent) return;
+
+    // 保存到后端
+    if (projectId) {
+      await apiSaveScriptWorkspace(projectId, {
+        content: draftContent,
+        episodes: episodes,
+        phase: 'view'
+      });
+    }
+
+    // 更新状态
     setScriptContent(draftContent);
     setPhase('view');
   };

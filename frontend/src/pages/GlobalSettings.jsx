@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import ScriptPage from './ScriptPage';
 import { apiUpdateProject } from '../api/project';
 
@@ -6,6 +6,22 @@ import { apiUpdateProject } from '../api/project';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
+
+// 视觉风格映射
+const VISUAL_STYLES = {
+  custom: { label: '自定义', coverImg: null },
+  oriental3d: { label: '3D东方仙侠', coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF1YMA3KDCVA9GNPRN1912B.png' },
+  mystery2d: { label: '2D悬疑动漫', coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF1ZTAX3W6NZKYMH0PYVYH7.png' },
+  cyberpunk3d: { label: '3D赛博朋克', coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF212REFTJS0T5TX853C6PV.png' },
+  pixar: { label: '皮克斯风格', coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF21N68B569JWD37XGXMJHY.png' },
+  cgwuxia: { label: 'CG武侠', coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF261TC70JTZ75NHHN40S7B.png' },
+  miyazaki: { label: '宫崎骏风格', coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF26SR6DGWH3J83QYYG7YQ2.png' },
+  shinkai: { label: '新海诚风格', coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/79F37XWHB4KFX7387QRVPJRGW2.png' },
+  ancientrealistic: { label: '真人古风写实', coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF2JXQECN3C3V6A1RSK2NAQ.png' },
+  urban: { label: '都市职场', coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/2PWDW8VRNFGH4RWESGMQD6FQ11.png' },
+  wasteland: { label: '末日废土', coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF2K6XQRPBT11ZHQ9E7GT2Q.png' },
+  mysterylive: { label: '真人悬疑', coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF2KG4DMWE4165JR2K270R7.png' },
+};
 
 // ── Stat card ──────────────────────────────────────────────────────────────
 
@@ -319,21 +335,27 @@ function TextArea({ value, onChange, placeholder }) {
 
 // ── Cover upload ───────────────────────────────────────────────────────────
 
-function CoverUpload({ coverUrl, onUpload }) {
+function CoverUpload({ coverUrl, onUpload, isSaving }) {
   const [hovered, setHovered] = useState(false);
   const fileInputRef = useRef(null);
 
   const handleChange = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const url = URL.createObjectURL(file);
-    onUpload(url);
+
+    // 将文件转换为 base64 data URL，可以持久化
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      onUpload(event.target.result);
+    };
+    reader.readAsDataURL(file);
+
     e.target.value = '';
   };
 
   return (
     <div
-      onClick={() => fileInputRef.current?.click()}
+      onClick={() => !isSaving && fileInputRef.current?.click()}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
@@ -348,17 +370,35 @@ function CoverUpload({ coverUrl, onUpload }) {
         flexShrink: 0,
         background: coverUrl ? 'transparent' : '#1D1E1E',
         border: coverUrl ? 'none' : `1.5px dashed ${hovered ? '#FFFFFF33' : '#FFFFFF1A'}`,
-        cursor: 'pointer',
+        cursor: isSaving ? 'not-allowed' : 'pointer',
         overflow: 'hidden',
         position: 'relative',
         transition: 'border-color 0.2s',
+        opacity: isSaving ? 0.6 : 1,
       }}
     >
       <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleChange} />
       {coverUrl ? (
         <>
           <img src={coverUrl} alt="项目封面" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-          {hovered && (
+          {isSaving && (
+            <div style={{
+              position: 'absolute', inset: 0,
+              background: 'rgba(0,0,0,0.7)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexDirection: 'column', gap: '8px',
+            }}>
+              <div style={{
+                width: '24px', height: '24px',
+                border: '2px solid #FFFFFF33',
+                borderTopColor: '#FFFFFF',
+                borderRadius: '50%',
+                animation: 'spin 0.8s linear infinite',
+              }} />
+              <span style={{ fontFamily: FONT, fontSize: '13px', lineHeight: '18px', color: '#FFFFFF99' }}>保存中...</span>
+            </div>
+          )}
+          {hovered && !isSaving && (
             <div style={{
               position: 'absolute', inset: 0,
               background: 'rgba(0,0,0,0.5)',
@@ -452,12 +492,129 @@ function ProjectNameHeading({ value, onChange }) {
 
 // ── Main ───────────────────────────────────────────────────────────────────
 
-export default function GlobalSettings({ projectName = '这里是项目名称', projectId, onBack, activeStep, onStepChange, onGoToSubject, isSubjectUnlocked = false, onEpisodesChange, chars = [], scenes = [], props = [], episodes = [], scriptPhase, onScriptPhaseChange, scriptHasStarted, onScriptHasStartedChange, scriptContent, onScriptContentChange, scriptDraftContent, onScriptDraftContentChange, scriptStreamingIndex, onScriptStreamingIndexChange, episodeStatuses = {} }) {
+export default function GlobalSettings({
+  projectName = '',
+  projectId,
+  projectDescription = '',
+  projectCoverUrl = '',
+  projectRatio = '16:9',
+  projectStyle = 'oriental3d',
+  onProjectUpdate,
+  onBack,
+  showToast,
+  activeStep,
+  onStepChange,
+  onGoToSubject,
+  isSubjectUnlocked = false,
+  onEpisodesChange,
+  chars = [],
+  scenes = [],
+  props = [],
+  episodes = [],
+  scriptPhase,
+  onScriptPhaseChange,
+  scriptHasStarted,
+  onScriptHasStartedChange,
+  scriptContent,
+  onScriptContentChange,
+  scriptDraftContent,
+  onScriptDraftContentChange,
+  scriptStreamingIndex,
+  onScriptStreamingIndexChange,
+  episodeStatuses = {}
+}) {
   const [name, setName] = useState(projectName);
-  const [description, setDescription] = useState('');
-  const [coverUrl, setCoverUrl] = useState('');
-  // TODO: 字段变化时调用 apiUpdateProject(projectId, { name, description, coverUrl })
-  // 建议用 useEffect + debounce 实现自动保存
+  const [description, setDescription] = useState(projectDescription);
+  const [coverUrl, setCoverUrl] = useState(projectCoverUrl);
+  const [isSaving, setIsSaving] = useState(false);
+  const saveTimerRef = useRef(null);
+
+  // 立即保存函数（返回 Promise）
+  const saveImmediately = async () => {
+    if (saveTimerRef.current) {
+      clearTimeout(saveTimerRef.current);
+      saveTimerRef.current = null;
+    }
+
+    const hasChanges =
+      name !== projectName ||
+      description !== projectDescription ||
+      coverUrl !== projectCoverUrl;
+
+    if (hasChanges && projectId && onProjectUpdate) {
+      const updates = {};
+      if (name !== projectName) updates.name = name;
+      if (description !== projectDescription) updates.description = description;
+      if (coverUrl !== projectCoverUrl) updates.cover_url = coverUrl;
+
+      if (Object.keys(updates).length > 0) {
+        setIsSaving(true);
+        try {
+          await onProjectUpdate(updates);
+        } finally {
+          setIsSaving(false);
+        }
+      }
+    }
+  };
+
+  // 同步 props 变化
+  useEffect(() => {
+    setName(projectName);
+  }, [projectName]);
+
+  useEffect(() => {
+    setDescription(projectDescription);
+  }, [projectDescription]);
+
+  useEffect(() => {
+    setCoverUrl(projectCoverUrl);
+  }, [projectCoverUrl]);
+
+  // 自动保存：name, description, coverUrl 变化时 debounce 调用 onProjectUpdate
+  useEffect(() => {
+    if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+
+    // 只有当值与初始 props 不同时才保存
+    const hasChanges =
+      name !== projectName ||
+      description !== projectDescription ||
+      coverUrl !== projectCoverUrl;
+
+    console.log('[GlobalSettings] useEffect triggered', {
+      hasChanges,
+      projectId,
+      hasOnProjectUpdate: !!onProjectUpdate,
+      coverUrl,
+      projectCoverUrl,
+      coverChanged: coverUrl !== projectCoverUrl
+    });
+
+    if (hasChanges && projectId && onProjectUpdate) {
+      console.log('[GlobalSettings] Setting save timer');
+      saveTimerRef.current = setTimeout(async () => {
+        const updates = {};
+        if (name !== projectName) updates.name = name;
+        if (description !== projectDescription) updates.description = description;
+        if (coverUrl !== projectCoverUrl) updates.cover_url = coverUrl;
+
+        console.log('[GlobalSettings] Calling onProjectUpdate with:', updates);
+
+        if (Object.keys(updates).length > 0) {
+          setIsSaving(true);
+          try {
+            await onProjectUpdate(updates);
+          } finally {
+            setIsSaving(false);
+          }
+        }
+      }, 800);
+    }
+
+    return () => {
+      if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
+    };
+  }, [name, description, coverUrl, projectId, projectName, projectDescription, projectCoverUrl, onProjectUpdate]);
 
   if (activeStep === 'script') {
     return (
@@ -473,6 +630,7 @@ export default function GlobalSettings({ projectName = '这里是项目名称', 
         }}
       >
         <ScriptPage
+          projectId={projectId}
           onGoToSubject={onGoToSubject}
           onEpisodesChange={onEpisodesChange}
           phase={scriptPhase}
@@ -518,7 +676,10 @@ export default function GlobalSettings({ projectName = '这里是项目名称', 
             <svg
               width="24" height="24" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"
               style={{ flexShrink: 0, rotate: '90deg', transformOrigin: '50% 50%', cursor: 'pointer' }}
-              onClick={onBack}
+              onClick={async () => {
+                await saveImmediately();
+                onBack?.();
+              }}
             >
               <path d="M12 6L8 10L4 6" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
@@ -561,21 +722,47 @@ export default function GlobalSettings({ projectName = '这里是项目名称', 
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
               <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF99' }}>画面比例</span>
               <div style={{ display: 'flex', gap: '24px', alignItems: 'center', height: '36px', flexShrink: 0 }}>
-                {/* 16:9 selected */}
+                {/* 16:9 */}
                 <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                     <div style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-                      <div style={{ borderRadius: '9999px', flexShrink: 0, background: '#2DC3E133', border: '1px solid #FFFFFF1A', outline: '1px solid #00000080', width: '16px', height: '16px' }} />
-                      <div style={{ borderRadius: '9999px', position: 'absolute', left: '50%', top: '50%', background: '#0A0A0A', width: '6px', height: '6px', translate: '-50% -50%' }} />
+                      <div style={{
+                        borderRadius: '9999px',
+                        flexShrink: 0,
+                        background: projectRatio === '16:9' ? '#2DC3E133' : '#090909',
+                        border: `1px solid ${projectRatio === '16:9' ? '#FFFFFF1A' : 'transparent'}`,
+                        outline: '1px solid #00000080',
+                        width: '16px',
+                        height: '16px'
+                      }} />
+                      {projectRatio === '16:9' && (
+                        <div style={{ borderRadius: '9999px', position: 'absolute', left: '50%', top: '50%', background: '#0A0A0A', width: '6px', height: '6px', translate: '-50% -50%' }} />
+                      )}
                     </div>
-                    <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF' }}>16:9</span>
+                    <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: projectRatio === '16:9' ? '#FFFFFF' : '#FFFFFF66' }}>16:9</span>
                     <div style={{ marginLeft: 'auto', width: '28px', height: '18px', borderRadius: '3px', flexShrink: 0, borderWidth: '1.5px', borderStyle: 'solid', borderColor: '#FFFFFF33' }} />
                   </div>
                 </div>
-                {/* 9:16 unselected */}
+                {/* 9:16 */}
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <div style={{ borderRadius: '9999px', flexShrink: 0, background: '#090909', border: '1px solid transparent', outline: '1px solid #00000080', width: '16px', height: '16px' }} />
-                  <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF66' }}>9:16</span>
+                  <div style={{
+                    borderRadius: '9999px',
+                    flexShrink: 0,
+                    background: projectRatio === '9:16' ? '#2DC3E133' : '#090909',
+                    border: `1px solid ${projectRatio === '9:16' ? '#FFFFFF1A' : 'transparent'}`,
+                    outline: '1px solid #00000080',
+                    width: '16px',
+                    height: '16px',
+                    position: 'relative',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center'
+                  }}>
+                    {projectRatio === '9:16' && (
+                      <div style={{ borderRadius: '9999px', background: '#0A0A0A', width: '6px', height: '6px' }} />
+                    )}
+                  </div>
+                  <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: projectRatio === '9:16' ? '#FFFFFF' : '#FFFFFF66' }}>9:16</span>
                   <div style={{ marginLeft: 'auto', width: '18px', height: '28px', borderRadius: '3px', flexShrink: 0, borderWidth: '1.5px', borderStyle: 'solid', borderColor: '#FFFFFF33' }} />
                 </div>
               </div>
@@ -596,6 +783,13 @@ export default function GlobalSettings({ projectName = '这里是项目名称', 
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px', flex: 1 }}>
                   <div style={{ height: '200px', borderRadius: '6px', overflow: 'hidden', alignSelf: 'stretch', position: 'relative', flexShrink: 0, background: '#2A2A2A' }}>
+                    {VISUAL_STYLES[projectStyle]?.coverImg && (
+                      <img
+                        src={VISUAL_STYLES[projectStyle].coverImg}
+                        alt=""
+                        style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+                      />
+                    )}
                     <div
                       style={{
                         position: 'absolute', left: 0, right: 0, bottom: -1,
@@ -605,7 +799,9 @@ export default function GlobalSettings({ projectName = '这里是项目名称', 
                         backgroundImage: 'linear-gradient(in oklab 180deg, oklab(0% 0 0 / 0%) 0%, oklab(0% 0 0 / 60%) 100%)',
                       }}
                     >
-                      <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '16px', color: '#FFFFFF' }}>写实</span>
+                      <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '16px', color: '#FFFFFF' }}>
+                        {VISUAL_STYLES[projectStyle]?.label || '未设置'}
+                      </span>
                     </div>
                   </div>
                 </div>
@@ -614,7 +810,7 @@ export default function GlobalSettings({ projectName = '这里是项目名称', 
             {/* 项目封面 */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
               <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF99' }}>项目封面</span>
-              <CoverUpload coverUrl={coverUrl} onUpload={setCoverUrl} />
+              <CoverUpload coverUrl={coverUrl} onUpload={setCoverUrl} isSaving={isSaving} />
             </div>
           </div>
         </div>

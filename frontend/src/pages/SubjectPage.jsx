@@ -1623,7 +1623,7 @@ function EditSubjectPanel({ char, tabLabel = '角色', onClose, onCommit, onCove
 
 // ── Main export ────────────────────────────────────────────────────────────
 
-export default function SubjectPage({ projectName = '两只老虎的奇遇', onBack, onUnlockStep, onStartStoryboard, initialTab = 'char', chars: externalChars, onCharsChange, scenes: externalScenes, onScenesChange, props: externalProps, onPropsChange }) {
+export default function SubjectPage({ projectId, projectName = '两只老虎的奇遇', onBack, onUnlockStep, onStartStoryboard, initialTab = 'char', chars: externalChars, onCharsChange, scenes: externalScenes, onScenesChange, props: externalProps, onPropsChange }) {
   const [activeTab, setActiveTab] = useState(initialTab);
   const [episodes, setEpisodes] = useState([]);
   const [activeEpisode, setActiveEpisode] = useState('');
@@ -1680,7 +1680,7 @@ export default function SubjectPage({ projectName = '两只老虎的奇遇', onB
 
   const handleAdd = async () => {
     const type = activeTab; // 'char' | 'scene' | 'prop'
-    const { id } = await apiCreateSubject(type, { name: '待定', desc: '待定' });
+    const { id } = await apiCreateSubject(type, { projectId, name: '待定', desc: '待定' });
     if (activeTab === 'char') {
       setChars((prev) => [...prev, { id, name: '待定', desc: '待定', imageUrl: null, voice: null }]);
     } else if (activeTab === 'scene') {
