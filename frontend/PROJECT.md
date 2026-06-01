@@ -303,6 +303,54 @@
 
 附带移除展示态每次渲染触发的调试 `console.log`。**改动文件**：`src/pages/StoryboardPage.jsx`。构建通过（0 错误）。
 
+**✅ 已完成（2026-06-01 晚）— 水印设置功能**
+
+首页左侧导航「更多选项」菜单新增「水印设置」入口，点击弹出设置弹窗：
+
+| 序号 | 功能 | 实现 |
+|------|------|------|
+| 1 | 弹窗组件 | 按 Paper 设计稿精确还原（400px 宽、圆角 16px、卡片背景 `#1D1E1E`、悬停 `#1F1F1F`） |
+| 2 | 开关交互 | Toggle 组件补充 hover/active 状态（透明度变化）；切换时显示 Toast 提示（「图片水印已开启/关闭」） |
+| 3 | API 对接 | 新增 `apiGetWatermarkSettings` / `apiUpdateWatermarkSettings`（`src/api/settings.js`）；点击保存调用后端接口 |
+| 4 | Toast 位置 | 水平居中、垂直 25vh（屏幕 1/4 位置），使用 Flexbox 全屏容器确保精确对齐 |
+| 5 | 组件文档 | 新增 `design-system/components/toggle.md`（尺寸/状态/颜色规范） |
+
+**技术细节**：
+- 所有间距使用明确 px 值（`gap-[16px]`、`py-[12px]`、`px-[16px]`），不使用 Tailwind 数字缩写
+- 按钮交互：关闭图标 hover 0.8 / active 0.6；取消/保存按钮 hover `#1C1C1C` / active `#1A1A1A`
+- 菜单项动态注入：`BOTTOM_NAV_ITEMS` 在组件内通过 `map` 为 `menu` 项注入 `popup` 函数，访问 `setWatermarkSettingsOpen` 状态
+
+**改动文件**：`src/components/WatermarkSettingsModal.jsx`、`src/components/Toggle.jsx`、`src/api/settings.js`、`src/pages/Home.jsx`、`design-system/components/toggle.md`
+
+**验证结果**：
+- ✅ 点击「水印设置」正常打开弹窗
+- ✅ Toggle 切换显示 Toast 提示
+- ✅ 卡片悬停背景色变化
+- ✅ 按钮交互状态完整
+- ✅ Toast 水平垂直位置准确
+- ✅ 构建通过（0 错误）
+
+**✅ 已完成（2026-06-01 晚）— API 配置弹窗模型默认标签**
+
+API 配置弹窗模型列表卡片新增「设为默认」交互：
+
+| 序号 | 功能 | 实现 |
+|------|------|------|
+| 1 | 标签样式 | 未激活：灰色边框/背景（`#FFFFFF14` / `#FFFFFF08`）、Regular 字体；激活：青色边框/背景（`#2DC3E133` / `#2DC3E11A`）、Medium 字体 |
+| 2 | 位置布局 | 标签紧随模型标题，gap 8px |
+| 3 | 交互逻辑 | 点击「设为默认」→ 变「默认中」；再次点击「默认中」→ 取消默认；点击其他模型自动取消前一个默认 |
+| 4 | 状态管理 | 新增 `setDefaultOnelinkModel` / `setDefaultCustomProviderModel` 函数，按 tab 独立管理默认模型（对话/图片/视频/配音各自独立） |
+| 5 | 数量统计修复 | OneLinkAI 服务商卡片「已配置模型」从硬编码 `23` 改为动态计算 `Object.values(modelsByTab).reduce(...)` |
+
+**改动文件**：`src/components/ApiConfigModal.jsx`
+
+**验证结果**：
+- ✅ 标签样式符合设计稿
+- ✅ 点击切换默认状态正常
+- ✅ 取消默认功能正常
+- ✅ 模型数量实时统计
+- ✅ 构建通过（0 错误）
+
 ### 待开发
 - [ ] 创作页（生视频 持续完善）
 - [ ] 资产库（持续完善）

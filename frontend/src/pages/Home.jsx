@@ -13,6 +13,7 @@ import ApiConfigModal from '../components/ApiConfigModal';
 import AccountMenu from '../components/AccountMenu';
 import ProfileModal from '../components/ProfileModal';
 import NewProjectModal from '../components/NewProjectModal';
+import WatermarkSettingsModal from '../components/WatermarkSettingsModal';
 import ProjectList from './ProjectList';
 import GlobalSettings from './GlobalSettings';
 import SubjectPage from './SubjectPage';
@@ -127,7 +128,7 @@ function MenuPopupItem({ label, onClick }) {
   return (
     <button
       type="button"
-      className="flex items-center gap-1 w-full rounded-md border-0 bg-transparent text-left cursor-pointer"
+      className="flex items-center gap-[4px] w-full rounded-[6px] border-0 bg-transparent text-left cursor-pointer"
       style={{
         padding: '8px 12px',
         backgroundColor: pressed ? '#FFFFFF14' : hovered ? '#FFFFFF0D' : 'transparent',
@@ -143,7 +144,7 @@ function MenuPopupItem({ label, onClick }) {
       onMouseUp={() => setPressed(false)}
     >
       <div
-        className="w-fit shrink-0 font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-sm/4.5"
+        className="w-fit shrink-0 font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-font-size-14"
         style={{ color: pressed || hovered ? '#FFFFFF' : '#FFFFFF99' }}
       >
         {label}
@@ -420,29 +421,7 @@ const BOTTOM_NAV_ITEMS = [
     key: 'menu',
     label: '菜单',
     tooltip: '更多选项',
-    popup: ({ close, anchorLeft }) => {
-      const handleMenuClick = (label) => {
-        if (label === '创作手册' && CREATION_MANUAL_URL) {
-          window.open(CREATION_MANUAL_URL, '_blank');
-        } else if (label === '用户协议') {
-          window.open('https://gcn0je6sgrhe.feishu.cn/wiki/FIspwGURtikxiwk28svc4thOn9c?from=from_copylink', '_blank');
-        } else if (label === '隐私政策') {
-          window.open('https://gcn0je6sgrhe.feishu.cn/wiki/LKlewdQJ0iaYVmkOPXVc4PWgnoc?from=from_copylink', '_blank');
-        }
-      };
-
-      return (
-        <div className="flex flex-col items-start w-max rounded-lg absolute left-10 bottom-0 [box-shadow:#00000066_0px_4px_16px] bg-[#161616] border border-solid border-[#FFFFFF0D] p-1" style={{ zIndex: 50 }}>
-          {['创作手册', '更新日志', '用户协议', '隐私政策', '商务合作', '关于我们'].map((label) => (
-            <MenuPopupItem
-              key={label}
-              label={label}
-              onClick={() => handleMenuClick(label)}
-            />
-          ))}
-        </div>
-      );
-    },
+    popup: null, // 将在组件内部动态注入
     icon: (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={ICON_STYLE}>
         <path d="M2.65 3.983H13.317" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
@@ -911,6 +890,7 @@ export default function Home({ onProjectCreated }) {
   const [apiConfigured, setApiConfigured] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
+  const [watermarkSettingsOpen, setWatermarkSettingsOpen] = useState(false);
   // TODO: 替换为真实接口 GET /projects，在 useEffect 中拉取并 setProjects
   const [projects, setProjects] = useState([]);
   const [activeProject, setActiveProject] = useState(null);
@@ -1124,6 +1104,37 @@ export default function Home({ onProjectCreated }) {
   const showApiBubble = !apiConfigOpen && (!isLoggedIn || (isLoggedIn && !apiConfigured));
 
   const bottomNavItems = BOTTOM_NAV_ITEMS.map((item) => {
+    if (item.key === 'menu') {
+      return {
+        ...item,
+        popup: ({ close, anchorLeft }) => {
+          const handleMenuClick = (label) => {
+            if (label === '创作手册' && CREATION_MANUAL_URL) {
+              window.open(CREATION_MANUAL_URL, '_blank');
+            } else if (label === '用户协议') {
+              window.open('https://gcn0je6sgrhe.feishu.cn/wiki/FIspwGURtikxiwk28svc4thOn9c?from=from_copylink', '_blank');
+            } else if (label === '隐私政策') {
+              window.open('https://gcn0je6sgrhe.feishu.cn/wiki/LKlewdQJ0iaYVmkOPXVc4PWgnoc?from=from_copylink', '_blank');
+            } else if (label === '水印设置') {
+              close();
+              setWatermarkSettingsOpen(true);
+            }
+          };
+
+          return (
+            <div className="flex flex-col items-start w-max rounded-medium absolute left-[40px] bottom-0 [box-shadow:#00000066_0px_4px_16px] bg-neutral-200 border border-solid border-[#FFFFFF0D] p-[4px]" style={{ zIndex: 50 }}>
+              {['创作手册', '更新日志', '用户协议', '隐私政策', '商务合作', '关于我们', '水印设置'].map((label) => (
+                <MenuPopupItem
+                  key={label}
+                  label={label}
+                  onClick={() => handleMenuClick(label)}
+                />
+              ))}
+            </div>
+          );
+        },
+      };
+    }
     if (item.key !== 'api' || !showApiBubble) return item;
     return {
       ...item,
@@ -1461,17 +1472,33 @@ export default function Home({ onProjectCreated }) {
           });
         }}
       />
+      {watermarkSettingsOpen && (
+        <WatermarkSettingsModal
+          onClose={() => setWatermarkSettingsOpen(false)}
+          showToast={showToast}
+        />
+      )}
       {toast && createPortal(
         <div style={{
           position: 'fixed',
-          top: '25vh',
-          left: '50%',
-          transform: 'translateX(-50%)',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          display: 'flex',
+          alignItems: 'flex-start',
+          justifyContent: 'center',
+          paddingTop: '25vh',
           zIndex: 9999,
           pointerEvents: 'none',
-          animation: 'slideUpBounce 250ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards',
         }}>
-          <div className="flex items-center gap-[8px] px-[16px] py-[8px] rounded-medium bg-toast-bg backdrop-blur-[20px]" style={{ whiteSpace: 'nowrap' }}>
+          <div
+            className="flex items-center gap-[8px] px-[16px] py-[8px] rounded-medium bg-toast-bg backdrop-blur-[20px]"
+            style={{
+              whiteSpace: 'nowrap',
+              animation: 'slideUpBounce 250ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards',
+            }}
+          >
             {toast.type === 'success' ? (
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
                 <path d="M8 14.667C9.841 14.667 11.508 13.921 12.714 12.714C13.921 11.508 14.667 9.841 14.667 8C14.667 6.159 13.921 4.492 12.714 3.286C11.508 2.08 9.841 1.333 8 1.333C6.159 1.333 4.492 2.08 3.286 3.286C2.08 4.492 1.333 6.159 1.333 8C1.333 9.841 2.08 11.508 3.286 12.714C4.492 13.921 6.159 14.667 8 14.667Z" fill="#52C41A" stroke="#52C41A" strokeWidth="1.333" strokeLinejoin="round" />

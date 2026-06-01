@@ -585,6 +585,7 @@ function CustomProviderCard({ configured, enabled, modelCount, providerName, onC
 function MainModal({
   configured,
   onelinkEnabled,
+  onelinkModelsByTab,
   onClose,
   onOpenOneLink,
   onOpenCustomProvider,
@@ -621,7 +622,7 @@ function MainModal({
               {configured ? (
                 <ConfiguredProviderCard
                   title="OneLinkAI"
-                  modelCount={23}
+                  modelCount={Object.values(onelinkModelsByTab ?? {}).reduce((sum, arr) => sum + arr.length, 0)}
                   date="2026-01-01"
                   enabled={onelinkEnabled}
                   onEdit={onEditOneLink}
@@ -741,7 +742,7 @@ function ModelTabs({ activeTab, onChange }) {
   );
 }
 
-const ModelCard = forwardRef(function ModelCard({ model, onToggle, onDelete, animating = false }, ref) {
+const ModelCard = forwardRef(function ModelCard({ model, onToggle, onDelete, onSetDefault, animating = false }, ref) {
   return (
     <div
       ref={ref}
@@ -749,8 +750,22 @@ const ModelCard = forwardRef(function ModelCard({ model, onToggle, onDelete, ani
       style={animating ? { animation: 'model-card-disable 280ms ease' } : undefined}
     >
       <div className="flex items-center gap-1.5 justify-between self-stretch py-[8px]">
-        <div className="w-fit shrink-0 font-medium text-white text-sm/4.5" style={{ fontFamily: FONT_MEDIUM }}>
-          {model.name}
+        <div className="flex items-center gap-[8px]">
+          <div className="w-fit shrink-0 font-medium text-white text-sm/4.5" style={{ fontFamily: FONT_MEDIUM }}>
+            {model.name}
+          </div>
+          <button
+            type="button"
+            onClick={onSetDefault}
+            className={`flex h-[24px] shrink-0 items-center justify-center rounded-md border px-[8px] text-xs/4 transition-colors disabled:pointer-events-none disabled:opacity-50 ${
+              model.isDefault
+                ? 'border-[#2DC3E133] bg-[#2DC3E11A] text-[#2DC3E1]'
+                : 'border-[#FFFFFF14] bg-[#FFFFFF08] text-[#FFFFFFCC] hover:bg-[#FFFFFF10] active:bg-[#FFFFFF08]'
+            }`}
+            style={{ fontFamily: model.isDefault ? FONT_MEDIUM : FONT }}
+          >
+            {model.isDefault ? '默认中' : '设为默认'}
+          </button>
         </div>
         <div className="flex items-center gap-3 justify-end">
           <StatusSwitch on={model.enabled} onClick={onToggle} onLabel="启用" />
@@ -787,6 +802,7 @@ function ConfigModelModal({
   onSave,
   onToggleModel,
   onDeleteModel,
+  onSetDefaultModel,
   onTest,
 }) {
   const activeTabIndex = Math.max(MODEL_TABS.indexOf(activeTab), 0);
@@ -888,6 +904,7 @@ function ConfigModelModal({
                       animating={tab === activeTab && disablingId === model.id}
                       onToggle={() => handleToggleModel(model.id)}
                       onDelete={() => onDeleteModel(model.id)}
+                      onSetDefault={() => onSetDefaultModel(model.id)}
                     />
                   ))}
                   {tabModels.length < 30 && (
@@ -1228,6 +1245,48 @@ export default function ApiConfigModal({ open, onClose, onConfigured }) {
       };
     });
 
+  const setDefaultOnelinkModel = (modelId) =>
+    setState((current) => {
+      const tab = current.activeModelTab;
+      const targetModel = (current.onelinkModelsByTab[tab] ?? []).find((m) => m.id === modelId);
+      const isCurrentlyDefault = targetModel?.isDefault;
+
+      const updated = (current.onelinkModelsByTab[tab] ?? []).map((model) => ({
+        ...model,
+        isDefault: isCurrentlyDefault ? false : model.id === modelId,
+      }));
+      return {
+        ...current,
+        onelinkModelsByTab: { ...current.onelinkModelsByTab, [tab]: updated },
+      };
+    });
+
+  const setDefaultCustomProviderModel = (modelId) =>
+    setState((current) => {
+      const tab = current.activeModelTab;
+      const provider = current.customProviders.find((p) => p.id === current.activeCustomProviderId);
+      const targetModel = (provider?.modelsByTab?.[tab] ?? []).find((m) => m.id === modelId);
+      const isCurrentlyDefault = targetModel?.isDefault;
+
+      return {
+        ...current,
+        customProviders: current.customProviders.map((provider) =>
+          provider.id === current.activeCustomProviderId
+            ? {
+                ...provider,
+                modelsByTab: {
+                  ...(provider.modelsByTab ?? createEmptyModelsByTab()),
+                  [tab]: (provider.modelsByTab?.[tab] ?? []).map((model) => ({
+                    ...model,
+                    isDefault: isCurrentlyDefault ? false : model.id === modelId,
+                  })),
+                },
+              }
+            : provider,
+        ),
+      };
+    });
+
   const toggleCustomProvider = (providerId) =>
     setState((current) => ({
       ...current,
@@ -1262,6 +1321,7 @@ export default function ApiConfigModal({ open, onClose, onConfigured }) {
             onSave={saveOneLinkConfig}
             onToggleModel={toggleOnelinkModel}
             onDeleteModel={(id) => requestDelete('onelinkModel', id)}
+            onSetDefaultModel={setDefaultOnelinkModel}
             onTest={testConnection}
           />
         );
@@ -1292,6 +1352,7 @@ export default function ApiConfigModal({ open, onClose, onConfigured }) {
             onSave={saveCustomProviderModelConfig}
             onToggleModel={toggleCustomProviderModel}
             onDeleteModel={(id) => requestDelete('customProviderModel', id)}
+            onSetDefaultModel={setDefaultCustomProviderModel}
             onTest={testConnection}
           />
         );
@@ -1324,6 +1385,7 @@ export default function ApiConfigModal({ open, onClose, onConfigured }) {
           <MainModal
             configured={state.mainConfigured}
             onelinkEnabled={state.onelinkEnabled}
+            onelinkModelsByTab={state.onelinkModelsByTab}
             onClose={closeMain}
             onOpenOneLink={openOneLinkConfig}
             onOpenCustomProvider={openCustomProviderForm}
