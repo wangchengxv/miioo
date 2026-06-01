@@ -137,7 +137,7 @@ export default function PrimaryNav({ items, activeKey = null, onChange, variant 
   const containerCls = isCompact
     ? 'primary-nav flex flex-col items-center gap-8 self-stretch'
     : isVertical
-    ? 'primary-nav flex flex-col items-start gap-16 flex-1'
+    ? 'primary-nav flex flex-col items-center justify-center gap-16 flex-1'
     : 'primary-nav flex flex-col items-start gap-12';
   const itemCls = isCompact
     ? 'primary-nav-item flex items-center justify-center rounded-full size-[32px]'

@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import defaultCover from '../assets/project-default-cover.png';
+import { formatRelativeTime } from '../utils/formatTime';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
@@ -595,7 +596,7 @@ function ProjectCard({ project, onRename, onDelete, onOpen }) {
             {project.name}
           </span>
           <span style={{ fontFamily: FONT, fontSize: '12px', color: '#FFFFFF66' }}>
-            {project.date || '刚刚'}
+            {formatRelativeTime(project.created_at || project.updated_at || project.date)}
           </span>
         </div>
         {(hovered || menuOpen) && (

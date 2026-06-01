@@ -59,7 +59,9 @@ export async function apiRegister({ phone, password, nickname }) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ phone, password, nickname }),
   });
-  return res.json();
+  const data = await res.json();
+  if (data.access_token) setTokens(data.access_token, data.refresh_token);
+  return data;
 }
 
 export async function apiLogout() {
@@ -94,15 +96,50 @@ export async function loginWithPhone(phone, code) {
   return apiVerifyCodeLogin({ phone, code });
 }
 
-export async function bindPhone(wechatToken, phone, code) {
+// ── Legacy alias（兼容 LoginModal 中微信扫码后绑定手机流程）─────────────────
+// 后端无 /api/auth/bind-phone，此处映射到微信登录确认接口
+export async function bindPhone(_wechatToken, phone, code) {
+  console.warn('[api] bindPhone 为 legacy alias，后端无 /api/auth/bind-phone，改用 apiConfirmWechatLogin');
+  return apiConfirmWechatLogin({ session_id: _wechatToken, phone, nickname: undefined });
+}
+
+// ── 微信登录（扫码）──────────────────────────────────────────────────────────
+
+export async function apiGetWechatLoginQrCode() {
   if (USE_MOCK) {
-    console.log('[mock] bind-phone', phone, code);
-    return { token: 'mock-token', user: { id: 'mock-id', name: 'mock-user' } };
+    console.log('[mock] get wechat login qrcode');
+    return { session_id: 'mock-session', qr_code_value: 'mock-qr', expires_in: 300 };
   }
-  const res = await fetch(`${BASE}/api/auth/bind-phone`, {
-    method: 'POST',
+  const res = await authFetch(`${BASE}/api/auth/wechat/qrcode`, {
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ wechatToken, phone, code }),
   });
   return res.json();
+}
+
+export async function apiPollWechatLogin(sessionId) {
+  if (USE_MOCK) {
+    console.log('[mock] poll wechat login', sessionId);
+    return { status: 'pending', access_token: null, refresh_token: null };
+  }
+  const res = await authFetch(`${BASE}/api/auth/wechat/poll/${encodeURIComponent(sessionId)}`, {
+    headers: { 'Content-Type': 'application/json' },
+  });
+  const data = await res.json();
+  if (data.access_token) setTokens(data.access_token, data.refresh_token);
+  return data;
+}
+
+export async function apiConfirmWechatLogin({ session_id, phone, nickname }) {
+  if (USE_MOCK) {
+    console.log('[mock] confirm wechat login', session_id);
+    return { status: 'confirmed', access_token: 'mock-token', refresh_token: 'mock-refresh' };
+  }
+  const res = await fetch(`${BASE}/api/auth/wechat/confirm`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ session_id, phone, nickname }),
+  });
+  const data = await res.json();
+  if (data.access_token) setTokens(data.access_token, data.refresh_token);
+  return data;
 }

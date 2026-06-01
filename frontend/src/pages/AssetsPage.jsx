@@ -1,7 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
-import { apiGetAssetDetail, apiGetShotDetail, apiGetShotVideoDetail, apiGetCreativeDays, apiGetProjectAssets } from '../api/assets';
-import { apiGetProjects } from '../api/project';
+import { apiGetAssetDetail, apiGetShotDetail, apiGetShotVideoDetail, apiGetProjectAssets, apiDeleteAsset, apiBatchDeleteAssets, apiUpdateAsset } from '../api/assets';
+import { apiDeleteCreationImage, apiDeleteCreationVideo, apiBatchDeleteImages, apiBatchDeleteVideos, apiToggleImageFavorite, apiToggleVideoFavorite } from '../api/creation';
+import { useCreationStore } from '../stores/creationStore';
+import { generationsToDays } from '../utils/creativeDaysAdapter';
+import { apiGetProjects, apiGetProjectOverview } from '../api/project';
 import ImageDetailModal from '../components/ImageDetailModal';
+import CreationVideoDetailModal from '../components/CreationVideoDetailModal';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
@@ -1428,10 +1432,14 @@ function AssetCard({ name, bgColor = '#252525', url = null, starred = false, sel
   const [starAnim, setStarAnim] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailData, setDetailData] = useState(null);
-  const [favorited, setFavorited] = useState(starred);
 
   function handleOpen() {
     if (batchMode) { onSelect?.(); return; }
+    // 创作资产：直接用 card 数据打开详情弹窗，不调 API
+    if (asset.type === 'image' || asset.type === 'video') {
+      setDetailOpen(true);
+      return;
+    }
     const id = asset.id;
     if (assetType === 'shot_video') {
       apiGetShotVideoDetail(id).then((d) => { setDetailData(d); setDetailOpen(true); });
@@ -1468,10 +1476,12 @@ function AssetCard({ name, bgColor = '#252525', url = null, starred = false, sel
       onMouseLeave={() => setHov(false)}
       onClick={() => { if (batchMode) onSelect?.(); else handleOpen(); }}
     >
-      <div style={{ width: '100%', height: '100%', backgroundColor: url ? 'transparent' : bgColor, position: 'relative' }}>
-        {url && (
+      <div style={{ width: '100%', height: '100%', backgroundColor: (url || asset.videoUrl) ? 'transparent' : bgColor, position: 'relative' }}>
+        {asset.type === 'video' && asset.videoUrl ? (
+          <video src={asset.videoUrl} poster={url} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} muted playsInline preload="metadata" />
+        ) : url ? (
           <img src={url} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-        )}
+        ) : null}
         {batchMode ? (
           <div style={{
             position: 'absolute',
@@ -1532,7 +1542,44 @@ function AssetCard({ name, bgColor = '#252525', url = null, starred = false, sel
         resolution={detailData?.resolution} generatedAt={detailData?.generatedAt} images={detailData?.images}
       />
     )}
-    {detailOpen && assetType !== 'shot' && assetType !== 'shot_video' && showStar && (
+    {detailOpen && asset.type === 'video' && (
+      <CreationVideoDetailModal
+        videoUrl={asset.videoUrl}
+        prompt={asset.prompt}
+        model={asset.model}
+        ratio={asset.ratio}
+        resolution={asset.resolution}
+        duration={asset.duration}
+        refMode={asset.refMode}
+        firstFrame={asset.firstFrame}
+        lastFrame={asset.lastFrame}
+        sound={asset.sound}
+        createdAt={asset.createdAt}
+        refImages={asset.refImages || []}
+        onClose={() => setDetailOpen(false)}
+        onDelete={() => { setDetailOpen(false); onDelete?.(); }}
+        favorited={starred}
+        onFavorite={() => onStar?.()}
+      />
+    )}
+    {detailOpen && asset.type === 'image' && (
+      <ImageDetailModal
+        card={{
+          imageUrl: asset.imageUrl || url,
+          prompt: asset.prompt,
+          model: asset.model,
+          ratio: asset.ratio,
+          resolution: asset.resolution,
+          refImages: asset.refImages,
+          createdAt: asset.createdAt,
+        }}
+        onClose={() => setDetailOpen(false)}
+        onDelete={() => { setDetailOpen(false); onDelete?.(); }}
+        favorited={starred}
+        onToggleFavorite={() => onStar?.()}
+      />
+    )}
+    {detailOpen && assetType !== 'shot' && assetType !== 'shot_video' && !asset.type && showStar && (
       <ImageDetailModal
         card={{
           imageUrl: url || detailData?.url,
@@ -1545,8 +1592,8 @@ function AssetCard({ name, bgColor = '#252525', url = null, starred = false, sel
         }}
         onClose={() => setDetailOpen(false)}
         onDelete={() => { setDetailOpen(false); onDelete?.(); }}
-        favorited={favorited}
-        onToggleFavorite={() => { setFavorited((v) => !v); onStar?.(); }}
+        favorited={starred}
+        onToggleFavorite={() => onStar?.()}
       />
     )}
     {detailOpen && assetType !== 'shot' && assetType !== 'shot_video' && !showStar && (
@@ -1675,51 +1722,6 @@ const CREATIVE_TYPE_TABS = [
   { key: 'dubbing', label: '配音' },
 ];
 
-const CREATIVE_DAYS = {
-  image: [
-    {
-      date: '今天',
-      cards: [
-        { id: 'img1', name: '镜头_001.jpg' },
-        { id: 'img2', name: '场景草图.png' },
-        { id: 'img3', name: '角色设定.jpg' },
-        { id: 'img4', name: '道具参考.png' },
-      ],
-    },
-    {
-      date: '昨天',
-      cards: [
-        { id: 'img5', name: '分镜_A01.jpg' },
-        { id: 'img6', name: '背景板.png' },
-      ],
-    },
-  ],
-  video: [
-    {
-      date: '今天',
-      cards: [
-        { id: 'vid1', name: '第1集_预览.mp4' },
-        { id: 'vid2', name: '第2集_预览.mp4' },
-      ],
-    },
-    {
-      date: '昨天',
-      cards: [
-        { id: 'vid3', name: '片头动画.mp4' },
-      ],
-    },
-  ],
-  dubbing: [
-    {
-      date: '今天',
-      cards: [
-        { id: 'dub1', name: '主角旁白_01', duration: '0:32' },
-        { id: 'dub2', name: '主角旁白_02', duration: '0:45' },
-        { id: 'dub3', name: '反派台词', duration: '1:08' },
-      ],
-    },
-  ],
-};
 
 const MOCK_PROJECT_ASSETS = {
   chars: [
@@ -1802,7 +1804,7 @@ function ProjectListItem({ project, active, onClick }) {
       style={{
         display: 'flex',
         alignItems: 'center',
-        gap: '10px',
+        gap: '8px',
         width: '100%',
         paddingTop: '10px',
         paddingBottom: '10px',
@@ -1828,6 +1830,7 @@ function ProjectListItem({ project, active, onClick }) {
         overflow: 'hidden',
         textOverflow: 'ellipsis',
         whiteSpace: 'nowrap',
+        minWidth: 0,
       }}>{project.name}</span>
       <span style={{
         fontFamily: FONT,
@@ -1849,9 +1852,24 @@ function ProjectAssetsPanel() {
   const [assetsMap, setAssetsMap] = useState({});
 
   useEffect(() => {
-    apiGetProjects().then((list) => {
-      setProjects(list);
-      setActiveProject((prev) => prev ?? list[0]?.id ?? null);
+    apiGetProjects().then(async (list) => {
+      // 为每个项目获取资产数量
+      const projectsWithCounts = await Promise.all(
+        list.map(async (project) => {
+          try {
+            const overview = await apiGetProjectOverview(project.id);
+            const counts = overview.asset_counts || {};
+            const totalCount = (counts.character || 0) + (counts.prop || 0) + (counts.scene || 0) +
+                               (counts.storyboard || 0) + (counts.image || 0) + (counts.video || 0);
+            return { ...project, count: totalCount };
+          } catch (err) {
+            console.error(`Failed to get overview for project ${project.id}`, err);
+            return { ...project, count: 0 };
+          }
+        })
+      );
+      setProjects(projectsWithCounts);
+      setActiveProject((prev) => prev ?? projectsWithCounts[0]?.id ?? null);
     });
   }, []);
 
@@ -1864,13 +1882,17 @@ function ProjectAssetsPanel() {
   const filtered = favOnly ? categoryAssets.filter((a) => a.starred) : categoryAssets;
 
   function toggleStar(id) {
+    const current = assetsMap[activeCategory]?.find((a) => a.id === id);
+    const newStarred = !current?.starred;
+    apiUpdateAsset(id, { is_starred: newStarred }).catch(console.error);
     setAssetsMap((prev) => ({
       ...prev,
-      [activeCategory]: prev[activeCategory].map((a) => a.id === id ? { ...a, starred: !a.starred } : a),
+      [activeCategory]: prev[activeCategory].map((a) => a.id === id ? { ...a, starred: newStarred } : a),
     }));
   }
 
   function deleteAsset(id) {
+    apiDeleteAsset(id).catch(console.error);
     setAssetsMap((prev) => ({
       ...prev,
       [activeCategory]: prev[activeCategory].filter((a) => a.id !== id),
@@ -1878,10 +1900,11 @@ function ProjectAssetsPanel() {
   }
 
   function deleteSelected() {
-    const ids = selected;
+    const ids = [...selected];
+    apiBatchDeleteAssets(ids).catch(console.error);
     setAssetsMap((prev) => ({
       ...prev,
-      [activeCategory]: prev[activeCategory].filter((a) => !ids.has(a.id)),
+      [activeCategory]: prev[activeCategory].filter((a) => !selected.has(a.id)),
     }));
     setSelected(new Set());
   }
@@ -2039,12 +2062,15 @@ function CreativeAssetsPanel() {
   const [activeType, setActiveType] = useState('image');
   const [batchMode, setBatchMode] = useState(false);
   const [selected, setSelected] = useState(new Set());
-  const [allDays, setAllDays] = useState({});
-  const days = allDays[activeType] ?? [];
 
-  useEffect(() => {
-    apiGetCreativeDays().then(setAllDays);
-  }, []);
+  const generationsByTab = useCreationStore((s) => s.generationsByTab);
+  const favorites = useCreationStore((s) => s.favorites);
+  const storeDeleteCard = useCreationStore((s) => s.deleteCard);
+  const storeDeleteSelectedCards = useCreationStore((s) => s.deleteSelectedCards);
+  const storeToggleFavorite = useCreationStore((s) => s.toggleFavorite);
+
+  const generations = generationsByTab[activeType] ?? [];
+  const days = generationsToDays(generations);
 
   function toggleSelect(id) {
     setSelected((prev) => {
@@ -2062,18 +2088,24 @@ function CreativeAssetsPanel() {
 
   function deleteSelected() {
     const ids = selected;
-    setAllDays((prev) => ({
-      ...prev,
-      [activeType]: prev[activeType].map((d) => ({ ...d, cards: d.cards.filter((c) => !ids.has(c.id)) })).filter((d) => d.cards.length > 0),
-    }));
+    const cardIds = [...ids];
+    storeDeleteSelectedCards(activeType, ids);
+    if (activeType === 'image') apiBatchDeleteImages(cardIds);
+    else if (activeType === 'video') apiBatchDeleteVideos(cardIds);
     setSelected(new Set());
   }
 
-  function toggleStar(id) {
-    setAllDays((prev) => ({
-      ...prev,
-      [activeType]: prev[activeType].map((d) => ({ ...d, cards: d.cards.map((c) => c.id === id ? { ...c, starred: !c.starred } : c) })),
-    }));
+  function toggleStar(cardKey) {
+    const isLiked = favorites.has(cardKey);
+    storeToggleFavorite(cardKey);
+    if (activeType === 'image') apiToggleImageFavorite(cardKey, !isLiked);
+    else if (activeType === 'video') apiToggleVideoFavorite(cardKey);
+  }
+
+  function deleteSingle(card) {
+    storeDeleteCard(activeType, card.genId, card.cardIdx);
+    if (activeType === 'image') apiDeleteCreationImage(card.id);
+    else if (activeType === 'video') apiDeleteCreationVideo(card.id);
   }
 
   function exitBatch() {
@@ -2144,19 +2176,20 @@ function CreativeAssetsPanel() {
               <span style={{ fontFamily: FONT, fontSize: '14px', color: '#FFFFFF99', flexShrink: 0 }}>{day.date}</span>
             </div>
             <div style={{ display: 'flex', flexDirection: activeType === 'dubbing' ? 'column' : 'row', flexWrap: activeType === 'dubbing' ? 'nowrap' : 'wrap', gap: activeType === 'dubbing' ? '8px' : '16px' }}>
-              {day.cards.map((card) => (
-                activeType === 'dubbing' ? (
+              {day.cards.map((card) => {
+                const isStarred = favorites.has(card.id);
+                return activeType === 'dubbing' ? (
                   <AudioCard
                     key={card.id}
                     name={card.name}
                     duration={card.duration}
-                    starred={card.starred || false}
+                    starred={isStarred}
                     selected={batchMode && selected.has(card.id)}
                     batchMode={batchMode}
                     onSelect={() => toggleSelect(card.id)}
                     onStar={() => toggleStar(card.id)}
                     onDownload={() => {}}
-                    onDelete={() => {}}
+                    onDelete={() => deleteSingle(card)}
                   />
                 ) : (
                   <AssetCard
@@ -2164,18 +2197,18 @@ function CreativeAssetsPanel() {
                     name={card.name}
                     bgColor="#1F2324"
                     url={card.url || null}
-                    starred={card.starred || false}
+                    starred={isStarred}
                     selected={batchMode && selected.has(card.id)}
                     batchMode={batchMode}
                     showStar
                     onSelect={() => toggleSelect(card.id)}
                     onStar={() => toggleStar(card.id)}
                     onDownload={() => {}}
-                    onDelete={() => {}}
+                    onDelete={() => deleteSingle(card)}
                     asset={card}
                   />
-                )
-              ))}
+                );
+              })}
             </div>
           </div>
         ))}

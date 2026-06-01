@@ -71,6 +71,9 @@ function ConfirmDeleteModal({ onConfirm, onCancel }) {
  * @param {Array} props.refImages - 参考图片数组
  * @param {Array} props.refVideos - 参考视频数组
  * @param {Array} props.refAudios - 参考音频数组
+ * @param {string} props.firstFrame - 首帧图片 URL（首尾帧模式下）
+ * @param {string} props.lastFrame - 尾帧图片 URL（首尾帧模式下）
+ * @param {boolean} props.sound - 是否有声音
  * @param {string} props.createdAt - 生成时间
  * @param {Function} props.onDownload - 下载回调
  * @param {Function} props.onDelete - 删除回调
@@ -88,6 +91,9 @@ export default function CreationVideoDetailModal({
   refImages = [],
   refVideos = [],
   refAudios = [],
+  firstFrame = '',
+  lastFrame = '',
+  sound,
   createdAt = '',
   onDownload,
   onDelete,
@@ -337,7 +343,37 @@ export default function CreationVideoDetailModal({
             </div>
 
             {/* Reference */}
-            {(refImages.length > 0 || refVideos.length > 0 || refAudios.length > 0) && (
+            {refMode === 'frame' ? (
+              <>
+                <div className="h-px shrink-0 bg-[#FFFFFF0A] my-0 mx-[20px]" />
+                <div className="flex py-[16px] px-[20px] gap-[12px]">
+                  <div className="flex flex-col items-start gap-[12px] flex-1 h-fit">
+                    <div className="tracking-[0.66px] uppercase inline-block self-stretch font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFF99] text-[11px]/[14px]">
+                      首帧
+                    </div>
+                    <div className="rounded-md overflow-clip flex flex-col items-center gap-0 justify-center h-[84px] self-stretch shrink-0 bg-[#FFFFFF14] border border-solid border-[#FFFFFF14] p-0">
+                      {firstFrame ? (
+                        <div className="w-full h-full shrink-0 bg-cover bg-[center]" style={{ backgroundImage: `url(${firstFrame})` }} />
+                      ) : (
+                        <div className="font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFF40] text-[12px]">无</div>
+                      )}
+                    </div>
+                  </div>
+                  <div className="flex flex-col items-start gap-[12px] flex-1 h-fit">
+                    <div className="tracking-[0.66px] uppercase inline-block self-stretch font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFF99] text-[11px]/[14px]">
+                      尾帧
+                    </div>
+                    <div className="rounded-md overflow-clip flex flex-col items-center gap-0 justify-center h-[84px] self-stretch shrink-0 bg-[#FFFFFF14] border border-solid border-[#FFFFFF14] p-0">
+                      {lastFrame ? (
+                        <div className="w-full h-full shrink-0 bg-cover bg-[center]" style={{ backgroundImage: `url(${lastFrame})` }} />
+                      ) : (
+                        <div className="font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFF40] text-[12px]">无</div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              </>
+            ) : (refImages.length > 0 || refVideos.length > 0 || refAudios.length > 0) && (
               <>
                 <div className="h-px shrink-0 bg-[#FFFFFF0A] my-0 mx-[20px]" />
                 <div className="flex flex-col py-[16px] px-[20px] gap-[12px]">
@@ -403,7 +439,7 @@ export default function CreationVideoDetailModal({
                     参考模式
                   </div>
                   <div className="tracking-[0.12px] inline-block font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFFCC] text-xs/4">
-                    {refMode}
+                    {refMode === 'frame' ? '首尾帧' : refMode}
                   </div>
                 </div>
               )}
@@ -434,6 +470,16 @@ export default function CreationVideoDetailModal({
                   </div>
                   <div className="tracking-[0.12px] inline-block font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFFCC] text-xs/4">
                     {duration}
+                  </div>
+                </div>
+              )}
+              {sound !== undefined && (
+                <div className="flex items-center justify-between">
+                  <div className="tracking-[0.12px] inline-block font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFF99] text-xs/4">
+                    声音
+                  </div>
+                  <div className="tracking-[0.12px] inline-block font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFFCC] text-xs/4">
+                    {sound ? '有' : '无'}
                   </div>
                 </div>
               )}

@@ -11,7 +11,10 @@ export const useCreationStore = create(
         set((state) => ({
           generationsByTab: {
             ...state.generationsByTab,
-            [tab]: [...state.generationsByTab[tab], generation],
+            [tab]: [...state.generationsByTab[tab], {
+              ...generation,
+              createdAt: generation.createdAt || new Date().toISOString(),
+            }],
           },
         })),
 

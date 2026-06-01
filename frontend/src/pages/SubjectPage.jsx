@@ -1233,7 +1233,7 @@ function RefImageField({ maxImages = 3 }) {
   );
 }
 
-function EditSubjectPanel({ char, tabLabel = '角色', onClose, onCommit, onCoverChange }) {
+function EditSubjectPanel({ projectId, char, tabLabel = '角色', onClose, onCommit, onCoverChange }) {
   const imageModels = getImageModelList();
   const [closeHovered, setCloseHovered] = useState(false);
   const [genHovered, setGenHovered] = useState(false);
@@ -1244,14 +1244,26 @@ function EditSubjectPanel({ char, tabLabel = '角色', onClose, onCommit, onCove
   const [modelHovered, setModelHovered] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
   const [selectedModel, setSelectedModel] = useState(imageModels[0]?.value || 'doubao-seedream-5.0-lite');
+  const modelTriggerRef = useRef(null);
   const [ratioHovered, setRatioHovered] = useState(false);
   const [ratioOpen, setRatioOpen] = useState(false);
   const [selectedRatio, setSelectedRatio] = useState('2:1');
+  const ratioTriggerRef = useRef(null);
   const [qualityHovered, setQualityHovered] = useState(false);
   const [qualityOpen, setQualityOpen] = useState(false);
   const [selectedQuality, setSelectedQuality] = useState('1K');
+  const qualityTriggerRef = useRef(null);
+  const modelDropdownRef = useRef(null);
+  const ratioDropdownRef = useRef(null);
+  const qualityDropdownRef = useRef(null);
   const [genMode, setGenMode] = useState('main');
-  const [generatedImages, setGeneratedImages] = useState([]);
+  // 从 char.imageUrl 初始化已生成的图片列表
+  const [generatedImages, setGeneratedImages] = useState(() => {
+    if (char?.imageUrl) {
+      return [{ url: char.imageUrl, settled: true, id: char.imageUrl }];
+    }
+    return [];
+  });
   const [viewImageUrl, setViewImageUrl] = useState(null);
   const [toast, setToast] = useState(null);
   const toastTimerRef = useRef(null);
@@ -1264,11 +1276,30 @@ function EditSubjectPanel({ char, tabLabel = '角色', onClose, onCommit, onCove
 
   // 当模型切换时，使用 defaults 重置参数
   useEffect(() => {
-    if (modelParams?.defaults) {
-      setSelectedRatio(modelParams.defaults.ratio);
-      setSelectedQuality(modelParams.defaults.resolution);
+    const params = getImageModelParams(selectedModel);
+    if (params?.defaults) {
+      console.log('[SubjectPage] 模型切换，重置参数:', params.defaults);
+      setSelectedRatio(params.defaults.ratio);
+      setSelectedQuality(params.defaults.resolution);
     }
-  }, [selectedModel, modelParams]);
+  }, [selectedModel]);
+
+  // 点击外部关闭下拉菜单
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (modelOpen && modelTriggerRef.current && !modelTriggerRef.current.contains(e.target) && modelDropdownRef.current && !modelDropdownRef.current.contains(e.target)) {
+        setModelOpen(false);
+      }
+      if (ratioOpen && ratioTriggerRef.current && !ratioTriggerRef.current.contains(e.target) && ratioDropdownRef.current && !ratioDropdownRef.current.contains(e.target)) {
+        setRatioOpen(false);
+      }
+      if (qualityOpen && qualityTriggerRef.current && !qualityTriggerRef.current.contains(e.target) && qualityDropdownRef.current && !qualityDropdownRef.current.contains(e.target)) {
+        setQualityOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [modelOpen, ratioOpen, qualityOpen]);
 
   function showToast(msg, type = 'success') {
     clearTimeout(toastTimerRef.current);
@@ -1407,20 +1438,45 @@ function EditSubjectPanel({ char, tabLabel = '角色', onClose, onCommit, onCove
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', position: 'relative' }}>
             <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF99' }}>选择模型</span>
             <div
+              ref={modelTriggerRef}
               style={{ ...selectStyle(modelHovered || modelOpen), border: `1px solid ${modelOpen ? 'rgba(45,195,225,0.6)' : modelHovered ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.08)'}` }}
               onMouseEnter={() => setModelHovered(true)}
               onMouseLeave={() => setModelHovered(false)}
-              onClick={() => setModelOpen((v) => !v)}
+              onClick={() => {
+                console.log('[SubjectPage] 点击模型选择器，当前状态:', modelOpen);
+                setModelOpen((v) => !v);
+              }}
             >
               <span style={{ flex: 1, fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF' }}>{selectedModel}</span>
               <ChevronDownIcon />
             </div>
-            {modelOpen && (
-              <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 60, background: '#1D1E1E', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '8px', padding: '4px', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
+            {modelOpen && createPortal(
+              <div
+                ref={modelDropdownRef}
+                style={{
+                  position: 'fixed',
+                  top: `${(modelTriggerRef.current?.getBoundingClientRect().bottom || 0) + 4}px`,
+                  left: `${modelTriggerRef.current?.getBoundingClientRect().left || 0}px`,
+                  width: `${modelTriggerRef.current?.getBoundingClientRect().width || 200}px`,
+                  zIndex: 9999,
+                  background: '#1D1E1E',
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  borderRadius: '8px',
+                  padding: '4px',
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                  maxHeight: '300px',
+                  overflowY: 'auto'
+                }}
+              >
+                {console.log('[SubjectPage] 渲染模型下拉菜单，选项数量:', imageModels.length)}
                 {imageModels.map((model) => (
                   <div
                     key={model.value}
-                    onClick={() => { setSelectedModel(model.value); setModelOpen(false); }}
+                    onClick={() => {
+                      console.log('[SubjectPage] 点击模型选项:', model.value);
+                      setSelectedModel(model.value);
+                      setModelOpen(false);
+                    }}
                     style={{
                       padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', fontFamily: FONT, fontSize: '14px', lineHeight: '18px',
                       color: selectedModel === model.value ? '#2DC3E1' : '#FFFFFFCC',
@@ -1433,7 +1489,8 @@ function EditSubjectPanel({ char, tabLabel = '角色', onClose, onCommit, onCove
                     {model.label}
                   </div>
                 ))}
-              </div>
+              </div>,
+              document.body
             )}
           </div>
 
@@ -1441,20 +1498,45 @@ function EditSubjectPanel({ char, tabLabel = '角色', onClose, onCommit, onCove
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', position: 'relative' }}>
             <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF99' }}>选择画面比例</span>
             <div
+              ref={ratioTriggerRef}
               style={{ ...selectStyle(ratioHovered || ratioOpen), border: `1px solid ${ratioOpen ? 'rgba(45,195,225,0.6)' : ratioHovered ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.08)'}` }}
               onMouseEnter={() => setRatioHovered(true)}
               onMouseLeave={() => setRatioHovered(false)}
-              onClick={() => setRatioOpen((v) => !v)}
+              onClick={() => {
+                console.log('[SubjectPage] 点击画面比例选择器，当前状态:', ratioOpen);
+                setRatioOpen((v) => !v);
+              }}
             >
               <span style={{ flex: 1, fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF' }}>{selectedRatio}</span>
               <ChevronDownIcon />
             </div>
-            {ratioOpen && (
-              <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 60, background: '#1D1E1E', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '8px', padding: '4px', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
+            {ratioOpen && createPortal(
+              <div
+                ref={ratioDropdownRef}
+                style={{
+                  position: 'fixed',
+                  top: `${(ratioTriggerRef.current?.getBoundingClientRect().bottom || 0) + 4}px`,
+                  left: `${ratioTriggerRef.current?.getBoundingClientRect().left || 0}px`,
+                  width: `${ratioTriggerRef.current?.getBoundingClientRect().width || 200}px`,
+                  zIndex: 9999,
+                  background: '#1D1E1E',
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  borderRadius: '8px',
+                  padding: '4px',
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                  maxHeight: '300px',
+                  overflowY: 'auto'
+                }}
+              >
+                {console.log('[SubjectPage] 渲染画面比例下拉菜单，选项:', availableRatios)}
                 {availableRatios.map((opt) => (
                   <div
                     key={opt}
-                    onClick={() => { setSelectedRatio(opt); setRatioOpen(false); }}
+                    onClick={() => {
+                      console.log('[SubjectPage] 点击画面比例选项:', opt);
+                      setSelectedRatio(opt);
+                      setRatioOpen(false);
+                    }}
                     style={{
                       padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', fontFamily: FONT, fontSize: '14px', lineHeight: '18px',
                       color: selectedRatio === opt ? '#2DC3E1' : '#FFFFFFCC',
@@ -1467,7 +1549,8 @@ function EditSubjectPanel({ char, tabLabel = '角色', onClose, onCommit, onCove
                     {opt}
                   </div>
                 ))}
-              </div>
+              </div>,
+              document.body
             )}
           </div>
 
@@ -1475,20 +1558,45 @@ function EditSubjectPanel({ char, tabLabel = '角色', onClose, onCommit, onCove
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', position: 'relative' }}>
             <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF99' }}>质量</span>
             <div
+              ref={qualityTriggerRef}
               style={{ ...selectStyle(qualityHovered || qualityOpen), border: `1px solid ${qualityOpen ? 'rgba(45,195,225,0.6)' : qualityHovered ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.08)'}` }}
               onMouseEnter={() => setQualityHovered(true)}
               onMouseLeave={() => setQualityHovered(false)}
-              onClick={() => setQualityOpen((v) => !v)}
+              onClick={() => {
+                console.log('[SubjectPage] 点击质量选择器，当前状态:', qualityOpen);
+                setQualityOpen((v) => !v);
+              }}
             >
               <span style={{ flex: 1, fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF' }}>{selectedQuality}</span>
               <ChevronDownIcon />
             </div>
-            {qualityOpen && (
-              <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 60, background: '#1D1E1E', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '8px', padding: '4px', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
+            {qualityOpen && createPortal(
+              <div
+                ref={qualityDropdownRef}
+                style={{
+                  position: 'fixed',
+                  top: `${(qualityTriggerRef.current?.getBoundingClientRect().bottom || 0) + 4}px`,
+                  left: `${qualityTriggerRef.current?.getBoundingClientRect().left || 0}px`,
+                  width: `${qualityTriggerRef.current?.getBoundingClientRect().width || 200}px`,
+                  zIndex: 9999,
+                  background: '#1D1E1E',
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  borderRadius: '8px',
+                  padding: '4px',
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                  maxHeight: '300px',
+                  overflowY: 'auto'
+                }}
+              >
+                {console.log('[SubjectPage] 渲染质量下拉菜单，选项:', availableResolutions)}
                 {availableResolutions.map((opt) => (
                   <div
                     key={opt}
-                    onClick={() => { setSelectedQuality(opt); setQualityOpen(false); }}
+                    onClick={() => {
+                      console.log('[SubjectPage] 点击质量选项:', opt);
+                      setSelectedQuality(opt);
+                      setQualityOpen(false);
+                    }}
                     style={{
                       padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', fontFamily: FONT, fontSize: '14px', lineHeight: '18px',
                       color: selectedQuality === opt ? '#2DC3E1' : '#FFFFFFCC',
@@ -1501,7 +1609,8 @@ function EditSubjectPanel({ char, tabLabel = '角色', onClose, onCommit, onCove
                     {opt}
                   </div>
                 ))}
-              </div>
+              </div>,
+              document.body
             )}
           </div>
 
@@ -1533,10 +1642,32 @@ function EditSubjectPanel({ char, tabLabel = '角色', onClose, onCommit, onCove
                 const placeholder = `generated-${Date.now()}`;
                 setGeneratedImages((prev) => [{ url: null, settled: false, id: placeholder }, ...prev]);
                 try {
-                  const { imageUrl } = await apiGenerateSubjectImage(char.id, { model: selectedModel, referenceImages });
-                  setGeneratedImages((prev) => prev.map((img) => img.id === placeholder ? { ...img, url: imageUrl, settled: true } : img));
+                  const result = await apiGenerateSubjectImage(projectId, char.id, {
+                    model: selectedModel,
+                    ratio: selectedRatio,
+                    resolution: selectedQuality,
+                    prompt: promptText,
+                  });
+                  const imageUrl = result.imageUrl || result.image_url;
+
+                  // 更新生成的图片，但不自动设置为定稿
+                  setGeneratedImages((prev) => {
+                    const updated = prev.map((img) => img.id === placeholder ? { ...img, url: imageUrl, settled: false } : img);
+
+                    // 检查是否已有定稿图片
+                    const hasSettled = updated.some((img) => img.settled);
+
+                    // 如果没有定稿图片，立即将这张设为封面（但不标记为定稿）
+                    if (!hasSettled && imageUrl) {
+                      onCoverChange?.(imageUrl);
+                    }
+
+                    return updated;
+                  });
+
                   showToast('图片生成成功', 'success');
-                } catch {
+                } catch (err) {
+                  console.error('[SubjectPage] 生成图片失败:', err);
                   setGeneratedImages((prev) => prev.filter((img) => img.id !== placeholder));
                   showToast('图片生成失败', 'error');
                 }
@@ -1680,7 +1811,10 @@ export default function SubjectPage({ projectId, projectName = '两只老虎的�
 
   const handleAdd = async () => {
     const type = activeTab; // 'char' | 'scene' | 'prop'
-    const { id } = await apiCreateSubject(type, { projectId, name: '待定', desc: '待定' });
+    const typeMap = { char: 'character', scene: 'scene', prop: 'prop' };
+    const actualType = typeMap[type];
+
+    const { id } = await apiCreateSubject(projectId, { type: actualType, name: '待定', description: '待定' });
     if (activeTab === 'char') {
       setChars((prev) => [...prev, { id, name: '待定', desc: '待定', imageUrl: null, voice: null }]);
     } else if (activeTab === 'scene') {
@@ -1771,51 +1905,54 @@ export default function SubjectPage({ projectId, projectName = '两只老虎的�
       {selectedChar && (
         <EditSubjectPanel
           key={selectedChar.id}
+          projectId={projectId}
           char={selectedChar}
           tabLabel="角色"
           onClose={() => setSelectedChar(null)}
           onCommit={(name, desc) => {
             setChars((prev) => prev.map((c) => c.id === selectedChar.id ? { ...c, name, desc } : c));
             setSelectedChar((prev) => ({ ...prev, name, desc }));
-            apiUpdateSubject(selectedChar.id, { name, desc });
+            apiUpdateSubject(projectId, selectedChar.id, { name, description: desc });
           }}
           onCoverChange={(imageUrl) => {
             setChars((prev) => prev.map((c) => c.id === selectedChar.id ? { ...c, imageUrl } : c));
-            apiUpdateSubject(selectedChar.id, { imageUrl });
+            apiUpdateSubject(projectId, selectedChar.id, { imageUrl });
           }}
         />
       )}
       {selectedScene && (
         <EditSubjectPanel
           key={selectedScene.id}
+          projectId={projectId}
           char={selectedScene}
           tabLabel="场景"
           onClose={() => setSelectedScene(null)}
           onCommit={(name, desc) => {
             setScenes((prev) => prev.map((s) => s.id === selectedScene.id ? { ...s, name, desc } : s));
             setSelectedScene((prev) => ({ ...prev, name, desc }));
-            apiUpdateSubject(selectedScene.id, { name, desc });
+            apiUpdateSubject(projectId, selectedScene.id, { name, description: desc });
           }}
           onCoverChange={(imageUrl) => {
             setScenes((prev) => prev.map((s) => s.id === selectedScene.id ? { ...s, imageUrl } : s));
-            apiUpdateSubject(selectedScene.id, { imageUrl });
+            apiUpdateSubject(projectId, selectedScene.id, { imageUrl });
           }}
         />
       )}
       {selectedProp && (
         <EditSubjectPanel
           key={selectedProp.id}
+          projectId={projectId}
           char={selectedProp}
           tabLabel="道具"
           onClose={() => setSelectedProp(null)}
           onCommit={(name, desc) => {
             setProps((prev) => prev.map((p) => p.id === selectedProp.id ? { ...p, name, desc } : p));
             setSelectedProp((prev) => ({ ...prev, name, desc }));
-            apiUpdateSubject(selectedProp.id, { name, desc });
+            apiUpdateSubject(projectId, selectedProp.id, { name, description: desc });
           }}
           onCoverChange={(imageUrl) => {
             setProps((prev) => prev.map((p) => p.id === selectedProp.id ? { ...p, imageUrl } : p));
-            apiUpdateSubject(selectedProp.id, { imageUrl });
+            apiUpdateSubject(projectId, selectedProp.id, { imageUrl });
           }}
         />
       )}

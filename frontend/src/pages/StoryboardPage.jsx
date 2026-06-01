@@ -4,10 +4,10 @@ import BatchDownloadModal from '../components/BatchDownloadModal';
 import ShotViewerModal from '../components/ShotViewerModal';
 import Toggle from '../components/Toggle';
 import AssetPickerModal from '../components/AssetPickerModal';
-import { apiUploadFile, apiGenerateImage, apiGenerateVideo, apiCreateShot, apiUpdateShot, apiDeleteShot, apiReorderShots, apiGetShots } from '../api/storyboard';
+import { apiUploadFile, apiUploadImage, apiGenerateStoryboardImage, apiGenerateStoryboardVideo, apiCreateStoryboard, apiUpdateStoryboard, apiDeleteStoryboard, apiReorderStoryboards, apiGetStoryboards } from '../api/storyboard';
 import DotsLoading from '../components/DotsLoading';
 import { apiGetEpisodes } from '../api/subject';
-import { getImageModelList, getVideoModelList, getImageModelParams, getVideoModelParams } from '../config';
+import { getImageModelParams, getVideoModelParams, getImageModelList, getVideoModelList } from '../config';
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -24,14 +24,46 @@ function EpisodeSelector({ episodes, value, onChange }) {
   const [hovered, setHovered] = useState(false);
   const [hoveredIdx, setHoveredIdx] = useState(null);
   const rootRef = useRef(null);
-  const measureRef = useRef(null);
   const [selectorWidth, setSelectorWidth] = useState(null);
 
-  // measure the longest episode name to fix the selector width
+  // 测量所有选集标题的实际像素宽度，取最大值
   useEffect(() => {
-    if (!measureRef.current) return;
-    setSelectorWidth(measureRef.current.scrollWidth + 1);
-  }, [episodes]);
+    // 创建一个临时元素来测量每个标题的宽度
+    const tempSpan = document.createElement('span');
+    tempSpan.style.cssText = `
+      position: absolute;
+      visibility: hidden;
+      pointer-events: none;
+      white-space: nowrap;
+      font-family: ${FONT_MEDIUM};
+      font-size: 14px;
+      font-weight: 500;
+      line-height: 20px;
+      padding: 0 6px;
+    `;
+    document.body.appendChild(tempSpan);
+
+    let maxWidth = 0;
+
+    // 优先测量所有 episodes
+    if (episodes && episodes.length > 0) {
+      episodes.forEach((ep) => {
+        tempSpan.textContent = ep;
+        const width = tempSpan.scrollWidth;
+        if (width > maxWidth) {
+          maxWidth = width;
+        }
+      });
+    } else {
+      // 降级：至少测量当前 value
+      tempSpan.textContent = value;
+      maxWidth = tempSpan.scrollWidth;
+    }
+
+    document.body.removeChild(tempSpan);
+    // 确保最小宽度为 60px，避免过窄
+    setSelectorWidth(Math.max(maxWidth + 12, 60));
+  }, [episodes, value]);
 
   useEffect(() => {
     if (!open) return;
@@ -43,24 +75,13 @@ function EpisodeSelector({ episodes, value, onChange }) {
   }, [open]);
 
   const dropdownMaxH = EPISODE_ITEM_H * EPISODE_MAX_VISIBLE + 8;
-  const longestEp = episodes.reduce((a, b) => (b.length > a.length ? b : a), '');
 
   return (
     <div ref={rootRef} style={{ position: 'relative', display: 'inline-flex', flexShrink: 0 }}>
-      {/* hidden span to measure longest text width */}
-      <span
-        ref={measureRef}
-        aria-hidden="true"
-        style={{
-          position: 'absolute', visibility: 'hidden', pointerEvents: 'none', whiteSpace: 'nowrap',
-          fontFamily: FONT_MEDIUM, fontSize: '14px', fontWeight: 500, lineHeight: '20px',
-          padding: '0 6px',
-        }}
-      >{longestEp}</span>
       {open ? (
         <div
           className="flex items-center gap-[6px] h-[28px] pl-[10px] pr-[6px] rounded-[6px] cursor-pointer border border-solid bg-input-bg-normal border-input-border-focus [outline:1px_solid_var(--color-stroke-outline)]"
-          style={{ boxShadow: '0px 0px 10px var(--color-glow)', width: selectorWidth ? `${selectorWidth + 32}px` : undefined }}
+          style={{ boxShadow: '0px 0px 10px var(--color-glow)', width: selectorWidth ? `${selectorWidth + 32}px` : '80px' }}
           onClick={() => setOpen(false)}
         >
           <span className="flex-1 text-input-text-content text-font-size-14 truncate" style={{ fontFamily: FONT_MEDIUM, fontWeight: 500, lineHeight: '20px' }}>
@@ -73,7 +94,7 @@ function EpisodeSelector({ episodes, value, onChange }) {
       ) : (
         <div
           className="flex items-center rounded-[6px] cursor-pointer"
-          style={{ height: '28px', padding: '0 6px', width: selectorWidth ? `${selectorWidth}px` : undefined, backgroundColor: hovered ? '#FFFFFF0F' : 'transparent', transition: 'background-color 0.12s' }}
+          style={{ height: '28px', padding: '0 6px', width: selectorWidth ? `${selectorWidth}px` : '60px', backgroundColor: hovered ? '#FFFFFF0F' : 'transparent', transition: 'background-color 0.12s' }}
           onMouseEnter={() => setHovered(true)}
           onMouseLeave={() => setHovered(false)}
           onClick={() => setOpen(true)}
@@ -86,7 +107,7 @@ function EpisodeSelector({ episodes, value, onChange }) {
       {open && (
         <div
           className="flex flex-col rounded-medium bg-select-bg border border-select-border absolute z-50"
-          style={{ top: 'calc(100% + 4px)', left: 0, width: selectorWidth ? `${selectorWidth + 32}px` : undefined, minWidth: '100%', padding: '4px', boxShadow: '0px 4px 16px var(--color-select-shadow)', maxHeight: `${dropdownMaxH}px`, overflowY: episodes.length > EPISODE_MAX_VISIBLE ? 'auto' : 'visible' }}
+          style={{ top: 'calc(100% + 4px)', left: 0, width: selectorWidth ? `${selectorWidth + 32}px` : '80px', padding: '4px', boxShadow: '0px 4px 16px var(--color-select-shadow)', maxHeight: `${dropdownMaxH}px`, overflowY: episodes.length > EPISODE_MAX_VISIBLE ? 'auto' : 'visible' }}
         >
           {episodes.map((ep, i) => {
             const isActive = ep === value;
@@ -360,14 +381,9 @@ const ModalToggle = Toggle;
 // ─── 批量生成分镜图弹窗 ───────────────────────────────────────────────────────
 
 function BatchImageModal({ shotCount, onClose, onConfirm }) {
-  const [model, setModel] = useState('');
-  const [modelOptions, setModelOptions] = useState([]);
+  const modelList = getImageModelList();
+  const [model, setModel] = useState(modelList[0]?.value || '');
   const [resolution, setResolution] = useState('1K');
-  useEffect(() => {
-    const list = getImageModelList();
-    setModelOptions(list.map(m => m.value));
-    setModel((prev) => prev || list[0]?.value || '');
-  }, []);
   return (
     <ModalOverlay onClose={onClose}>
       <div style={{
@@ -386,7 +402,10 @@ function BatchImageModal({ shotCount, onClose, onConfirm }) {
             <span style={{ fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.60)', fontFamily: FONT, flexShrink: 0 }}>待生成的分镜图数量</span>
             <span style={{ fontSize: '14px', lineHeight: '18px', color: '#FFFFFF', fontFamily: FONT, flexShrink: 0 }}>{shotCount}个</span>
           </div>
-          <ModalSelect label="选择模型" value={model} options={modelOptions} onChange={setModel} />
+          <ModalSelect label="选择模型" value={modelList.find(m => m.value === model)?.label || ''} options={modelList.map(m => m.label)} onChange={(label) => {
+            const selected = modelList.find(m => m.label === label);
+            if (selected) setModel(selected.value);
+          }} />
           <ModalSelect label="分辨率" value={resolution} options={['1K', '2K', '4K']} onChange={setResolution} />
         </div>
         {/* 底部 */}
@@ -402,15 +421,10 @@ function BatchImageModal({ shotCount, onClose, onConfirm }) {
 // ─── 批量生成分镜视频弹窗 ─────────────────────────────────────────────────────
 
 function BatchVideoModal({ shotCount, onClose, onConfirm }) {
-  const [model, setModel] = useState('');
-  const [modelOptions, setModelOptions] = useState([]);
+  const modelList = getVideoModelList();
+  const [model, setModel] = useState(modelList[0]?.value || '');
   const [quality, setQuality] = useState('720P');
   const [sound, setSound] = useState(true);
-  useEffect(() => {
-    const list = getVideoModelList();
-    setModelOptions(list.map(m => m.value));
-    setModel((prev) => prev || list[0]?.value || '');
-  }, []);
   return (
     <ModalOverlay onClose={onClose}>
       <div style={{
@@ -429,7 +443,10 @@ function BatchVideoModal({ shotCount, onClose, onConfirm }) {
             <span style={{ fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.60)', fontFamily: FONT, flexShrink: 0 }}>待生成的分镜视频数量</span>
             <span style={{ fontSize: '14px', lineHeight: '18px', color: '#FFFFFF', fontFamily: FONT, flexShrink: 0 }}>{shotCount}个</span>
           </div>
-          <ModalSelect label="选择模型" value={model} options={modelOptions} onChange={setModel} />
+          <ModalSelect label="选择模型" value={modelList.find(m => m.value === model)?.label || ''} options={modelList.map(m => m.label)} onChange={(label) => {
+            const selected = modelList.find(m => m.label === label);
+            if (selected) setModel(selected.value);
+          }} />
           {/* 时长（只读） */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignSelf: 'stretch' }}>
             <span style={{ fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.60)', fontFamily: FONT }}>时长</span>
@@ -939,7 +956,7 @@ function PanelUploadSlot({ label, onUpload, media, onRemove, accept = 'image/*' 
 
 // ─── 面板内提示词输入框 ────────────────────────────────────────────────────────
 
-const MAX_PROMPT_LEN = 300;
+const MAX_PROMPT_LEN = 1000;
 
 // ── DOM helpers for atomic mention editing ────────────────────────────────────
 
@@ -954,16 +971,33 @@ function buildMentionPattern(allSubjects) {
 
 function parseSegments(text, allSubjects) {
   const pattern = buildMentionPattern(allSubjects);
-  if (!pattern) return [{ kind: 'text', text }];
   const segments = [];
   let last = 0;
+
+  // 匹配 @角色/@场景/@道具 和 [参考图:URL] 两种格式
+  const combinedPattern = pattern
+    ? new RegExp(`(@(?:${pattern.source.slice(2, -2)})|\\[参考图:[^\\]]+\\])`, 'g')
+    : /\[参考图:[^\]]+\]/g;
+
   let m;
-  while ((m = pattern.exec(text)) !== null) {
+  while ((m = combinedPattern.exec(text)) !== null) {
     if (m.index > last) segments.push({ kind: 'text', text: text.slice(last, m.index) });
-    const subject = allSubjects.find((s) => s.name === m[1]);
-    segments.push({ kind: 'mention', name: m[1], type: subject?._type ?? 'char' });
-    last = m.index + m[0].length;
+
+    const matched = m[0];
+    if (matched.startsWith('[参考图:')) {
+      // 参考图标签
+      const url = matched.slice(5, -1); // 提取 URL
+      segments.push({ kind: 'mention', name: url, type: 'ref' });
+    } else if (matched.startsWith('@')) {
+      // 主体提及
+      const name = matched.slice(1);
+      const subject = allSubjects.find((s) => s.name === name);
+      segments.push({ kind: 'mention', name, type: subject?._type ?? 'char' });
+    }
+
+    last = m.index + matched.length;
   }
+
   if (last < text.length) segments.push({ kind: 'text', text: text.slice(last) });
   return segments;
 }
@@ -974,9 +1008,20 @@ function serializeEditor(el) {
     if (node.nodeType === Node.TEXT_NODE) {
       out += node.textContent;
     } else if (node.nodeType === Node.ELEMENT_NODE) {
-      if (node.dataset?.mention) out += `@${node.dataset.mention}`;
-      else if (node.tagName === 'BR') out += '\n';
-      else out += node.textContent;
+      if (node.dataset?.mention) {
+        const mentionType = node.dataset.mentionType;
+        if (mentionType === 'ref') {
+          // 参考图标签序列化为 [参考图:URL]
+          out += `[参考图:${node.dataset.mention}]`;
+        } else {
+          // 主体提及序列化为 @名称
+          out += `@${node.dataset.mention}`;
+        }
+      } else if (node.tagName === 'BR') {
+        out += '\n';
+      } else {
+        out += node.textContent;
+      }
     }
   }
   return out;
@@ -996,14 +1041,34 @@ function rebuildEditorDOM(el, text, allSubjects, typeOverrides = {}) {
       span.dataset.mention = seg.name;
       span.dataset.mentionType = type;
       span.contentEditable = 'false';
-      span.textContent = `@${seg.name}`;
-      span.style.cssText = [
-        'display:inline-flex', 'align-items:center', 'padding:0 4px',
-        'border-radius:4px', 'font-size:14px', 'line-height:21px',
-        `background:${color}26`, `color:${color}`,
-        `box-shadow:inset 0 0 0 1px ${color}33`,
-        'vertical-align:middle', 'user-select:none', 'cursor:default',
-      ].join(';');
+
+      // 参考图标签显示简短文本，主体提及显示 @名称
+      if (type === 'ref') {
+        // 从 URL 中提取文件名，截断到 7 个字符
+        const rawName = seg.name.split('/').pop()?.split('?')[0] ?? '参考图';
+        const baseName = rawName.replace(/\.[^.]+$/, '') || '参考图';
+        span.textContent = baseName.length > 7 ? baseName.slice(0, 7) + '…' : baseName;
+      } else {
+        span.textContent = `@${seg.name}`;
+      }
+
+      if (type === 'ref') {
+        span.style.cssText = [
+          'display:inline-flex', 'align-items:center', 'padding:0 4px',
+          'border-radius:6px', 'font-size:14px', 'line-height:18px',
+          'background:#8870FF1A', 'color:#E8A1FF',
+          'box-shadow:inset 0 0 0 1px #FFFFFF14',
+          'vertical-align:middle', 'user-select:none', 'cursor:default',
+        ].join(';');
+      } else {
+        span.style.cssText = [
+          'display:inline-flex', 'align-items:center', 'padding:0 4px',
+          'border-radius:4px', 'font-size:14px', 'line-height:21px',
+          `background:${color}26`, `color:${color}`,
+          `box-shadow:inset 0 0 0 1px ${color}33`,
+          'vertical-align:middle', 'user-select:none', 'cursor:default',
+        ].join(';');
+      }
       el.appendChild(span);
     }
   }
@@ -1020,11 +1085,27 @@ function getCaretOffset(el) {
   for (const node of el.childNodes) {
     if (node === range.startContainer || node.contains?.(range.startContainer)) {
       if (node.nodeType === Node.TEXT_NODE) offset += range.startOffset;
-      else if (node.dataset?.mention) offset += node.dataset.mention.length + 1;
+      else if (node.dataset?.mention) {
+        const mentionType = node.dataset.mentionType;
+        if (mentionType === 'ref') {
+          // 参考图标签：[参考图:URL] 的长度
+          offset += `[参考图:${node.dataset.mention}]`.length;
+        } else {
+          // 主体提及：@名称 的长度
+          offset += node.dataset.mention.length + 1;
+        }
+      }
       break;
     }
     if (node.nodeType === Node.TEXT_NODE) offset += node.textContent.length;
-    else if (node.dataset?.mention) offset += node.dataset.mention.length + 1;
+    else if (node.dataset?.mention) {
+      const mentionType = node.dataset.mentionType;
+      if (mentionType === 'ref') {
+        offset += `[参考图:${node.dataset.mention}]`.length;
+      } else {
+        offset += node.dataset.mention.length + 1;
+      }
+    }
     else offset += node.textContent.length;
   }
   return offset;
@@ -1046,7 +1127,10 @@ function setCaretOffset(el, targetOffset) {
       }
       remaining -= len;
     } else if (node.dataset?.mention) {
-      const len = node.dataset.mention.length + 1;
+      const mentionType = node.dataset.mentionType;
+      const len = mentionType === 'ref'
+        ? `[参考图:${node.dataset.mention}]`.length
+        : node.dataset.mention.length + 1;
       if (remaining < len) {
         const range = document.createRange();
         range.setStartAfter(node);
@@ -1079,7 +1163,7 @@ function setCaretOffset(el, targetOffset) {
   sel.addRange(range);
 }
 
-function PanelPromptInput({ value, onChange, chars = [], scenes = [], props = [] }) {
+function PanelPromptInput({ value, onChange, chars = [], scenes = [], props = [], mainRefs = [] }) {
   const [focused, setFocused] = useState(false);
   const [hov, setHov] = useState(false);
   const [mentionQuery, setMentionQuery] = useState(null);
@@ -1089,6 +1173,7 @@ function PanelPromptInput({ value, onChange, chars = [], scenes = [], props = []
   const suppressSyncRef = useRef(false);
   const allSubjectsRef = useRef([]);
   const typeOverridesRef = useRef({});
+  const isBlurringRef = useRef(false);
 
   const borderColor = focused ? 'rgba(45,195,225,0.60)' : hov ? 'rgba(255,255,255,0.20)' : 'rgba(255,255,255,0.08)';
   const outlineColor = focused ? 'rgba(45,195,225,0.12)' : '#00000080';
@@ -1113,7 +1198,10 @@ function PanelPromptInput({ value, onChange, chars = [], scenes = [], props = []
   }
 
   function syncToValue(el) {
-    if (suppressSyncRef.current) { suppressSyncRef.current = false; return; }
+    if (suppressSyncRef.current || isBlurringRef.current) {
+      suppressSyncRef.current = false;
+      return;
+    }
     const caretOffset = getCaretOffset(el);
     // 把当前 DOM 里已有的类型合并进持久化 ref，防止 rebuild 时丢失
     const domTypes = readDOMTypes(el);
@@ -1270,7 +1358,7 @@ function PanelPromptInput({ value, onChange, chars = [], scenes = [], props = []
   }
 
   function handleInput() {
-    if (composingRef.current) return;
+    if (composingRef.current || !focused) return;
     const el = editorRef.current;
     if (el) syncToValue(el);
   }
@@ -1279,7 +1367,18 @@ function PanelPromptInput({ value, onChange, chars = [], scenes = [], props = []
   function handleCompositionEnd() {
     composingRef.current = false;
     const el = editorRef.current;
-    if (el) syncToValue(el);
+    if (el && focused) syncToValue(el);
+  }
+
+  function handleBlur() {
+    // 设置失焦标志，防止失焦过程中的 syncToValue 调用
+    isBlurringRef.current = true;
+    setFocused(false);
+    setMentionQuery(null);
+    // 在下一帧重置标志
+    requestAnimationFrame(() => {
+      isBlurringRef.current = false;
+    });
   }
 
   function handleSelectMention(name, type) {
@@ -1290,21 +1389,42 @@ function PanelPromptInput({ value, onChange, chars = [], scenes = [], props = []
     const atIdx = textBefore.lastIndexOf('@');
     const before = value.slice(0, atIdx);
     const after = value.slice(caretOffset);
-    const newVal = `${before}@${name} ${after}`.slice(0, MAX_PROMPT_LEN);
+
+    let newVal;
+    let newCaretOffset;
+    let typeOverrides;
+
+    if (type === 'ref') {
+      // 参考图：插入 [参考图:URL] 标签
+      const refTag = `[参考图:${name}]`;
+      newVal = `${before}${refTag} ${after}`.slice(0, MAX_PROMPT_LEN);
+      newCaretOffset = before.length + refTag.length + 1;
+      typeOverrides = { ...readDOMTypes(el) };
+    } else {
+      // 主体：插入 @name
+      newVal = `${before}@${name} ${after}`.slice(0, MAX_PROMPT_LEN);
+      newCaretOffset = atIdx + name.length + 2;
+      typeOverrides = { ...readDOMTypes(el), [name]: type };
+    }
+
     onChange(newVal);
     setMentionQuery(null);
     suppressSyncRef.current = true;
-    // 读出已有类型映射，再把本次选中的类型合并进去
-    const typeOverrides = { ...readDOMTypes(el), [name]: type };
     requestAnimationFrame(() => {
       if (!editorRef.current) return;
       suppressSyncRef.current = false;
       rebuildEditorDOM(editorRef.current, newVal, allSubjectsRef.current, typeOverrides);
-      setCaretOffset(editorRef.current, atIdx + name.length + 2);
+      setCaretOffset(editorRef.current, newCaretOffset);
     });
   }
 
   const segments = parseSegments(value, allSubjects);
+
+  // 调试：检查是否有重复
+  if (!focused && value && segments.length > 0) {
+    console.log('展示态 - value:', value);
+    console.log('展示态 - segments:', segments);
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignSelf: 'stretch' }}>
@@ -1317,7 +1437,7 @@ function PanelPromptInput({ value, onChange, chars = [], scenes = [], props = []
           display: 'flex', flexDirection: 'column',
           backgroundColor: '#1D1E1E', borderRadius: '8px',
           border: `1px solid ${borderColor}`, outline: `${outlineWidth} solid ${outlineColor}`,
-          padding: '9px 12px', height: '120px', boxSizing: 'border-box',
+          padding: '9px 12px', minHeight: '120px', boxSizing: 'border-box',
           transition: 'border-color 0.10s',
           position: 'relative',
         }}
@@ -1325,11 +1445,12 @@ function PanelPromptInput({ value, onChange, chars = [], scenes = [], props = []
         {focused ? (
           /* 编辑态：contenteditable，mention span 为 contentEditable=false 原子 */
           <div
+            key="editor"
             ref={editorRef}
             contentEditable
             suppressContentEditableWarning
             onFocus={() => setFocused(true)}
-            onBlur={() => { setFocused(false); setMentionQuery(null); }}
+            onBlur={handleBlur}
             onKeyDown={handleKeyDown}
             onInput={handleInput}
             onCompositionStart={handleCompositionStart}
@@ -1344,8 +1465,9 @@ function PanelPromptInput({ value, onChange, chars = [], scenes = [], props = []
             className="[&:empty]:before:content-[attr(data-placeholder)] [&:empty]:before:text-[rgba(255,255,255,0.30)] [&:empty]:before:pointer-events-none"
           />
         ) : (
-          /* 展示态：带高亮 tag 的 read-only 视图，点击进入编辑 */
+          /* 展示态：渲染 value 字符串，\n 由 pre-wrap 自动换行，mention 高亮 */
           <div
+            key="display"
             onClick={() => setFocused(true)}
             style={{
               flex: 1, overflow: 'hidden',
@@ -1371,6 +1493,7 @@ function PanelPromptInput({ value, onChange, chars = [], scenes = [], props = []
           chars={chars}
           scenes={scenes}
           props={props}
+          mainRefs={mainRefs}
           query={mentionQuery}
           onSelect={handleSelectMention}
           onClose={() => setMentionQuery(null)}
@@ -1382,6 +1505,41 @@ function PanelPromptInput({ value, onChange, chars = [], scenes = [], props = []
 }
 
 // ─── 生成分镜图面板 ────────────────────────────────────────────────────────────
+
+// 构建完整提示词内容
+function buildPromptFromShot(shot, chars = [], scenes = [], props = []) {
+  const lines = [];
+
+  // 第一行：镜头参数
+  const paramParts = [
+    shot?.params?.framing && `景别：${shot.params.framing}`,
+    shot?.params?.cameraMotion && `运镜：${shot.params.cameraMotion}`,
+    shot?.params?.angle && `拍摄角度：${shot.params.angle}`,
+    shot?.params?.composition && `构图：${shot.params.composition}`,
+    shot?.params?.duration && `时长：${shot.params.duration}`,
+  ].filter(Boolean);
+  if (paramParts.length) lines.push(paramParts.join('，'));
+
+  // 第二行：光影 + 环境音
+  const atmosphereParts = [
+    shot?.lightShadow && `光影：${shot.lightShadow}`,
+    shot?.ambientSound && `环境音：${shot.ambientSound}`,
+  ].filter(Boolean);
+  if (atmosphereParts.length) lines.push(atmosphereParts.join('，'));
+
+  // 第三行：画面描述（保留原有的 @提及）
+  if (shot?.description) lines.push(shot.description);
+
+  // 第四行：台词分配
+  if (shot?.narration?.segments?.length > 0) {
+    const dialogues = shot.narration.segments
+      .map(seg => `${seg.role}：${seg.lines}`)
+      .join('，');
+    lines.push(`台词分配：${dialogues}`);
+  }
+
+  return lines.join('\n');
+}
 
 function RefSlotBtn({ onClick, children }) {
   const [hov, setHov] = useState(false);
@@ -1409,11 +1567,20 @@ function RefSlotBtn({ onClick, children }) {
 }
 
 function GenerateImagePanel({ shot, chars = [], scenes = [], props = [], onClose, onGenerate, onShowToast, generatedImages = [], onSetGeneratedImages }) {
-  const imageModels = getImageModelList();
-  const [model, setModel] = useState(imageModels[0]?.value || 'doubao-seedream-5.0-lite');
+  const modelList = getImageModelList();
+  const [model, setModel] = useState(modelList[0]?.value || '');
   const [resolution, setResolution] = useState('2K');
-  const [prompt, setPrompt] = useState(shot?.description || '');
-  const [refImages, setRefImages] = useState([]);
+  const [prompt, setPrompt] = useState(() => buildPromptFromShot(shot, chars, scenes, props));
+  const [refImages, setRefImages] = useState(() => {
+    const images = [];
+    // 添加主体参考图
+    if (shot?.mainRefs?.length > 0) {
+      shot.mainRefs.forEach(ref => {
+        if (ref?.url) images.push(ref);
+      });
+    }
+    return images;
+  });
   const [refImgPickerOpen, setRefImgPickerOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [btnHov, setBtnHov] = useState(false);
@@ -1432,11 +1599,43 @@ function GenerateImagePanel({ shot, chars = [], scenes = [], props = [], onClose
     }
   }, [model, modelParams]);
 
-  function handleRefFileChange(e) {
+  async function handleRefImageUpload(file) {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const result = await apiUploadFile(formData);
+
+      // 在提示词末尾添加参考图标签
+      const refTag = `[参考图:${result.url}]`;
+      setPrompt(prev => {
+        const newPrompt = prev ? `${prev} ${refTag}` : refTag;
+        return newPrompt.slice(0, MAX_PROMPT_LEN);
+      });
+
+      // 同时添加到参考图列表
+      setRefImages(prev => [...prev, { id: result.id || result.url, url: result.url, name: file.name }]);
+
+      return result;
+    } catch (error) {
+      console.error('主体图上传失败:', error);
+      onShowToast?.('主体图上传失败', 'error');
+      throw error;
+    }
+  }
+
+  async function handleRefFileChange(e) {
     const files = Array.from(e.target.files);
     if (!files.length) return;
-    const newItems = files.map((f) => ({ id: URL.createObjectURL(f), url: URL.createObjectURL(f), name: f.name }));
-    setRefImages((prev) => [...prev, ...newItems]);
+
+    for (const file of files) {
+      try {
+        await handleRefImageUpload(file);
+      } catch (error) {
+        // 错误已在 handleRefImageUpload 中处理
+        // 继续处理下一个文件
+      }
+    }
+
     e.target.value = '';
   }
 
@@ -1503,8 +1702,11 @@ function GenerateImagePanel({ shot, chars = [], scenes = [], props = [], onClose
               <span style={{ fontSize: '14px', lineHeight: '20px', color: '#FFFFFF', fontFamily: FONT, flexShrink: 0 }}>{String(shot?.number ?? 1).padStart(2, '0')}</span>
             </div>
 
-            <PanelPromptInput value={prompt} onChange={setPrompt} chars={chars} scenes={scenes} props={props} />
-            <PanelSelect label="选择模型" value={model} options={imageModels.map(m => m.value)} onChange={setModel} />
+            <PanelPromptInput value={prompt} onChange={setPrompt} chars={chars} scenes={scenes} props={props} mainRefs={shot?.mainRefs || []} />
+            <PanelSelect label="选择模型" value={modelList.find(m => m.value === model)?.label || ''} options={modelList.map(m => m.label)} onChange={(label) => {
+              const selected = modelList.find(m => m.label === label);
+              if (selected) setModel(selected.value);
+            }} />
 
             {/* 参考图 — 多张 */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignSelf: 'stretch' }}>
@@ -1611,14 +1813,20 @@ function GenerateImagePanel({ shot, chars = [], scenes = [], props = [], onClose
 }
 
 function GenerateVideoPanel({ shot, nextShot = null, chars = [], scenes = [], props = [], onClose, onGenerate, onShowToast }) {
-  const videoModels = getVideoModelList();
   const [mode, setMode] = useState('all'); // 'all' | 'first-last' | 'multi'
-  const [model, setModel] = useState(videoModels[0]?.value || 'seedance-2.0');
+  const modelList = getVideoModelList();
+  const [model, setModel] = useState(modelList[0]?.value || '');
   const [resolution, setResolution] = useState('720p');
   const [duration, setDuration] = useState('自动匹配');
   const [sound, setSound] = useState(true);
-  const [prompt, setPrompt] = useState(shot?.description || '');
-  const [refSubject, setRefSubject] = useState(shot?.mainRefs?.[0] ?? null);
+  const [prompt, setPrompt] = useState(() => buildPromptFromShot(shot, chars, scenes, props));
+  const [refSubject, setRefSubject] = useState(() => {
+    // 优先使用主体列的主体图
+    if (shot?.mainRefs?.length > 0 && shot.mainRefs[0]?.url) {
+      return shot.mainRefs[0];
+    }
+    return null;
+  });
   const [refImage, setRefImage] = useState(null);
   const [refVideo, setRefVideo] = useState(null);
   const [refAudio, setRefAudio] = useState(null);
@@ -1644,6 +1852,29 @@ function GenerateVideoPanel({ shot, nextShot = null, chars = [], scenes = [], pr
       // duration 保持"自动匹配"，不使用 defaults
     }
   }, [model, modelParams]);
+
+  async function handleRefMediaUpload(file, type = 'image') {
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const result = await apiUploadFile(formData);
+
+      // 只有图片类型才在提示词末尾添加参考图标签
+      if (type === 'image') {
+        const refTag = `[参考图:${result.url}]`;
+        setPrompt(prev => {
+          const newPrompt = prev ? `${prev} ${refTag}` : refTag;
+          return newPrompt.slice(0, MAX_PROMPT_LEN);
+        });
+      }
+
+      return { id: result.id || result.url, url: result.url, name: file.name, type: file.type };
+    } catch (error) {
+      console.error('主体图上传失败:', error);
+      onShowToast?.('主体图上传失败', 'error');
+      throw error;
+    }
+  }
 
   async function handleGenerate() {
     if (loading) return;
@@ -1703,7 +1934,7 @@ function GenerateVideoPanel({ shot, nextShot = null, chars = [], scenes = [], pr
               <span style={{ fontSize: '14px', lineHeight: '20px', color: '#FFFFFF', fontFamily: FONT, flexShrink: 0 }}>{String(shot?.number ?? 1).padStart(2, '0')}</span>
             </div>
 
-            <PanelPromptInput value={prompt} onChange={setPrompt} chars={chars} scenes={scenes} props={props} />
+            <PanelPromptInput value={prompt} onChange={setPrompt} chars={chars} scenes={scenes} props={props} mainRefs={shot?.mainRefs || []} />
 
             {/* 模式 radio 单选器 */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
@@ -1727,15 +1958,75 @@ function GenerateVideoPanel({ shot, nextShot = null, chars = [], scenes = [], pr
             </div>
             </div>
 
-            <PanelSelect label="选择模型" value={model} options={videoModels.map(m => m.value)} onChange={setModel} />
+            <PanelSelect label="选择模型" value={modelList.find(m => m.value === model)?.label || ''} options={modelList.map(m => m.label)} onChange={(label) => {
+              const selected = modelList.find(m => m.label === label);
+              if (selected) setModel(selected.value);
+            }} />
 
             {/* 全能参考字段 */}
             {mode === 'all' && (
               <>
-                <PanelUploadSlot label="参考主体" accept="image/*" media={refSubject} onUpload={setRefSubject} onRemove={() => setRefSubject(null)} />
-                <PanelUploadSlot label="参考图" accept="image/*" media={refImage} onUpload={setRefImage} onRemove={() => setRefImage(null)} />
-                <PanelUploadSlot label="参考视频" accept="video/*" media={refVideo} onUpload={setRefVideo} onRemove={() => setRefVideo(null)} />
-                <PanelUploadSlot label="参考音频" accept="audio/*" media={refAudio} onUpload={setRefAudio} onRemove={() => setRefAudio(null)} />
+                <PanelUploadSlot label="参考主体" accept="image/*" media={refSubject} onUpload={async (media) => {
+                  if (media.id?.startsWith('blob:')) {
+                    // 本地文件，需要上传
+                    try {
+                      const response = await fetch(media.url);
+                      const blob = await response.blob();
+                      const file = new File([blob], media.name, { type: media.type });
+                      const uploaded = await handleRefMediaUpload(file, 'image');
+                      setRefSubject(uploaded);
+                    } catch (error) {
+                      // 错误已在 handleRefMediaUpload 中处理
+                    }
+                  } else {
+                    setRefSubject(media);
+                  }
+                }} onRemove={() => setRefSubject(null)} />
+                <PanelUploadSlot label="参考图" accept="image/*" media={refImage} onUpload={async (media) => {
+                  if (media.id?.startsWith('blob:')) {
+                    try {
+                      const response = await fetch(media.url);
+                      const blob = await response.blob();
+                      const file = new File([blob], media.name, { type: media.type });
+                      const uploaded = await handleRefMediaUpload(file, 'image');
+                      setRefImage(uploaded);
+                    } catch (error) {
+                      // 错误已处理
+                    }
+                  } else {
+                    setRefImage(media);
+                  }
+                }} onRemove={() => setRefImage(null)} />
+                <PanelUploadSlot label="参考视频" accept="video/*" media={refVideo} onUpload={async (media) => {
+                  if (media.id?.startsWith('blob:')) {
+                    try {
+                      const response = await fetch(media.url);
+                      const blob = await response.blob();
+                      const file = new File([blob], media.name, { type: media.type });
+                      const uploaded = await handleRefMediaUpload(file, 'video');
+                      setRefVideo(uploaded);
+                    } catch (error) {
+                      // 错误已处理
+                    }
+                  } else {
+                    setRefVideo(media);
+                  }
+                }} onRemove={() => setRefVideo(null)} />
+                <PanelUploadSlot label="参考音频" accept="audio/*" media={refAudio} onUpload={async (media) => {
+                  if (media.id?.startsWith('blob:')) {
+                    try {
+                      const response = await fetch(media.url);
+                      const blob = await response.blob();
+                      const file = new File([blob], media.name, { type: media.type });
+                      const uploaded = await handleRefMediaUpload(file, 'audio');
+                      setRefAudio(uploaded);
+                    } catch (error) {
+                      // 错误已处理
+                    }
+                  } else {
+                    setRefAudio(media);
+                  }
+                }} onRemove={() => setRefAudio(null)} />
               </>
             )}
 
@@ -1766,8 +2057,36 @@ function GenerateVideoPanel({ shot, nextShot = null, chars = [], scenes = [], pr
             {/* 多图参考字段 */}
             {mode === 'multi' && (
               <>
-                <PanelUploadSlot label="参考主体" accept="image/*" media={refSubject} onUpload={setRefSubject} onRemove={() => setRefSubject(null)} />
-                <PanelUploadSlot label="参考图" accept="image/*" media={refImage} onUpload={setRefImage} onRemove={() => setRefImage(null)} />
+                <PanelUploadSlot label="参考主体" accept="image/*" media={refSubject} onUpload={async (media) => {
+                  if (media.id?.startsWith('blob:')) {
+                    try {
+                      const response = await fetch(media.url);
+                      const blob = await response.blob();
+                      const file = new File([blob], media.name, { type: media.type });
+                      const uploaded = await handleRefMediaUpload(file, 'image');
+                      setRefSubject(uploaded);
+                    } catch (error) {
+                      // 错误已处理
+                    }
+                  } else {
+                    setRefSubject(media);
+                  }
+                }} onRemove={() => setRefSubject(null)} />
+                <PanelUploadSlot label="参考图" accept="image/*" media={refImage} onUpload={async (media) => {
+                  if (media.id?.startsWith('blob:')) {
+                    try {
+                      const response = await fetch(media.url);
+                      const blob = await response.blob();
+                      const file = new File([blob], media.name, { type: media.type });
+                      const uploaded = await handleRefMediaUpload(file, 'image');
+                      setRefImage(uploaded);
+                    } catch (error) {
+                      // 错误已处理
+                    }
+                  } else {
+                    setRefImage(media);
+                  }
+                }} onRemove={() => setRefImage(null)} />
               </>
             )}
 
@@ -2329,18 +2648,34 @@ function CharMentionDropdown({ chars, query, onSelect, onClose, triggerRef }) {
 
 // ─── 主体 @ 下拉（角色/场景/道具，用于提示词输入框）─────────────────────────────
 
-const SUBJECT_TYPE_LABEL = { char: '角色', scene: '场景', prop: '道具' };
-const SUBJECT_TYPE_COLOR = { char: '#E2E24B', scene: '#4BE2C3', prop: '#4B9EE2' };
+const SUBJECT_TYPE_LABEL = { char: '角色', scene: '场景', prop: '道具', ref: '主体' };
+const SUBJECT_TYPE_COLOR = { char: '#E2E24B', scene: '#4BE2C3', prop: '#4B9EE2', ref: '#E8A1FF' };
 
-function SubjectMentionDropdown({ chars, scenes, props, query, onSelect, onClose, triggerRef }) {
+function SubjectMentionDropdown({ chars, scenes, props, mainRefs = [], query, onSelect, onClose, triggerRef }) {
   const ref = useRef(null);
   const [pos, setPos] = useState({ top: 0, left: 0, width: 0, visibility: 'hidden' });
 
+  // 主体参考图转换为下拉项，排在最前面
+  const refItems = mainRefs
+    .filter((ref) => ref.url && ref.name) // 只显示有 URL 和名称的
+    .map((ref) => ({
+      id: ref.id,
+      name: ref.name,
+      url: ref.url,
+      _type: 'ref',
+      displayName: `「主体」${ref.name}`,
+    }));
+
   const allItems = [
+    ...refItems,
     ...chars.map((c) => ({ ...c, _type: 'char' })),
     ...scenes.map((s) => ({ ...s, _type: 'scene' })),
     ...props.map((p) => ({ ...p, _type: 'prop' })),
-  ].filter((item) => item.name.includes(query));
+  ].filter((item) => {
+    // 参考图项按 displayName 过滤，其他按 name 过滤
+    const searchText = item._type === 'ref' ? item.displayName : item.name;
+    return searchText.includes(query);
+  });
 
   useEffect(() => {
     if (!triggerRef?.current || !ref.current) return;
@@ -2388,7 +2723,15 @@ function SubjectMentionDropdown({ chars, scenes, props, query, onSelect, onClose
       {allItems.map((item) => (
         <div
           key={`${item._type}-${item.id}`}
-          onMouseDown={(e) => { e.preventDefault(); onSelect(item.name); }}
+          onMouseDown={(e) => {
+            e.preventDefault();
+            // 参考图项点击时，传入 URL 和 'ref' 类型
+            if (item._type === 'ref') {
+              onSelect(item.url, 'ref');
+            } else {
+              onSelect(item.name, item._type);
+            }
+          }}
           style={{
             padding: '7px 12px',
             borderRadius: '6px',
@@ -2416,7 +2759,7 @@ function SubjectMentionDropdown({ chars, scenes, props, query, onSelect, onClose
           }}>
             {SUBJECT_TYPE_LABEL[item._type]}
           </span>
-          {item.name}
+          {item._type === 'ref' ? item.displayName : item.name}
         </div>
       ))}
     </div>,
@@ -2428,6 +2771,41 @@ function SubjectMentionDropdown({ chars, scenes, props, query, onSelect, onClose
 
 function SubjectTag({ name, type }) {
   const color = SUBJECT_TYPE_COLOR[type] ?? '#E2E24B';
+
+  // 参考图标签：从 URL 提取文件名并截断到 7 个字符
+  let displayText;
+  if (type === 'ref') {
+    const rawName = name.split('/').pop()?.split('?')[0] ?? '参考图';
+    const baseName = rawName.replace(/\.[^.]+$/, '') || '参考图';
+    displayText = baseName.length > 7 ? baseName.slice(0, 7) + '…' : baseName;
+  } else {
+    displayText = name;
+  }
+
+  // 参考图标签使用特殊样式
+  if (type === 'ref') {
+    return (
+      <span
+        style={{
+          display: 'inline-flex',
+          alignItems: 'center',
+          paddingInline: '4px',
+          borderRadius: '6px',
+          fontSize: '14px',
+          lineHeight: '18px',
+          backgroundColor: '#8870FF1A',
+          color: '#E8A1FF',
+          boxShadow: 'inset 0 0 0 1px #FFFFFF14',
+          fontFamily: '"Alibaba PuHuiTi 2.0", system-ui, sans-serif',
+          flexShrink: 0,
+          verticalAlign: 'middle',
+        }}
+      >
+        {displayText}
+      </span>
+    );
+  }
+
   return (
     <span
       style={{
@@ -2445,7 +2823,7 @@ function SubjectTag({ name, type }) {
         verticalAlign: 'middle',
       }}
     >
-      {name}
+      {displayText}
     </span>
   );
 }
@@ -2959,13 +3337,22 @@ function NarrationCol({ segments, onChange, chars, globalVoiceParams = {}, onSav
   const [editingIdx, setEditingIdx] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
 
-  // 初始化：从 segments 同步一条记录
+  // 初始化：从 segments 同步记录
   useEffect(() => {
-    if (dubList === null && segments.length > 0 && segments.some((s) => s.value.trim())) {
-      const role = segments.find((s) => s.type === 'char')?.value ?? '';
-      const lines = segments.map((s) => s.value).join('');
-      const globalForRole = role ? (globalVoiceParams[role] ?? {}) : {};
-      setDubList([{ role, speed: globalForRole.speed ?? 1.0, volume: globalForRole.volume ?? 70, lines }]);
+    if (dubList === null && segments.length > 0) {
+      const validSegments = segments.filter((s) => s?.lines?.trim());
+      if (validSegments.length > 0) {
+        const list = validSegments.map((seg) => {
+          const globalForRole = seg.role ? (globalVoiceParams[seg.role] ?? {}) : {};
+          return {
+            role: seg.role ?? '',
+            speed: globalForRole.speed ?? 1.0,
+            volume: globalForRole.volume ?? 70,
+            lines: seg.lines ?? '',
+          };
+        });
+        setDubList(list);
+      }
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -3006,14 +3393,14 @@ function NarrationCol({ segments, onChange, chars, globalVoiceParams = {}, onSav
   function handleSaveCurrent(data) {
     const next = buildNext(data);
     setDubList(next);
-    onChange(next.map((d) => ({ type: 'text', value: d.lines })));
+    onChange(next.map((d) => ({ role: d.role, lines: d.lines })));
     setModalOpen(false);
   }
 
   function handleSaveGlobal(data) {
     const next = buildNext(data, true);
     setDubList(next);
-    onChange(next.map((d) => ({ type: 'text', value: d.lines })));
+    onChange(next.map((d) => ({ role: d.role, lines: d.lines })));
     if (data.role) {
       onSaveGlobalVoice?.(data.role, { speed: data.speed, volume: data.volume });
     }
@@ -3023,7 +3410,7 @@ function NarrationCol({ segments, onChange, chars, globalVoiceParams = {}, onSav
   function handleDelete(idx) {
     const next = list.filter((_, i) => i !== idx);
     setDubList(next.length > 0 ? next : null);
-    onChange(next.map((d) => ({ type: 'text', value: d.lines })));
+    onChange(next.map((d) => ({ role: d.role, lines: d.lines })));
   }
 
   const modalInitialData = editingIdx !== null && list[editingIdx]
@@ -3043,7 +3430,7 @@ function NarrationCol({ segments, onChange, chars, globalVoiceParams = {}, onSav
     }}>
       {/* 标题行 */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-        <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.60)', fontFamily: FONT }}>旁白配音</span>
+        <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.60)', fontFamily: FONT }}>台词分配</span>
         {hasContent && (
           <AddNarrationBtn onClick={openAdd} />
         )}
@@ -3152,7 +3539,7 @@ function AddSlotDropdown({ anchorRef, onUpload, onAssetPicker, onClose }) {
   );
 }
 
-function MainRefCol({ refs, onChange, chars }) {
+function MainRefCol({ shot, onChange, chars }) {
   const [hoveredIdx, setHoveredIdx] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [assetPickerOpen, setAssetPickerOpen] = useState(false);
@@ -3161,20 +3548,53 @@ function MainRefCol({ refs, onChange, chars }) {
   const fileInputRef = useRef(null);
 
   function handleDelete(idx) {
-    onChange(refs.filter((_, i) => i !== idx));
+    onChange({ ...shot, mainRefs: shot.mainRefs.filter((_, i) => i !== idx) });
   }
 
-  function handleFileSelect(e) {
+  async function handleFileSelect(e) {
     const file = e.target.files[0];
     if (!file) return;
-    const url = URL.createObjectURL(file);
-    onChange([...refs, { id: url, url, name: file.name, type: file.type }]);
+
+    // 先创建本地预览 URL
+    const localUrl = URL.createObjectURL(file);
+    const tempRef = { id: localUrl, url: localUrl, name: file.name, type: file.type, uploading: true };
+    const newRefs = [...shot.mainRefs, tempRef];
+    onChange({ ...shot, mainRefs: newRefs });
     e.target.value = '';
+
+    // 立即上传到后端
+    try {
+      const result = await apiUploadImage(file);
+
+      // 更新 mainRefs：替换临时 URL 为后端 URL
+      const updatedRefs = newRefs.map(ref =>
+        ref.id === localUrl
+          ? { id: result.url, url: result.url, name: file.name, type: file.type, uploaded: true }
+          : ref
+      );
+
+      // 在 description 末尾追加参考图标签
+      const refTag = `[参考图:${result.url}]`;
+      const currentDesc = shot.description || '';
+      const newDesc = currentDesc ? `${currentDesc} ${refTag}` : refTag;
+
+      // 同时更新 mainRefs 和 description
+      onChange({
+        ...shot,
+        mainRefs: updatedRefs,
+        description: newDesc
+      });
+    } catch (error) {
+      console.error('上传失败', error);
+      // 上传失败，移除临时项
+      onChange({ ...shot, mainRefs: newRefs.filter(ref => ref.id !== localUrl) });
+      // TODO: 显示错误提示
+    }
   }
 
   function handleAssetConfirm(assets) {
     const newRefs = assets.map(a => ({ id: a.id, url: a.url ?? null, name: a.name, type: a.type ?? 'image' }));
-    onChange([...refs, ...newRefs]);
+    onChange({ ...shot, mainRefs: [...shot.mainRefs, ...newRefs] });
   }
 
   return (
@@ -3199,8 +3619,8 @@ function MainRefCol({ refs, onChange, chars }) {
           <div key={row} style={{ display: 'flex', gap: '4px' }}>
             {[0, 1].map((col) => {
               const idx = row * 2 + col;
-              const img = refs[idx];
-              const isOverflow = refs.length >= 4 && idx === 3;
+              const img = shot.mainRefs[idx];
+              const isOverflow = shot.mainRefs.length >= 4 && idx === 3;
 
               if (isOverflow) {
                 return (
@@ -3218,9 +3638,9 @@ function MainRefCol({ refs, onChange, chars }) {
                       border: '1px solid rgba(255,255,255,0.06)',
                     }}
                   >
-                    {refs[3].url
-                      ? <img src={refs[3].url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                      : <div style={{ width: '100%', height: '100%', backgroundColor: refs[3].bgColor ?? '#252525' }} />
+                    {shot.mainRefs[3].url
+                      ? <img src={shot.mainRefs[3].url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                      : <div style={{ width: '100%', height: '100%', backgroundColor: shot.mainRefs[3].bgColor ?? '#252525' }} />
                     }
                     <div style={{
                       position: 'absolute', inset: 0,
@@ -3228,7 +3648,7 @@ function MainRefCol({ refs, onChange, chars }) {
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                     }}>
                       <span style={{ fontSize: '12px', color: '#FFFFFF', fontWeight: 700, fontFamily: '"Alibaba PuHuiTi 2.0", system-ui, sans-serif' }}>
-                        {refs.length > 4 ? `${refs.length - 3}+` : `${refs.length}+`}
+                        {shot.mainRefs.length > 4 ? `${shot.mainRefs.length - 3}+` : `${shot.mainRefs.length}+`}
                       </span>
                     </div>
                   </div>
@@ -3279,7 +3699,7 @@ function MainRefCol({ refs, onChange, chars }) {
                 );
               }
 
-              if (idx === refs.length && refs.length < 4) {
+              if (idx === shot.mainRefs.length && shot.mainRefs.length < 4) {
                 return (
                   <div key={idx} ref={addBtnRef} style={{ display: 'inline-flex', flexShrink: 0 }}>
                     <AddSlotBtn
@@ -3297,7 +3717,7 @@ function MainRefCol({ refs, onChange, chars }) {
 
       {modalOpen && (
         <MainRefModal
-          refs={refs}
+          shot={shot}
           onChange={onChange}
           onClose={() => setModalOpen(false)}
         />
@@ -3308,17 +3728,17 @@ function MainRefCol({ refs, onChange, chars }) {
 
 // ─── 主体参考弹窗 ─────────────────────────────────────────────────────────────
 
-function MainRefModal({ refs, onChange, onClose }) {
+function MainRefModal({ shot, onChange, onClose }) {
   const [hoveredIdx, setHoveredIdx] = useState(null);
   const [assetPickerOpen, setAssetPickerOpen] = useState(false);
 
   function handleAssetConfirm(assets) {
     const newRefs = assets.map(a => ({ id: a.id, url: a.url ?? null, name: a.name, type: a.type ?? 'image' }));
-    onChange([...refs, ...newRefs]);
+    onChange({ ...shot, mainRefs: [...shot.mainRefs, ...newRefs] });
   }
 
   function handleDelete(idx) {
-    onChange(refs.filter((_, i) => i !== idx));
+    onChange({ ...shot, mainRefs: shot.mainRefs.filter((_, i) => i !== idx) });
   }
 
   return (
@@ -3363,13 +3783,13 @@ function MainRefModal({ refs, onChange, onClose }) {
 
           {/* content */}
           <div style={{ flex: 1, overflowY: 'auto', padding: '0 24px 16px' }}>
-            {refs.length === 0 ? (
+            {shot.mainRefs.length === 0 ? (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '200px', color: 'rgba(255,255,255,0.30)', fontSize: '14px', fontFamily: '"Alibaba PuHuiTi 2.0", system-ui, sans-serif' }}>
                 暂无图片
               </div>
             ) : (
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: '8px' }}>
-                {refs.map((img, idx) => (
+                {shot.mainRefs.map((img, idx) => (
                   <div
                     key={img.id}
                     onMouseEnter={() => setHoveredIdx(idx)}
@@ -3930,8 +4350,8 @@ function MainRefColWrapper({ shot, onChange, chars }) {
         主体参考
       </span>
       <MainRefCol
-        refs={shot.mainRefs}
-        onChange={(refs) => onChange({ ...shot, mainRefs: refs })}
+        shot={shot}
+        onChange={onChange}
         chars={chars}
       />
     </div>
@@ -4105,9 +4525,9 @@ const INITIAL_SHOTS = [
 
 // ─── 主页面 ───────────────────────────────────────────────────────────────────
 
-const EPISODES = [];
+const EPISODES = ['第一集', '第二集'];
 
-export default function StoryboardPage({ projectName = '两只老虎的奇遇', chars = [], scenes = [], props = [], episodes = EPISODES, onUnlockStep, onVideoGenerated }) {
+export default function StoryboardPage({ projectId, projectName = '两只老虎的奇遇', chars = [], scenes = [], props = [], episodes = EPISODES, onUnlockStep, onVideoGenerated }) {
   const activeEpisodes = episodes.length > 0 ? episodes : EPISODES;
   const [shots, setShots] = useState([]);
   const [globalVoiceParams, setGlobalVoiceParams] = useState({});
@@ -4127,9 +4547,26 @@ export default function StoryboardPage({ projectName = '两只老虎的奇遇', 
   const [videoPanel, setVideoPanel] = useState(null); // { shot }
   const [genImageHistoryMap, setGenImageHistoryMap] = useState({}); // { [shotId]: generatedImages[] }
 
+  // 页面加载时从后端获取剧本数据
   useEffect(() => {
-    apiGetShots(episode).then(setShots);
-  }, [episode]);
+    if (!projectId) return;
+
+    // TODO: 需要将 episode 名称映射为 episode_id
+    // 当前 episode 是"第一集"这样的名称，需要后端提供 episode_id
+    apiGetStoryboards(projectId, { episode_id: episode })
+      .then((data) => {
+        // 只在返回有效数据时更新状态
+        // null 或 undefined 表示无数据，保持现有状态
+        // 空数组表示该集数确实没有剧本，清空状态
+        if (data !== null && data !== undefined) {
+          setShots(Array.isArray(data) ? data : []);
+        }
+      })
+      .catch((err) => {
+        console.error('[StoryboardPage] 加载剧本失败:', err);
+        // 请求失败时不清空现有数据
+      });
+  }, [projectId, episode]);
 
   useEffect(() => {
     if (activeEpisodes.length > 0 && !activeEpisodes.includes(episode)) {
@@ -4221,43 +4658,94 @@ export default function StoryboardPage({ projectName = '两只老虎的奇遇', 
 
   function updateShot(id, next) {
     setShots((prev) => prev.map((s) => (s.id === id ? next : s)));
-    // TODO: apiUpdateShot(id, next)
+    // 调用后端接口
+    apiUpdateStoryboard(projectId, id, { ...next, episode_id: episode }).catch((err) => {
+      console.error('[StoryboardPage] 更新分镜失败:', err);
+    });
   }
 
   function addShotAfter(id) {
-    setShots((prev) => {
-      const idx = prev.findIndex((s) => s.id === id);
-      const newShot = makeShot(0);
-      const next = [...prev.slice(0, idx + 1), newShot, ...prev.slice(idx + 1)];
-      // TODO: apiCreateShot(episodeId, newShot)
-      return next.map((s, i) => ({ ...s, number: i + 1 }));
-    });
+    const idx = shots.findIndex((s) => s.id === id);
+    const newShot = makeShot(idx + 2);
+
+    // 先调用后端接口获取真实 ID
+    apiCreateStoryboard(projectId, { ...newShot, episode_id: episode, number: idx + 2 })
+      .then((created) => {
+        // 使用后端返回的 ID 创建分镜
+        const shotWithRealId = { ...newShot, id: created.id };
+        setShots((prev) => {
+          const next = [...prev.slice(0, idx + 1), shotWithRealId, ...prev.slice(idx + 1)];
+          const reordered = next.map((s, i) => ({ ...s, number: i + 1 }));
+
+          // 使用原子操作更新所有分镜的顺序
+          const orderedIds = reordered.map(s => s.id);
+          apiReorderStoryboards(projectId, orderedIds).catch(console.error);
+
+          return reordered;
+        });
+      })
+      .catch((err) => {
+        console.error('[StoryboardPage] 创建分镜失败:', err);
+      });
   }
 
   function copyShot(id) {
-    setShots((prev) => {
-      const idx = prev.findIndex((s) => s.id === id);
-      const copy = { ...prev[idx], id: `shot-copy-${Date.now()}` };
-      const next = [...prev.slice(0, idx + 1), copy, ...prev.slice(idx + 1)];
-      // TODO: apiCreateShot(episodeId, copy)
-      return next.map((s, i) => ({ ...s, number: i + 1 }));
-    });
+    const idx = shots.findIndex((s) => s.id === id);
+    const original = shots[idx];
+    const copy = { ...original, id: undefined }; // 移除 ID，让后端生成新的
+
+    // 先调用后端接口获取真实 ID
+    apiCreateStoryboard(projectId, { ...copy, episode_id: episode, number: idx + 2 })
+      .then((created) => {
+        const shotWithRealId = { ...copy, id: created.id };
+        setShots((prev) => {
+          const next = [...prev.slice(0, idx + 1), shotWithRealId, ...prev.slice(idx + 1)];
+          const reordered = next.map((s, i) => ({ ...s, number: i + 1 }));
+
+          // 使用原子操作更新所有分镜的顺序
+          const orderedIds = reordered.map(s => s.id);
+          apiReorderStoryboards(projectId, orderedIds).catch(console.error);
+
+          return reordered;
+        });
+      })
+      .catch((err) => {
+        console.error('[StoryboardPage] 复制分镜失败:', err);
+      });
   }
 
   function deleteShot(id) {
-    // TODO: apiDeleteShot(id)
-    setShots((prev) => {
-      const next = prev.filter((s) => s.id !== id);
-      return next.map((s, i) => ({ ...s, number: i + 1 }));
-    });
+    apiDeleteStoryboard(projectId, id)
+      .then(() => {
+        setShots((prev) => {
+          const next = prev.filter((s) => s.id !== id);
+          const reordered = next.map((s, i) => ({ ...s, number: i + 1 }));
+
+          // 使用原子操作更新所有分镜的顺序
+          const orderedIds = reordered.map(s => s.id);
+          apiReorderStoryboards(projectId, orderedIds).catch(console.error);
+
+          return reordered;
+        });
+      })
+      .catch((err) => {
+        console.error('[StoryboardPage] 删除分镜失败:', err);
+      });
   }
 
   function addNewShot() {
-    setShots((prev) => {
-      const newShot = makeShot(prev.length + 1);
-      // TODO: apiCreateShot(episodeId, newShot)
-      return [...prev, newShot];
-    });
+    const newNumber = shots.length + 1;
+    const newShot = makeShot(newNumber);
+
+    // 先调用后端接口获取真实 ID
+    apiCreateStoryboard(projectId, { ...newShot, episode_id: episode })
+      .then((created) => {
+        const shotWithRealId = { ...newShot, id: created.id };
+        setShots((prev) => [...prev, shotWithRealId]);
+      })
+      .catch((err) => {
+        console.error('[StoryboardPage] 创建分镜失败:', err);
+      });
   }
 
   function handleDrop(targetId) {
@@ -4459,15 +4947,20 @@ export default function StoryboardPage({ projectName = '两只老虎的奇遇', 
         onShowToast={showToast}
         onGenerate={async (params) => {
           const shot = imagePanel.shot;
-          // TODO: 替换为真实接口 apiGenerateImage(shot.id, params)
-          // const { imageUrl } = await apiGenerateImage(shot.id, params);
-          await new Promise((r) => setTimeout(r, 1000));
-          const mockUrl = `https://picsum.photos/seed/${shot.id}/400/225`;
-          setShots((prev) => prev.map((s) => s.id === shot.id && !s.storyboardImage
-            ? { ...s, storyboardImage: { id: mockUrl, url: mockUrl, name: 'generated.jpg', type: 'image/jpeg' } }
-            : s
-          ));
-          return { url: mockUrl };
+          try {
+            const result = await apiGenerateStoryboardImage(projectId, shot.id, { ...params, episode_id: episode });
+            const imageUrl = result.image_url || result.url;
+
+            setShots((prev) => prev.map((s) => s.id === shot.id && !s.storyboardImage
+              ? { ...s, storyboardImage: { id: imageUrl, url: imageUrl, name: 'generated.jpg', type: 'image/jpeg' } }
+              : s
+            ));
+
+            return { url: imageUrl };
+          } catch (err) {
+            console.error('[StoryboardPage] 生成分镜图失败:', err);
+            throw err;
+          }
         }}
       />
     )}
@@ -4482,16 +4975,21 @@ export default function StoryboardPage({ projectName = '两只老虎的奇遇', 
         onShowToast={showToast}
         onGenerate={async (params) => {
           const shot = videoPanel.shot;
-          // TODO: 替换为真实接口 apiGenerateVideo(shot.id, params)
-          // const { videoUrl } = await apiGenerateVideo(shot.id, params);
-          await new Promise((r) => setTimeout(r, 1200));
-          const mockUrl = `https://www.w3schools.com/html/mov_bbb.mp4`;
-          setShots((prev) => prev.map((s) => s.id === shot.id && !s.storyboardVideo
-            ? { ...s, storyboardVideo: { id: `vid-${shot.id}`, url: mockUrl, name: 'generated.mp4', type: 'video/mp4' } }
-            : s
-          ));
-          onVideoGenerated?.(activeEpisodes.indexOf(episode));
-          return { url: mockUrl };
+          try {
+            const result = await apiGenerateStoryboardVideo(projectId, shot.id, { ...params, episode_id: episode });
+            const videoUrl = result.video_url || result.url;
+
+            setShots((prev) => prev.map((s) => s.id === shot.id && !s.storyboardVideo
+              ? { ...s, storyboardVideo: { id: `vid-${shot.id}`, url: videoUrl, name: 'generated.mp4', type: 'video/mp4' } }
+              : s
+            ));
+
+            onVideoGenerated?.(activeEpisodes.indexOf(episode));
+            return { url: videoUrl };
+          } catch (err) {
+            console.error('[StoryboardPage] 生成分镜视频失败:', err);
+            throw err;
+          }
         }}
       />
     )}

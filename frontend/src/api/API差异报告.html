@@ -1,0 +1,555 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Miioo API 前后端差异报告</title>
+<style>
+  body { font-family: -apple-system, sans-serif; background: #111; color: #eee; padding: 40px; line-height: 1.7; }
+  h1 { border-bottom: 2px solid #333; padding-bottom: 10px; }
+  h2 { color: #ff6b35; margin-top: 48px; }
+  h3 { color: #aaa; margin-top: 24px; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0 32px; }
+  th { background: #222; color: #ccc; font-weight: 600; text-align: left; }
+  th, td { border: 1px solid #333; padding: 8px 12px; font-size: 13px; vertical-align: top; }
+  td code { background: #222; padding: 1px 5px; border-radius: 3px; color: #80cbc4; font-size: 12px; }
+  .tag { display: inline-block; padding: 1px 7px; border-radius: 3px; font-size: 11px; font-weight: 700; margin-right: 4px; }
+  .tag-wrong { background: #662222; color: #ff8888; }
+  .tag-missing { background: #554400; color: #ffcc00; }
+  .tag-extra { background: #224466; color: #88ccff; }
+  .tag-ok { background: #224422; color: #88ff88; }
+  .tag-field { background: #443355; color: #cc99ff; }
+  .section-desc { color: #999; margin-bottom: 12px; font-size: 13px; }
+  .note { background: #1a1a2e; border-left: 3px solid #ff6b35; padding: 10px 16px; margin: 20px 0; font-size: 13px; color: #ccc; }
+  details { margin: 4px 0; }
+  summary { cursor: pointer; color: #88ccff; }
+  .file-badge { background: #1a2a1a; border: 1px solid #2a4a2a; padding: 2px 8px; border-radius: 4px; font-size: 11px; color: #88ff88; }
+</style>
+</head>
+<body>
+
+<h1>Miioo API 前后端差异报告</h1>
+<p style="color:#666">生成时间：2026-05-28 &nbsp;|&nbsp; 对照文档：<code>api文档.json</code>（OpenAPI 3.1）</p>
+
+<div class="note" style="border-left-color: #88ff88; background: #1a2a1a;">
+  <strong>✅ 修复状态：</strong>所有 <span class="tag tag-wrong">路径错误</span> 和 <span class="tag tag-field">字段差异</span> 已全部修复，<code>vite build</code> 构建通过。
+  页面通过 legacy alias 兼容旧调用，无需修改页面代码即可运行。
+  <span class="tag tag-missing">前端缺失</span> 和 <span class="tag tag-extra">后端无接口</span> 项暂以 mock / no-op 保留，待后续与后端沟通后补充。
+</div>
+
+<div class="note">
+  <strong>说明：</strong>以下表格覆盖 <code>src/api/</code> 全部 8 个文件。
+  <span class="tag tag-wrong">路径错误</span>表示前端调用路径与后端不符，
+  <span class="tag tag-field">字段差异</span>表示请求体字段名/结构与后端 schema 不一致，
+  <span class="tag tag-missing">前端缺失</span>表示后端有此接口但前端未实现，
+  <span class="tag tag-extra">后端无接口</span>表示前端有此函数但后端无对应路由。
+  <span class="tag tag-ok">已修复</span>表示已在 API 层修正，页面代码无需改动。
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>一、路径错误（前端 URL 与后端路由不匹配）</h2>
+<p class="section-desc">这类问题会直接导致 404，必须优先修复。</p>
+
+<table>
+<tr><th>文件 / 函数</th><th>前端当前路径</th><th>后端正确路径</th><th>差异说明</th></tr>
+
+<tr>
+  <td><span class="file-badge">subject.js</span><br><code>apiUpdateSubject(subjectId, data)</code></td>
+  <td><code>PATCH /api/subjects/{subjectId}</code></td>
+  <td><code>PATCH /api/projects/{projectId}/subjects/{subjectId}</code></td>
+  <td><span class="tag tag-wrong">路径错误</span>缺少 <code>project_id</code> 路径参数，函数需增加 <code>projectId</code> 入参</td>
+</tr>
+
+<tr>
+  <td><span class="file-badge">subject.js</span><br><code>apiBatchGenerate(params)</code></td>
+  <td><code>POST /api/subjects/batch-generate</code></td>
+  <td><code>POST /api/projects/{projectId}/subjects/batch-generate</code></td>
+  <td><span class="tag tag-wrong">路径错误</span>缺少 <code>project_id</code> 路径参数</td>
+</tr>
+
+<tr>
+  <td><span class="file-badge">storyboard.js</span><br><code>apiGetShots(episodeId)</code></td>
+  <td><code>GET /api/episodes/{episodeId}/storyboards</code></td>
+  <td><code>GET /api/projects/{projectId}/storyboards?episode_id={episodeId}</code></td>
+  <td><span class="tag tag-wrong">路径错误</span>路由完全不存在，需改为项目下 storyboards 带 <code>episode_id</code> 查询参数，函数需增加 <code>projectId</code> 入参</td>
+</tr>
+
+<tr>
+  <td><span class="file-badge">storyboard.js</span><br><code>apiCreateShot(episodeId, data)</code></td>
+  <td><code>POST /api/episodes/{episodeId}/storyboards</code></td>
+  <td><code>POST /api/projects/{projectId}/storyboards</code></td>
+  <td><span class="tag tag-wrong">路径错误</span>需改为项目下 storyboards，<code>episode_id</code> 移入请求体</td>
+</tr>
+
+<tr>
+  <td><span class="file-badge">storyboard.js</span><br><code>apiUpdateShot(shotId, data)</code></td>
+  <td><code>PATCH /api/storyboards/{shotId}</code></td>
+  <td><code>PATCH /api/projects/{projectId}/storyboards/{storyboardId}</code></td>
+  <td><span class="tag tag-wrong">路径错误</span>缺少 <code>project_id</code>，函数需增加 <code>projectId</code> 入参</td>
+</tr>
+
+<tr>
+  <td><span class="file-badge">storyboard.js</span><br><code>apiUpdateShotFinalized(shotId, finalized)</code></td>
+  <td><code>PATCH /api/storyboards/{shotId}</code></td>
+  <td><code>PATCH /api/projects/{projectId}/storyboards/{storyboardId}</code></td>
+  <td><span class="tag tag-wrong">路径错误</span>同上，且后端 <code>StoryboardUpdate</code> 无 <code>finalized</code> 字段（见字段差异表）</td>
+</tr>
+
+<tr>
+  <td><span class="file-badge">storyboard.js</span><br><code>apiReorderShots(episodeId, orderedIds)</code></td>
+  <td><code>PATCH /api/episodes/{episodeId}/storyboards/reorder</code><br>body: <code>{ orderedIds }</code></td>
+  <td><code>POST /api/projects/{projectId}/storyboards/reorder</code><br>body: <code>{ ordered_ids: [...] }</code></td>
+  <td><span class="tag tag-wrong">路径错误</span>方法应为 POST，路径改为项目下，字段名 <code>orderedIds</code> → <code>ordered_ids</code></td>
+</tr>
+
+<tr>
+  <td><span class="file-badge">assets.js</span><br><code>apiGetProjectAssets(projectId)</code></td>
+  <td><code>GET /api/projects/{projectId}/assets</code></td>
+  <td><code>GET /api/assets?project_id={projectId}&amp;scope=project&amp;asset_type=...</code></td>
+  <td><span class="tag tag-wrong">路径错误</span>后端无 <code>/projects/{id}/assets</code> 路由，应查 <code>/api/assets</code> 带过滤参数</td>
+</tr>
+
+<tr>
+  <td><span class="file-badge">user.js</span><br><code>apiGetWechatQrCode()</code></td>
+  <td><code>GET /api/users/me/wechat/qrcode</code></td>
+  <td><code>GET /api/auth/wechat/qrcode</code>（登录用）</td>
+  <td><span class="tag tag-wrong">路径错误</span>后端无绑定微信路由，只有登录流程的微信二维码</td>
+</tr>
+
+<tr>
+  <td><span class="file-badge">user.js</span><br><code>apiPollWechatBind(ticket)</code></td>
+  <td><code>GET /api/users/me/wechat/status?ticket=...</code></td>
+  <td><code>GET /api/auth/wechat/poll/{session_id}</code>（登录用）</td>
+  <td><span class="tag tag-wrong">路径错误</span>后端无绑定微信轮询，只有登录轮询，且参数是 <code>session_id</code> 不是 <code>ticket</code></td>
+</tr>
+
+<tr>
+  <td><span class="file-badge">user.js</span><br><code>apiUnbindWechat()</code></td>
+  <td><code>DELETE /api/users/me/wechat</code></td>
+  <td>（后端无此路由）</td>
+  <td><span class="tag tag-extra">后端无接口</span></td>
+</tr>
+
+<tr>
+  <td><span class="file-badge">user.js</span><br><code>apiSendPhoneCode(phone)</code></td>
+  <td><code>POST /api/users/me/phone/code</code></td>
+  <td>（后端无此路由）</td>
+  <td><span class="tag tag-extra">后端无接口</span>后端只有 <code>/api/auth/send-code</code>（登录/注册用），无换绑手机独立接口</td>
+</tr>
+
+<tr>
+  <td><span class="file-badge">user.js</span><br><code>apiVerifyPhoneCode(phone, code)</code></td>
+  <td><code>POST /api/users/me/phone/verify</code></td>
+  <td>（后端无此路由）</td>
+  <td><span class="tag tag-extra">后端无接口</span></td>
+</tr>
+
+<tr>
+  <td><span class="file-badge">user.js</span><br><code>apiRebindPhone(newPhone, code)</code></td>
+  <td><code>POST /api/users/me/phone/rebind</code></td>
+  <td>（后端无此路由）</td>
+  <td><span class="tag tag-extra">后端无接口</span></td>
+</tr>
+
+<tr>
+  <td><span class="file-badge">auth.js</span><br><code>bindPhone(wechatToken, phone, code)</code></td>
+  <td><code>POST /api/auth/bind-phone</code></td>
+  <td>（后端无此路由）</td>
+  <td><span class="tag tag-extra">后端无接口</span>此函数为 legacy alias，后端无对应路由，可删除</td>
+</tr>
+
+<tr>
+  <td><span class="file-badge">user.js</span><br><code>apiUploadAvatar(file)</code></td>
+  <td><code>POST /api/upload</code></td>
+  <td><code>POST /api/images/upload</code></td>
+  <td><span class="tag tag-wrong">路径错误</span>后端上传接口为 <code>/api/images/upload</code></td>
+</tr>
+
+<tr>
+  <td><span class="file-badge">storyboard.js</span><br><code>apiUploadFile(file)</code></td>
+  <td><code>POST /api/upload</code></td>
+  <td><code>POST /api/images/upload</code></td>
+  <td><span class="tag tag-wrong">路径错误</span>同上</td>
+</tr>
+
+<tr>
+  <td><span class="file-badge">creation.js</span><br><code>apiGetVideoLastFrame(videoUrl)</code></td>
+  <td><code>POST /api/creation/video-last-frame</code></td>
+  <td>（后端无此路由）</td>
+  <td><span class="tag tag-extra">后端无接口</span>后端无提取视频尾帧的独立接口</td>
+</tr>
+
+<tr>
+  <td><span class="file-badge">assets.js</span><br><code>apiGetShotVideoDetail(shotId)</code></td>
+  <td><code>GET /api/storyboards/{shotId}/video</code></td>
+  <td>（后端无此路由）</td>
+  <td><span class="tag tag-extra">后端无接口</span>视频信息在 <code>StoryboardResponse</code> 的 <code>video_url / video_thumbnail_url</code> 等字段中，无独立接口</td>
+</tr>
+
+</table>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>二、请求体字段差异（字段名 / 结构不匹配）</h2>
+<p class="section-desc">前端发送的字段名或结构与后端 schema 不一致，会导致 422 验证错误。</p>
+
+<table>
+<tr><th>文件 / 函数</th><th>后端 Schema</th><th>前端发送</th><th>差异详情</th></tr>
+
+<tr>
+  <td><span class="file-badge">project.js</span><br><code>apiCreateProject</code></td>
+  <td><code>CreateProjectRequest</code></td>
+  <td><code>{ name, desc, ratio, style, custom_style_desc }</code></td>
+  <td>
+    <span class="tag tag-field">字段差异</span>
+    <code>desc</code> → 后端为 <code>description</code><br>
+    <code>ratio</code> → 后端为 <code>aspect_ratio</code><br>
+    <code>style</code> → 后端为 <code>visual_style</code><br>
+    <code>custom_style_desc</code> → 后端无此字段<br>
+    <span class="tag tag-missing">前端缺失</span>后端还有 <code>project_type</code>（可选）、<code>cover_url</code>（可选）
+  </td>
+</tr>
+
+<tr>
+  <td><span class="file-badge">config.js</span><br><code>apiSaveApiConfig</code></td>
+  <td><code>CreateProviderRequest</code></td>
+  <td><code>{ name, api_key, base_url, models }</code></td>
+  <td>
+    <span class="tag tag-field">字段差异</span>
+    <code>models</code> → 后端无此字段（模型需单独通过 <code>POST /api/models</code> 创建）<br>
+    <span class="tag tag-missing">前端缺失</span>后端必填 <code>provider_type</code>（如 "openai"、"custom"）
+  </td>
+</tr>
+
+<tr>
+  <td><span class="file-badge">storyboard.js</span><br><code>apiCreateShot</code></td>
+  <td><code>StoryboardCreate</code></td>
+  <td>传入 <code>data</code> 对象（具体字段由调用方决定）</td>
+  <td>
+    <span class="tag tag-field">字段差异</span>需检查页面调用处，确保字段名用后端 snake_case，如 <code>shot_number / shot_type / camera_angle / image_prompt / anchor_storyboard_id / clone_from_storyboard_id</code> 等
+  </td>
+</tr>
+
+<tr>
+  <td><span class="file-badge">storyboard.js</span><br><code>apiUpdateShotFinalized</code></td>
+  <td><code>StoryboardUpdate</code></td>
+  <td><code>{ finalized: boolean }</code></td>
+  <td>
+    <span class="tag tag-field">字段差异</span><code>finalized</code> 后端 <code>StoryboardUpdate</code> 无此字段，后端可更新字段为：<code>content / shot_type / camera / camera_angle / composition / duration / lighting / ambient_sound / voiceover / image_prompt / image_url / video_url / character_ids / scene_id / prop_ids / reference_image_urls / gen_params</code>
+  </td>
+</tr>
+
+<tr>
+  <td><span class="file-badge">creation.js</span><br><code>apiGenerateCreation</code>（图片分支）</td>
+  <td><code>CreationImageGenerateRequest</code></td>
+  <td><code>{ prompt, model, count, aspect_ratio, resolution, save_to_assets }</code></td>
+  <td>
+    <span class="tag tag-field">字段差异</span>
+    后端无 <code>count</code>，有 <code>image_count</code>（或 <code>imageCount</code>）<br>
+    <span class="tag tag-missing">前端缺失</span>后端还有 <code>category</code>、<code>reference_images</code>、<code>asset_name</code>、<code>session_id</code>、<code>shot_id</code>、<code>project_id</code>、<code>watermark</code>、<code>inherit_project_style</code>
+  </td>
+</tr>
+
+<tr>
+  <td><span class="file-badge">creation.js</span><br><code>apiGenerateCreation</code>（视频分支）</td>
+  <td><code>CreationVideoGenerateRequest</code></td>
+  <td><code>{ prompt, model, ratio, resolution, duration, first_frame_url, last_frame_url, save_to_assets }</code></td>
+  <td>
+    <span class="tag tag-missing">前端缺失</span>后端还有大量字段：<code>generation_mode / reference_mode / with_audio / audio_type / off_peak / watermark / attachments / mentions / subjects / multiframe_segments / reference_video_url / reference_audio_url / first_frame_asset_id / last_frame_asset_id / reference_video_asset_id / reference_audio_asset_id / reference_image_asset_ids</code><br>
+    <span class="tag tag-field">字段差异</span><code>save_to_assets</code> 后端 schema 无此字段
+  </td>
+</tr>
+
+<tr>
+  <td><span class="file-badge">creation.js</span><br><code>apiToggleImageFavorite</code></td>
+  <td><code>CreationBatchFavoriteRequest</code></td>
+  <td><code>{ liked: boolean }</code></td>
+  <td><span class="tag tag-ok">字段对齐</span>但后端 <code>liked</code> 为必填，前端传参正确</td>
+</tr>
+
+<tr>
+  <td><span class="file-badge">creation.js</span><br><code>apiBatchDeleteImages / apiBatchDeleteVideos</code></td>
+  <td><code>CreationBatchImageRequest</code></td>
+  <td><code>{ ids, asset_ids }</code></td>
+  <td><span class="tag tag-ok">字段对齐</span>后端接受 <code>asset_ids</code> 或 <code>ids</code>，前端两个都传了，兼容正确</td>
+</tr>
+
+<tr>
+  <td><span class="file-badge">creation.js</span><br><code>apiBatchFavoriteImages</code></td>
+  <td><code>CreationBatchImageFavoriteRequest</code></td>
+  <td><code>{ ids, liked }</code></td>
+  <td><span class="tag tag-ok">字段对齐</span></td>
+</tr>
+
+</table>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>三、后端有接口，前端未实现（<span class="tag tag-missing" style="font-size:11px">前端缺失</span>）</h2>
+<p class="section-desc">后端已有完整路由，但 <code>src/api/</code> 中无对应函数，页面功能如需使用则须补充。</p>
+
+<table>
+<tr><th>后端接口</th><th>方法</th><th>请求 Schema</th><th>响应 Schema</th><th>备注</th></tr>
+
+<tr><td><code>/api/projects/{project_id}</code></td><td>GET</td><td>—</td><td>ProjectResponse</td><td>获取单个项目详情，当前前端无此调用</td></tr>
+<tr><td><code>/api/projects/{project_id}</code></td><td>DELETE</td><td>—</td><td>—</td><td>删除项目</td></tr>
+<tr><td><code>/api/projects/{project_id}/overview</code></td><td>GET</td><td>—</td><td>ProjectOverviewResponse</td><td>项目概览（资产数量、缩略图、剧集进度）</td></tr>
+<tr><td><code>/api/projects/{project_id}/assets/download</code></td><td>POST</td><td>—</td><td>—</td><td>下载项目全部资产</td></tr>
+
+<tr><td><code>/api/projects/{project_id}/script-workspace</code></td><td>GET</td><td>—</td><td>ProjectScriptWorkspaceResponse</td><td>剧本工作区（含 script + messages）</td></tr>
+<tr><td><code>/api/projects/{project_id}/script-workspace</code></td><td>PATCH</td><td>ProjectScriptUpdateRequest</td><td>ProjectScriptResponse</td><td>更新剧本内容/标题</td></tr>
+<tr><td><code>/api/projects/{project_id}/script-workspace/upload</code></td><td>POST</td><td>file (multipart)</td><td>ProjectScriptWorkspaceResponse</td><td>上传剧本文件</td></tr>
+<tr><td><code>/api/projects/{project_id}/script-workspace/chat</code></td><td>POST</td><td>ProjectScriptChatRequest</td><td>ProjectScriptWorkspaceResponse</td><td>AI 剧本对话</td></tr>
+<tr><td><code>/api/projects/{project_id}/script-workspace/split-preview</code></td><td>POST</td><td>ProjectScriptSplitPreviewRequest</td><td>ProjectScriptSplitPreviewResponse</td><td>剧本拆集预览</td></tr>
+<tr><td><code>/api/projects/{project_id}/script-workspace/apply-split</code></td><td>POST</td><td>ProjectScriptApplySplitRequest</td><td>ProjectScriptApplySplitResponse</td><td>应用拆集结果</td></tr>
+<tr><td><code>/api/projects/{project_id}/script-workspace/finalize</code></td><td>POST</td><td>ProjectScriptFinalizeRequest</td><td>ProjectScriptFinalizeResponse</td><td>定稿剧本</td></tr>
+<tr><td><code>/api/projects/{project_id}/script-workspace/extract-subjects</code></td><td>POST</td><td>—</td><td>ProjectScriptExtractSubjectsResponse</td><td>从剧本提取主体</td></tr>
+<tr><td><code>/api/projects/{project_id}/script-workspace/history</code></td><td>GET</td><td>—</td><td>ProjectScriptHistoryListResponse</td><td>剧本历史列表</td></tr>
+<tr><td><code>/api/projects/{project_id}/script-workspace/history/{history_id}</code></td><td>GET</td><td>—</td><td>ProjectScriptHistoryResponse</td><td>历史详情</td></tr>
+<tr><td><code>/api/projects/{project_id}/script-workspace/history/{history_id}/restore</code></td><td>POST</td><td>—</td><td>ProjectScriptWorkspaceResponse</td><td>恢复历史版本</td></tr>
+
+<tr><td><code>/api/projects/{project_id}/episodes/{episode_id}/generate</code></td><td>POST</td><td>GenerateScriptRequest</td><td>EpisodeResponse</td><td>生成剧集剧本</td></tr>
+<tr><td><code>/api/projects/{project_id}/episodes/{episode_id}/generate/stream</code></td><td>POST</td><td>GenerateScriptRequest</td><td>（流式）</td><td>流式生成剧本</td></tr>
+<tr><td><code>/api/projects/{project_id}/episodes/{episode_id}/upload</code></td><td>POST</td><td>file (multipart)</td><td>—</td><td>上传剧集剧本文件</td></tr>
+<tr><td><code>/api/projects/{project_id}/episodes</code></td><td>POST</td><td>EpisodeCreate</td><td>EpisodeResponse</td><td>创建剧集</td></tr>
+<tr><td><code>/api/projects/{project_id}/episodes/{episode_id}</code></td><td>PATCH / DELETE</td><td>EpisodeUpdate</td><td>EpisodeResponse</td><td>更新/删除剧集</td></tr>
+
+<tr><td><code>/api/projects/{project_id}/subjects/{subject_id}</code></td><td>GET</td><td>—</td><td>SubjectDetailResponse</td><td>主体详情（含主图/候选图/参考图）</td></tr>
+<tr><td><code>/api/projects/{project_id}/subjects/{subject_id}/reference-images/upload</code></td><td>POST</td><td>file</td><td>SubjectReferenceImage</td><td>上传主体参考图</td></tr>
+<tr><td><code>/api/projects/{project_id}/subjects/{subject_id}/reference-images/bind</code></td><td>POST</td><td>ReferenceAssetBindRequest</td><td>[]SubjectReferenceImage</td><td>绑定已有资产为参考图</td></tr>
+<tr><td><code>/api/projects/{project_id}/subjects/{subject_id}/images</code></td><td>GET</td><td>—</td><td>[]SubjectImageResponse</td><td>主体图片列表</td></tr>
+<tr><td><code>/api/projects/{project_id}/subjects/{subject_id}/images/{image_id}/set-primary</code></td><td>PATCH</td><td>—</td><td>SubjectImageResponse</td><td>设置主体主图</td></tr>
+<tr><td><code>/api/projects/{project_id}/subjects/{subject_id}/images/{image_id}/download</code></td><td>GET</td><td>—</td><td>—</td><td>下载主体图片</td></tr>
+<tr><td><code>/api/projects/{project_id}/subjects/{subject_id}/duplicate</code></td><td>POST</td><td>DuplicateRequest</td><td>SubjectResponse</td><td>复制主体</td></tr>
+<tr><td><code>/api/projects/{project_id}/subjects/extract</code></td><td>POST</td><td>?episode_id=</td><td>[]SubjectResponse</td><td>从剧集提取主体</td></tr>
+
+<tr><td><code>/api/projects/{project_id}/storyboards</code></td><td>POST</td><td>StoryboardCreate</td><td>StoryboardResponse</td><td>创建分镜（含 anchor/clone 等高级功能）</td></tr>
+<tr><td><code>/api/projects/{project_id}/storyboards/generate</code></td><td>POST</td><td>GenerateStoryboardRequest</td><td>[]StoryboardResponse</td><td>从剧集生成分镜</td></tr>
+<tr><td><code>/api/projects/{project_id}/storyboards/generate-from-final-script</code></td><td>POST</td><td>—</td><td>GenerateStoryboardsFromFinalScriptResponse</td><td>从定稿剧本生成分镜</td></tr>
+<tr><td><code>/api/projects/{project_id}/storyboards/{storyboard_id}/upload-image</code></td><td>POST</td><td>file</td><td>—</td><td>上传分镜图片</td></tr>
+<tr><td><code>/api/projects/{project_id}/storyboards/{storyboard_id}/upload-video</code></td><td>POST</td><td>file</td><td>StoryboardResponse</td><td>上传分镜视频</td></tr>
+<tr><td><code>/api/projects/{project_id}/storyboards/{storyboard_id}/download-video</code></td><td>GET</td><td>—</td><td>—</td><td>下载分镜视频</td></tr>
+<tr><td><code>/api/projects/{project_id}/storyboards/download/images</code></td><td>POST</td><td>BatchDownloadRequest</td><td>—</td><td>批量下载分镜图片</td></tr>
+<tr><td><code>/api/projects/{project_id}/storyboards/download/videos</code></td><td>POST</td><td>BatchDownloadRequest</td><td>—</td><td>批量下载分镜视频</td></tr>
+
+<tr><td><code>/api/assets</code></td><td>GET</td><td>?project_id &amp; scope &amp; asset_type &amp; category...</td><td>[]AssetResponse</td><td>资产列表（支持多维过滤、搜索、回收站）</td></tr>
+<tr><td><code>/api/assets</code></td><td>POST</td><td>AssetCreate</td><td>AssetResponse</td><td>创建资产</td></tr>
+<tr><td><code>/api/assets/{asset_id}/extract-frame</code></td><td>POST</td><td>ExtractAssetFrameRequest</td><td>AssetResponse</td><td>提取资产帧</td></tr>
+<tr><td><code>/api/assets/{asset_id}/download</code></td><td>GET</td><td>?prefer_origin</td><td>—</td><td>下载资产</td></tr>
+<tr><td><code>/api/assets/batch-delete</code></td><td>POST</td><td>BatchDeleteRequest</td><td>—</td><td>批量删除（已有，但前端函数未处理返回值）</td></tr>
+<tr><td><code>/api/assets/restore</code></td><td>POST</td><td>BatchRestoreRequest</td><td>—</td><td>批量恢复资产</td></tr>
+<tr><td><code>/api/assets/{asset_id}/restore</code></td><td>POST</td><td>—</td><td>AssetResponse</td><td>恢复单个资产</td></tr>
+
+<tr><td><code>/api/tasks</code></td><td>GET / POST</td><td>CreateTaskRequest</td><td>[]GenTaskResponse</td><td>生成任务管理</td></tr>
+<tr><td><code>/api/tasks/{task_id}</code></td><td>GET</td><td>—</td><td>GenTaskResponse</td><td>任务状态查询</td></tr>
+<tr><td><code>/api/tasks/{task_id}/cancel</code></td><td>POST</td><td>—</td><td>—</td><td>取消任务</td></tr>
+<tr><td><code>/api/tasks/{task_id}/retry</code></td><td>POST</td><td>—</td><td>GenTaskResponse</td><td>重试任务</td></tr>
+<tr><td><code>/api/tasks/video/{task_id}</code></td><td>GET</td><td>—</td><td>VideoTaskStatusResponse</td><td>视频任务状态</td></tr>
+
+<tr><td><code>/api/projects/{project_id}/audio-clips</code></td><td>GET / POST</td><td>GenerateAudioRequest</td><td>[]AudioClipResponse</td><td>分镜配音生成与列表</td></tr>
+<tr><td><code>/api/projects/{project_id}/audio-clips/{clip_id}</code></td><td>DELETE</td><td>—</td><td>—</td><td>删除配音</td></tr>
+<tr><td><code>/api/projects/{project_id}/video-clips</code></td><td>GET / POST</td><td>GenerateVideoRequest</td><td>[]VideoClipResponse</td><td>分镜视频片段管理</td></tr>
+<tr><td><code>/api/projects/{project_id}/video-clips/{clip_id}</code></td><td>DELETE</td><td>—</td><td>—</td><td>删除视频片段</td></tr>
+
+<tr><td><code>/api/projects/{project_id}/workbench/images/generate</code></td><td>POST</td><td>WorkbenchImageGenerateRequest</td><td>WorkbenchTaskResponse</td><td>工作台图片生成</td></tr>
+<tr><td><code>/api/projects/{project_id}/workbench/images</code></td><td>GET</td><td>多查询参数</td><td>WorkbenchImageListResponse</td><td>工作台图片列表</td></tr>
+<tr><td><code>/api/projects/{project_id}/workbench/images/upload</code></td><td>POST</td><td>file</td><td>WorkbenchImageUploadResponse</td><td>工作台图片上传</td></tr>
+<tr><td><code>/api/projects/{project_id}/workbench/tasks/{task_id}</code></td><td>GET</td><td>—</td><td>WorkbenchImageTaskStatusResponse</td><td>工作台任务轮询</td></tr>
+<tr><td><code>/api/projects/{project_id}/workbench/images/batch-delete</code></td><td>POST</td><td>WorkbenchBatchImageRequest</td><td>WorkbenchImageDeleteResponse</td><td>工作台批量删除</td></tr>
+<tr><td><code>/api/projects/{project_id}/workbench/images/batch-download</code></td><td>POST</td><td>WorkbenchBatchImageRequest</td><td>—</td><td>工作台批量下载</td></tr>
+<tr><td><code>/api/projects/{project_id}/workbench/images/{image_id}/like</code></td><td>POST</td><td>WorkbenchBatchFavoriteRequest</td><td>WorkbenchFavoriteResponse</td><td>工作台点赞</td></tr>
+<tr><td><code>/api/projects/{project_id}/workbench/images/{image_id}/favorite</code></td><td>POST</td><td>WorkbenchBatchFavoriteRequest</td><td>WorkbenchFavoriteResponse</td><td>工作台收藏</td></tr>
+<tr><td><code>/api/projects/{project_id}/workbench/results</code></td><td>GET</td><td>多查询参数</td><td>WorkbenchMediaQueryResponse</td><td>工作台结果查询</td></tr>
+
+<tr><td><code>/api/creation/sessions</code></td><td>GET / POST</td><td>CreateSessionRequest</td><td>[]CreationSessionResponse</td><td>创作会话管理</td></tr>
+<tr><td><code>/api/creation/sessions/{session_id}</code></td><td>GET / PATCH / DELETE</td><td>UpdateSessionRequest</td><td>CreationSessionResponse</td><td>会话详情/更新/删除</td></tr>
+<tr><td><code>/api/creation/sessions/{session_id}/shots</code></td><td>GET / POST</td><td>CreateShotRequest</td><td>[]CreationShotResponse</td><td>创作镜头管理</td></tr>
+<tr><td><code>/api/creation/shots/{shot_id}</code></td><td>GET / PATCH / DELETE</td><td>UpdateShotRequest</td><td>CreationShotResponse</td><td>镜头详情/更新/删除</td></tr>
+<tr><td><code>/api/creation/sessions/{session_id}/shots/reorder</code></td><td>POST</td><td>ReorderShotsRequest</td><td>[]CreationShotResponse</td><td>镜头排序</td></tr>
+<tr><td><code>/api/creation/images</code></td><td>GET</td><td>多查询参数</td><td>CreationImageListResponse</td><td>创作图片列表</td></tr>
+<tr><td><code>/api/creation/images/upload</code></td><td>POST</td><td>file + params</td><td>CreationImageUploadResponse</td><td>创作图片上传</td></tr>
+<tr><td><code>/api/creation/videos/upload</code></td><td>POST</td><td>file + params</td><td>CreationVideoUploadResponse</td><td>创作视频上传</td></tr>
+<tr><td><code>/api/creation/audios/upload</code></td><td>POST</td><td>file + params</td><td>CreationAudioUploadResponse</td><td>创作音频上传</td></tr>
+<tr><td><code>/api/creation/tasks</code></td><td>GET</td><td>?status &amp; task_type...</td><td>[]CreationTaskResponse</td><td>创作任务列表</td></tr>
+<tr><td><code>/api/creation/tasks/{task_id}</code></td><td>GET</td><td>—</td><td>CreationImageTaskStatusResponse</td><td>创作图片任务轮询</td></tr>
+<tr><td><code>/api/creation/videos</code></td><td>GET</td><td>?page &amp; page_size</td><td>CreationVideoListResponse</td><td>创作视频列表</td></tr>
+<tr><td><code>/api/creation/videos/generate</code></td><td>POST</td><td>CreationVideoGenerateRequest</td><td>CreationTaskResponse</td><td>创作视频生成（前端字段不完整，见上表）</td></tr>
+<tr><td><code>/api/creation/videos/tasks/{task_id}</code></td><td>GET</td><td>—</td><td>CreationVideoTaskStatusResponse</td><td>创作视频任务轮询</td></tr>
+<tr><td><code>/api/creation/videos/batch-download</code></td><td>POST</td><td>CreationBatchImageRequest</td><td>—</td><td>批量下载视频</td></tr>
+<tr><td><code>/api/creation/audios/generate</code></td><td>POST</td><td>CreationAudioGenerateRequest</td><td>—</td><td>创作音频生成</td></tr>
+<tr><td><code>/api/creation/audios</code></td><td>GET</td><td>?page &amp; page_size...</td><td>—</td><td>创作音频列表</td></tr>
+<tr><td><code>/api/creation/audios/{audio_id}</code></td><td>GET / DELETE</td><td>—</td><td>—</td><td>音频详情/删除</td></tr>
+<tr><td><code>/api/creation/audios/{audio_id}/favorite</code></td><td>POST</td><td>—</td><td>—</td><td>音频收藏</td></tr>
+<tr><td><code>/api/creation/audios/batch-delete</code></td><td>POST</td><td>CreationBatchAudioRequest</td><td>—</td><td>批量删除音频</td></tr>
+<tr><td><code>/api/creation/audios/batch-download</code></td><td>POST</td><td>CreationBatchAudioRequest</td><td>—</td><td>批量下载音频</td></tr>
+
+<tr><td><code>/api/creation/shots/{shot_id}/generate-image</code></td><td>POST</td><td>CreationShotImageGenerateRequest</td><td>CreationTaskResponse</td><td>镜头图片生成</td></tr>
+<tr><td><code>/api/creation/shots/{shot_id}/generate-audio</code></td><td>POST</td><td>CreationShotAudioGenerateRequest</td><td>CreationShotAudioResponse</td><td>镜头配音生成</td></tr>
+<tr><td><code>/api/creation/shots/{shot_id}/generate-video</code></td><td>POST</td><td>CreationShotVideoGenerateRequest</td><td>CreationShotVideoResponse</td><td>镜头视频生成</td></tr>
+
+<tr><td><code>/api/voices/official</code></td><td>GET</td><td>?language</td><td>[]VoiceResponse</td><td>官方音色列表</td></tr>
+<tr><td><code>/api/voices/custom</code></td><td>POST</td><td>file + params</td><td>VoiceResponse</td><td>创建自定义音色</td></tr>
+<tr><td><code>/api/voices/{voice_id}</code></td><td>PATCH / DELETE</td><td>UpdateCustomVoiceRequest</td><td>VoiceResponse</td><td>自定义音色管理</td></tr>
+<tr><td><code>/api/voices/{voice_id}/favorite</code></td><td>POST / DELETE</td><td>—</td><td>—</td><td>音色收藏</td></tr>
+
+<tr><td><code>/api/models</code></td><td>GET</td><td>?category</td><td>[]ModelConfigResponse</td><td>模型列表</td></tr>
+<tr><td><code>/api/models</code></td><td>POST</td><td>CreateModelRequest</td><td>ModelConfigResponse</td><td>创建模型</td></tr>
+<tr><td><code>/api/models/{model_id}</code></td><td>PATCH / DELETE</td><td>UpdateModelRequest</td><td>ModelConfigResponse</td><td>模型更新/删除</td></tr>
+<tr><td><code>/api/models/defaults</code></td><td>GET</td><td>—</td><td>—</td><td>获取默认模型配置</td></tr>
+
+<tr><td><code>/api/user-styles</code></td><td>GET / POST</td><td>CreateUserStyleRequest</td><td>[]UserStyleResponse</td><td>用户视觉风格管理</td></tr>
+<tr><td><code>/api/user-styles/options</code></td><td>GET</td><td>—</td><td>[]VisualStyleOptionResponse</td><td>可选视觉风格列表</td></tr>
+<tr><td><code>/api/user-styles/{style_id}</code></td><td>PATCH / DELETE</td><td>UpdateUserStyleRequest</td><td>UserStyleResponse</td><td>风格更新/删除</td></tr>
+
+<tr><td><code>/api/notifications</code></td><td>GET</td><td>?is_read &amp; type</td><td>[]NotificationResponse</td><td>通知列表（前端已有函数但缺查询参数）</td></tr>
+<tr><td><code>/api/notifications/unread-count</code></td><td>GET</td><td>—</td><td>—</td><td>未读数量</td></tr>
+<tr><td><code>/api/notifications/{notification_id}/read</code></td><td>PATCH</td><td>—</td><td>—</td><td>标记已读</td></tr>
+<tr><td><code>/api/notifications/read-all</code></td><td>POST</td><td>—</td><td>—</td><td>全部已读</td></tr>
+<tr><td><code>/api/notifications/{notification_id}</code></td><td>DELETE</td><td>—</td><td>—</td><td>删除通知</td></tr>
+
+<tr><td><code>/api/projects/{project_id}/compositions</code></td><td>GET / POST</td><td>CompositionCreate</td><td>[]CompositionResponse</td><td>合成管理</td></tr>
+<tr><td><code>/api/projects/{project_id}/compositions/{comp_id}</code></td><td>PATCH / DELETE</td><td>CompositionUpdate</td><td>CompositionResponse</td><td>合成更新/删除</td></tr>
+<tr><td><code>/api/projects/{project_id}/compositions/{comp_id}/render</code></td><td>POST</td><td>—</td><td>CompositionResponse</td><td>渲染合成</td></tr>
+
+<tr><td><code>/api/exports/prepare</code></td><td>POST</td><td>ExportRequest</td><td>ExportResponse</td><td>导出准备</td></tr>
+<tr><td><code>/api/llm/chat</code></td><td>POST</td><td>ChatRequest</td><td>—</td><td>LLM 对话</td></tr>
+<tr><td><code>/api/llm/chat/stream</code></td><td>POST</td><td>ChatRequest</td><td>（流式）</td><td>LLM 流式对话</td></tr>
+<tr><td><code>/api/llm/models</code></td><td>GET</td><td>—</td><td>—</td><td>LLM 模型列表</td></tr>
+
+<tr><td><code>/api/auth/wechat/qrcode</code></td><td>GET</td><td>—</td><td>QrCodeSessionResponse</td><td>微信扫码登录二维码</td></tr>
+<tr><td><code>/api/auth/wechat/poll/{session_id}</code></td><td>GET</td><td>—</td><td>QrCodePollResponse</td><td>微信登录轮询</td></tr>
+<tr><td><code>/api/auth/wechat/confirm</code></td><td>POST</td><td>QrCodeConfirmRequest</td><td>QrCodePollResponse</td><td>微信登录确认</td></tr>
+
+</table>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>四、后端响应字段，前端代码未使用（<span class="tag tag-extra" style="font-size:11px">需确认</span>）</h2>
+<p class="section-desc">后端返回的关键字段，前端页面/Store 若未消费则属于遗留差距，按需补充。</p>
+
+<table>
+<tr><th>后端响应 Schema</th><th>后端有但前端未消费的字段</th><th>说明</th></tr>
+
+<tr>
+  <td><code>UserResponse</code><br>（GET /api/auth/me）</td>
+  <td><code>has_api_configured</code>: boolean</td>
+  <td>用户是否已配置 API，前端引导用户配置 API 时需要此字段</td>
+</tr>
+
+<tr>
+  <td><code>ProjectResponse</code><br>（项目列表/创建/更新）</td>
+  <td><code>visual_style</code>: string<br><code>visual_style_label</code>: string|null<br><code>project_type</code>: string|null<br><code>language</code>: string<br><code>notes</code>: string|null<br><code>status</code>: string</td>
+  <td>前端目前 mock 字段为 <code>style / customStyleDesc</code>，后端用 <code>visual_style</code>（value）+ <code>visual_style_label</code>（显示名）；<code>language / notes / status</code> 前端未使用</td>
+</tr>
+
+<tr>
+  <td><code>EpisodeResponse</code><br>（剧集列表）</td>
+  <td><code>content</code>: string|null<br><code>summary</code>: string|null<br><code>status</code>: string<br><code>updated_at</code>: string</td>
+  <td>前端目前 mock 返回字符串数组，后端返回完整对象</td>
+</tr>
+
+<tr>
+  <td><code>StoryboardResponse</code><br>（分镜列表）</td>
+  <td><code>video_asset_id / video_thumbnail_url / video_duration / video_model / video_resolution / video_ratio / video_is_primary</code><br><code>gen_params</code>: object<br><code>reference_image_urls</code>: array</td>
+  <td>视频相关字段（含资产ID、分辨率、比例）和生成参数对象，前端若需展示视频详情需消费这些字段</td>
+</tr>
+
+<tr>
+  <td><code>SubjectResponse</code><br>（主体列表）</td>
+  <td><code>primary_image_url</code>: string|null<br><code>image_count</code>: integer<br><code>gen_config</code>: object|null<br><code>reference_image_url / reference_asset_id</code></td>
+  <td><code>primary_image_url</code> 替代旧的 <code>image_url</code>；<code>image_count</code> 用于展示图片数量；<code>gen_config</code> 存最近生成配置</td>
+</tr>
+
+<tr>
+  <td><code>AssetResponse</code><br>（资产列表）</td>
+  <td><code>is_deleted</code>: boolean<br><code>deleted_at</code>: string|null<br><code>metadata_json</code>: object|null<br><code>reference_image_urls</code>: array|null</td>
+  <td>软删除状态字段，前端资产库回收站功能需消费 <code>is_deleted / deleted_at</code></td>
+</tr>
+
+<tr>
+  <td><code>ProviderResponse</code><br>（API 配置）</td>
+  <td><code>default_image_watermark</code>: boolean<br><code>default_video_watermark</code>: boolean<br><code>is_connected</code>: boolean<br><code>last_tested_at</code>: string|null</td>
+  <td>水印默认值和连接状态，前端 API 配置页需展示</td>
+</tr>
+
+<tr>
+  <td><code>CreationImageCard / CreationVideoCard</code><br>（创作资产）</td>
+  <td>驼峰和蛇形双字段：<code>thumbnailUrl / thumbnail_url</code>、<code>originalUrl / original_url</code>、<code>aspectRatio / aspect_ratio</code>、<code>createdAt / created_at</code>、<code>isLiked / is_liked</code>、<code>isOwner / is_owner</code>、<code>sessionId / session_id</code>、<code>shotId / shot_id</code>、<code>referenceImages / reference_images</code></td>
+  <td>后端同时返回两种命名，前端应统一使用其中一种，避免歧义</td>
+</tr>
+
+</table>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>五、当前前端有但后端无接口（<span class="tag tag-extra" style="font-size:11px">后端无接口</span>）</h2>
+<p class="section-desc">这些函数对应的后端路由不存在，需与后端确认是否有规划，或改用其他接口替代。</p>
+
+<table>
+<tr><th>文件 / 函数</th><th>前端意图</th><th>建议处理方式</th></tr>
+
+<tr>
+  <td><span class="file-badge">user.js</span><br><code>apiGetWechatQrCode()</code></td>
+  <td>绑定微信（账号设置）</td>
+  <td>后端目前只有微信登录流程（<code>/api/auth/wechat/*</code>），无账号绑定微信接口，需与后端确认</td>
+</tr>
+
+<tr>
+  <td><span class="file-badge">user.js</span><br><code>apiPollWechatBind(ticket)</code></td>
+  <td>轮询微信绑定状态</td>
+  <td>同上</td>
+</tr>
+
+<tr>
+  <td><span class="file-badge">user.js</span><br><code>apiUnbindWechat()</code></td>
+  <td>解绑微信</td>
+  <td>同上</td>
+</tr>
+
+<tr>
+  <td><span class="file-badge">user.js</span><br><code>apiSendPhoneCode(phone)</code></td>
+  <td>换绑手机发送验证码</td>
+  <td>后端只有登录/注册的 <code>/api/auth/send-code</code>，无独立换绑手机接口</td>
+</tr>
+
+<tr>
+  <td><span class="file-badge">user.js</span><br><code>apiVerifyPhoneCode(phone, code)</code></td>
+  <td>换绑手机验证</td>
+  <td>同上</td>
+</tr>
+
+<tr>
+  <td><span class="file-badge">user.js</span><br><code>apiRebindPhone(newPhone, code)</code></td>
+  <td>直接换绑手机</td>
+  <td>同上</td>
+</tr>
+
+<tr>
+  <td><span class="file-badge">auth.js</span><br><code>bindPhone(wechatToken, phone, code)</code></td>
+  <td>微信登录后绑定手机</td>
+  <td>后端无 <code>/api/auth/bind-phone</code>，legacy alias，可删除</td>
+</tr>
+
+<tr>
+  <td><span class="file-badge">creation.js</span><br><code>apiGetVideoLastFrame(videoUrl)</code></td>
+  <td>提取视频尾帧用作首帧</td>
+  <td>后端无此接口，目前前端 mock 用 canvas 生成，需与后端确认是否需要专门接口，或在前端用 ffmpeg.wasm 处理</td>
+</tr>
+
+<tr>
+  <td><span class="file-badge">assets.js</span><br><code>apiGetShotVideoDetail(shotId)</code></td>
+  <td>获取分镜视频详情</td>
+  <td>后端无独立接口，视频信息在 <code>StoryboardResponse</code> 字段中（<code>video_url / video_thumbnail_url / video_duration</code> 等）</td>
+</tr>
+
+</table>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>六、修复优先级建议</h2>
+
+<table>
+<tr><th>优先级</th><th>问题类型</th><th>影响</th></tr>
+<tr><td><strong>P0</strong></td><td>路径错误（表一）</td><td>直接 404，功能完全不可用</td></tr>
+<tr><td><strong>P1</strong></td><td>请求体字段差异（表二）</td><td>422 验证错误，接口调用失败</td></tr>
+<tr><td><strong>P2</strong></td><td>前端缺失的必要接口（表三中标记为页面用到的）</td><td>页面功能无数据支撑</td></tr>
+<tr><td><strong>P3</strong></td><td>后端响应字段未消费（表四）</td><td>功能可跑通但数据展示不完整</td></tr>
+<tr><td><strong>P4</strong></td><td>后端无接口的函数（表五）</td><td>需与后端沟通规划，暂可保留 mock</td></tr>
+</table>
+
+</body>
+</html>

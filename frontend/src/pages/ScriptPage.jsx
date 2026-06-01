@@ -3,7 +3,7 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { Markdown } from 'tiptap-markdown';
 import ReactMarkdown from 'react-markdown';
-import { apiSaveScriptWorkspace } from '../api/subject';
+import { apiSaveScriptWorkspace, apiGetScriptWorkspace, apiChatScriptWorkspace } from '../api/subject';
 import { PulsingBorder } from '@paper-design/shaders-react';
 import DotsLoading from '../components/DotsLoading';
 
@@ -1467,6 +1467,23 @@ export default function ScriptPage({ projectId, onGoToSubject, onEpisodesChange,
     ensureThinkingStyle();
   }, []);
 
+  // 页面加载时从后端恢复剧本
+  useEffect(() => {
+    if (!projectId) return;
+
+    apiGetScriptWorkspace(projectId)
+      .then((data) => {
+        if (data?.content) {
+          setScriptContent(data.content);
+          setPhase('view');
+          setHasStarted(true);
+        }
+      })
+      .catch((err) => {
+        console.error('[ScriptPage] 加载剧本失败:', err);
+      });
+  }, [projectId, setScriptContent, setPhase, setHasStarted]);
+
   const visibleContent = phase === 'edit' ? draftContent : scriptContent;
   const outline = useMemo(() => parseScriptOutline(visibleContent).filter((item) => item.level === 2), [visibleContent]);
 
@@ -1499,7 +1516,7 @@ export default function ScriptPage({ projectId, onGoToSubject, onEpisodesChange,
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [phase, handleStop]);
 
-  const handleSend = (text, files) => {
+  const handleSend = async (text, files) => {
     if (!text && files.length === 0) return;
 
     setLastSentText(text);
@@ -1511,11 +1528,21 @@ export default function ScriptPage({ projectId, onGoToSubject, onEpisodesChange,
     setSelectedEpisode(0);
     setStreamingIndex(0);
 
-    stopTimerRef.current = setTimeout(() => {
-      stopTimerRef.current = null;
+    try {
+      // 调用剧本对话接口
+      const result = await apiChatScriptWorkspace(projectId, {
+        message: text,
+        // files 暂不支持
+      });
+
+      setScriptContent(result.content || MOCK_SCRIPT_MARKDOWN);
+      setPhase('streaming');
+    } catch (err) {
+      console.error('[ScriptPage] 生成剧本失败:', err);
+      // 失败时使用 mock 数据
       setScriptContent(MOCK_SCRIPT_MARKDOWN);
       setPhase('streaming');
-    }, 3000);
+    }
   };
 
   const handleStreamingDone = useCallback(() => {

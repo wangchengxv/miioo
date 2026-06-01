@@ -1,5 +1,7 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
+import { useCreationStore } from '../stores/creationStore';
+import { generationsToFlatList } from '../utils/creativeDaysAdapter';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
@@ -123,27 +125,6 @@ const MOCK_PROJECT_ASSETS_MAP = {
   },
 };
 
-const MOCK_CREATIVE_ASSETS = {
-  images: [
-    { id: 'img1', name: '镜头_001.jpg', bgColor: '#1E2022', starred: true },
-    { id: 'img2', name: '场景草图.png', bgColor: '#201E22', starred: false },
-    { id: 'img3', name: '角色设定.jpg', bgColor: '#1E2020', starred: true },
-    { id: 'img4', name: '道具参考.png', bgColor: '#202024', starred: false },
-    { id: 'img5', name: '分镜_A01.jpg', bgColor: '#1F2020', starred: false },
-    { id: 'img6', name: '背景板.png', bgColor: '#1D2020', starred: false },
-  ],
-  videos: [
-    { id: 'vid1', name: '第1集_预览.mp4', bgColor: '#1A1E24', starred: true },
-    { id: 'vid2', name: '第2集_预览.mp4', bgColor: '#1E1A24', starred: false },
-    { id: 'vid3', name: '片头动画.mp4', bgColor: '#1A1A20', starred: false },
-  ],
-  dubbing: [
-    { id: 'dub1', name: '旁白_第1集.mp3', bgColor: '#1E2022', starred: true, type: 'audio' },
-    { id: 'dub2', name: '角色配音_主角.wav', bgColor: '#201E22', starred: false, type: 'audio' },
-    { id: 'dub3', name: '旁白_第2集.mp3', bgColor: '#1E2020', starred: false, type: 'audio' },
-    { id: 'dub4', name: '角色配音_反派.wav', bgColor: '#1A1A20', starred: true, type: 'audio' },
-  ],
-};
 
 // 子 Tab → projectAssetsMap 的 key
 const SUB_TAB_KEY_MAP = {
@@ -265,9 +246,34 @@ export default function AssetPickerModal({
   projects = MOCK_PROJECTS,
   // projectAssetsMap: { [projectId]: { chars, scenes, props, storyboard_img, storyboard_video } }；未传时使用 mock 数据
   projectAssetsMap = MOCK_PROJECT_ASSETS_MAP,
-  // creativeAssets: { images: [], videos: [] }  创作资产；未传时使用 mock 数据
-  creativeAssets = MOCK_CREATIVE_ASSETS,
+  // creativeAssets: { images: [], videos: [], dubbing: [] }  创作资产；未传时从 store 读取
+  creativeAssets: creativeAssetsProp = null,
 }) {
+  // 从 store 读取创作资产数据（当 prop 未传入时）
+  const generationsByTab = useCreationStore((s) => s.generationsByTab);
+  const favorites = useCreationStore((s) => s.favorites);
+
+  const creativeAssets = useMemo(() => {
+    if (creativeAssetsProp) return creativeAssetsProp;
+
+    // 从 store 转换数据格式
+    return {
+      images: generationsToFlatList(generationsByTab.image || [], favorites).map(item => ({
+        ...item,
+        bgColor: item.bgColor || '#1F2324',
+      })),
+      videos: generationsToFlatList(generationsByTab.video || [], favorites).map(item => ({
+        ...item,
+        bgColor: item.bgColor || '#1F2324',
+      })),
+      dubbing: generationsToFlatList(generationsByTab.dubbing || [], favorites).map(item => ({
+        ...item,
+        bgColor: item.bgColor || '#1F2324',
+        type: 'audio',
+      })),
+    };
+  }, [creativeAssetsProp, generationsByTab, favorites]);
+
   const projectSubTabsAvail = accept === 'video' ? PROJECT_SUB_TABS_VIDEO : accept === 'image' ? PROJECT_SUB_TABS_IMAGE : accept === 'audio' ? PROJECT_SUB_TABS_AUDIO : PROJECT_SUB_TABS_ALL;
   const creativeSubTabsAvail = accept === 'video' ? CREATIVE_SUB_TABS_VIDEO : accept === 'image' ? CREATIVE_SUB_TABS_IMAGE : accept === 'audio' ? CREATIVE_SUB_TABS_AUDIO : CREATIVE_SUB_TABS_ALL;
 

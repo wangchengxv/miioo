@@ -148,7 +148,43 @@ export async function apiGetSubjectImages(projectId, subjectId) {
 export async function apiGenerateSubjectImage(projectId, subjectId, params) {
   if (USE_MOCK) {
     console.log('[mock] generate image for subject', projectId, subjectId, params);
-    return { jobId: `job-${Date.now()}`, imageUrl: null, assetId: null };
+    // 模拟 1.5 秒延迟
+    await new Promise(r => setTimeout(r, 1500));
+    const mockUrl = `https://picsum.photos/seed/${subjectId}-${Date.now()}/512/512`;
+    const mockImageId = `img-${Date.now()}`;
+
+    // 更新 localStorage 中的主体数据，添加 primary_image（带错误保护）
+    try {
+      const types = ['character', 'scene', 'prop'];
+      for (const type of types) {
+        const key = `miioo_subjects_${projectId}_${type}`;
+        const saved = localStorage.getItem(key);
+        if (saved) {
+          const subjects = JSON.parse(saved);
+          const index = subjects.findIndex(s => s.id === subjectId || String(s.id) === String(subjectId));
+          if (index !== -1) {
+            subjects[index].primary_image = {
+              asset_id: mockImageId,
+              file_url: mockUrl
+            };
+            subjects[index].imageUrl = mockUrl; // 兼容前端使用的字段
+            localStorage.setItem(key, JSON.stringify(subjects));
+            break;
+          }
+        }
+      }
+    } catch (err) {
+      console.warn('[mock] update subject image in localStorage failed:', err);
+      // 即使 localStorage 更新失败，仍返回 mock 数据
+    }
+
+    return {
+      jobId: `job-${Date.now()}`,
+      imageUrl: mockUrl,
+      assetId: mockImageId,
+      image_url: mockUrl,
+      asset_id: mockImageId
+    };
   }
   const res = await authFetch(`${BASE}/api/projects/${projectId}/subjects/${subjectId}/generate-image`, {
     method: 'POST',
@@ -374,16 +410,99 @@ export async function apiSaveScriptWorkspace(projectId, data) {
   if (USE_MOCK) {
     console.log('[mock] save script workspace', projectId, data);
     const key = `miioo_script_${projectId}`;
-    localStorage.setItem(key, JSON.stringify(data));
-    return data;
+    const saved = {
+      content: data.content || '',
+      episodes: data.episodes || [],
+      phase: data.phase || 'view',
+      updated_at: new Date().toISOString()
+    };
+    localStorage.setItem(key, JSON.stringify(saved));
+    return saved;
   }
   const res = await authFetch(
     `${BASE}/api/projects/${projectId}/script-workspace`,
     {
-      method: 'PUT',
+      method: 'PATCH',  // 修改为 PATCH，与 API 文档一致
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     }
   );
+  return res.json();
+}
+
+/**
+ * 剧本对话生成（用于 ScriptPage 的生成按钮）
+ * @param {string} projectId - 项目 ID
+ * @param {object} params - {message: string}
+ * @returns {Promise<{content: string}>}
+ */
+export async function apiChatScriptWorkspace(projectId, { message }) {
+  if (USE_MOCK) {
+    console.log('[mock] chat script workspace', projectId, message);
+    // 模拟 3 秒延迟
+    await new Promise(r => setTimeout(r, 3000));
+
+    // 使用硬编码的 mock 剧本（从 ScriptPage.jsx 导入）
+    const MOCK_SCRIPT_MARKDOWN = `# 两只老虎的青枫奇遇
+
+## 第一集：陌生的邻居
+
+**场景1：青枫林·晨光草地（0:00-1:30）**
+
+【镜头1】俯拍：青枫林被晨雾笼罩，阳光透过树叶洒下斑驳光影。镜头缓缓下降，聚焦到一片开阔的草地。
+
+【镜头2】中景：大虎（橙黄色，体型健壮）正在草地上做伸展运动，动作笨拙但认真。
+
+【镜头3】特写：大虎打了个大大的哈欠，露出锋利的牙齿。
+
+**大虎**（自言自语）："又是美好的一天！今天要去找小虎玩！"
+
+**场景2：青枫林·小虎的树洞（1:30-3:00）**
+
+【镜头4】全景：镜头跟随大虎穿过树林，来到一棵巨大的枫树前。树干上有一个圆形的洞口。
+
+【镜头5】中景：大虎站在树洞前，用爪子轻轻敲门。
+
+**大虎**："小虎！小虎！起床啦！"
+
+【镜头6】内景·树洞：小虎（白色带黑纹，体型较小）蜷缩在柔软的草垫上，耳朵动了动。
+
+【镜头7】特写：小虎睁开惺忪的眼睛，揉了揉眼睛。
+
+**小虎**（慵懒地）："大虎？这么早……"
+
+## 第二集：神秘的声音
+
+**场景1：青枫林·深处（0:00-2:00）**
+
+【镜头1】全景：大虎和小虎并肩走在林间小路上，阳光透过树叶形成光斑。
+
+【镜头2】中景：两只老虎突然停下脚步，竖起耳朵。
+
+**小虎**（警觉）："你听到了吗？"
+
+**大虎**（点头）："好像是……歌声？"
+
+【镜头3】特写：远处传来悠扬的笛声，伴随着风吹树叶的沙沙声。`;
+
+    const content = MOCK_SCRIPT_MARKDOWN;
+
+    // 保存到 localStorage
+    const key = `miioo_script_${projectId}`;
+    localStorage.setItem(key, JSON.stringify({
+      content,
+      episodes: [],
+      phase: 'view',
+      updated_at: new Date().toISOString()
+    }));
+
+    return { content };
+  }
+
+  const res = await authFetch(`${BASE}/api/projects/${projectId}/script-workspace/chat`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message }),
+  });
   return res.json();
 }

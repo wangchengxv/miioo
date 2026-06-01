@@ -332,28 +332,7 @@ function Agreement({ checked, onToggle }) {
         </div>
       </button>
       <div style={{ fontFamily: FONT, color: '#FFFFFF99', fontSize: 12, lineHeight: '16px' }}>
-        登录即表示您同意并遵守{' '}
-        <a
-          href="https://gcn0je6sgrhe.feishu.cn/wiki/FIspwGURtikxiwk28svc4thOn9c?from=from_copylink"
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ color: '#2DC3E1', textDecoration: 'none', cursor: 'pointer' }}
-          onMouseEnter={(e) => { e.target.style.textDecoration = 'underline'; }}
-          onMouseLeave={(e) => { e.target.style.textDecoration = 'none'; }}
-        >
-          《用户协议》
-        </a>
-        {' '}与{' '}
-        <a
-          href="https://gcn0je6sgrhe.feishu.cn/wiki/LKlewdQJ0iaYVmkOPXVc4PWgnoc?from=from_copylink"
-          target="_blank"
-          rel="noopener noreferrer"
-          style={{ color: '#2DC3E1', textDecoration: 'none', cursor: 'pointer' }}
-          onMouseEnter={(e) => { e.target.style.textDecoration = 'underline'; }}
-          onMouseLeave={(e) => { e.target.style.textDecoration = 'none'; }}
-        >
-          《隐私政策》
-        </a>
+        登录即表示您同意并遵守 {' '}《用户协议》{' '}与{' '}《隐私政策》
       </div>
     </div>
   );

@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { PulsingBorder } from '@paper-design/shaders-react';
 import bgImage from '../assets/home-bg.png';
 import { apiCreateProject, apiGetProjects, apiUpdateProject, apiDeleteProject, apiGetProject } from '../api/project';
-import { clearTokens } from '../api/auth';
+import { clearTokens, apiLogout } from '../api/auth';
 import { apiGetCurrentUser, apiGetNotifications } from '../api/user';
 import { apiGetSubjects, apiGetEpisodes, apiGetScriptWorkspace } from '../api/subject';
 import { apiGetStoryboards } from '../api/storyboard';
@@ -420,17 +420,29 @@ const BOTTOM_NAV_ITEMS = [
     key: 'menu',
     label: '菜单',
     tooltip: '更多选项',
-    popup: ({ close, anchorLeft }) => (
-      <div className="flex flex-col items-start w-max rounded-lg absolute left-10 bottom-0 [box-shadow:#00000066_0px_4px_16px] bg-[#161616] border border-solid border-[#FFFFFF0D] p-1" style={{ zIndex: 50 }}>
-        {['创作手册', '更新日志', '用户协议', '隐私政策', '商务合作', '关于我们'].map((label) => (
-          <MenuPopupItem
-            key={label}
-            label={label}
-            onClick={label === '创作手册' && CREATION_MANUAL_URL ? () => window.open(CREATION_MANUAL_URL, '_blank') : undefined}
-          />
-        ))}
-      </div>
-    ),
+    popup: ({ close, anchorLeft }) => {
+      const handleMenuClick = (label) => {
+        if (label === '创作手册' && CREATION_MANUAL_URL) {
+          window.open(CREATION_MANUAL_URL, '_blank');
+        } else if (label === '用户协议') {
+          window.open('https://gcn0je6sgrhe.feishu.cn/wiki/FIspwGURtikxiwk28svc4thOn9c?from=from_copylink', '_blank');
+        } else if (label === '隐私政策') {
+          window.open('https://gcn0je6sgrhe.feishu.cn/wiki/LKlewdQJ0iaYVmkOPXVc4PWgnoc?from=from_copylink', '_blank');
+        }
+      };
+
+      return (
+        <div className="flex flex-col items-start w-max rounded-lg absolute left-10 bottom-0 [box-shadow:#00000066_0px_4px_16px] bg-[#161616] border border-solid border-[#FFFFFF0D] p-1" style={{ zIndex: 50 }}>
+          {['创作手册', '更新日志', '用户协议', '隐私政策', '商务合作', '关于我们'].map((label) => (
+            <MenuPopupItem
+              key={label}
+              label={label}
+              onClick={() => handleMenuClick(label)}
+            />
+          ))}
+        </div>
+      );
+    },
     icon: (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={ICON_STYLE}>
         <path d="M2.65 3.983H13.317" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
@@ -894,8 +906,8 @@ export default function Home({ onProjectCreated }) {
   const [bottomActiveKey, setBottomActiveKey] = useState(null);
   const [loginOpen, setLoginOpen] = useState(false);
   const [apiConfigOpen, setApiConfigOpen] = useState(false);
-  // mock 模式下跳过登录检查，方便前端独立研发
-  const [isLoggedIn, setIsLoggedIn] = useState(() => import.meta.env.VITE_USE_MOCK === 'true' || !!localStorage.getItem('token'));
+  // mock 模式下也需要检查 token，退出登录后应该显示未登录状态
+  const [isLoggedIn, setIsLoggedIn] = useState(() => !!localStorage.getItem('token'));
   const [apiConfigured, setApiConfigured] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
@@ -931,6 +943,28 @@ export default function Home({ onProjectCreated }) {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToast({ msg, type });
     toastTimerRef.current = setTimeout(() => setToast(null), 2500);
+  };
+
+  // 统一的退出登录处理函数
+  const handleLogout = async () => {
+    try {
+      // 调用后端退出登录接口
+      await apiLogout();
+    } catch (error) {
+      console.error('退出登录接口调用失败:', error);
+    }
+
+    // 清除登录凭证
+    clearTokens();
+
+    // 只清除当前会话状态，保留项目数据和解锁状态供下次登录使用
+    localStorage.removeItem('miioo_active_project_id');
+    localStorage.removeItem('miioo_active_step');
+    localStorage.removeItem('miioo_active_key');
+
+    // 强制刷新页面并跳转到首页
+    // 使用 location.replace 而不是 location.href，确保不会留在历史记录中
+    window.location.replace('/');
   };
 
   // 监听项目切换并保存 ID
@@ -1200,7 +1234,7 @@ export default function Home({ onProjectCreated }) {
                 userId="miioo_suzy"
                 phone="178 **** 0361"
                 wechat="suzylee"
-                onLogout={() => { clearTokens(); setIsLoggedIn(false); }}
+                onLogout={handleLogout}
                 onOpenProfile={() => setProfileOpen(true)}
               />
             ) : (
@@ -1216,7 +1250,7 @@ export default function Home({ onProjectCreated }) {
           isLoggedIn={isLoggedIn}
           currentUser={currentUser}
           onLoginClick={() => setLoginOpen(true)}
-          onLogout={() => { clearTokens(); setIsLoggedIn(false); }}
+          onLogout={handleLogout}
           onOpenProfile={() => setProfileOpen(true)}
           onLogoClick={() => {
             setActiveProject(null);
@@ -1401,7 +1435,7 @@ export default function Home({ onProjectCreated }) {
       <ProfileModal
         open={profileOpen}
         onClose={() => setProfileOpen(false)}
-        onLogout={() => { clearTokens(); setIsLoggedIn(false); setProfileOpen(false); }}
+        onLogout={handleLogout}
         userName="Suzy"
         userId="miioo_suzy"
         phone="178 **** 0361"
