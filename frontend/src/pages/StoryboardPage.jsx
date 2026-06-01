@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import BatchDownloadModal from '../components/BatchDownloadModal';
 import ShotViewerModal from '../components/ShotViewerModal';
@@ -1420,12 +1420,6 @@ function PanelPromptInput({ value, onChange, chars = [], scenes = [], props = []
 
   const segments = parseSegments(value, allSubjects);
 
-  // 调试：检查是否有重复
-  if (!focused && value && segments.length > 0) {
-    console.log('展示态 - value:', value);
-    console.log('展示态 - segments:', segments);
-  }
-
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignSelf: 'stretch' }}>
       <span style={{ fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.60)', fontFamily: FONT }}>提示词</span>
@@ -1506,36 +1500,50 @@ function PanelPromptInput({ value, onChange, chars = [], scenes = [], props = []
 
 // ─── 生成分镜图面板 ────────────────────────────────────────────────────────────
 
-// 构建完整提示词内容
+// 由分镜列表字段拼出提示词输入框的「初始内容」。
+// 注意：提示词只是辅助生图/生视频的描述，不是真正控制分镜内容的字段。
+// 真正的分镜内容存在 shot 的各列字段里（params/lightShadow/ambientSound/description/narration），
+// 由列表直接编辑并实时回传后端；提示词框内的编辑不回写这些字段。
+// 因此这里每次打开面板都按 shot 的当前字段重建初始提示词——
+// 只有更新了列表字段，提示词框的初始内容才会随之变化。
+// 需求：只展示字段内容、不展示字段标题（如「景别：远景」只取「远景」）。
 function buildPromptFromShot(shot, chars = [], scenes = [], props = []) {
   const lines = [];
 
-  // 第一行：镜头参数
+  // 第一行：镜头固定参数（只取值，不带「景别：」等标题）
   const paramParts = [
-    shot?.params?.framing && `景别：${shot.params.framing}`,
-    shot?.params?.cameraMotion && `运镜：${shot.params.cameraMotion}`,
-    shot?.params?.angle && `拍摄角度：${shot.params.angle}`,
-    shot?.params?.composition && `构图：${shot.params.composition}`,
-    shot?.params?.duration && `时长：${shot.params.duration}`,
+    shot?.params?.framing,
+    shot?.params?.cameraMotion,
+    shot?.params?.angle,
+    shot?.params?.composition,
+    shot?.params?.duration,
   ].filter(Boolean);
   if (paramParts.length) lines.push(paramParts.join('，'));
 
-  // 第二行：光影 + 环境音
+  // 第二行：光影 + 环境音（只取值，不带标题）
   const atmosphereParts = [
-    shot?.lightShadow && `光影：${shot.lightShadow}`,
-    shot?.ambientSound && `环境音：${shot.ambientSound}`,
+    shot?.lightShadow,
+    shot?.ambientSound,
   ].filter(Boolean);
   if (atmosphereParts.length) lines.push(atmosphereParts.join('，'));
 
-  // 第三行：画面描述（保留原有的 @提及）
-  if (shot?.description) lines.push(shot.description);
+  // 第三行：画面描述（保留原有的 @提及），主体参考图以 [参考图:URL] 标签追加在末尾。
+  // 主体参考列上传的图不写回列表字段，只在这里出现在画面描述段末尾，由用户决定如何使用。
+  const descParts = [];
+  if (shot?.description) descParts.push(shot.description);
+  if (shot?.mainRefs?.length > 0) {
+    shot.mainRefs.forEach((ref) => {
+      if (ref?.url) descParts.push(`[参考图:${ref.url}]`);
+    });
+  }
+  if (descParts.length) lines.push(descParts.join(' '));
 
-  // 第四行：台词分配
+  // 第四行：台词分配（去掉「台词分配：」标题，「角色：台词」属于内容予以保留）
   if (shot?.narration?.segments?.length > 0) {
     const dialogues = shot.narration.segments
       .map(seg => `${seg.role}：${seg.lines}`)
       .join('，');
-    lines.push(`台词分配：${dialogues}`);
+    lines.push(dialogues);
   }
 
   return lines.join('\n');
@@ -1570,6 +1578,9 @@ function GenerateImagePanel({ shot, chars = [], scenes = [], props = [], onClose
   const modelList = getImageModelList();
   const [model, setModel] = useState(modelList[0]?.value || '');
   const [resolution, setResolution] = useState('2K');
+  // 提示词：仅暂存在当前弹窗的本地 state，编辑不回写分镜列表字段。
+  // 关闭面板时组件卸载、本地态丢弃，下次打开按 shot 当前字段重新生成初始内容。
+  // 点击「生成分镜图」时才把 prompt 随 onGenerate 传回后端。
   const [prompt, setPrompt] = useState(() => buildPromptFromShot(shot, chars, scenes, props));
   const [refImages, setRefImages] = useState(() => {
     const images = [];
@@ -1589,7 +1600,7 @@ function GenerateImagePanel({ shot, chars = [], scenes = [], props = [], onClose
   const refFileRef = useRef(null);
 
   // 获取当前模型支持的分辨率
-  const modelParams = getImageModelParams(model);
+  const modelParams = useMemo(() => getImageModelParams(model), [model]);
   const availableResolutions = modelParams?.resolutions || ['1K', '2K', '4K'];
 
   // 当模型切换时，使用 defaults 重置参数
@@ -1597,13 +1608,12 @@ function GenerateImagePanel({ shot, chars = [], scenes = [], props = [], onClose
     if (modelParams?.defaults) {
       setResolution(modelParams.defaults.resolution);
     }
-  }, [model, modelParams]);
+  }, [modelParams]);
 
   async function handleRefImageUpload(file) {
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      const result = await apiUploadFile(formData);
+      // apiUploadFile 内部会自行构建 FormData，这里直接传原始 file。
+      const result = await apiUploadFile(file);
 
       // 在提示词末尾添加参考图标签
       const refTag = `[参考图:${result.url}]`;
@@ -1819,6 +1829,9 @@ function GenerateVideoPanel({ shot, nextShot = null, chars = [], scenes = [], pr
   const [resolution, setResolution] = useState('720p');
   const [duration, setDuration] = useState('自动匹配');
   const [sound, setSound] = useState(true);
+  // 提示词：仅暂存在当前弹窗的本地 state，编辑不回写分镜列表字段。
+  // 关闭面板时组件卸载、本地态丢弃，下次打开按 shot 当前字段重新生成初始内容。
+  // 点击「生成分镜视频」时才把 prompt 随 onGenerate 传回后端。
   const [prompt, setPrompt] = useState(() => buildPromptFromShot(shot, chars, scenes, props));
   const [refSubject, setRefSubject] = useState(() => {
     // 优先使用主体列的主体图
@@ -1839,7 +1852,7 @@ function GenerateVideoPanel({ shot, nextShot = null, chars = [], scenes = [], pr
   const [viewerShot, setViewerShot] = useState(null);
 
   // 获取当前模型支持的参数
-  const modelParams = getVideoModelParams(model);
+  const modelParams = useMemo(() => getVideoModelParams(model), [model]);
   const availableResolutions = modelParams?.resolutions || ['720p', '1080p', '2K', '4K'];
   const availableDurations = modelParams?.durations || ['4s', '5s', '6s', '7s', '8s', '9s', '10s'];
   const availableRefModes = modelParams?.refModes || [];
@@ -1851,13 +1864,12 @@ function GenerateVideoPanel({ shot, nextShot = null, chars = [], scenes = [], pr
       setMode(modelParams.defaults.refMode);
       // duration 保持"自动匹配"，不使用 defaults
     }
-  }, [model, modelParams]);
+  }, [modelParams]);
 
   async function handleRefMediaUpload(file, type = 'image') {
     try {
-      const formData = new FormData();
-      formData.append('file', file);
-      const result = await apiUploadFile(formData);
+      // apiUploadFile 内部会自行构建 FormData，这里直接传原始 file。
+      const result = await apiUploadFile(file);
 
       // 只有图片类型才在提示词末尾添加参考图标签
       if (type === 'image') {
@@ -3573,17 +3585,9 @@ function MainRefCol({ shot, onChange, chars }) {
           : ref
       );
 
-      // 在 description 末尾追加参考图标签
-      const refTag = `[参考图:${result.url}]`;
-      const currentDesc = shot.description || '';
-      const newDesc = currentDesc ? `${currentDesc} ${refTag}` : refTag;
-
-      // 同时更新 mainRefs 和 description
-      onChange({
-        ...shot,
-        mainRefs: updatedRefs,
-        description: newDesc
-      });
+      // 主体参考图只更新 mainRefs，不回写列表的「画面描述」字段。
+      // 参考图标签只在生成弹窗的提示词输入框（画面描述段末尾）出现，由用户决定如何使用。
+      onChange({ ...shot, mainRefs: updatedRefs });
     } catch (error) {
       console.error('上传失败', error);
       // 上传失败，移除临时项
@@ -4100,7 +4104,7 @@ const NUMBER_BTNS = [
   { key: 'delete', icon: <IconDelete />, label: '删除分镜' },
 ];
 
-function CardActionBtn({ btn, index, onAdd, onCopy, onDeleteRequest, onDragStart }) {
+function CardActionBtn({ btn, index, onAdd, onCopy, onDeleteRequest, onDragHandlePress }) {
   const [hov, setHov] = useState(false);
   const [tooltipPos, setTooltipPos] = useState(null);
   const btnRef = useRef(null);
@@ -4122,8 +4126,7 @@ function CardActionBtn({ btn, index, onAdd, onCopy, onDeleteRequest, onDragStart
     <>
       <div
         ref={btnRef}
-        draggable={btn.key === 'drag'}
-        onDragStart={btn.key === 'drag' ? onDragStart : undefined}
+        onMouseDown={btn.key === 'drag' ? onDragHandlePress : undefined}
         onClick={() => {
           if (btn.key === 'add') onAdd?.();
           if (btn.key === 'copy') onCopy?.();
@@ -4179,7 +4182,7 @@ function CardActionBtn({ btn, index, onAdd, onCopy, onDeleteRequest, onDragStart
   );
 }
 
-function NumberCol({ number, isHovered, onAdd, onCopy, onDeleteRequest, onDragStart }) {
+function NumberCol({ number, isHovered, onAdd, onCopy, onDeleteRequest, onDragHandlePress }) {
   return (
     <div
       style={{
@@ -4218,7 +4221,7 @@ function NumberCol({ number, isHovered, onAdd, onCopy, onDeleteRequest, onDragSt
           onAdd={onAdd}
           onCopy={onCopy}
           onDeleteRequest={onDeleteRequest}
-          onDragStart={onDragStart}
+          onDragHandlePress={onDragHandlePress}
         />
       ))}
     </div>
@@ -4393,6 +4396,13 @@ function MediaColWrapper({ label, media, onUpload, accept, isVideo, isLast = fal
 function ShotRow({ shot, onChange, onAdd, onCopy, onDelete, chars, isDragging, onDragStart, onDragOver, onDrop, insertBefore, insertAfter, onGenerateImage, onGenerateVideo, globalVoiceParams, onSaveGlobalVoice }) {
   const [hovered, setHovered] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  // 仅当拖拽动作由「拖拽手柄」按钮发起时才允许排序，鼠标在卡片其他区域拖拽无效。
+  const dragFromHandle = useRef(false);
+  function armDragHandle() {
+    dragFromHandle.current = true;
+    // 若只是点击手柄而未真正拖动，mouseup 时清除标记，避免下次从其他区域误触发排序。
+    window.addEventListener('mouseup', () => { dragFromHandle.current = false; }, { once: true });
+  }
 
   return (
     <>
@@ -4402,7 +4412,11 @@ function ShotRow({ shot, onChange, onAdd, onCopy, onDelete, chars, isDragging, o
       )}
       <div
         draggable
-        onDragStart={onDragStart}
+        onDragStart={(e) => {
+          if (!dragFromHandle.current) { e.preventDefault(); return; }
+          onDragStart?.();
+        }}
+        onDragEnd={() => { dragFromHandle.current = false; }}
         onDragOver={(e) => { e.preventDefault(); onDragOver?.(); }}
         onDrop={(e) => { e.preventDefault(); onDrop?.(); }}
         onMouseEnter={() => setHovered(true)}
@@ -4427,7 +4441,7 @@ function ShotRow({ shot, onChange, onAdd, onCopy, onDelete, chars, isDragging, o
           onAdd={onAdd}
           onCopy={onCopy}
           onDeleteRequest={() => setConfirmDelete(true)}
-          onDragStart={onDragStart}
+          onDragHandlePress={armDragHandle}
         />
         <DescriptionCol shot={shot} onChange={onChange} />
         <TextEditCol
