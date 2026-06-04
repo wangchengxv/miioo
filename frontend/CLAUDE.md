@@ -40,3 +40,7 @@ src/
 - 涉及样式、颜色、间距、组件视觉 → 读 `design-system/CLAUDE.md`
 - 涉及 API 函数、数据请求、mock、接口对接 → 读 `src/api/CLAUDE.md`
 - 新建或修改页面组件 → 读 `src/pages/CLAUDE.md`
+
+## 后端接口对接
+- 日常调接口 → 先查 `src/api/API差异报告.html`
+- 后端更新 `api文档.json` → 遵循 `src/api/CLAUDE.md` 中的全量差异分析流程，AI 直接分析更新报告（不用脚本）

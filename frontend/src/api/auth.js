@@ -1,14 +1,9 @@
 const BASE = import.meta.env.VITE_API_BASE_URL;
-const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
 
 import { setTokens, clearTokens as _clearTokens, authHeaders, authFetch } from './request.js';
 export { clearTokens } from './request.js';
 
 export async function apiSendCode(phone) {
-  if (USE_MOCK) {
-    console.log('[mock] send-code to', phone);
-    return { message: 'ok' };
-  }
   const res = await fetch(`${BASE}/api/auth/send-code`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -18,11 +13,6 @@ export async function apiSendCode(phone) {
 }
 
 export async function apiLogin({ phone, password }) {
-  if (USE_MOCK) {
-    console.log('[mock] login', phone);
-    setTokens('mock-token', 'mock-refresh');
-    return { access_token: 'mock-token', refresh_token: 'mock-refresh', token_type: 'bearer' };
-  }
   const res = await fetch(`${BASE}/api/auth/login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -34,11 +24,6 @@ export async function apiLogin({ phone, password }) {
 }
 
 export async function apiVerifyCodeLogin({ phone, code }) {
-  if (USE_MOCK) {
-    console.log('[mock] verify-code-login', phone, code);
-    setTokens('mock-token', 'mock-refresh');
-    return { access_token: 'mock-token', refresh_token: 'mock-refresh', token_type: 'bearer' };
-  }
   const res = await fetch(`${BASE}/api/auth/verify-code-login`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -50,10 +35,6 @@ export async function apiVerifyCodeLogin({ phone, code }) {
 }
 
 export async function apiRegister({ phone, password, nickname }) {
-  if (USE_MOCK) {
-    console.log('[mock] register', phone);
-    return { access_token: 'mock-token', refresh_token: 'mock-refresh', token_type: 'bearer' };
-  }
   const res = await fetch(`${BASE}/api/auth/register`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -65,21 +46,13 @@ export async function apiRegister({ phone, password, nickname }) {
 }
 
 export async function apiLogout() {
-  if (USE_MOCK) {
-    console.log('[mock] logout');
-    return;
-  }
-  await authFetch(`${BASE}/api/auth/logout`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-  });
+  try {
+    await authFetch(`${BASE}/api/auth/logout`, { method: 'POST' });
+  } catch {}
+  _clearTokens();
 }
 
 export async function apiGetCurrentUser() {
-  if (USE_MOCK) {
-    console.log('[mock] get current user');
-    return {};
-  }
   const res = await authFetch(`${BASE}/api/auth/me`, {
     headers: { 'Content-Type': 'application/json' },
   });
@@ -103,41 +76,41 @@ export async function bindPhone(_wechatToken, phone, code) {
   return apiConfirmWechatLogin({ session_id: _wechatToken, phone, nickname: undefined });
 }
 
-// ── 微信登录（扫码）──────────────────────────────────────────────────────────
-
-export async function apiGetWechatLoginQrCode() {
-  if (USE_MOCK) {
-    console.log('[mock] get wechat login qrcode');
-    return { session_id: 'mock-session', qr_code_value: 'mock-qr', expires_in: 300 };
+// ── 微信扫码登录（新版，接口路径待后端确认）────────────────────────────────
+// 生成二维码
+export async function apiGetWechatQrCode() {
+  if (import.meta.env.VITE_USE_MOCK === 'true') {
+    return {
+      qrcode_id: 'mock-qr-001',
+      expire_seconds: 120,
+      qrcode_url: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KR8EAVS6CW9V257SBVP40T1A.png',
+    };
   }
-  const res = await authFetch(`${BASE}/api/auth/wechat/qrcode`, {
-    headers: { 'Content-Type': 'application/json' },
-  });
+  const res = await fetch(`${BASE}/api/auth/wechat/qrcode`);
   return res.json();
 }
 
-export async function apiPollWechatLogin(sessionId) {
-  if (USE_MOCK) {
-    console.log('[mock] poll wechat login', sessionId);
-    return { status: 'pending', access_token: null, refresh_token: null };
+// 轮询二维码状态
+// 响应 status: 'pending' | 'scanned' | 'confirmed' | 'need_bind_mobile' | 'expired'
+export async function apiPollWechatQrCodeStatus(qrcodeId) {
+  if (import.meta.env.VITE_USE_MOCK === 'true') {
+    return { status: 'pending' };
   }
-  const res = await authFetch(`${BASE}/api/auth/wechat/poll/${encodeURIComponent(sessionId)}`, {
-    headers: { 'Content-Type': 'application/json' },
-  });
+  const res = await fetch(`${BASE}/api/auth/wechat/qrcode/status?qrcode_id=${encodeURIComponent(qrcodeId)}`);
   const data = await res.json();
   if (data.access_token) setTokens(data.access_token, data.refresh_token);
   return data;
 }
 
-export async function apiConfirmWechatLogin({ session_id, phone, nickname }) {
-  if (USE_MOCK) {
-    console.log('[mock] confirm wechat login', session_id);
-    return { status: 'confirmed', access_token: 'mock-token', refresh_token: 'mock-refresh' };
+// 绑定手机号（微信登录 need_bind_mobile 分支）
+export async function apiBindMobileWithBindToken({ bind_token, mobile, sms_code }) {
+  if (import.meta.env.VITE_USE_MOCK === 'true') {
+    return { access_token: 'mock-token', refresh_token: 'mock-refresh' };
   }
-  const res = await fetch(`${BASE}/api/auth/wechat/confirm`, {
+  const res = await fetch(`${BASE}/api/auth/wechat/bind-mobile`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ session_id, phone, nickname }),
+    body: JSON.stringify({ bind_token, mobile, sms_code }),
   });
   const data = await res.json();
   if (data.access_token) setTokens(data.access_token, data.refresh_token);

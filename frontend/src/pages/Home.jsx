@@ -1,19 +1,28 @@
 import { useEffect, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { PulsingBorder } from '@paper-design/shaders-react';
-import bgImage from '../assets/home-bg.png';
-import { apiCreateProject, apiGetProjects, apiUpdateProject, apiDeleteProject, apiGetProject } from '../api/project';
+import bgVideoPoster from '../assets/bg-video-poster.jpg';
+import bgVideo1 from '../assets/bg-video-1.mp4';
+//import bgVideo2 from '../assets/bg-video-2.mp4';
+//import bgVideo3 from '../assets/bg-video-3.mp4';
+//import bgVideo4 from '../assets/bg-video-4.mp4';
+//import bgVideo5 from '../assets/bg-video-5.mp4';
+//import bgVideo6 from '../assets/bg-video-6.mp4';
+import { apiGetProjects, apiUpdateProject, apiDeleteProject, apiGetProject, apiGetProjectOverview } from '../api/project';
 import { clearTokens, apiLogout } from '../api/auth';
+import { apiListProviders } from '../api/config';
 import { apiGetCurrentUser, apiGetNotifications } from '../api/user';
 import { apiGetSubjects, apiGetEpisodes, apiGetScriptWorkspace } from '../api/subject';
 import { apiGetStoryboards } from '../api/storyboard';
 import PrimaryNav from '../components/PrimaryNav';
 import LoginModal from '../components/LoginModal';
 import ApiConfigModal from '../components/ApiConfigModal';
+import NoModelNotice from '../components/NoModelNotice';
 import AccountMenu from '../components/AccountMenu';
 import ProfileModal from '../components/ProfileModal';
 import NewProjectModal from '../components/NewProjectModal';
 import WatermarkSettingsModal from '../components/WatermarkSettingsModal';
+import NotificationCenterModal from '../components/NotificationCenterModal';
 import ProjectList from './ProjectList';
 import GlobalSettings from './GlobalSettings';
 import SubjectPage from './SubjectPage';
@@ -22,53 +31,6 @@ import AssetsPage from './AssetsPage';
 import CreationPage from './CreationPage';
 
 const ICON_STYLE = { flexShrink: '0' };
-
-const MAX_NOTIFICATION_ITEMS = 5;
-
-const NOTIFICATION_ITEMS = [
-  {
-    id: 'n1',
-    title: '系统通知',
-    content: '你的项目《海上残响》已完成自动保存，可以继续编辑。',
-    time: '3小时前',
-    unread: true,
-  },
-  {
-    id: 'n2',
-    title: '创作提醒',
-    content: '分镜草稿已生成完成，去时间轴里继续细化镜头。',
-    time: '昨天',
-    unread: true,
-  },
-  {
-    id: 'n3',
-    title: '协作动态',
-    content: '林渡在《晨雾码头》里留下了 2 条批注。',
-    time: '昨天',
-    unread: false,
-  },
-  {
-    id: 'n4',
-    title: '系统通知',
-    content: '你收藏的参考镜头包已同步到资产中心。',
-    time: '2天前',
-    unread: false,
-  },
-  {
-    id: 'n5',
-    title: '创作提醒',
-    content: '角色设定页检测到可复用的风格提示词。',
-    time: '2天前',
-    unread: false,
-  },
-  {
-    id: 'n6',
-    title: '系统通知',
-    content: '新一轮模型能力更新已开放体验。',
-    time: '3天前',
-    unread: false,
-  },
-];
 
 const NAV_ITEMS = [
   {
@@ -154,6 +116,7 @@ function MenuPopupItem({ label, onClick }) {
 }
 
 const COMMUNITY_QR_CODE_URL = 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KR8EAVS6CW9V257SBVP40T1A.png';
+const BIZ_QR_CODE_URL = 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KT856M9JGFA1FF8DBG9699ZM.png';
 
 const CREATION_MANUAL_URL = '';
 
@@ -168,210 +131,93 @@ function QRCodePopup({ anchorLeft }) {
   );
 }
 
-function NotificationEmptyIcon() {
-  return (
-    <svg width="56" height="56" viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-      <rect x="6" y="6" width="44" height="44" rx="22" fill="url(#notification-empty-bg)" />
-      <rect x="6.5" y="6.5" width="43" height="43" rx="21.5" stroke="url(#notification-empty-stroke)" />
-      <path d="M20.667 29.667H20V30.333H20.667V29.667ZM35.333 29.667V30.333H36V29.667H35.333ZM17.5 29C17.132 29 16.833 29.298 16.833 29.667C16.833 30.035 17.132 30.333 17.5 30.333V29ZM38.5 30.333C38.868 30.333 39.167 30.035 39.167 29.667C39.167 29.298 38.868 29 38.5 29V30.333ZM30.667 29.667H31.333C31.333 29.298 31.035 29 30.667 29V29.667ZM25.333 29.667V29C24.965 29 24.667 29.298 24.667 29.667H25.333ZM28 12.333V11.667C23.4 11.667 19.667 15.4 19.667 20H20.333H21C21 16.136 24.136 13 28 13V12.333ZM20.333 20H19.667V29.667H20.333H21V20H20.333ZM20.333 29.667V30.333H35.333V29.667V29H20.333V29.667ZM35.333 29.667H36V20H35.333H34.667V29.667H35.333ZM35.333 20H36C36 15.4 32.6 11.667 28 11.667V12.333V13C31.864 13 34.667 16.136 34.667 20H35.333ZM17.5 29.667V30.333H38.5V29.667V29H17.5V29.667ZM28 33V33.667C29.841 33.667 31.333 32.174 31.333 30.333H30.667H30C30 31.438 29.105 32.333 28 32.333V33ZM30.667 30.333H31.333V29.667H30.667H30V30.333H30.667ZM30.667 29.667V29H25.333V29.667V30.333H30.667V29.667ZM25.333 29.667H24.667V30.333H25.333H26V29.667H25.333ZM25.333 30.333H24.667C24.667 32.174 26.159 33.667 28 33.667V33V32.333C26.895 32.333 26 31.438 26 30.333H25.333Z" fill="url(#notification-empty-bell)" fillOpacity="0.92" />
-      <circle cx="35" cy="17" r="3" fill="#7AE5B9" fillOpacity="0.9" />
-      <defs>
-        <linearGradient id="notification-empty-bg" x1="10" y1="10" x2="46" y2="46" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#FFFFFF" stopOpacity="0.12" />
-          <stop offset="1" stopColor="#FFFFFF" stopOpacity="0.04" />
-        </linearGradient>
-        <linearGradient id="notification-empty-stroke" x1="10" y1="10" x2="46" y2="46" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#FFFFFF" stopOpacity="0.24" />
-          <stop offset="1" stopColor="#FFFFFF" stopOpacity="0.08" />
-        </linearGradient>
-        <linearGradient id="notification-empty-bell" x1="28" y1="11.667" x2="28" y2="33.667" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#FFFFFF" />
-          <stop offset="1" stopColor="#B7C0CC" />
-        </linearGradient>
-      </defs>
-    </svg>
-  );
-}
+function MoreOptionsMenu({ close, setWatermarkSettingsOpen }) {
+  const [bizQrVisible, setBizQrVisible] = useState(false);
+  const bizItemRef = useRef(null);
 
-function NotificationEmptyState() {
-  return (
-    <div className="notification-empty-state">
-      <div className="notification-empty-icon-wrap">
-        <NotificationEmptyIcon />
-      </div>
-      <div className="font-['AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] font-medium text-base/5 text-white">
-        暂无通知
-      </div>
-      <div className="max-w-[220px] text-center font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-sm/5 text-[#FFFFFF99]">
-        新的系统消息和创作提醒会显示在这里
-      </div>
-    </div>
-  );
-}
-
-function NotificationDetailModal({ item, onClose }) {
-  return (
-    <div
-      className="fixed inset-0 z-[200] flex items-center justify-center bg-surface-overlay backdrop-blur-[20px]"
-      onClick={onClose}
-    >
-      <div
-        className="[font-synthesis:none] w-[400px] flex flex-col rounded-large bg-surface-modal overflow-hidden antialiased"
-        style={{ boxShadow: '0px 8px 32px rgba(0,0,0,0.6)' }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-center gap-[16px] justify-between w-100 py-[16px] bg-surface-modal rounded-t-large rounded-b-none px-[24px]">
-          <span className="flex-1 font-['AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] font-medium text-white text-base/5">
-            {item.title}
-          </span>
-          <button type="button" onClick={onClose} className="shrink-0 cursor-pointer" aria-label="关闭">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
-              <path d="M2.667 2.667L13.333 13.333" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
-              <path d="M2.667 13.333L13.333 2.667" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
-        </div>
-
-        {/* Body */}
-        <div className="flex flex-col items-start gap-[16px] py-[8px] w-100 bg-surface-modal px-[24px]">
-          <div className="text-[14px] leading-[175%] self-stretch font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFFCC]">
-            {item.content}
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center gap-[16px] justify-between w-100 bg-surface-modal py-[16px] px-[24px] rounded-t-none rounded-b-large">
-          <div className="flex flex-1 items-center">
-            <div className="flex-1 h-fit font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFF66] text-xs/4">
-              {item.time}
-            </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex flex-col h-9 shrink-0 rounded-lg [box-shadow:#00000066_3px_3px_8px] [outline:1px_solid_#00000080] p-px cursor-pointer"
-              style={{ backgroundImage: 'linear-gradient(in oklab 148.76deg, oklab(94.7% -0.078 -0.022 / 30%) 3.64%, oklab(75.5% -0.102 -0.072 / 0%) 42.81%), linear-gradient(in oklab 180deg, #FFFFFF14, #FFFFFF14)' }}
-            >
-              <div className="flex items-center grow shrink basis-[0%] rounded-[7px] px-[15px] gap-[4px] bg-btn-primary-bg-normal hover:bg-btn-primary-bg-hover active:bg-btn-primary-bg-active">
-                <span className="inline-block w-max shrink-0 font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-white text-sm/4.5">
-                  关闭
-                </span>
-              </div>
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function NotificationCard({ item, onOpenDetail }) {
-  const [hovered, setHovered] = useState(false);
-  const [pressed, setPressed] = useState(false);
-
-  return (
-    <button
-      type="button"
-      className="notification-card"
-      data-hovered={hovered}
-      data-pressed={pressed}
-      onClick={onOpenDetail}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => {
-        setHovered(false);
-        setPressed(false);
-      }}
-      onMouseDown={() => setPressed(true)}
-      onMouseUp={() => setPressed(false)}
-    >
-      <div className="flex items-start gap-3 self-stretch">
-        <div className="flex flex-col items-start gap-1 flex-1 min-w-0">
-          <div className="flex items-center gap-2 w-full min-w-0">
-            <div className="truncate font-['AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] font-medium text-sm/4.5 text-white">
-              {item.title}
-            </div>
-            {item.unread && <span className="notification-card-dot" aria-hidden="true" />}
-          </div>
-          <div className="notification-card-content font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-sm/5 text-[#FFFFFF99]">
-            {item.content}
-          </div>
-        </div>
-        <div className="shrink-0 font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-xs/4 text-[#FFFFFF66]">
-          {item.time}
-        </div>
-      </div>
-    </button>
-  );
-}
-
-function NotificationPopup({ items, onClose, anchorLeft }) {
-  const [closeHovered, setCloseHovered] = useState(false);
-  const [closePressed, setClosePressed] = useState(false);
-  const [isScrolling, setIsScrolling] = useState(false);
-  const [detailItem, setDetailItem] = useState(null);
-  const scrollEndTimerRef = useRef(null);
-  const visibleItems = items.slice(0, MAX_NOTIFICATION_ITEMS);
-  const isEmpty = visibleItems.length === 0;
-
-  useEffect(() => () => {
-    if (scrollEndTimerRef.current) {
-      window.clearTimeout(scrollEndTimerRef.current);
+  const handleMenuClick = (label) => {
+    if (label === '创作手册' && CREATION_MANUAL_URL) {
+      window.open(CREATION_MANUAL_URL, '_blank');
+    } else if (label === '用户协议') {
+      window.open('https://gcn0je6sgrhe.feishu.cn/wiki/FIspwGURtikxiwk28svc4thOn9c?from=from_copylink', '_blank');
+    } else if (label === '隐私政策') {
+      window.open('https://gcn0je6sgrhe.feishu.cn/wiki/LKlewdQJ0iaYVmkOPXVc4PWgnoc?from=from_copylink', '_blank');
+    } else if (label === '水印设置') {
+      close();
+      setWatermarkSettingsOpen(true);
+    } else if (label === '商务合作') {
+      setBizQrVisible((v) => !v);
     }
-  }, []);
+  };
 
-  const handleListScroll = () => {
-    setIsScrolling(true);
-    if (scrollEndTimerRef.current) {
-      window.clearTimeout(scrollEndTimerRef.current);
-    }
-    scrollEndTimerRef.current = window.setTimeout(() => {
-      setIsScrolling(false);
-      scrollEndTimerRef.current = null;
-    }, 480);
+  const containerRef = useRef(null);
+
+  const getBizQrTop = () => {
+    if (!bizItemRef.current || !containerRef.current) return 0;
+    const itemTop = bizItemRef.current.offsetTop;
+    // 浮窗高度：padding(16+16) + 图片(120) + gap(9) + 文字(16) = 177px
+    const popupHeight = 177;
+    const containerRect = containerRef.current.getBoundingClientRect();
+    const maxTop = window.innerHeight - 24 - popupHeight - containerRect.top;
+    return Math.min(itemTop, maxTop);
   };
 
   return (
-    <>
-      {detailItem && (
-        <NotificationDetailModal item={detailItem} onClose={() => setDetailItem(null)} />
-      )}
-      <div className="notification-popup" style={{ left: anchorLeft ?? 40, bottom: 24 }} role="dialog" aria-label="消息中心">
-        <div className="notification-popup-header">
-          <div className="font-['AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] font-medium text-base/5 text-white">
-            消息中心
+    <div
+      ref={containerRef}
+      className="flex flex-col items-start w-max rounded-medium absolute left-[40px] bottom-0 [box-shadow:#00000066_0px_4px_16px] bg-neutral-200 border border-solid border-[#FFFFFF0D] p-[4px]"
+      style={{ zIndex: 50 }}
+    >
+      {['创作手册', '更新日志', '用户协议', '隐私政策', '商务合作', '水印设置'].map((label) =>
+        label === '商务合作' ? (
+          <div key={label} ref={bizItemRef} style={{ width: '100%' }}>
+            <MenuPopupItem label={label} onClick={() => handleMenuClick(label)} />
           </div>
-          <button
-            type="button"
-            className="notification-close"
-            data-hovered={closeHovered}
-            data-pressed={closePressed}
-            onClick={onClose}
-            onMouseEnter={() => setCloseHovered(true)}
-            onMouseLeave={() => {
-              setCloseHovered(false);
-              setClosePressed(false);
-            }}
-            onMouseDown={() => setClosePressed(true)}
-            onMouseUp={() => setClosePressed(false)}
-            aria-label="关闭消息中心"
-          >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-              <path d="M3.5 3.5L10.5 10.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-              <path d="M10.5 3.5L3.5 10.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-            </svg>
-          </button>
-        </div>
-        {isEmpty ? (
-          <NotificationEmptyState />
         ) : (
-          <div className="notification-popup-list" data-scrolling={isScrolling} onScroll={handleListScroll} role="list">
-            {visibleItems.map((item) => (
-              <NotificationCard key={item.id} item={item} onOpenDetail={() => setDetailItem(item)} />
-            ))}
+          <MenuPopupItem key={label} label={label} onClick={() => handleMenuClick(label)} />
+        )
+      )}
+      {bizQrVisible && (
+        <div
+          style={{
+            position: 'absolute',
+            left: 'calc(100% + 8px)',
+            top: getBizQrTop(),
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '9px',
+            borderRadius: '8px',
+            boxShadow: '#00000066 0px 4px 16px',
+            backgroundColor: '#161616',
+            border: '1px solid #FFFFFF14',
+            padding: '16px',
+            zIndex: 60,
+          }}
+        >
+          <div
+            style={{
+              width: '120px',
+              height: '120px',
+              backgroundImage: `url(${BIZ_QR_CODE_URL})`,
+              backgroundSize: 'cover',
+              backgroundPosition: '50%',
+              flexShrink: 0,
+            }}
+          />
+          <div
+            style={{
+              fontFamily: "'AlibabaPuHuiTi_2_55_Regular', 'Alibaba PuHuiTi 2.0', system-ui, sans-serif",
+              color: '#FFFFFFCC',
+              fontSize: '12px',
+              lineHeight: '16px',
+            }}
+          >
+            扫码添加工作人员
           </div>
-        )}
-      </div>
-    </>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -399,7 +245,6 @@ const BOTTOM_NAV_ITEMS = [
     key: 'notifications',
     label: '通知',
     tooltip: '通知',
-    popup: ({ close, anchorLeft }) => <NotificationPopup items={NOTIFICATION_ITEMS} onClose={close} anchorLeft={anchorLeft} />,
     icon: (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={ICON_STYLE}>
         <path d="M3.8 12.2H3.3V12.7H3.8V12.2ZM12.2 12.2V12.7H12.7V12.2H12.2ZM2 11.7C1.724 11.7 1.5 11.924 1.5 12.2C1.5 12.476 1.724 12.7 2 12.7V12.2V11.7ZM14 12.7C14.276 12.7 14.5 12.476 14.5 12.2C14.5 11.924 14.276 11.7 14 11.7V12.2V12.7ZM9.5 12.2H10C10 11.924 9.776 11.7 9.5 11.7V12.2ZM6.5 12.2V11.7C6.224 11.7 6 11.924 6 12.2H6.5ZM8 2V1.5C5.404 1.5 3.3 3.604 3.3 6.2H3.8H4.3C4.3 4.157 5.957 2.5 8 2.5V2ZM3.8 6.2H3.3V12.2H3.8H4.3V6.2H3.8ZM3.8 12.2V12.7H12.2V12.2V11.7H3.8V12.2ZM12.2 12.2H12.7V6.2H12.2H11.7V12.2H12.2ZM12.2 6.2H12.7C12.7 3.604 10.596 1.5 8 1.5V2V2.5C10.043 2.5 11.7 4.157 11.7 6.2H12.2ZM2 12.2V12.7H14V12.2V11.7H2V12.2ZM8 14V14.5C9.105 14.5 10 13.605 10 12.5H9.5H9C9 13.052 8.552 13.5 8 13.5V14ZM9.5 12.5H10V12.2H9.5H9V12.5H9.5ZM9.5 12.2V11.7H6.5V12.2V12.7H9.5V12.2ZM6.5 12.2H6V12.5H6.5H7V12.2H6.5ZM6.5 12.5H6C6 13.605 6.895 14.5 8 14.5V14V13.5C7.448 13.5 7 13.052 7 12.5H6.5Z" fill="#FFFFFF" />
@@ -432,7 +277,8 @@ const BOTTOM_NAV_ITEMS = [
   },
 ];
 
-const BG_URL = bgImage;
+const BG_VIDEOS = [bgVideo1, /*bgVideo2, bgVideo3, bgVideo4, bgVideo5, bgVideo6*/];
+const BG_POSTER_URL = bgVideoPoster;
 
 const CMB_ICON_DEFAULT = (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: '0' }}>
@@ -781,10 +627,10 @@ function WorkflowHeadbar({ activeStep, onStepChange, unlockedSteps, isLoggedIn, 
         <CreationManualButton />
         {isLoggedIn ? (
           <AccountMenu
-            userName={currentUser.name ?? ''}
-            userId={currentUser.id ?? ''}
-            phone={currentUser.phone ?? ''}
-            wechat={currentUser.wechat ?? ''}
+            nickname={currentUser.nickname ?? ''}
+            phone={currentUser.phone_bound ? (currentUser.phone ?? '已绑定') : '未绑定'}
+            wechat={currentUser.wechat_bound ? (currentUser.wechat ?? '已绑定') : '未绑定'}
+            avatarUrl={currentUser.avatar_url ?? ''}
             onLogout={onLogout}
             onOpenProfile={onOpenProfile}
           />
@@ -875,29 +721,25 @@ function WorkflowHeadbar({ activeStep, onStepChange, unlockedSteps, isLoggedIn, 
 
 export default function Home({ onProjectCreated }) {
   const [activeKey, setActiveKey] = useState(() => {
-    // 如果有激活的项目，恢复为 'project'
-    const savedProjectId = localStorage.getItem('miioo_active_project_id');
-    if (savedProjectId) return 'project';
-
-    // 否则尝试恢复上次的 activeKey
-    return localStorage.getItem('miioo_active_key') || 'home';
+    // 只有明确保存了非 home 的 activeKey 才恢复，否则默认 home
+    const savedKey = localStorage.getItem('miioo_active_key');
+    return savedKey || 'home';
   });
   const [bottomActiveKey, setBottomActiveKey] = useState(null);
   const [loginOpen, setLoginOpen] = useState(false);
   const [apiConfigOpen, setApiConfigOpen] = useState(false);
+  const [noModelNoticeOpen, setNoModelNoticeOpen] = useState(false);
+  const [notificationCenterOpen, setNotificationCenterOpen] = useState(false);
   // mock 模式下也需要检查 token，退出登录后应该显示未登录状态
   const [isLoggedIn, setIsLoggedIn] = useState(() => !!localStorage.getItem('token'));
   const [apiConfigured, setApiConfigured] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
   const [watermarkSettingsOpen, setWatermarkSettingsOpen] = useState(false);
-  // TODO: 替换为真实接口 GET /projects，在 useEffect 中拉取并 setProjects
   const [projects, setProjects] = useState([]);
   const [activeProject, setActiveProject] = useState(null);
   const [isLoadingProject, setIsLoadingProject] = useState(false);
-  const [activeProjectId, setActiveProjectId] = useState(() => {
-    return localStorage.getItem('miioo_active_project_id') || null;
-  });
+  const [activeProjectId, setActiveProjectId] = useState(null);
   const [activeStep, setActiveStep] = useState(() => {
     return localStorage.getItem('miioo_active_step') || 'script';
   });
@@ -918,6 +760,8 @@ export default function Home({ onProjectCreated }) {
   const [notifications, setNotifications] = useState([]);
   const [toast, setToast] = useState(null);
   const toastTimerRef = useRef(null);
+  const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
+  const videoRef = useRef(null);
 
   const showToast = (msg, type = 'warning') => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -968,6 +812,9 @@ export default function Home({ onProjectCreated }) {
   useEffect(() => {
     if (activeKey !== 'home') {
       localStorage.setItem('miioo_active_key', activeKey);
+    } else {
+      // 回到首页时清除缓存，确保刷新不会跳转
+      localStorage.removeItem('miioo_active_key');
     }
   }, [activeKey]);
 
@@ -996,7 +843,7 @@ export default function Home({ onProjectCreated }) {
       }
 
       // 3. 并行加载所有数据
-      const [scriptData, charsData, scenesData, propsData, episodesData] = await Promise.all([
+      const [scriptData, charsData, scenesData, propsData, episodesData, overviewData] = await Promise.all([
         apiGetScriptWorkspace(projectId).catch(err => {
           console.error('加载剧本数据失败:', err);
           return { content: '', episodes: [], phase: 'initial' };
@@ -1004,7 +851,8 @@ export default function Home({ onProjectCreated }) {
         apiGetSubjects(projectId, { type: 'character' }).catch(() => []),
         apiGetSubjects(projectId, { type: 'scene' }).catch(() => []),
         apiGetSubjects(projectId, { type: 'prop' }).catch(() => []),
-        apiGetEpisodes(projectId).catch(() => [])
+        apiGetEpisodes(projectId).catch(() => []),
+        apiGetProjectOverview(projectId).catch(() => null),
       ]);
 
       // 4. 更新状态
@@ -1016,6 +864,21 @@ export default function Home({ onProjectCreated }) {
       setSharedChars(charsData);
       setSharedScenes(scenesData);
       setSharedProps(propsData);
+
+      // 从后端数据中提取剧集状态，优先用 overview 的 episode_progress（状态更精准）
+      if (overviewData?.episode_progress?.length > 0) {
+        const statusMap = {};
+        overviewData.episode_progress.forEach((ep, index) => {
+          statusMap[index] = ep.status || 'pending';
+        });
+        setEpisodeStatuses(statusMap);
+      } else if (episodesData.length > 0) {
+        const statusMap = {};
+        episodesData.forEach((episode, index) => {
+          statusMap[index] = episode.status || 'pending';
+        });
+        setEpisodeStatuses(statusMap);
+      }
 
       // 5. 加载分镜数据（需要剧集 ID）
       if (episodesData.length > 0) {
@@ -1044,34 +907,43 @@ export default function Home({ onProjectCreated }) {
 
   useEffect(() => {
     apiGetProjects().then((data) => {
+      const normalized = data.map((p) => ({ ...p, cover: p.cover ?? p.cover_url }));
       // 按创建时间倒序排列，最新的在前
-      const sorted = [...data].sort((a, b) => {
+      const sorted = [...normalized].sort((a, b) => {
         const timeA = new Date(a.created_at || 0).getTime();
         const timeB = new Date(b.created_at || 0).getTime();
         return timeB - timeA;
       });
       setProjects(sorted);
 
-      // 刷新后恢复激活项目
-      if (activeProjectId) {
-        const exists = sorted.some(p => p.id === activeProjectId);
+      // 只在项目页面（activeKey === 'project'）且有缓存项目 ID 时才恢复
+      const savedProjectId = localStorage.getItem('miioo_active_project_id');
+      const savedKey = localStorage.getItem('miioo_active_key');
+
+      if (savedKey === 'project' && savedProjectId) {
+        const exists = sorted.some(p => p.id === savedProjectId);
         if (exists) {
-          loadProjectDetails(activeProjectId);
+          setActiveProjectId(savedProjectId);
+          loadProjectDetails(savedProjectId);
         } else {
           // 项目已被删除，清除缓存
           localStorage.removeItem('miioo_active_project_id');
           localStorage.removeItem('miioo_active_step');
           localStorage.removeItem('miioo_active_key');
-          setActiveProjectId(null);
         }
       }
-    });
-    apiGetCurrentUser().then(setCurrentUser);
-    apiGetNotifications().then(setNotifications);
+    }).catch(() => {});
+    apiGetCurrentUser().then(setCurrentUser).catch(() => {});
+    apiGetNotifications().then(setNotifications).catch(() => {});
+    apiListProviders().then((data) => {
+      const providers = Array.isArray(data) ? data : (data?.providers || []);
+      if (providers.length > 0) setApiConfigured(true);
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
     const handleForceLogout = () => {
+      if (!localStorage.getItem('token')) return;
       setIsLoggedIn(false);
       setLoginOpen(true);
     };
@@ -1089,10 +961,6 @@ export default function Home({ onProjectCreated }) {
   };
 
   const handleNavChange = (key) => {
-    if (!isLoggedIn && key !== 'home') {
-      setLoginOpen(true);
-      return;
-    }
     setActiveKey(key);
     setActiveProject(null);
     setActiveProjectId(null);
@@ -1107,32 +975,9 @@ export default function Home({ onProjectCreated }) {
     if (item.key === 'menu') {
       return {
         ...item,
-        popup: ({ close, anchorLeft }) => {
-          const handleMenuClick = (label) => {
-            if (label === '创作手册' && CREATION_MANUAL_URL) {
-              window.open(CREATION_MANUAL_URL, '_blank');
-            } else if (label === '用户协议') {
-              window.open('https://gcn0je6sgrhe.feishu.cn/wiki/FIspwGURtikxiwk28svc4thOn9c?from=from_copylink', '_blank');
-            } else if (label === '隐私政策') {
-              window.open('https://gcn0je6sgrhe.feishu.cn/wiki/LKlewdQJ0iaYVmkOPXVc4PWgnoc?from=from_copylink', '_blank');
-            } else if (label === '水印设置') {
-              close();
-              setWatermarkSettingsOpen(true);
-            }
-          };
-
-          return (
-            <div className="flex flex-col items-start w-max rounded-medium absolute left-[40px] bottom-0 [box-shadow:#00000066_0px_4px_16px] bg-neutral-200 border border-solid border-[#FFFFFF0D] p-[4px]" style={{ zIndex: 50 }}>
-              {['创作手册', '更新日志', '用户协议', '隐私政策', '商务合作', '关于我们', '水印设置'].map((label) => (
-                <MenuPopupItem
-                  key={label}
-                  label={label}
-                  onClick={() => handleMenuClick(label)}
-                />
-              ))}
-            </div>
-          );
-        },
+        popup: ({ close }) => (
+          <MoreOptionsMenu close={close} setWatermarkSettingsOpen={setWatermarkSettingsOpen} />
+        ),
       };
     }
     if (item.key !== 'api' || !showApiBubble) return item;
@@ -1184,13 +1029,15 @@ export default function Home({ onProjectCreated }) {
   });
 
   const handleBottomNavChange = (key) => {
-    if (!isLoggedIn) {
-      setLoginOpen(true);
-      return;
-    }
     if (key === 'api') {
+      if (!isLoggedIn) { setLoginOpen(true); return; }
       setBottomActiveKey(null);
       setApiConfigOpen(true);
+      return;
+    }
+    if (key === 'notifications') {
+      setBottomActiveKey(null);
+      setNotificationCenterOpen(true);
       return;
     }
 
@@ -1208,7 +1055,21 @@ export default function Home({ onProjectCreated }) {
       {/* background — only visible on home page */}
       {activeKey === 'home' && (
         <>
-          <div className="absolute bg-cover bg-center inset-0" style={{ backgroundImage: `url(${BG_URL})` }} />
+          <video
+            ref={videoRef}
+            autoPlay
+            muted
+            playsInline
+            poster={BG_POSTER_URL}
+            className="absolute inset-0 object-cover"
+            style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center center' }}
+            onEnded={() => {
+              setCurrentVideoIndex((prev) => (prev + 1) % BG_VIDEOS.length);
+            }}
+            key={currentVideoIndex}
+          >
+            <source src={BG_VIDEOS[currentVideoIndex]} type="video/mp4" />
+          </video>
           <div
             className="absolute inset-0 pointer-events-none"
             style={{ backgroundImage: 'linear-gradient(in oklab 180deg, oklab(0% 0 0 / 0%) 81.58%, oklab(0% 0 0) 100%), linear-gradient(in oklab 90deg, oklab(0% 0 0 / 60%) 0%, oklab(0% 0 0 / 0%) 9.99%)' }}
@@ -1241,10 +1102,10 @@ export default function Home({ onProjectCreated }) {
             <CreationManualButton />
             {isLoggedIn ? (
               <AccountMenu
-                userName="Suzy"
-                userId="miioo_suzy"
-                phone="178 **** 0361"
-                wechat="suzylee"
+                nickname={currentUser.nickname ?? ''}
+                phone={currentUser.phone_bound ? (currentUser.phone ?? '已绑定') : '未绑定'}
+                wechat={currentUser.wechat_bound ? (currentUser.wechat ?? '已绑定') : '未绑定'}
+                avatarUrl={currentUser.avatar_url ?? ''}
                 onLogout={handleLogout}
                 onOpenProfile={() => setProfileOpen(true)}
               />
@@ -1311,12 +1172,19 @@ export default function Home({ onProjectCreated }) {
           {/* page content */}
           <div className="flex-1 min-h-0 overflow-hidden relative">
             {activeKey === 'home' && (
-              <StartCreationButton onClick={() => setNewProjectOpen(true)} />
+              <StartCreationButton onClick={() => {
+                if (!isLoggedIn) { setLoginOpen(true); return; }
+                setNewProjectOpen(true);
+              }} />
             )}
             {activeKey === 'project' && !activeProject && !isLoadingProject && (
               <ProjectList
                 projects={projects}
-                onNewProject={() => setNewProjectOpen(true)}
+                onNewProject={() => {
+                  if (!isLoggedIn) { setLoginOpen(true); return; }
+                  if (!apiConfigured) { setNoModelNoticeOpen(true); return; }
+                  setNewProjectOpen(true);
+                }}
                 onOpenProject={(p) => {
                   loadProjectDetails(p.id);
                   setActiveKey('project');
@@ -1435,41 +1303,53 @@ export default function Home({ onProjectCreated }) {
               <AssetsPage projects={projects} />
             )}
             {activeKey === 'create' && (
-              <CreationPage />
+              <CreationPage
+                isLoggedIn={isLoggedIn}
+                onLoginClick={() => setLoginOpen(true)}
+                apiConfigured={apiConfigured}
+                onShowNoModelNotice={() => setNoModelNoticeOpen(true)}
+              />
             )}
           </div>
         </div>
       </div>
 
-      <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} onSuccess={() => { setLoginOpen(false); setIsLoggedIn(true); }} />
+      <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} onSuccess={() => {
+        setLoginOpen(false);
+        setIsLoggedIn(true);
+        apiListProviders().then((data) => {
+          const providers = Array.isArray(data) ? data : (data?.providers || []);
+          if (providers.length > 0) setApiConfigured(true);
+        }).catch(() => {});
+      }} />
       <ApiConfigModal open={apiConfigOpen} onClose={() => setApiConfigOpen(false)} onConfigured={() => setApiConfigured(true)} />
+      {noModelNoticeOpen && (
+        <NoModelNotice
+          onConfigureAPI={() => {
+            setNoModelNoticeOpen(false);
+            setApiConfigOpen(true);
+          }}
+          onViewTutorial={() => setNoModelNoticeOpen(false)}
+          onClose={() => setNoModelNoticeOpen(false)}
+        />
+      )}
+      <NotificationCenterModal
+        open={notificationCenterOpen}
+        onClose={() => setNotificationCenterOpen(false)}
+        showToast={showToast}
+      />
       <ProfileModal
         open={profileOpen}
         onClose={() => setProfileOpen(false)}
         onLogout={handleLogout}
-        userName="Suzy"
-        userId="miioo_suzy"
-        phone="178 **** 0361"
-        wechat="suzylee"
+        currentUser={currentUser}
+        onProfileUpdated={(updated) => setCurrentUser(prev => ({ ...prev, ...updated }))}
       />
       <NewProjectModal
         open={newProjectOpen}
         onClose={() => setNewProjectOpen(false)}
-        onConfirm={({ name, desc, ratio, style, customStyleDesc, coverFile }) => {
-          setNewProjectOpen(false);
-          apiCreateProject({ name, desc, ratio, style, customStyleDesc, coverFile }).then((project) => {
-            handleProjectCreated({
-              id: project.id,
-              name,
-              desc,
-              ratio,
-              style,
-              customStyleDesc,
-              cover: project.cover_url,
-              created_at: project.created_at,
-              updated_at: project.updated_at,
-            });
-          });
+        onConfirm={(project) => {
+          handleProjectCreated(project);
         }}
       />
       {watermarkSettingsOpen && (

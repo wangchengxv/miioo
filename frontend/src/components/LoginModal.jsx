@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { sendVerificationCode, loginWithPhone, bindPhone } from '../api/auth';
+import { useState, useEffect, useRef } from 'react';
+import { sendVerificationCode, loginWithPhone, apiGetWechatQrCode, apiPollWechatQrCodeStatus, apiBindMobileWithBindToken } from '../api/auth';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
@@ -125,37 +125,27 @@ function TabButton({ active, children, onClick }) {
       type="button"
       onClick={onClick}
       style={{
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: 4,
         padding: 0,
         margin: 0,
         border: 0,
         background: 'transparent',
         cursor: 'pointer',
+        width: 'fit-content',
+        fontFamily: active ? FONT_MEDIUM : FONT,
+        fontWeight: active ? 500 : 400,
+        color: active ? '#FFFFFF' : '#FFFFFF99',
+        fontSize: 14,
+        lineHeight: '18px',
       }}
     >
-      <div
-        style={{
-          width: 'fit-content',
-          fontFamily: active ? FONT_MEDIUM : FONT,
-          fontWeight: active ? 500 : 400,
-          color: '#FFFFFF',
-          fontSize: 14,
-          lineHeight: '18px',
-        }}
-      >
-        {children}
-      </div>
-      {active && <div style={{ height: 2, width: '100%', flexShrink: 0, backgroundColor: '#DDDDDD' }} />}
+      {children}
     </button>
   );
 }
 
 function Tabs({ tab, onChange }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 24, alignSelf: 'stretch' }}>
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 24, alignSelf: 'stretch', justifyContent: 'center' }}>
       <TabButton active={tab === 'phone'} onClick={() => onChange('phone')}>手机号</TabButton>
       <TabButton active={tab === 'wechat'} onClick={() => onChange('wechat')}>微信扫码</TabButton>
     </div>
@@ -165,14 +155,31 @@ function Tabs({ tab, onChange }) {
 function SendCodeButton({ phone }) {
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
+  const [countdown, setCountdown] = useState(0);
+  const timerRef = useRef(null);
 
-  const backgroundColor = pressed ? '#111111' : hovered ? '#1D1E1E' : '#161616';
-  const borderColor = pressed ? '#FFFFFF14' : hovered ? '#FFFFFF1F' : '#FFFFFF0D';
-  const textColor = pressed ? '#FFFFFF99' : hovered ? '#FFFFFF' : '#FFFFFFCC';
+  const disabled = countdown > 0;
+
+  const backgroundColor = disabled ? '#161616' : pressed ? '#111111' : hovered ? '#1D1E1E' : '#161616';
+  const borderColor = disabled ? '#FFFFFF0D' : pressed ? '#FFFFFF14' : hovered ? '#FFFFFF1F' : '#FFFFFF0D';
+  const textColor = disabled ? '#FFFFFF33' : pressed ? '#FFFFFF99' : hovered ? '#FFFFFF' : '#FFFFFFCC';
+
+  const handleClick = async () => {
+    if (disabled) return;
+    await sendVerificationCode(phone);
+    setCountdown(60);
+  };
+
+  useEffect(() => {
+    if (countdown <= 0) return;
+    timerRef.current = setTimeout(() => setCountdown((c) => c - 1), 1000);
+    return () => clearTimeout(timerRef.current);
+  }, [countdown]);
 
   return (
     <button
       type="button"
+      disabled={disabled}
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -182,32 +189,34 @@ function SendCodeButton({ phone }) {
         paddingLeft: 8,
         paddingRight: 8,
         gap: 4,
-        boxShadow: pressed ? 'none' : '#00000066 3px 3px 8px',
+        boxShadow: disabled || pressed ? 'none' : '#00000066 3px 3px 8px',
         backgroundColor,
         border: `1px solid ${borderColor}`,
         outline: '1px solid #00000080',
-        cursor: 'pointer',
+        cursor: disabled ? 'default' : 'pointer',
         transition: 'background-color 120ms ease, border-color 120ms ease, box-shadow 120ms ease',
       }}
-      onMouseEnter={() => setHovered(true)}
+      onMouseEnter={() => !disabled && setHovered(true)}
       onMouseLeave={() => {
         setHovered(false);
         setPressed(false);
       }}
-      onMouseDown={() => setPressed(true)}
+      onMouseDown={() => !disabled && setPressed(true)}
       onMouseUp={() => setPressed(false)}
-      onClick={() => sendVerificationCode(phone)}
+      onClick={handleClick}
     >
-      <div style={{ fontFamily: FONT, color: textColor, fontSize: 12, lineHeight: '16px', transition: 'color 120ms ease' }}>获取</div>
+      <div style={{ fontFamily: FONT, color: textColor, fontSize: 12, lineHeight: '16px', transition: 'color 120ms ease', minWidth: 24, textAlign: 'center' }}>
+        {disabled ? `${countdown}s` : '获取'}
+      </div>
     </button>
   );
 }
 
-function TextInput({ placeholder, value, onChange, suffix }) {
+function TextInput({ placeholder, value, onChange, suffix, error, onBlur, onKeyDown, onPaste, inputMode }) {
   const [focused, setFocused] = useState(false);
   const [hovered, setHovered] = useState(false);
 
-  const borderColor = focused ? '#2DC3E1' : hovered ? 'rgba(255,255,255,0.2)' : '#FFFFFF14';
+  const borderColor = error ? '#F75F5F' : focused ? '#2DC3E1' : hovered ? 'rgba(255,255,255,0.2)' : '#FFFFFF14';
 
   return (
     <div
@@ -236,6 +245,7 @@ function TextInput({ placeholder, value, onChange, suffix }) {
         value={value}
         onChange={onChange}
         placeholder={placeholder}
+        inputMode={inputMode}
         className="placeholder:text-[#FFFFFF66]"
         style={{
           flex: 1,
@@ -249,20 +259,25 @@ function TextInput({ placeholder, value, onChange, suffix }) {
           lineHeight: '18px',
         }}
         onFocus={() => setFocused(true)}
-        onBlur={() => setFocused(false)}
+        onBlur={() => {
+          setFocused(false);
+          onBlur?.();
+        }}
+        onKeyDown={onKeyDown}
+        onPaste={onPaste}
       />
       {suffix}
     </div>
   );
 }
 
-function Field({ label, placeholder, value, onChange, suffix, errorText }) {
+function Field({ label, placeholder, value, onChange, suffix, error, errorText, onBlur, onKeyDown, onPaste, inputMode }) {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4, alignSelf: 'stretch', padding: 0 }}>
       <div style={{ alignSelf: 'stretch', fontFamily: FONT, color: '#FFFFFF99', fontSize: 14, lineHeight: '18px' }}>{label}</div>
-      <TextInput placeholder={placeholder} value={value} onChange={onChange} suffix={suffix} />
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 0, paddingLeft: 13, paddingRight: 13, alignSelf: 'stretch', borderRadius: 8, opacity: 0 }}>
-        <div style={{ width: 'fit-content', fontFamily: FONT, color: '#F75F5F', fontSize: 14, lineHeight: '18px' }}>{errorText}</div>
+      <TextInput placeholder={placeholder} value={value} onChange={onChange} suffix={suffix} error={error} onBlur={onBlur} onKeyDown={onKeyDown} onPaste={onPaste} inputMode={inputMode} />
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 0, paddingLeft: 12, paddingRight: 12, alignSelf: 'stretch', opacity: error && errorText ? 1 : 0 }}>
+        <div style={{ width: 'fit-content', fontFamily: FONT, color: '#F75F5F', fontSize: 14, lineHeight: '18px' }}>{errorText || ''}</div>
       </div>
     </div>
   );
@@ -359,12 +374,66 @@ function Agreement({ checked, onToggle }) {
   );
 }
 
-function PhoneLoginView({ onLogin, onChangeTab }) {
+function PhoneLoginView({ onLogin, onChangeTab, onShowToast }) {
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
   const [agreed, setAgreed] = useState(false);
+  const [phoneError, setPhoneError] = useState(false);
+  const [phoneTouched, setPhoneTouched] = useState(false);
+  const [codeError, setCodeError] = useState(false);
+
+  const validatePhone = (value) => /^1\d{10}$/.test(value);
+  const validateCode = (value) => value.trim().length > 0 && /^\d+$/.test(value);
+
+  const handlePhoneChange = (e) => {
+    const value = e.target.value;
+    setPhone(value);
+    if (phoneTouched) setPhoneError(!validatePhone(value));
+  };
+
+  const handlePhoneBlur = () => {
+    setPhoneTouched(true);
+    setPhoneError(!validatePhone(phone));
+  };
+
+  const handleCodeChange = (e) => {
+    const digits = e.target.value.replace(/\D/g, '');
+    setCode(digits);
+  };
+
+  const handleCodeKeyDown = (e) => {
+    if (e.key === ' ') e.preventDefault();
+  };
+
+  const handleCodePaste = (e) => {
+    e.preventDefault();
+    const pasted = e.clipboardData.getData('text');
+    const digits = pasted.replace(/\D/g, '');
+    setCode(digits);
+  };
+
+  const handleCodeBlur = () => {
+    setCodeError(code.length > 0 && !/^\d+$/.test(code));
+  };
 
   const handleLogin = async () => {
+    if (!agreed) {
+      onShowToast('error', '请先阅读并同意用户协议和隐私政策');
+      return;
+    }
+    if (!validatePhone(phone)) {
+      setPhoneTouched(true);
+      setPhoneError(true);
+      return;
+    }
+    if (!code.trim()) {
+      onShowToast('error', '请输入验证码');
+      return;
+    }
+    if (!/^\d+$/.test(code)) {
+      onShowToast('error', '验证码只能包含数字');
+      return;
+    }
     await loginWithPhone(phone, code);
     onLogin();
   };
@@ -374,8 +443,28 @@ function PhoneLoginView({ onLogin, onChangeTab }) {
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 24, width: '100%', paddingLeft: 32, paddingRight: 32, flex: 1, backgroundColor: '#161616' }}>
         <Tabs tab="phone" onChange={onChangeTab} />
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4, alignSelf: 'stretch', padding: 0 }}>
-          <Field label="手机号" placeholder="请输入11位数字手机号" value={phone} onChange={(e) => setPhone(e.target.value)} errorText="手机号格式错误" />
-          <Field label="验证码" placeholder="请输入短信验证码" value={code} onChange={(e) => setCode(e.target.value)} suffix={<SendCodeButton phone={phone} />} errorText="验证码错误" />
+          <Field
+            label="手机号"
+            placeholder="请输入11位数字手机号"
+            value={phone}
+            onChange={handlePhoneChange}
+            onBlur={handlePhoneBlur}
+            error={phoneError}
+            errorText="请输入正确格式的手机号"
+          />
+          <Field
+            label="验证码"
+            placeholder="请输入短信验证码"
+            value={code}
+            onChange={handleCodeChange}
+            onKeyDown={handleCodeKeyDown}
+            onPaste={handleCodePaste}
+            onBlur={handleCodeBlur}
+            error={codeError}
+            errorText="验证码只能包含数字"
+            suffix={<SendCodeButton phone={phone} />}
+            inputMode="numeric"
+          />
         </div>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, justifyContent: 'space-between', width: '100%', backgroundColor: '#161616', padding: 32 }}>
@@ -386,44 +475,142 @@ function PhoneLoginView({ onLogin, onChangeTab }) {
   );
 }
 
-function WechatView({ onBackToPhone, onScanSuccess }) {
+// qr status: 'loading' | 'ready' | 'scanned' | 'confirmed' | 'need_bind_mobile' | 'expired' | 'error'
+function WechatView({ onBackToPhone, onLoginSuccess, onNeedBind, onShowToast }) {
   const [agreed, setAgreed] = useState(false);
+  const [qrStatus, setQrStatus] = useState('loading');
+  const [qrcodeUrl, setQrcodeUrl] = useState('');
+  const qrcodeIdRef = useRef('');
+  const pollTimerRef = useRef(null);
+
+  const stopPolling = () => {
+    if (pollTimerRef.current) {
+      clearTimeout(pollTimerRef.current);
+      pollTimerRef.current = null;
+    }
+  };
+
+  const startPolling = (qrcodeId) => {
+    const poll = async () => {
+      try {
+        const data = await apiPollWechatQrCodeStatus(qrcodeId);
+        if (data.status === 'confirmed') {
+          stopPolling();
+          onLoginSuccess();
+        } else if (data.status === 'need_bind_mobile') {
+          stopPolling();
+          onNeedBind(data.bind_token);
+        } else if (data.status === 'expired') {
+          stopPolling();
+          setQrStatus('expired');
+        } else if (data.status === 'scanned') {
+          setQrStatus('scanned');
+          pollTimerRef.current = setTimeout(poll, 2000);
+        } else {
+          // pending
+          pollTimerRef.current = setTimeout(poll, 2000);
+        }
+      } catch {
+        stopPolling();
+        setQrStatus('error');
+      }
+    };
+    pollTimerRef.current = setTimeout(poll, 2000);
+  };
+
+  const loadQrCode = async () => {
+    stopPolling();
+    setQrStatus('loading');
+    setQrcodeUrl('');
+    try {
+      const data = await apiGetWechatQrCode();
+      qrcodeIdRef.current = data.qrcode_id;
+      setQrcodeUrl(data.qrcode_url);
+      setQrStatus('ready');
+      startPolling(data.qrcode_id);
+    } catch {
+      setQrStatus('error');
+      onShowToast('error', '获取二维码失败，请重试');
+    }
+  };
+
+  useEffect(() => {
+    loadQrCode();
+    return () => stopPolling();
+  }, []);
+
+  const qrLabel = {
+    loading: '正在获取二维码…',
+    ready: '请使用微信扫码',
+    scanned: '扫码成功，请在手机上确认',
+    expired: '二维码已过期，点击刷新',
+    error: '加载失败，点击重试',
+  }[qrStatus] ?? '请使用微信扫码';
+
+  const isExpiredOrError = qrStatus === 'expired' || qrStatus === 'error';
 
   return (
     <>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 24, paddingLeft: 32, paddingRight: 32, alignSelf: 'stretch', flex: 1, backgroundColor: '#161616' }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 24, alignSelf: 'stretch', padding: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 24, alignSelf: 'stretch', padding: 0, justifyContent: 'center' }}>
           <TabButton active={false} onClick={onBackToPhone}>手机号</TabButton>
           <TabButton active onClick={() => {}}>微信扫码</TabButton>
         </div>
-        <button
-          type="button"
-          onClick={onScanSuccess}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            flexDirection: 'column',
-            gap: 12,
-            padding: 0,
-            border: 0,
-            background: 'transparent',
-            cursor: 'pointer',
-          }}
-        >
-          <div
+        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
+          <button
+            type="button"
+            onClick={isExpiredOrError ? loadQrCode : undefined}
             style={{
+              position: 'relative',
               width: 200,
               height: 200,
               flexShrink: 0,
-              backgroundImage: `url(${QR_CODE_URL})`,
-              backgroundSize: 'cover',
-              backgroundPosition: '50%',
+              padding: 0,
+              border: 0,
+              background: '#1D1E1E',
+              borderRadius: 8,
+              overflow: 'hidden',
+              cursor: isExpiredOrError ? 'pointer' : 'default',
             }}
-          />
-          <div style={{ width: 'fit-content', fontFamily: FONT, color: '#FFFFFF99', fontSize: 12, lineHeight: '16px' }}>
-            请使用微信扫码
-          </div>
-        </button>
+          >
+            {qrcodeUrl && (
+              <img
+                src={qrcodeUrl}
+                alt="微信登录二维码"
+                style={{
+                  width: '100%',
+                  height: '100%',
+                  objectFit: 'cover',
+                  display: 'block',
+                  opacity: isExpiredOrError || qrStatus === 'scanned' ? 0.25 : 1,
+                  transition: 'opacity 200ms ease',
+                }}
+              />
+            )}
+            {qrStatus === 'loading' && (
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <div style={{ width: 24, height: 24, border: '2px solid #FFFFFF33', borderTopColor: '#2DC3E1', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+              </div>
+            )}
+            {isExpiredOrError && (
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M12 4V8M12 4L9 7M12 4L15 7" stroke="#FFFFFFCC" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M4 12C4 7.582 7.582 4 12 4" stroke="#FFFFFFCC" strokeWidth="1.5" strokeLinecap="round" />
+                  <path d="M20 12C20 16.418 16.418 20 12 20C7.582 20 4 16.418 4 12" stroke="#FFFFFF33" strokeWidth="1.5" strokeLinecap="round" />
+                </svg>
+                <div style={{ fontFamily: FONT, color: '#FFFFFFCC', fontSize: 12, lineHeight: '16px' }}>点击刷新</div>
+              </div>
+            )}
+            {qrStatus === 'scanned' && (
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+                <SuccessIcon />
+                <div style={{ fontFamily: FONT, color: '#52BF92', fontSize: 12, lineHeight: '16px' }}>扫码成功</div>
+              </div>
+            )}
+          </button>
+          <div style={{ fontFamily: FONT, color: '#FFFFFF99', fontSize: 12, lineHeight: '16px' }}>{qrLabel}</div>
+        </div>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, justifyContent: 'space-between', width: '100%', backgroundColor: '#161616', padding: 32 }}>
         <Agreement checked={agreed} onToggle={() => setAgreed((value) => !value)} />
@@ -432,13 +619,61 @@ function WechatView({ onBackToPhone, onScanSuccess }) {
   );
 }
 
-function BindPhoneView({ onBind, onBack }) {
+function BindPhoneView({ onBind, onBack, onShowToast, bindToken }) {
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
+  const [phoneError, setPhoneError] = useState(false);
+  const [phoneTouched, setPhoneTouched] = useState(false);
+  const [codeError, setCodeError] = useState(false);
+
+  const validatePhone = (value) => /^1\d{10}$/.test(value);
+
+  const handlePhoneChange = (e) => {
+    const value = e.target.value;
+    setPhone(value);
+    if (phoneTouched) setPhoneError(!validatePhone(value));
+  };
+
+  const handlePhoneBlur = () => {
+    setPhoneTouched(true);
+    setPhoneError(!validatePhone(phone));
+  };
+
+  const handleCodeChange = (e) => {
+    const digits = e.target.value.replace(/\D/g, '');
+    setCode(digits);
+  };
+
+  const handleCodeKeyDown = (e) => {
+    if (e.key === ' ') e.preventDefault();
+  };
+
+  const handleCodePaste = (e) => {
+    e.preventDefault();
+    const pasted = e.clipboardData.getData('text');
+    const digits = pasted.replace(/\D/g, '');
+    setCode(digits);
+  };
+
+  const handleCodeBlur = () => {
+    setCodeError(code.length > 0 && !/^\d+$/.test(code));
+  };
 
   const handleBind = async () => {
-    // TODO: wechatToken 需从微信 OAuth 回调中获取，当前 mock 传空字符串
-    await bindPhone('', phone, code);
+    if (!validatePhone(phone)) {
+      setPhoneTouched(true);
+      setPhoneError(true);
+      return;
+    }
+    if (!code.trim()) {
+      onShowToast?.('error', '请输入验证码');
+      return;
+    }
+    if (!/^\d+$/.test(code)) {
+      onShowToast?.('error', '验证码只能包含数字');
+      return;
+    }
+    await apiBindMobileWithBindToken({ bind_token: bindToken, mobile: phone, sms_code: code });
     onBind();
   };
 
@@ -467,8 +702,28 @@ function BindPhoneView({ onBind, onBack }) {
           </div>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4, alignSelf: 'stretch', padding: 0 }}>
-          <Field label="手机号" placeholder="请输入11位数字手机号" value={phone} onChange={(e) => setPhone(e.target.value)} errorText="手机号格式错误" />
-          <Field label="验证码" placeholder="请输入短信验证码" value={code} onChange={(e) => setCode(e.target.value)} suffix={<SendCodeButton phone={phone} />} errorText="验证码错误" />
+          <Field
+            label="手机号"
+            placeholder="请输入11位数字手机号"
+            value={phone}
+            onChange={handlePhoneChange}
+            onBlur={handlePhoneBlur}
+            error={phoneError}
+            errorText="请输入正确格式的手机号"
+          />
+          <Field
+            label="验证码"
+            placeholder="请输入短信验证码"
+            value={code}
+            onChange={handleCodeChange}
+            onKeyDown={handleCodeKeyDown}
+            onPaste={handleCodePaste}
+            onBlur={handleCodeBlur}
+            error={codeError}
+            errorText="验证码只能包含数字"
+            suffix={<SendCodeButton phone={phone} />}
+            inputMode="numeric"
+          />
         </div>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, justifyContent: 'space-between', width: '100%', backgroundColor: '#161616', padding: 32 }}>
@@ -495,9 +750,60 @@ function BindPhoneView({ onBind, onBack }) {
   );
 }
 
+function CheckCircleIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" className="shrink-0">
+      <circle cx="8" cy="8" r="7" fill="#52BF92" stroke="#52BF92" strokeWidth="1.333" />
+      <path d="M5.333 8L7.333 10L10.667 6.667" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+function AlertCircleIcon() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" className="shrink-0">
+      <circle cx="8" cy="8" r="7" fill="#D13A3B" stroke="#D13A3B" strokeWidth="1.333" />
+      <path d="M8 4.667V8.667" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" />
+      <circle cx="8" cy="11" r="0.667" fill="#FFFFFF" />
+    </svg>
+  );
+}
+
+function Toast({ toasts }) {
+  return (
+    <div className="fixed top-[24px] left-1/2 z-[200] flex -translate-x-1/2 flex-col items-center gap-[8px] pointer-events-none">
+      {toasts.map((toast) => (
+        <div
+          key={toast.id}
+          className="flex items-center gap-[8px] rounded-lg px-[16px] py-[10px] text-sm/4.5"
+          style={{
+            backgroundColor: '#1D1E1E',
+            backdropFilter: 'blur(20px)',
+            WebkitBackdropFilter: 'blur(20px)',
+            boxShadow: '0px 4px 16px rgba(0,0,0,0.6), inset 0px 0px 0px 1px rgba(255,255,255,0.08)',
+            fontFamily: FONT,
+            animation: 'toast-in 0.2s ease',
+          }}
+        >
+          {toast.type === 'success' ? <CheckCircleIcon /> : <AlertCircleIcon />}
+          <span className={toast.type === 'success' ? 'text-[#52BF92]' : 'text-[#D13A3B]'}>{toast.message}</span>
+        </div>
+      ))}
+    </div>
+  );
+}
+
 export default function LoginModal({ open, onClose, onSuccess }) {
   const [tab, setTab] = useState('phone');
   const [step, setStep] = useState('login');
+  const [bindToken, setBindToken] = useState('');
+  const [toasts, setToasts] = useState([]);
+
+  const showToast = (type, message) => {
+    const id = Date.now();
+    setToasts((prev) => [...prev, { id, type, message }]);
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3000);
+  };
 
   if (!open) return null;
 
@@ -506,12 +812,18 @@ export default function LoginModal({ open, onClose, onSuccess }) {
     setTimeout(() => {
       setTab('phone');
       setStep('login');
+      setBindToken('');
     }, 0);
   };
 
   const handleLoginSuccess = () => {
     onSuccess?.();
     handleClose();
+  };
+
+  const handleNeedBind = (token) => {
+    setBindToken(token);
+    setStep('bind');
   };
 
   return (
@@ -529,26 +841,26 @@ export default function LoginModal({ open, onClose, onSuccess }) {
       }}
       onClick={handleClose}
     >
+      <Toast toasts={toasts} />
       <div
         style={{
           display: 'flex',
           alignItems: 'flex-start',
           borderRadius: 16,
           overflow: 'clip',
-          width: 800,
+          width: 400,
           height: 470,
         }}
         onClick={(event) => event.stopPropagation()}
       >
-        <div style={{ alignSelf: 'stretch', flex: 1, backgroundColor: '#DDDDDD' }} />
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', flex: 1, alignSelf: 'stretch', padding: 0, backgroundColor: '#161616' }}>
           <ModalHeader onClose={handleClose} />
           {step === 'bind' ? (
-            <BindPhoneView onBind={handleLoginSuccess} onBack={() => setStep('login')} />
+            <BindPhoneView onBind={handleLoginSuccess} onBack={() => setStep('login')} onShowToast={showToast} bindToken={bindToken} />
           ) : tab === 'phone' ? (
-            <PhoneLoginView onLogin={handleLoginSuccess} onChangeTab={setTab} />
+            <PhoneLoginView onLogin={handleLoginSuccess} onChangeTab={setTab} onShowToast={showToast} />
           ) : (
-            <WechatView onBackToPhone={() => setTab('phone')} onScanSuccess={() => setStep('bind')} />
+            <WechatView onBackToPhone={() => setTab('phone')} onLoginSuccess={handleLoginSuccess} onNeedBind={handleNeedBind} onShowToast={showToast} />
           )}
         </div>
       </div>

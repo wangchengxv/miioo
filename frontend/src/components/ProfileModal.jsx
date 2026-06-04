@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
-import { apiUpdateUser, apiUploadAvatar, apiDeleteAccount, apiGetWechatQrCode, apiPollWechatBind, apiUnbindWechat, apiSendPhoneCode, apiVerifyPhoneCode, apiRebindPhone } from '../api/user';
+import { createPortal } from 'react-dom';
+import { apiUpdateProfile, apiUploadAvatar, apiDeleteAccount, apiGetWechatQrCode, apiPollWechatBind, apiUnbindWechat, apiSendPhoneCode, apiVerifyPhoneCode, apiRebindPhone } from '../api/user';
 
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
 const FONT_REGULAR = "'AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
@@ -59,7 +60,7 @@ function Avatar({ size = 64, src }) {
   );
 }
 
-function ProfileField({ label, value, onChange, placeholder }) {
+function ProfileField({ label, value, onChange, placeholder, maxLength, onBlurSave }) {
   const [editing, setEditing] = useState(false);
   const [focused, setFocused] = useState(false);
   const inputRef = useRef(null);
@@ -72,7 +73,11 @@ function ProfileField({ label, value, onChange, placeholder }) {
   const handleBlur = () => {
     setFocused(false);
     setEditing(false);
+    onBlurSave?.();
   };
+
+  const count = maxLength ? (value?.length ?? 0) : null;
+  const atLimit = maxLength && count >= maxLength;
 
   if (!editing) {
     return (
@@ -115,6 +120,7 @@ function ProfileField({ label, value, onChange, placeholder }) {
           border: `1px solid ${focused ? 'var(--color-input-border-focus)' : 'var(--color-input-border-normal)'}`,
           background: 'var(--color-input-bg-normal)',
           padding: '7px 10px',
+          gap: '6px',
           transition: 'border-color 120ms',
           ...(focused ? { boxShadow: '0px 0px 10px var(--color-glow)', mixBlendMode: 'lighten' } : {}),
         }}
@@ -124,11 +130,17 @@ function ProfileField({ label, value, onChange, placeholder }) {
           value={value}
           onChange={onChange}
           placeholder={placeholder}
-          className="w-full bg-transparent border-0 outline-none placeholder:text-[rgba(255,255,255,0.2)]"
-          style={{ fontFamily: FONT_REGULAR, fontSize: '14px', lineHeight: '20px', color: 'rgba(255,255,255,0.85)' }}
+          maxLength={maxLength}
+          className="flex-1 bg-transparent border-0 outline-none placeholder:text-[rgba(255,255,255,0.2)]"
+          style={{ fontFamily: FONT_REGULAR, fontSize: '14px', lineHeight: '20px', color: 'rgba(255,255,255,0.85)', minWidth: 0 }}
           onFocus={() => setFocused(true)}
           onBlur={handleBlur}
         />
+        {maxLength && (
+          <span style={{ fontFamily: FONT_REGULAR, fontSize: '12px', lineHeight: '18px', color: atLimit ? '#F75F5F' : 'rgba(255,255,255,0.3)', flexShrink: 0 }}>
+            {count}/{maxLength}
+          </span>
+        )}
       </div>
     </div>
   );
@@ -278,6 +290,49 @@ function DeleteConfirmDialog({ onConfirm, onCancel }) {
             className="[font-synthesis:none] flex items-center justify-center h-9 px-[16px] rounded-medium shrink-0 bg-btn-danger-bg-normal hover:bg-btn-danger-bg-hover active:bg-btn-danger-bg-active border border-btn-danger-border [outline:1px_solid_var(--color-stroke-outline)] outline-offset-0 cursor-pointer antialiased"
           >
             <span className="text-btn-danger-text text-font-size-14 font-font-weight-medium shrink-0" style={{ fontFamily: FONT_MEDIUM }}>继续注销</span>
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function WechatUnbindConfirmDialog({ onConfirm, onCancel }) {
+  return (
+    <div
+      style={{ position: 'fixed', inset: 0, zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
+      onClick={onCancel}
+    >
+      <div
+        style={{ width: '360px', background: '#161616', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '24px', boxShadow: '#00000099 0px 8px 32px' }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <span style={{ fontFamily: FONT_MEDIUM, fontWeight: 500, fontSize: '16px', lineHeight: '20px', color: '#FFFFFF' }}>确认解绑微信？</span>
+            <span style={{ fontFamily: FONT_REGULAR, fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.6)' }}>
+              解绑后，微信将无法用于登录本账号。
+            </span>
+          </div>
+          <button type="button" onClick={onCancel} style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', cursor: 'pointer', borderRadius: '8px', padding: 0, flexShrink: 0 }}>
+            <CloseIcon />
+          </button>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px' }}>
+          <button
+            type="button"
+            onClick={onCancel}
+            className="[font-synthesis:none] flex items-center justify-center h-9 px-[16px] rounded-medium shrink-0 bg-btn-primary-bg-normal hover:bg-btn-primary-bg-hover active:bg-btn-primary-bg-active border border-btn-primary-border [outline:1px_solid_var(--color-stroke-outline)] outline-offset-0 [box-shadow:var(--color-shadow)_3px_3px_8px] cursor-pointer antialiased"
+            style={{ fontFamily: FONT_REGULAR, fontSize: '14px', lineHeight: '18px' }}
+          >
+            <span className="text-text-secondary text-font-size-14 shrink-0" style={{ fontFamily: FONT_REGULAR }}>取消</span>
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            className="[font-synthesis:none] flex items-center justify-center h-9 px-[16px] rounded-medium shrink-0 bg-btn-danger-bg-normal hover:bg-btn-danger-bg-hover active:bg-btn-danger-bg-active border border-btn-danger-border [outline:1px_solid_var(--color-stroke-outline)] outline-offset-0 cursor-pointer antialiased"
+          >
+            <span className="text-btn-danger-text text-font-size-14 font-font-weight-medium shrink-0" style={{ fontFamily: FONT_MEDIUM }}>确认解绑</span>
           </button>
         </div>
       </div>
@@ -697,32 +752,54 @@ function WechatBindView({ onBack, onClose, onBindSuccess }) {
 
 export default function ProfileModal({
   open,
-  userName = 'user-name',
-  userId = 'miioo_user',
-  phone = '未绑定',
-  wechat = '未绑定',
+  currentUser = {},
   onLogout,
   onClose,
-  onOpenProfile,
+  onProfileUpdated,
 }) {
-  const [nameVal, setNameVal] = useState(userName || '');
-  const [deleteStep, setDeleteStep] = useState(null); // null | 'confirm' | 'verify'
+  const [nameVal, setNameVal] = useState('');
+  const [deleteStep, setDeleteStep] = useState(null);
   const [avatarUrl, setAvatarUrl] = useState(null);
   const [wechatView, setWechatView] = useState('profile');
-  const [boundWechat, setBoundWechat] = useState(wechat || null);
-  const [phoneUnbindStep, setPhoneUnbindStep] = useState(null); // null | 'step1' | 'step2'
-  const [boundPhone, setBoundPhone] = useState(phone || null);
+  const [boundWechat, setBoundWechat] = useState(null);
+  const [phoneUnbindStep, setPhoneUnbindStep] = useState(null);
+  const [boundPhone, setBoundPhone] = useState(null);
+  const [wechatUnbindConfirm, setWechatUnbindConfirm] = useState(false);
+  const [toast, setToast] = useState(null);
+  const toastTimerRef = useRef(null);
+
+  const showToast = (msg, type = 'warning') => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast({ msg, type });
+    toastTimerRef.current = setTimeout(() => setToast(null), 2500);
+  };
+
+  useEffect(() => {
+    if (!open) return;
+    setNameVal(currentUser.nickname ?? '');
+    setAvatarUrl(currentUser.avatar_url ?? null);
+    setBoundPhone(currentUser.phone_bound ? (currentUser.phone ?? '已绑定') : null);
+    setBoundWechat(currentUser.wechat_bound ? (currentUser.wechat ?? '已绑定') : null);
+    setWechatView('profile');
+    setDeleteStep(null);
+    setPhoneUnbindStep(null);
+  }, [open]);
 
   const handleClose = () => {
     if (wechatView !== 'profile') {
       setWechatView('profile');
       return;
     }
-    apiUpdateUser({ name: nameVal });
     onClose?.();
   };
 
-  const handleAvatarChange = (url) => setAvatarUrl(url);
+  const handleLocalPreview = (localUrl) => setAvatarUrl(localUrl);
+
+  const handleAvatarUploaded = async (cdnUrl) => {
+    setAvatarUrl(cdnUrl);
+    const updated = await apiUpdateProfile({ nickname: nameVal, avatar_url: cdnUrl }).catch(() => null);
+    if (updated) onProfileUpdated?.(updated);
+  };
 
   const handleBindSuccess = (nickname) => {
     setBoundWechat(nickname || '已绑定');
@@ -732,6 +809,7 @@ export default function ProfileModal({
   const handleUnbindWechat = async () => {
     await apiUnbindWechat();
     setBoundWechat(null);
+    setWechatUnbindConfirm(false);
   };
 
   const handlePhoneRebindSuccess = (newPhone) => {
@@ -772,21 +850,33 @@ export default function ProfileModal({
 
             {/* Avatar section */}
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', padding: '24px', gap: '8px' }}>
-              <AvatarEditButton avatarSrc={avatarUrl} onAvatarChange={handleAvatarChange} />
+              <AvatarEditButton avatarSrc={avatarUrl} onLocalPreview={handleLocalPreview} onUploaded={handleAvatarUploaded} showToast={showToast} />
               <span style={{ fontFamily: FONT_MEDIUM, fontWeight: 500, fontSize: '16px', lineHeight: '20px', color: 'rgba(255,255,255,0.85)' }}>
-                {nameVal || userName}
+                {nameVal || currentUser.nickname || ''}
               </span>
               <span style={{ fontFamily: FONT_REGULAR, fontSize: '12px', lineHeight: '16px', color: '#FFFFFF99' }}>
-                ID：{userId}
+                ID：{currentUser.display_id ?? currentUser.id ?? ''}
               </span>
             </div>
 
             {/* Rows */}
             <div style={{ display: 'flex', flexDirection: 'column', paddingTop: '0' }}>
-              <ProfileField label="用户名" value={nameVal} onChange={(e) => setNameVal(e.target.value)} placeholder="请输入用户名" />
+              <ProfileField
+                label="用户名"
+                value={nameVal}
+                onChange={(e) => setNameVal(e.target.value)}
+                placeholder="请输入用户名"
+                maxLength={20}
+                onBlurSave={async () => {
+                  if (nameVal !== (currentUser.nickname ?? '')) {
+                    const updated = await apiUpdateProfile({ nickname: nameVal, avatar_url: avatarUrl }).catch(() => null);
+                    if (updated) onProfileUpdated?.(updated);
+                  }
+                }}
+              />
               <PhoneRow phone={boundPhone} onUnbind={() => setPhoneUnbindStep('step1')} />
               {boundWechat ? (
-                <WechatBoundRow nickname={boundWechat} onUnbind={handleUnbindWechat} />
+                <WechatBoundRow nickname={boundWechat} onUnbind={() => setWechatUnbindConfirm(true)} />
               ) : (
                 <WechatUnboundRow onBind={() => setWechatView('qrcode')} />
               )}
@@ -825,11 +915,35 @@ export default function ProfileModal({
           onCancel={() => setPhoneUnbindStep(null)}
         />
       )}
+      {wechatUnbindConfirm && (
+        <WechatUnbindConfirmDialog
+          onConfirm={handleUnbindWechat}
+          onCancel={() => setWechatUnbindConfirm(false)}
+        />
+      )}
+      {toast && createPortal(
+        <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, display: 'flex', alignItems: 'flex-start', justifyContent: 'center', paddingTop: '25vh', zIndex: 9999, pointerEvents: 'none' }}>
+          <div
+            className="flex items-center gap-[8px] px-[16px] py-[8px] rounded-medium bg-toast-bg backdrop-blur-[20px]"
+            style={{ whiteSpace: 'nowrap', animation: 'slideUpBounce 250ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards' }}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+              <path d="M8 14.667C9.841 14.667 11.508 13.921 12.714 12.714C13.921 11.508 14.667 9.841 14.667 8C14.667 6.159 13.921 4.492 12.714 3.286C11.508 2.08 9.841 1.333 8 1.333C6.159 1.333 4.492 2.08 3.286 3.286C2.08 4.492 1.333 6.159 1.333 8C1.333 9.841 2.08 11.508 3.286 12.714C4.492 13.921 6.159 14.667 8 14.667Z" fill="#EB8B14" stroke="#EB8B14" strokeWidth="1.333" strokeLinejoin="round" />
+              <path fillRule="evenodd" clipRule="evenodd" d="M8 12.333C8.46 12.333 8.833 11.96 8.833 11.5C8.833 11.04 8.46 10.667 8 10.667C7.54 10.667 7.167 11.04 7.167 11.5C7.167 11.96 7.54 12.333 8 12.333Z" fill="#FFFFFF" />
+              <path d="M8 4V9.333" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            <span className="text-text-primary text-font-size-16 font-font-weight-regular" style={{ fontFamily: FONT_REGULAR }}>
+              {toast.msg}
+            </span>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
 
-function AvatarEditButton({ avatarSrc, onAvatarChange }) {
+function AvatarEditButton({ avatarSrc, onLocalPreview, onUploaded, showToast }) {
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
   const fileInputRef = useRef(null);
@@ -837,11 +951,16 @@ function AvatarEditButton({ avatarSrc, onAvatarChange }) {
   const handleFileChange = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (file.size > 5 * 1024 * 1024) {
+      showToast('不得上传超过5M的图像！');
+      e.target.value = '';
+      return;
+    }
     const localUrl = URL.createObjectURL(file);
-    onAvatarChange(localUrl);
+    onLocalPreview(localUrl);
     const result = await apiUploadAvatar(file);
     if (result?.avatarUrl) {
-      onAvatarChange(result.avatarUrl);
+      onUploaded(result.avatarUrl);
       URL.revokeObjectURL(localUrl);
     }
     e.target.value = '';

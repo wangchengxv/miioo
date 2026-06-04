@@ -1,32 +1,40 @@
 import { authFetch } from './request';
 
-/**
- * 获取水印设置
- */
+const BASE = import.meta.env.VITE_API_BASE_URL;
+
+// 水印开关存于 ProviderResponse.default_image_watermark / default_video_watermark
+// 读取时取第一个 provider 的值；更新时对所有 provider 批量 PATCH
+
 export async function apiGetWatermarkSettings() {
-  if (import.meta.env.VITE_USE_MOCK === 'true') {
-    return {
-      imageWatermark: false,
-      videoWatermark: false,
-    };
-  }
-  return authFetch(`${import.meta.env.VITE_API_BASE_URL}/api/settings/watermark`, {
-    method: 'GET',
+  const res = await authFetch(`${BASE}/api/providers`, {
+    headers: { 'Content-Type': 'application/json' },
   });
+  const providers = await res.json();
+  const list = Array.isArray(providers) ? providers : (providers.items ?? []);
+  if (list.length === 0) return { imageWatermark: false, videoWatermark: false };
+  const first = list[0];
+  return {
+    imageWatermark: first.default_image_watermark ?? false,
+    videoWatermark: first.default_video_watermark ?? false,
+  };
 }
 
-/**
- * 更新水印设置
- * @param {Object} params
- * @param {boolean} params.imageWatermark - 图片 AI 水印开关
- * @param {boolean} params.videoWatermark - 视频 AI 水印开关
- */
-export async function apiUpdateWatermarkSettings(params) {
-  if (import.meta.env.VITE_USE_MOCK === 'true') {
-    return { success: true };
-  }
-  return authFetch(`${import.meta.env.VITE_API_BASE_URL}/api/settings/watermark`, {
-    method: 'POST',
-    body: JSON.stringify(params),
+export async function apiUpdateWatermarkSettings({ imageWatermark, videoWatermark }) {
+  const res = await authFetch(`${BASE}/api/providers`, {
+    headers: { 'Content-Type': 'application/json' },
   });
+  const providers = await res.json();
+  const list = Array.isArray(providers) ? providers : (providers.items ?? []);
+  await Promise.all(
+    list.map((p) =>
+      authFetch(`${BASE}/api/providers/${p.id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          default_image_watermark: imageWatermark,
+          default_video_watermark: videoWatermark,
+        }),
+      })
+    )
+  );
 }

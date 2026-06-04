@@ -10,6 +10,31 @@ import CreationVideoDetailModal from '../components/CreationVideoDetailModal';
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
 
+function CopyPromptButton({ text, onCopy }) {
+  const [hovered, setHovered] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  const color = pressed ? '#FFFFFF99' : hovered ? '#FFFFFFCC' : '#FFFFFF66';
+  return (
+    <button
+      type="button"
+      style={{ padding: 0, margin: 0, border: 0, background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', color, transition: 'color 120ms ease', flexShrink: 0 }}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => { setHovered(false); setPressed(false); }}
+      onMouseDown={() => setPressed(true)}
+      onMouseUp={() => setPressed(false)}
+      onClick={() => {
+        navigator.clipboard.writeText(text || '');
+        onCopy?.();
+      }}
+    >
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="5.5" y="5.5" width="7" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.2"/>
+        <path d="M3.5 10.5V3.5A1.5 1.5 0 0 1 5 2h6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+      </svg>
+    </button>
+  );
+}
+
 // Matches AssetsPage StarIcon — golden fill when starred, configurable stroke otherwise
 function StarIcon({ filled = false, strokeColor = '#FFFFFF' }) {
   return (
@@ -1031,11 +1056,18 @@ function GenTypeSelector({ value, onChange, disabled }) {
 }
 
 // ─── Model selector ───────────────────────────────────────────────────────────
-function ModelSelector({ value, onChange, options = [], disabled }) {
+function ModelSelector({ value, onChange, options = [], disabled, onBeforeOpen }) {
   const [open, setOpen] = useState(false);
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const isActive = open || hovered;
+
+  const handleClick = () => {
+    if (disabled) return;
+    // 在打开前调用回调，如果返回 false 则不打开
+    if (onBeforeOpen && onBeforeOpen() === false) return;
+    setOpen((v) => !v);
+  };
 
   return (
     <Dropdown
@@ -1045,7 +1077,7 @@ function ModelSelector({ value, onChange, options = [], disabled }) {
         <button
           type="button"
           disabled={disabled}
-          onClick={() => !disabled && setOpen((v) => !v)}
+          onClick={handleClick}
           onMouseEnter={() => !disabled && setHovered(true)}
           onMouseLeave={() => setHovered(false)}
           onFocus={() => setFocused(true)}
@@ -1820,7 +1852,7 @@ function formatMentionLabel(name) {
 }
 
 function InputCard({ onGenerate, width = '800px', disabled = false, genType, onGenTypeChange,
-  model, onModelChange, modelOptions = [], creationParams, prefillVersion = 0, prefillData = null }) {
+  model, onModelChange, modelOptions = [], creationParams, prefillVersion = 0, prefillData = null, onBeforeModelOpen }) {
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const [hasContent, setHasContent] = useState(false);
@@ -2374,7 +2406,7 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0px', justifyContent: 'space-between', alignSelf: 'stretch' }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', padding: 0 }}>
             <GenTypeSelector value={genType} onChange={onGenTypeChange} disabled={disabled} />
-            <ModelSelector value={model} onChange={onModelChange} options={modelOptions} disabled={disabled} />
+            <ModelSelector value={model} onChange={onModelChange} options={modelOptions} disabled={disabled} onBeforeOpen={onBeforeModelOpen} />
             {genType === 'image' && (
               <ParamsSelector
                 ratio={ratio}
@@ -2662,11 +2694,17 @@ function ImageDetailModal({ card, onClose, onDelete, favorited, onToggleFavorite
   const [starAnim, setStarAnim] = useState(false);
   const [closeHovered, setCloseHovered] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
+  const [toastVisible, setToastVisible] = useState(false);
 
   function handleStarClick() {
     setStarAnim(true);
     setTimeout(() => setStarAnim(false), 300);
     onToggleFavorite?.();
+  }
+
+  function handleCopyPrompt() {
+    setToastVisible(true);
+    setTimeout(() => setToastVisible(false), 2500);
   }
 
   return (
@@ -2723,7 +2761,10 @@ function ImageDetailModal({ card, onClose, onDelete, favorited, onToggleFavorite
 
                   {/* 提示词 */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '16px 20px', flexShrink: 0 }}>
-                    <div style={{ fontFamily: FONT, fontSize: '11px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>提示词</div>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                      <div style={{ fontFamily: FONT, fontSize: '11px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>提示词</div>
+                      <CopyPromptButton text={card.prompt} onCopy={handleCopyPrompt} />
+                    </div>
                     <div style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '20px', letterSpacing: '0.01em', color: '#FFFFFFCC' }}>{card.prompt || '—'}</div>
                   </div>
 
@@ -2839,6 +2880,14 @@ function ImageDetailModal({ card, onClose, onDelete, favorited, onToggleFavorite
           onConfirm={() => { setConfirmDelete(false); onDelete?.(); }}
           onCancel={() => setConfirmDelete(false)}
         />
+      )}
+      {toastVisible && createPortal(
+        <div style={{ position: 'fixed', top: 24, left: '50%', zIndex: 1200, transform: 'translateX(-50%)', pointerEvents: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, borderRadius: 8, padding: '10px 16px', background: '#1D1E1E', boxShadow: '0px 4px 16px rgba(0,0,0,0.6), inset 0px 0px 0px 1px rgba(255,255,255,0.08)', fontFamily: FONT, fontSize: 14, lineHeight: '18px', color: '#52BF92', animation: 'toast-in 0.2s ease', whiteSpace: 'nowrap' }}>
+            您已复制提示词
+          </div>
+        </div>,
+        document.body
       )}
     </>
   );
@@ -3201,7 +3250,7 @@ function ImageResultCard({ status, imageUrl, prompt, model, ratio, resolution, r
   );
 }
 
-function CreationResultState({ generations, onGenerate, genType, onGenTypeChange, model, onModelChange, modelOptions, creationParams, onDeleteCard, batchMode = false, selected, onToggleSelect, onSwitchToFrameMode, onVideoCardClick, favorites, toggleFavorite, showToast }) {
+function CreationResultState({ generations, onGenerate, genType, onGenTypeChange, model, onModelChange, modelOptions, creationParams, onDeleteCard, batchMode = false, selected, onToggleSelect, onSwitchToFrameMode, onVideoCardClick, favorites, toggleFavorite, showToast, onBeforeModelOpen }) {
   const scrollRef = useRef(null);
   const [prefillVersion, setPrefillVersion] = useState(0);
   const [prefillData, setPrefillData] = useState(null);
@@ -3392,7 +3441,7 @@ function CreationResultState({ generations, onGenerate, genType, onGenTypeChange
         <div style={{ width: 'min(800px, 100%)' }}>
           <InputCard onGenerate={onGenerate} width="100%" genType={genType} onGenTypeChange={onGenTypeChange}
             model={model} onModelChange={onModelChange} modelOptions={modelOptions} creationParams={creationParams}
-            prefillVersion={prefillVersion} prefillData={prefillData} />
+            prefillVersion={prefillVersion} prefillData={prefillData} onBeforeModelOpen={onBeforeModelOpen} />
         </div>
       </div>
     </div>
@@ -3400,7 +3449,7 @@ function CreationResultState({ generations, onGenerate, genType, onGenTypeChange
 }
 
 // ─── Empty state ──────────────────────────────────────────────────────────────
-function CreationEmptyState({ onGenerate, genType, onGenTypeChange, model, onModelChange, modelOptions, creationParams }) {
+function CreationEmptyState({ onGenerate, genType, onGenTypeChange, model, onModelChange, modelOptions, creationParams, onBeforeModelOpen }) {
   const EmptyIcon = EMPTY_ICON_MAP[genType] ?? CreationEmptyIconImage;
   return (
     <div
@@ -3436,7 +3485,7 @@ function CreationEmptyState({ onGenerate, genType, onGenTypeChange, model, onMod
       {/* InputCard: absolute, centered horizontally, 16px from bottom */}
       <div style={{ position: 'absolute', left: '50%', bottom: '16px', translate: '-50% 0', width: 'min(800px, 100%)' }}>
         <InputCard onGenerate={onGenerate} width="100%" genType={genType} onGenTypeChange={onGenTypeChange}
-          model={model} onModelChange={onModelChange} modelOptions={modelOptions} creationParams={creationParams} />
+          model={model} onModelChange={onModelChange} modelOptions={modelOptions} creationParams={creationParams} onBeforeModelOpen={onBeforeModelOpen} />
       </div>
     </div>
   );
@@ -3595,7 +3644,73 @@ function CreationPlainBtn({ children, onClick }) {
 }
 
 // ─── Main page ────────────────────────────────────────────────────────────────
-export default function CreationPage() {
+function CreationLoginEmptyState({ onLoginClick }) {
+  return (
+    <div
+      style={{
+        display: 'flex',
+        flex: 1,
+        minHeight: 0,
+        flexDirection: 'column',
+        alignItems: 'center',
+        justifyContent: 'center',
+        alignSelf: 'stretch',
+        gap: '12px',
+      }}
+    >
+      <svg width="64" height="64" viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
+        <defs>
+          <linearGradient id="cli-bg" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+            <stop stopColor="#FFFFFF" stopOpacity="0.12" />
+            <stop offset="1" stopColor="#FFFFFF" stopOpacity="0.04" />
+          </linearGradient>
+          <linearGradient id="cli-stroke" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
+            <stop stopColor="#FFFFFF" stopOpacity="0.24" />
+            <stop offset="1" stopColor="#FFFFFF" stopOpacity="0.08" />
+          </linearGradient>
+          <linearGradient id="cli-icon" x1="18" y1="20" x2="46" y2="44" gradientUnits="userSpaceOnUse">
+            <stop stopColor="#FFFFFF" />
+            <stop offset="1" stopColor="#B7C0CC" />
+          </linearGradient>
+        </defs>
+        <rect x="4" y="4" width="56" height="56" rx="28" fill="url(#cli-bg)" />
+        <rect x="4.5" y="4.5" width="55" height="55" rx="27.5" stroke="url(#cli-stroke)" />
+        <path d="M32 22C28.686 22 26 24.686 26 28C26 31.314 28.686 34 32 34C35.314 34 38 31.314 38 28C38 24.686 35.314 22 32 22Z" stroke="url(#cli-icon)" strokeWidth="1.5" strokeLinecap="round" />
+        <path d="M22 42C22 38.134 26.477 35 32 35C37.523 35 42 38.134 42 42" stroke="url(#cli-icon)" strokeWidth="1.5" strokeLinecap="round" />
+      </svg>
+      <div
+        style={{
+          fontFamily: FONT,
+          fontSize: '14px',
+          lineHeight: '20px',
+          color: 'rgba(255,255,255,0.4)',
+          textAlign: 'center',
+        }}
+      >
+        请先{' '}
+        <button
+          type="button"
+          onClick={onLoginClick}
+          style={{
+            padding: 0,
+            margin: 0,
+            border: 0,
+            background: 'transparent',
+            cursor: 'pointer',
+            fontFamily: FONT,
+            fontSize: '14px',
+            lineHeight: '20px',
+            color: '#2DC3E1',
+          }}
+        >
+          登录
+        </button>
+      </div>
+    </div>
+  );
+}
+
+export default function CreationPage({ isLoggedIn, onLoginClick, apiConfigured = true, onShowNoModelNotice }) {
   const [activeTab, setActiveTab] = useState('image');
   const [genType, setGenType] = useState('image');
   const [generating, setGenerating] = useState(false);
@@ -3955,7 +4070,9 @@ export default function CreationPage() {
             position: 'relative',
           }}
         >
-          {generations.length > 0 ? (
+          {isLoggedIn === false ? (
+            <CreationLoginEmptyState onLoginClick={onLoginClick} />
+          ) : generations.length > 0 ? (
             <CreationResultState
               generations={generations}
               onGenerate={handleGenerate}
@@ -3974,10 +4091,17 @@ export default function CreationPage() {
               favorites={favorites}
               toggleFavorite={handleToggleFavorite}
               showToast={showToast}
+              onBeforeModelOpen={() => {
+                if (!apiConfigured) { onShowNoModelNotice?.(); return false; }
+              }}
             />
           ) : (
             <CreationEmptyState onGenerate={handleGenerate} genType={genType} onGenTypeChange={handleGenTypeChange}
-              model={model} onModelChange={setModel} modelOptions={modelOptions} creationParams={creationParams} />
+              model={model} onModelChange={setModel} modelOptions={modelOptions} creationParams={creationParams}
+              onBeforeModelOpen={() => {
+                if (!apiConfigured) { onShowNoModelNotice?.(); return false; }
+              }}
+            />
           )}
         </div>
       </div>

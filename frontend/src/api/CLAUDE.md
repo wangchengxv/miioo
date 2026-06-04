@@ -19,14 +19,9 @@ export async function apiXxx(params) {
 - `VITE_USE_MOCK=true` 返回假数据，`false` 调真实接口
 - 环境变量在 `.env.local`，不得提交 Git
 
-## 数据读写检查清单
-涉及以下场景时，**先找 Suzy 确认接口字段，再动手**：
-1. 表单提交 / 确认操作 — 是否需要 POST / PATCH？
-2. 页面初始化 — 是否需要 GET 替换硬编码数组？
-3. 删除操作 — 是否需要 DELETE？
-4. 文件上传 — `createObjectURL` 仅本地预览，是否需要 POST /upload？
-5. AI 生成 — 是否需要 POST /generate？
-6. 模拟逻辑 — `Math.random()`、`Date.now()` 作为 ID，是否需要替换？
+## 日常开发 — 调接口前
+1. 先查 `API差异报告.html` 确认接口路径、字段、方法
+2. 若报告信息不足或存在歧义，找 Suzy 确认
 
-## 待修复清单
-详见 `API_AUDIT.md`，按 P0 → P1 → P2 → P3 修复，每条前找 Suzy 确认。
+## 后端更新 API 文档时
+当 Suzy 说后端更新了 `api文档.json`，通读 `src/api/*.js` 和 `api文档.json`，做全量对比（路径、方法、请求体字段、前端缺失、后端无接口），更新 `API差异报告.html` 全部六个章节。

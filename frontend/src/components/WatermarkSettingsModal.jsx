@@ -55,7 +55,10 @@ export default function WatermarkSettingsModal({ onClose, showToast }) {
     setLoading(true);
     try {
       await apiUpdateWatermarkSettings({ imageWatermark, videoWatermark });
+      showToast('水印设置已保存', 'success');
       onClose();
+    } catch {
+      showToast('保存失败，请重试', 'error');
     } finally {
       setLoading(false);
     }

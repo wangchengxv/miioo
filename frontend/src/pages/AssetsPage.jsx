@@ -709,7 +709,7 @@ function AssetDetailModal({ onClose, onDownload, name, description, prompt, mode
             {/* Scrollable content */}
             <div style={{ flexGrow: 1, flexShrink: 1, flexBasis: '0%', overflowY: 'auto', minHeight: 0 }}>
               {/* Finalized status */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '8px', paddingBottom: '8px', paddingLeft: '16px', paddingRight: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px' }}>
                 <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFF99' }}>是否定稿</span>
                 {isFinalized ? (
                   <div style={{
@@ -943,7 +943,7 @@ function ShotDetailModal({ onClose, onDownload, shotNumber, prompt, model, resol
             {/* Scrollable content */}
             <div style={{ flexGrow: 1, flexShrink: 1, flexBasis: '0%', overflowY: 'auto', minHeight: 0 }}>
               {/* Finalized status */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingTop: '16px', paddingBottom: '16px', paddingLeft: '16px', paddingRight: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px' }}>
                 <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFF99' }}>是否定稿</span>
                 {isFinalized ? (
                   <div style={{
@@ -1346,7 +1346,7 @@ function ShotVideoDetailModal({ onClose, onDownload, shotNumber, prompt, model, 
           }}>
             <div style={{ flexGrow: 1, flexShrink: 1, flexBasis: '0%', overflowY: 'auto', minHeight: 0 }}>
               {/* Finalized status */}
-              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px' }}>
                 <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFF99' }}>是否定稿</span>
                 {isFinalized ? (
                   <div style={{ paddingLeft: '8px', paddingRight: '8px', paddingTop: '2px', paddingBottom: '2px', borderRadius: '4px', boxShadow: '#FFFFFF14 0px 0px 0px 1px inset', backgroundColor: '#7AE5B91A' }}>
@@ -1602,6 +1602,131 @@ function AssetCard({ name, bgColor = '#252525', url = null, starred = false, sel
         ratio={detailData?.ratio} resolution={detailData?.resolution} generatedAt={detailData?.generatedAt} images={detailData?.images}
       />
     )}
+    </>
+  );
+}
+
+const SUBJECT_CARD_CATEGORIES = new Set(['chars', 'scenes', 'props']);
+
+function ProjectAssetCard({ name, desc, url, selected, batchMode, onDownload, onDelete, onSelect, asset = {} }) {
+  const [hov, setHov] = useState(false);
+  const [detailOpen, setDetailOpen] = useState(false);
+
+  function handleClick() {
+    if (batchMode) { onSelect?.(); return; }
+    setDetailOpen(true);
+  }
+
+  return (
+    <>
+      <div
+        style={{
+          width: '200px',
+          height: '246px',
+          borderRadius: '12px',
+          overflow: 'hidden',
+          flexShrink: 0,
+          backgroundColor: '#1A1A1A',
+          border: selected ? '1px solid #2DC3E1' : '1px solid #FFFFFF14',
+          outline: hov && !selected ? '1px solid #FFFFFF26' : '1px solid transparent',
+          transition: 'outline-color 0.15s, border-color 0.15s',
+          cursor: 'pointer',
+          position: 'relative',
+          display: 'flex',
+          flexDirection: 'column',
+        }}
+        onMouseEnter={() => setHov(true)}
+        onMouseLeave={() => setHov(false)}
+        onClick={handleClick}
+      >
+        {/* image area */}
+        <div
+          style={{
+            flex: 1,
+            minHeight: '148px',
+            position: 'relative',
+            backgroundImage: url
+              ? `url(${url})`
+              : 'linear-gradient(145deg, oklab(27.6% -0.014 -0.012) 0%, oklab(23.8% -0.010 -0.019) 100%)',
+            backgroundSize: 'cover',
+            backgroundPosition: '50%',
+            backgroundColor: '#252525',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+          }}
+        >
+          {!url && (
+            <svg width="40" height="40" viewBox="0 0 40 40" fill="none" style={{ flexShrink: 0 }}>
+              <circle cx="20" cy="20" r="20" fill="#FFFFFF0A" />
+              <path d="M20 12C16.69 12 14 14.69 14 18C14 20.48 15.43 22.63 17.5 23.65V26C17.5 26.55 17.95 27 18.5 27H21.5C22.05 27 22.5 26.55 22.5 26V23.65C24.57 22.63 26 20.48 26 18C26 14.69 23.31 12 20 12Z" fill="#FFFFFF26" />
+            </svg>
+          )}
+
+          {/* top-right: batch checkbox or more menu */}
+          {batchMode ? (
+            <div style={{
+              position: 'absolute', top: '8px', right: '8px',
+              width: '18px', height: '18px', borderRadius: '4px',
+              border: selected ? '1px solid #2DC3E1' : '1px solid rgba(255,255,255,0.5)',
+              backgroundColor: selected ? '#2DC3E1' : 'rgba(0,0,0,0.5)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+            }}>
+              {selected && (
+                <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
+                  <path d="M1 4L3.5 6.5L9 1" stroke="#000" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              )}
+            </div>
+          ) : hov && (
+            <div
+              style={{ position: 'absolute', top: '8px', right: '8px' }}
+              onClick={(e) => e.stopPropagation()}
+            >
+              <MoreMenu onDownload={onDownload} onDelete={onDelete} />
+            </div>
+          )}
+
+        </div>
+
+        {/* info overlay */}
+        <div style={{
+          position: 'absolute', left: 0, bottom: 0, right: 0,
+          backgroundColor: '#161616F2',
+          padding: '12px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '6px',
+        }}>
+          <span style={{ fontFamily: FONT_MEDIUM, fontWeight: 500, fontSize: '14px', lineHeight: '20px', color: '#FFFFFFE6', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {name}
+          </span>
+          {desc ? (
+            <span style={{
+              fontFamily: FONT, fontSize: '12px', lineHeight: '17px', color: '#FFFFFF66',
+              display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden',
+            }}>
+              {desc}
+            </span>
+          ) : null}
+        </div>
+      </div>
+
+      {detailOpen && (
+        <ImageDetailModal
+          card={{
+            imageUrl: asset.url || url,
+            prompt: asset.prompt,
+            model: asset.model,
+            ratio: asset.ratio,
+            resolution: asset.resolution,
+            refImages: asset.refImages,
+            createdAt: asset.created_at,
+          }}
+          onClose={() => setDetailOpen(false)}
+          onDelete={() => { setDetailOpen(false); onDelete?.(); }}
+        />
+      )}
     </>
   );
 }
@@ -2033,6 +2158,19 @@ function ProjectAssetsPanel() {
                 onStar={() => toggleStar(asset.id)}
                 onDownload={() => {}}
                 onDelete={() => deleteAsset(asset.id)}
+              />
+            ) : SUBJECT_CARD_CATEGORIES.has(activeCategory) ? (
+              <ProjectAssetCard
+                key={asset.id}
+                name={asset.name}
+                desc={asset.description}
+                url={asset.url || null}
+                selected={batchMode && selected.has(asset.id)}
+                batchMode={batchMode}
+                onSelect={() => toggleSelect(asset.id)}
+                onDownload={() => {}}
+                onDelete={() => deleteAsset(asset.id)}
+                asset={asset}
               />
             ) : (
               <AssetCard

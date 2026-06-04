@@ -1,6 +1,6 @@
 import { forwardRef, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Toggle from './Toggle';
-import { apiTestConnection, apiSaveApiConfig, apiGetApiConfig } from '../api/config';
+import { apiOneClickSetup, apiCreateModel, apiListModels, apiUpdateModel, apiGetBanner, apiListProviders, apiTestConnection, apiUpdateProvider, apiGetCardVisibility } from '../api/config';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
@@ -16,24 +16,57 @@ const MODEL_DESCRIPTION = 'GPT-5.2 是 GPT-5 系列最新一代旗舰级智能�
 const DEFAULT_PROVIDER_NAME = 'API服务商';
 const MODEL_TABS = ['对话模型', '图片模型', '视频模型', '配音模型'];
 const TAB_SLIDE_DURATION = 220;
-const MAX_PROVIDER_CARDS = 9;
-const MAX_CUSTOM_PROVIDERS = MAX_PROVIDER_CARDS - 1;
-const PROVIDER_OPTIONS = [
-  { label: 'OpenAI Compatible', value: 'openai-compatible' },
-  { label: 'SiliconFlow', value: 'siliconflow' },
-  { label: 'Volcengine', value: 'volcengine' },
-];
+
+const CARD_KEY_NAMES = {
+  onelink: 'OneLinkAI',
+  minimax: 'MiniMax',
+  aiping: 'AIPing',
+  volcengine: 'Volcengine',
+  vidu: 'Vidu',
+  fal: 'Fal',
+};
+
+// 将后端 category 映射到前端 tab
+function getCategoryTab(category) {
+  const mapping = {
+    'chat': '对话模型',
+    'image': '图片模型',
+    'video': '视频模型',
+    'audio': '配音模型',
+  };
+  return mapping[category] || null;
+}
+
+// 将前端 tab 映射到后端 category
+function getTabCategory(tab) {
+  const mapping = {
+    '对话模型': 'chat',
+    '图片模型': 'image',
+    '视频模型': 'video',
+    '配音模型': 'audio',
+  };
+  return mapping[tab] || null;
+}
+// const MAX_PROVIDER_CARDS = 9;
+// const MAX_CUSTOM_PROVIDERS = MAX_PROVIDER_CARDS - 1;
+// const PROVIDER_OPTIONS = [
+//   { label: 'OpenAI Compatible', value: 'openai-compatible' },
+//   { label: 'SiliconFlow', value: 'siliconflow' },
+//   { label: 'Volcengine', value: 'volcengine' },
+// ];
 
 function createEmptyModelDraft() {
   return { name: '', identifier: '', note: '' };
 }
 
-function createCustomProviderDraft() {
-  return { name: '', vendor: '', baseUrl: '', apiKey: '', models: [] };
-}
+// function createCustomProviderDraft() {
+//   return { name: '', vendor: '', baseUrl: '', apiKey: '', models: [] };
+// }
 
 function sortModels(models) {
   return [...models].sort((a, b) => {
+    if (a.isDefault && !b.isDefault) return -1;
+    if (!a.isDefault && b.isDefault) return 1;
     if (a.enabled && !b.enabled) return -1;
     if (!a.enabled && b.enabled) return 1;
     if (a.enabled && b.enabled) {
@@ -57,19 +90,25 @@ function createDefaultState() {
     mainConfigured: false,
     childView: null,
     onelinkEnabled: false,
+    onelinkProviderId: null,
+    onelinkCreatedAt: '---',
     activeModelTab: '对话模型',
-    activeCustomProviderId: null,
     onelinkApiKey: '',
-    customProviders: [],
-    customProviderDraft: createCustomProviderDraft(),
-    onelinkModelsByTab: {
-      '对话模型': [],
-      '图片模型': [],
-      '视频模型': [],
-      '配音模型': [],
-    },
+    onelinkApiKeyActual: '',
+    onelinkKeyIsFromServer: false,
+    apiTested: false,
+    onelinkModelsByTab: createEmptyModelsByTab(),
     onelinkModelDraft: createEmptyModelDraft(),
-    customProviderModelDraft: createEmptyModelDraft(),
+    // Other providers from backend
+    otherProviders: [],
+    visibleCardKeys: ['onelink'], // card-visibility API 返回的可见卡片键
+    activeOtherProviderId: null,
+    editProviderApiKey: '',
+    editProviderApiKeyActual: '',
+    editProviderKeyIsFromServer: false,
+    editProviderApiTested: false,
+    editProviderModelsByTab: createEmptyModelsByTab(),
+    editProviderModelDraft: createEmptyModelDraft(),
   };
 }
 
@@ -397,94 +436,58 @@ function SelectOption({ option, selected, onSelect }) {
   );
 }
 
-function ProviderSelect({ value, onChange }) {
-  const [open, setOpen] = useState(false);
-  const containerRef = useRef(null);
-  const selectedOption = PROVIDER_OPTIONS.find((option) => option.value === value);
+// function ProviderSelect({ value, onChange }) {
+//   const [open, setOpen] = useState(false);
+//   const containerRef = useRef(null);
+//   const selectedOption = PROVIDER_OPTIONS.find((option) => option.value === value);
+//   useEffect(() => {
+//     if (!open) return undefined;
+//     const handlePointerDown = (event) => {
+//       if (!containerRef.current?.contains(event.target)) setOpen(false);
+//     };
+//     window.addEventListener('pointerdown', handlePointerDown);
+//     return () => window.removeEventListener('pointerdown', handlePointerDown);
+//   }, [open]);
+//   return (
+//     <div ref={containerRef} className="relative self-stretch">
+//       ...
+//     </div>
+//   );
+// }
 
-  useEffect(() => {
-    if (!open) return undefined;
-    const handlePointerDown = (event) => {
-      if (!containerRef.current?.contains(event.target)) setOpen(false);
-    };
-    window.addEventListener('pointerdown', handlePointerDown);
-    return () => window.removeEventListener('pointerdown', handlePointerDown);
-  }, [open]);
+function RecommendationBanner({ bannerData }) {
+  const { image_url } = bannerData || {};
 
-  const triggerClassName = open
-    ? 'border-input-border-focus bg-input-bg-focus [box-shadow:0px_0px_10px_var(--color-glow)] [mix-blend-mode:lighten]'
-    : 'border-input-border-normal bg-input-bg-normal hover:border-input-border-hover hover:bg-input-bg-hover focus:border-input-border-focus focus:bg-input-bg-focus focus:[box-shadow:0px_0px_10px_var(--color-glow)] focus:[mix-blend-mode:lighten]';
+  if (!image_url) return null;
 
-  return (
-    <div ref={containerRef} className="relative self-stretch">
-      <button
-        type="button"
-        onClick={() => setOpen((current) => !current)}
-        className={`flex h-9 w-full items-center justify-between rounded-lg border border-solid px-[12px] pr-[6px] outline outline-1 outline-stroke-outline transition-colors ${triggerClassName}`}
-        aria-expanded={open}
-      >
-        <div className={`flex-1 text-left text-sm/4.5 ${selectedOption ? 'text-input-text-content' : 'text-input-text-hint'}`} style={{ fontFamily: FONT }}>
-          {selectedOption?.label ?? '请选择'}
-        </div>
-        <ChevronDownIcon />
-      </button>
-      {open ? (
-        <div
-          className="absolute top-[calc(100%+4px)] left-0 z-10 flex w-full flex-col rounded-lg border border-solid border-select-border bg-select-bg p-[4px]"
-          style={{ boxShadow: '0px 4px 16px var(--color-select-shadow)' }}
-        >
-          {PROVIDER_OPTIONS.map((option) => (
-            <SelectOption
-              key={option.value}
-              option={option}
-              selected={option.value === value}
-              onSelect={(nextValue) => { onChange(nextValue); setOpen(false); }}
-            />
-          ))}
-        </div>
-      ) : null}
-    </div>
-  );
-}
+  const tutorialUrl = ''; // 教程链接，前端写死，暂时留空
+  const fullImageUrl = image_url.startsWith('http') ? image_url : `${import.meta.env.VITE_API_BASE_URL}${image_url}`;
 
-function RecommendationBanner() {
   return (
     <div
-      className={`flex items-start gap-[12px] self-stretch rounded-lg bg-input-bg-normal px-[16px] py-[12px] ${INSET_BORDER_CLASS}`}
-      style={{ backgroundImage: RECOMMENDATION_GRADIENT }}
+      className="flex items-start gap-[12px] px-[16px] py-[12px] rounded-lg justify-end h-[96px] shrink-0 bg-[#1D1E1E] bg-cover bg-[position:50%] [box-shadow:#FFFFFF14_0px_0px_0px_1px_inset]"
+      style={{ backgroundImage: `url(${fullImageUrl})` }}
     >
-      <div className="flex flex-1 flex-col items-start gap-[8px]">
-        <div className="self-stretch text-base/5 font-medium text-text-primary" style={{ fontFamily: FONT_MEDIUM }}>
-          推荐使用OneLinkAI API
-        </div>
-        <div className="flex flex-col items-start gap-[2px] self-stretch">
-          <div className="flex items-center gap-[2px] self-stretch">
-            <div className="text-[14px] leading-[150%] text-text-secondary" style={{ fontFamily: FONT }}>OneLinkAI平台支持</div>
-            <Tag>Seedance2.0</Tag>
-            <Tag>Kling</Tag>
-            <Tag>Vidu</Tag>
-            <div className="text-[14px] leading-[150%] text-text-secondary" style={{ fontFamily: FONT }}>等多种模型，价格优惠，连接稳定。</div>
-          </div>
-          <div className="flex items-center gap-[2px] self-stretch">
-            <div className="text-[14px] leading-[150%] text-text-secondary" style={{ fontFamily: FONT }}>新用户注册赠送</div>
-            <Tag roundedClassName="rounded-md">50元</Tag>
-            <div className="text-[14px] leading-[150%] text-text-secondary" style={{ fontFamily: FONT }}>算力金。</div>
-          </div>
-        </div>
-      </div>
-      <div className="[font-synthesis:none] flex items-end gap-[8px] self-stretch antialiased text-xs/4">
+      <div className="flex items-end gap-[8px] self-stretch">
         <button
           type="button"
-          className="flex h-[32px] items-center gap-[4px] rounded-lg border border-solid border-[#FFFFFF0D] bg-[#161616] px-[16px] [box-shadow:#00000066_3px_3px_8px] [outline:1px_solid_#00000080] transition-colors hover:bg-[#1D1E1E] active:bg-[#161616]"
+          onClick={tutorialUrl ? () => window.open(tutorialUrl, '_blank') : undefined}
+          disabled={!tutorialUrl}
+          className="flex items-center h-[32px] rounded-lg px-[16px] gap-[4px] [box-shadow:#00000066_3px_3px_8px] bg-[#161616] border border-solid border-[#FFFFFF0D] [outline:1px_solid_#00000080] transition-colors hover:bg-[#1D1E1E] active:bg-[#161616] disabled:opacity-50 disabled:cursor-not-allowed"
         >
-          <div className="inline-block w-max shrink-0 text-sm/4.5 text-[#FFFFFF99]" style={{ fontFamily: FONT }}>教程</div>
+          <div className="inline-block w-max shrink-0 text-[#FFFFFF99] text-sm/4.5" style={{ fontFamily: FONT }}>
+            教程
+          </div>
         </button>
         <button
           type="button"
-          className="flex h-[32px] items-center gap-[4px] rounded-lg border border-solid border-[#FFFFFF33] bg-[#2DC3E1] bg-origin-border px-[16px] [outline:1px_solid_#00000080] transition-colors hover:bg-[#53D3ED] active:bg-[#139EBA]"
+          onClick={() => window.open(link_url || 'https://www.onelinkai.cloud/', '_blank')}
+          className="flex items-center h-[32px] rounded-lg px-[16px] gap-[4px] bg-[#2DC3E1] bg-origin-border border border-solid border-[#FFFFFF33] [outline:1px_solid_#00000080] transition-colors hover:bg-[#53D3ED] active:bg-[#139EBA]"
           style={{ backgroundImage: ACCENT_BUTTON_GRADIENT }}
         >
-          <div className="inline-block w-max text-center text-sm/4.5 font-medium text-[#090909]" style={{ fontFamily: FONT_MEDIUM }}>获取</div>
+          <div className="inline-block text-center font-medium text-[#090909] text-sm/4.5" style={{ fontFamily: FONT_MEDIUM }}>
+            获取
+          </div>
         </button>
       </div>
     </div>
@@ -508,6 +511,26 @@ function InitialProviderCard({ onConfigure, onToggle }) {
         <AccentButton className="h-9" onClick={(e) => { e.stopPropagation(); onConfigure(); }} textClassName="text-center">
           开始配置API
         </AccentButton>
+      </div>
+    </div>
+  );
+}
+
+function UnconfiguredProviderCard({ name, onConfigure }) {
+  return (
+    <div className={CARD_BASE} onClick={onConfigure}>
+      <div className="flex items-center justify-between gap-3 self-stretch">
+        <div className="flex-1 text-base/5 font-medium text-white" style={{ fontFamily: FONT_MEDIUM }}>
+          {name}
+        </div>
+        <div onClick={(e) => e.stopPropagation()}>
+          <StatusSwitch on={false} onClick={onConfigure} />
+        </div>
+      </div>
+      <div className="flex flex-1 items-center justify-center self-stretch">
+        <SecondaryButton className="h-9" onClick={(e) => { e.stopPropagation(); onConfigure(); }}>
+          开始配置API
+        </SecondaryButton>
       </div>
     </div>
   );
@@ -542,62 +565,49 @@ function ConfiguredProviderCard({ title, modelCount, date, enabled, onEdit, onTe
   );
 }
 
-function CustomProviderCard({ configured, enabled, modelCount, providerName, onConfigure, onEdit, onToggle, onDelete, onTest }) {
-  if (configured) {
-    return (
-      <ConfiguredProviderCard
-        title={providerName}
-        modelCount={modelCount}
-        date="2026-01-01"
-        enabled={enabled}
-        onEdit={onEdit}
-        onTest={onTest}
-        onToggle={onToggle}
-        deletable
-        onDelete={onDelete}
-      />
-    );
-  }
-
-  return (
-    <div className={CARD_BASE} onClick={onConfigure}>
-      <div className="self-stretch text-center text-base/5 font-medium text-text-primary opacity-0" style={{ fontFamily: FONT_MEDIUM }}>
-        OneLinkAI
-      </div>
-      <div className="flex flex-1 items-center justify-center self-stretch">
-        <SecondaryButton
-          className="h-9"
-          icon={<PlusIcon className="h-[16px] w-[16px] grow-0 shrink basis-auto self-auto text-white-80" />}
-          onClick={(e) => { e.stopPropagation(); onConfigure(); }}
-          textClassName="text-white-80"
-        >
-          自定义服务商
-        </SecondaryButton>
-      </div>
-      <div className="flex items-center justify-between self-stretch opacity-0">
-        <div className="text-sm/4.5 text-text-secondary" style={{ fontFamily: FONT }}>状态</div>
-        <div className="h-6 w-14" />
-      </div>
-    </div>
-  );
-}
+// function CustomProviderCard({ configured, enabled, modelCount, providerName, onConfigure, onEdit, onToggle, onDelete, onTest }) {
+//   if (configured) {
+//     return (
+//       <ConfiguredProviderCard
+//         title={providerName}
+//         modelCount={modelCount}
+//         date="2026-01-01"
+//         enabled={enabled}
+//         onEdit={onEdit}
+//         onTest={onTest}
+//         onToggle={onToggle}
+//         deletable
+//         onDelete={onDelete}
+//       />
+//     );
+//   }
+//   return (
+//     <div className={CARD_BASE} onClick={onConfigure}>
+//       <SecondaryButton icon={<PlusIcon />} onClick={(e) => { e.stopPropagation(); onConfigure(); }}>
+//         自定义服务商
+//       </SecondaryButton>
+//     </div>
+//   );
+// }
 
 function MainModal({
   configured,
   onelinkEnabled,
   onelinkModelsByTab,
+  onelinkCreatedAt,
   onClose,
   onOpenOneLink,
-  onOpenCustomProvider,
   onComplete,
   onEditOneLink,
   onToggleOneLink,
-  customProviders,
-  canAddCustomProvider,
-  onEditCustomProvider,
-  onToggleCustomProvider,
-  onDeleteCustomProvider,
   onTestOneLink,
+  availableModelCount = 23,
+  bannerData,
+  otherProviders = [],
+  onEditOtherProvider,
+  onToggleOtherProvider,
+  onTestOtherProvider,
+  onConfigureOtherProvider,
 }) {
   return (
     <div className="[font-synthesis:none] flex h-[600px] w-[800px] max-w-[calc(100vw-48px)] flex-col overflow-hidden text-xs/4 antialiased">
@@ -611,7 +621,7 @@ function MainModal({
       </div>
 
       <div className="flex min-h-0 flex-1 flex-col gap-[16px] overflow-y-auto bg-surface-modal px-[24px] py-[8px]">
-        <RecommendationBanner />
+        <RecommendationBanner bannerData={bannerData} />
 
         <div className="flex flex-col gap-[8px] self-stretch">
           <div className="self-stretch text-sm/4.5 font-medium text-text-primary" style={{ fontFamily: FONT_MEDIUM }}>
@@ -623,7 +633,7 @@ function MainModal({
                 <ConfiguredProviderCard
                   title="OneLinkAI"
                   modelCount={Object.values(onelinkModelsByTab ?? {}).reduce((sum, arr) => sum + arr.length, 0)}
-                  date="2026-01-01"
+                  date={onelinkCreatedAt || '---'}
                   enabled={onelinkEnabled}
                   onEdit={onEditOneLink}
                   onTest={onTestOneLink}
@@ -634,36 +644,23 @@ function MainModal({
               )}
             </div>
 
-            {customProviders.map((provider) => (
+            {otherProviders.map(provider => (
               <div key={provider.id} className="w-[calc((100%-32px)/3)]">
-                <CustomProviderCard
-                  configured={provider.configured}
-                  enabled={provider.enabled}
-                  modelCount={Object.values(provider.modelsByTab ?? {}).reduce((sum, arr) => sum + arr.length, 0)}
-                  providerName={provider.name || DEFAULT_PROVIDER_NAME}
-                  onConfigure={onOpenCustomProvider}
-                  onEdit={() => onEditCustomProvider(provider.id)}
-                  onToggle={() => onToggleCustomProvider(provider.id)}
-                  onDelete={() => onDeleteCustomProvider(provider.id)}
-                  onTest={onTestOneLink}
-                />
+                {provider.configured ? (
+                  <ConfiguredProviderCard
+                    title={provider.name}
+                    modelCount={Object.values(provider.modelsByTab ?? {}).reduce((sum, arr) => sum + arr.length, 0)}
+                    date={provider.createdAt}
+                    enabled={provider.enabled}
+                    onEdit={() => onEditOtherProvider(provider.id)}
+                    onTest={() => onTestOtherProvider(provider.id)}
+                    onToggle={() => onToggleOtherProvider(provider.id)}
+                  />
+                ) : (
+                  <UnconfiguredProviderCard name={provider.name} onConfigure={() => onConfigureOtherProvider?.(provider.cardKey)} />
+                )}
               </div>
             ))}
-
-            {canAddCustomProvider ? (
-              <div className="w-[calc((100%-32px)/3)]">
-                <CustomProviderCard
-                  configured={false}
-                  enabled={false}
-                  modelCount={0}
-                  providerName={DEFAULT_PROVIDER_NAME}
-                  onConfigure={onOpenCustomProvider}
-                  onEdit={() => undefined}
-                  onToggle={() => undefined}
-                  onDelete={() => undefined}
-                />
-              </div>
-            ) : null}
           </div>
         </div>
 
@@ -672,8 +669,9 @@ function MainModal({
             配置说明
           </div>
         <div className="whitespace-pre-wrap text-[14px] leading-[150%] text-text-secondary" style={{ fontFamily: FONT }}>
-            我们已经为您配置好OneLink AI平台内的23个主流模型，前往官网
+            我们已经为您配置好OneLink AI平台内的{availableModelCount}个主流模型，前往官网
             <span
+              onClick={() => window.open('https://www.onelinkai.cloud/', '_blank')}
               className="cursor-pointer text-text-accent underline-offset-2 transition-all hover:underline hover:brightness-125 active:opacity-70"
             >获取API</span>
             后即可开始使用
@@ -697,9 +695,9 @@ function MainModal({
   );
 }
 
-function NestedModal({ title, children, footer, onClose }) {
+function NestedModal({ title, children, footer, onClose, wide = false }) {
   return (
-    <div className="[font-synthesis:none] flex h-[600px] w-[400px] max-w-[calc(100vw-80px)] flex-col overflow-hidden text-xs/4 antialiased" onClick={(event) => event.stopPropagation()}>
+    <div className={`[font-synthesis:none] flex h-[600px] ${wide ? 'w-[800px]' : 'w-[400px]'} max-w-[calc(100vw-80px)] flex-col overflow-hidden text-xs/4 antialiased`} onClick={(event) => event.stopPropagation()}>
       <div className="flex items-center justify-between gap-[16px] rounded-t-2xl bg-surface-modal px-[24px] py-[16px]">
         <div className="flex-1 text-base/5 font-medium text-text-primary" style={{ fontFamily: FONT_MEDIUM }}>
           {title}
@@ -725,16 +723,15 @@ function ModelTabs({ activeTab, onChange }) {
           <button
             key={tab}
             type="button"
-            className="flex flex-col items-center gap-[4px] transition-opacity hover:opacity-80 active:opacity-60"
+            className="transition-opacity hover:opacity-80 active:opacity-60"
             onClick={() => onChange(tab)}
           >
             <div
               className={`w-fit text-sm/4.5 transition-colors ${active ? 'font-medium text-text-primary' : 'text-text-secondary hover:text-text-primary active:text-text-secondary'}`}
-              style={{ fontFamily: active ? FONT_MEDIUM : FONT }}
+              style={{ fontFamily: active ? FONT_MEDIUM : FONT, fontWeight: active ? 500 : 400 }}
             >
               {tab}
             </div>
-            {active ? <div className="h-0.5 self-stretch bg-[#DDDDDD]" /> : null}
           </button>
         );
       })}
@@ -804,6 +801,7 @@ function ConfigModelModal({
   onDeleteModel,
   onSetDefaultModel,
   onTest,
+  apiTested = false,
 }) {
   const activeTabIndex = Math.max(MODEL_TABS.indexOf(activeTab), 0);
   const [disablingId, setDisablingId] = useState(null);
@@ -812,6 +810,7 @@ function ConfigModelModal({
   const prevPositions = useRef({});
 
   const activeModels = modelsByTab[activeTab] ?? [];
+  const showEmptyState = !apiTested && activeModels.length === 0;
 
   const snapshotPositions = useCallback(() => {
     prevPositions.current = {};
@@ -841,6 +840,7 @@ function ConfigModelModal({
   const handleToggleModel = useCallback((modelId) => {
     const model = activeModels.find((m) => m.id === modelId);
     if (model?.enabled) {
+      // 关闭启用 → 下移动画
       snapshotPositions();
       setDisablingId(modelId);
       setTimeout(() => {
@@ -849,14 +849,28 @@ function ConfigModelModal({
         onToggleModel(modelId);
       }, 260);
     } else {
-      onToggleModel(modelId);
+      // 打开启用 → 上移动画
+      snapshotPositions();
+      setTimeout(() => {
+        pendingFlip.current = true;
+        onToggleModel(modelId);
+      }, 0);
     }
   }, [activeModels, onToggleModel, snapshotPositions]);
+
+  const handleSetDefaultModel = useCallback((modelId) => {
+    snapshotPositions();
+    setTimeout(() => {
+      pendingFlip.current = true;
+      onSetDefaultModel(modelId);
+    }, 0);
+  }, [onSetDefaultModel, snapshotPositions]);
 
   return (
     <NestedModal
       title={title}
       onClose={onCancel}
+      wide
       footer={
         <PrimaryButton className="h-9" innerClassName="px-[15px]" onClick={onSave}>
           保存
@@ -873,12 +887,16 @@ function ConfigModelModal({
             onChange={apiDisabled ? undefined : onApiChange}
             placeholder={apiPlaceholder}
             disabled={apiDisabled}
-            readOnly={!apiDisabled && Boolean(apiValue && apiValue.includes('自动代入'))}
           />
           <AccentButton className="h-9" textClassName="text-center" onClick={onTest}>
             测试连接
           </AccentButton>
         </div>
+        {apiTested && apiValue.includes('*') && (
+          <div className="text-xs/4 text-text-hint" style={{ fontFamily: FONT }}>
+            API已配置，出于安全考虑仅显示部分字符。可重新输入完整 API 进行更新
+          </div>
+        )}
       </div>
 
       <div className="flex flex-1 flex-col items-start gap-[12px] self-stretch overflow-hidden min-h-0">
@@ -894,28 +912,50 @@ function ConfigModelModal({
           >
             {MODEL_TABS.map((tab) => {
               const tabModels = modelsByTab[tab] ?? [];
+              const tabShowEmptyState = !apiTested && tabModels.length === 0;
               return (
                 <div key={tab} className="flex shrink-0 flex-col gap-[12px] overflow-y-auto pr-[2px]" style={{ width: `${100 / MODEL_TABS.length}%`, height: '100%' }}>
-                  {tabModels.map((model) => (
-                    <ModelCard
-                      key={model.id}
-                      ref={(el) => { if (tab === activeTab) cardRefs.current[model.id] = el; }}
-                      model={model}
-                      animating={tab === activeTab && disablingId === model.id}
-                      onToggle={() => handleToggleModel(model.id)}
-                      onDelete={() => onDeleteModel(model.id)}
-                      onSetDefault={() => onSetDefaultModel(model.id)}
-                    />
-                  ))}
-                  {tabModels.length < 30 && (
-                    <SecondaryButton
-                      className="h-9 w-full justify-center shrink-0"
-                      icon={<PlusIcon className="h-[16px] w-[16px] text-text-secondary" />}
-                      onClick={onAddModel}
-                      textClassName="text-center"
-                    >
-                      添加模型
-                    </SecondaryButton>
+                  {tabShowEmptyState ? (
+                    <div className="flex flex-1 flex-col items-center justify-center gap-[8px]">
+                      <svg width="48" height="48" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg">
+                        <path d="M37 22L34 25L23 14L26 11C28 9 33 7 37 11C41 15 38.5 20 37 22Z" fill="#2D2D2D" stroke="#2D2D2D" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M42 6L37 11" stroke="#2D2D2D" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M11 26L14 23L25 34L22 37C20 39 15 41 11 37C7 33 9.5 28 11 26Z" fill="#2D2D2D" stroke="#2D2D2D" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M23 32L27 28" stroke="#2D2D2D" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M6 42L11 37" stroke="#2D2D2D" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+                        <path d="M16 25L20 21" stroke="#2D2D2D" strokeWidth="3" strokeLinecap="round" strokeLinejoin="round"/>
+                      </svg>
+                      <div className="text-xs text-[#FFFFFF66]" style={{ fontFamily: FONT }}>
+                        请先配置API Key
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      {tabModels.map((model) => (
+                        <ModelCard
+                          key={model.id ?? model.modelId}
+                          ref={(el) => { if (tab === activeTab) cardRefs.current[model.id ?? model.modelId] = el; }}
+                          model={model}
+                          animating={tab === activeTab && disablingId === model.id}
+                          onToggle={() => handleToggleModel(model.id)}
+                          onDelete={() => onDeleteModel(model.id)}
+                          onSetDefault={() => handleSetDefaultModel(model.id)}
+                        />
+                      ))}
+                      {apiTested && tabModels.length < 30 && (
+                        <button
+                          type="button"
+                          onClick={onAddModel}
+                          className="flex h-9 w-full shrink-0 items-center justify-center gap-[4px] rounded-lg bg-btn-primary-bg-normal px-[16px] outline-none transition-colors hover:bg-btn-primary-bg-hover active:bg-btn-primary-bg-active"
+                          style={{ border: '1px dashed #FFFFFF33' }}
+                        >
+                          <PlusIcon className="h-[16px] w-[16px] text-text-secondary" />
+                          <div className="shrink-0 text-center text-sm/4.5 text-text-secondary" style={{ fontFamily: FONT }}>
+                            添加模型
+                          </div>
+                        </button>
+                      )}
+                    </>
                   )}
                 </div>
               );
@@ -955,43 +995,21 @@ function EditModelModal({ draft, onChange, onCancel, onSave, title = '添加模�
   );
 }
 
-function CustomProviderModal({ draft, onChange, onCancel, onAdd }) {
-  const canAdd = draft.name.trim() !== '' && draft.vendor !== '' && draft.baseUrl.trim() !== '' && draft.apiKey.trim() !== '';
-  return (
-    <NestedModal
-      title="自定义API服务商"
-      onClose={onCancel}
-      footer={
-        <>
-          <SecondaryButton className="h-9" onClick={onCancel}>
-            取消
-          </SecondaryButton>
-          <PrimaryButton className="h-9" innerClassName="px-[15px]" onClick={onAdd} disabled={!canAdd}>
-            添加
-          </PrimaryButton>
-        </>
-      }
-    >
-      <Field label="名称">
-        <TextInput value={draft.name} onChange={(event) => onChange('name', event.target.value)} placeholder="请输入" />
-      </Field>
-      <Field label="服务商">
-        <ProviderSelect value={draft.vendor} onChange={(value) => onChange('vendor', value)} />
-      </Field>
-      <Field label="Base URL">
-        <TextInput value={draft.baseUrl} onChange={(event) => onChange('baseUrl', event.target.value)} placeholder="请输入" />
-      </Field>
-      <Field label="API key">
-        <TextInput value={draft.apiKey} onChange={(event) => onChange('apiKey', event.target.value)} placeholder="请输入" />
-      </Field>
-    </NestedModal>
-  );
-}
+// function CustomProviderModal({ draft, onChange, onCancel, onAdd }) {
+//   const canAdd = draft.name.trim() !== '' && draft.vendor !== '' && draft.baseUrl.trim() !== '' && draft.apiKey.trim() !== '';
+//   return (
+//     <NestedModal title="自定义API服务商" onClose={onCancel} footer={...}>
+//       ...
+//     </NestedModal>
+//   );
+// }
 
 export default function ApiConfigModal({ open, onClose, onConfigured }) {
   const [state, setState] = useState(createDefaultState);
   const [toasts, setToasts] = useState([]);
   const [confirmDelete, setConfirmDelete] = useState(null);
+  const [availableModelCount, setAvailableModelCount] = useState(23);
+  const [bannerData, setBannerData] = useState(null);
 
   const showToast = useCallback((type, message) => {
     const id = Date.now();
@@ -999,56 +1017,209 @@ export default function ApiConfigModal({ open, onClose, onConfigured }) {
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3000);
   }, []);
 
+  const loadModelsFromBackend = useCallback(() => {
+    apiListModels().then((models) => {
+      if (!models || !models.length) return;
+      setState((current) => {
+        const modelsByTab = createEmptyModelsByTab();
+        models.forEach((model) => {
+          if (current.onelinkProviderId && model.provider_id !== current.onelinkProviderId) return;
+          const tab = getCategoryTab(model.category);
+          if (!tab) return;
+          modelsByTab[tab].push({
+            id: model.id,
+            name: model.name || model.model_id,
+            description: model.description || MODEL_DESCRIPTION,
+            enabled: model.is_enabled ?? false,
+            isDefault: model.is_default ?? false,
+            modelId: model.model_id,
+          });
+        });
+        return {
+          ...current,
+          onelinkModelsByTab: Object.fromEntries(
+            Object.entries(modelsByTab).map(([tab, list]) => [tab, sortModels(list)])
+          ),
+        };
+      });
+      setAvailableModelCount(models.length);
+    }).catch((err) => {
+      console.error('加载模型列表失败:', err);
+    });
+  }, []);
+
+  const initializeFromBackend = useCallback(() => {
+    Promise.all([
+      apiListProviders().catch(() => []),
+      apiListModels().catch(() => []),
+      apiGetBanner().catch(() => null),
+      apiGetCardVisibility().catch(() => []),
+    ]).then(([providersData, allModels, bannerResult, cardVisibility]) => {
+      if (bannerResult) setBannerData(bannerResult);
+
+      const rawList = Array.isArray(providersData) ? providersData : (providersData?.items ?? providersData?.providers ?? []);
+      const onelinkProvider = rawList.find(p => p.provider_type === 'onelink' || p.name === 'OneLinkAI');
+      const otherProvidersList = rawList.filter(p => p !== onelinkProvider);
+
+      // card-visibility 返回的可见卡片键（去掉 onelink，单独处理）
+      const visibleKeys = cardVisibility.length > 0
+        ? cardVisibility.filter(c => c.is_visible !== false).map(c => c.card_key)
+        : ['onelink', ...otherProvidersList.map(p => p.provider_type).filter(Boolean)];
+      const visibleCardKeys = visibleKeys.length > 0 ? visibleKeys : ['onelink'];
+
+      // Group models by provider_id
+      const groupedByProvider = {};
+      (allModels || []).forEach(model => {
+        const tab = getCategoryTab(model.category);
+        if (!tab) return;
+        const pid = model.provider_id;
+        if (!groupedByProvider[pid]) groupedByProvider[pid] = createEmptyModelsByTab();
+        groupedByProvider[pid][tab].push({
+          id: model.id,
+          name: model.name || model.model_id,
+          description: model.description || MODEL_DESCRIPTION,
+          enabled: model.is_enabled ?? false,
+          isDefault: model.is_default ?? false,
+          modelId: model.model_id,
+        });
+      });
+      Object.values(groupedByProvider).forEach(byTab => {
+        MODEL_TABS.forEach(tab => { if (byTab[tab]) byTab[tab] = sortModels(byTab[tab]); });
+      });
+
+      let onelinkUpdate = {};
+      if (onelinkProvider) {
+        const maskedKey = onelinkProvider.api_key_masked || '';
+        onelinkUpdate = {
+          mainConfigured: true,
+          onelinkEnabled: onelinkProvider.is_enabled ?? false,
+          onelinkProviderId: onelinkProvider.id,
+          onelinkCreatedAt: onelinkProvider.created_at ? onelinkProvider.created_at.slice(0, 10) : '---',
+          onelinkApiKey: maskedKey,
+          onelinkApiKeyActual: maskedKey,
+          onelinkKeyIsFromServer: true,
+          apiTested: true,
+          onelinkModelsByTab: groupedByProvider[onelinkProvider.id] || createEmptyModelsByTab(),
+        };
+      }
+
+      // 所有非 onelink 的配置好的服务商，key 为 provider_type
+      const configuredByType = {};
+      otherProvidersList.forEach(p => {
+        if (p.provider_type) configuredByType[p.provider_type] = p;
+      });
+
+      // 按 card-visibility 顺序构建 otherProviders（含未配置的可见服务商）
+      const formattedOtherProviders = visibleCardKeys
+        .filter(key => key !== 'onelink')
+        .map(key => {
+          const p = configuredByType[key];
+          if (p) {
+            return {
+              id: p.id,
+              cardKey: key,
+              name: p.name || CARD_KEY_NAMES[key] || key,
+              configured: true,
+              enabled: p.is_enabled ?? false,
+              createdAt: p.created_at ? p.created_at.slice(0, 10) : '---',
+              apiKeyMasked: p.api_key_masked || '',
+              modelsByTab: groupedByProvider[p.id] || createEmptyModelsByTab(),
+            };
+          }
+          // 未配置但可见的服务商
+          return {
+            id: key,
+            cardKey: key,
+            name: CARD_KEY_NAMES[key] || key,
+            configured: false,
+            enabled: false,
+            createdAt: '---',
+            apiKeyMasked: '',
+            modelsByTab: createEmptyModelsByTab(),
+          };
+        });
+
+      setState(current => ({
+        ...current,
+        ...onelinkUpdate,
+        otherProviders: formattedOtherProviders,
+        visibleCardKeys,
+      }));
+
+      setAvailableModelCount((allModels || []).length);
+    }).catch(err => {
+      console.warn('初始化配置失败:', err);
+    });
+  }, []);
+
   const testConnection = useCallback(async () => {
-    await apiTestConnection();
-    showToast('success', '连接成功！');
-  }, [showToast]);
+    try {
+      // key 来自后端（脱敏值），直接让后端用已存的 key 测试
+      if (state.onelinkKeyIsFromServer && state.onelinkProviderId) {
+        const result = await apiTestConnection(state.onelinkProviderId);
+        if (result?.test_success === false) {
+          showToast('error', result?.test_message || '连接失败，请检查API是否正确');
+        } else {
+          showToast('success', '连接成功！');
+        }
+        return;
+      }
+
+      const keyToTest = state.onelinkApiKeyActual.trim();
+      if (!keyToTest) {
+        showToast('error', '请先输入API');
+        return;
+      }
+      const result = await apiOneClickSetup({ api_key: keyToTest });
+
+      // oneclick-setup 已将模型写入后端，直接从 /api/models 拉取带真实 id 的完整数据
+      if (result.test_success || (result.models && result.models.length > 0)) {
+        loadModelsFromBackend();
+        setState((current) => ({ ...current, apiTested: true }));
+        setAvailableModelCount(result.models?.length ?? 0);
+      }
+
+      if (result.test_success) {
+        showToast('success', '连接成功！');
+      } else {
+        showToast('error', result.test_message || '连接失败，请检查API是否正确');
+      }
+    } catch (error) {
+      console.error('测试连接失败:', error);
+      const msg = error?.message && !error.message.startsWith('请求失败') ? error.message : '连接失败，请检查API是否正确';
+      showToast('error', msg);
+    }
+  }, [showToast, state.onelinkApiKeyActual, state.onelinkKeyIsFromServer, state.onelinkProviderId, loadModelsFromBackend]);
 
   const requestDelete = useCallback((type, id) => {
     setConfirmDelete({ type, id });
   }, []);
+
+  // 加载广告位数据和 provider 信息
+  useEffect(() => {
+    if (!open) return;
+    initializeFromBackend();
+  }, [open, initializeFromBackend]);
 
   function resetState() {
     setState(createDefaultState);
   }
 
   function closeMain() {
-    apiSaveApiConfig(state);
     resetState();
     onClose?.();
   }
 
   function closeChild() {
-    setState((current) => {
-      const activeProvider = current.customProviders.find((provider) => provider.id === current.activeCustomProviderId);
-      const shouldRemovePendingProvider = current.childView?.startsWith('custom-provider') && activeProvider && !activeProvider.configured;
-
-      return {
-        ...current,
-        childView: null,
-        activeCustomProviderId: shouldRemovePendingProvider ? null : current.activeCustomProviderId,
-        customProviderDraft: current.childView === 'custom-provider-form' ? createCustomProviderDraft() : current.customProviderDraft,
-        customProviderModelDraft: current.childView?.startsWith('custom-provider') ? createEmptyModelDraft() : current.customProviderModelDraft,
-        customProviders: shouldRemovePendingProvider
-          ? current.customProviders.filter((provider) => provider.id !== current.activeCustomProviderId)
-          : current.customProviders,
-      };
-    });
+    setState((current) => ({
+      ...current,
+      childView: null,
+      onelinkModelDraft: createEmptyModelDraft(),
+    }));
   }
 
   useEffect(() => {
     if (!open) return undefined;
-
-    apiGetApiConfig().then((config) => {
-      setState((current) => ({
-        ...current,
-        mainConfigured: config.mainConfigured ?? current.mainConfigured,
-        onelinkEnabled: config.onelinkEnabled ?? current.onelinkEnabled,
-        onelinkApiKey: config.onelinkApiKey ?? current.onelinkApiKey,
-        onelinkModelsByTab: config.onelinkModelsByTab ?? current.onelinkModelsByTab,
-        customProviders: config.customProviders ?? current.customProviders,
-      }));
-    });
 
     const handleKeyDown = (event) => {
       if (event.key !== 'Escape') return;
@@ -1064,12 +1235,18 @@ export default function ApiConfigModal({ open, onClose, onConfigured }) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [open, onClose, state.childView]);
 
-  const activeCustomProvider = useMemo(
-    () => state.customProviders.find((provider) => provider.id === state.activeCustomProviderId) ?? null,
-    [state.customProviders, state.activeCustomProviderId],
-  );
-  const customApiKey = activeCustomProvider?.apiKey ?? '';
-  const canAddCustomProvider = state.customProviders.length < MAX_CUSTOM_PROVIDERS;
+  // 打开 onelink-config 子弹窗时从后端加载模型列表
+  useEffect(() => {
+    if (state.childView !== 'onelink-config') return;
+    loadModelsFromBackend();
+  }, [state.childView, loadModelsFromBackend]);
+
+  // const activeCustomProvider = useMemo(
+  //   () => state.customProviders.find((provider) => provider.id === state.activeCustomProviderId) ?? null,
+  //   [state.customProviders, state.activeCustomProviderId],
+  // );
+  // const customApiKey = activeCustomProvider?.apiKey ?? '';
+  // const canAddCustomProvider = state.customProviders.length < MAX_CUSTOM_PROVIDERS;
 
   if (!open) return null;
 
@@ -1078,62 +1255,231 @@ export default function ApiConfigModal({ open, onClose, onConfigured }) {
   const updateDraft = (draftKey, field, value) =>
     setState((current) => ({ ...current, [draftKey]: { ...current[draftKey], [field]: value } }));
 
-  const updateCustomProviderDraft = (field, value) =>
-    setState((current) => ({ ...current, customProviderDraft: { ...current.customProviderDraft, [field]: value } }));
+  // const updateCustomProviderDraft = (field, value) =>
+  //   setState((current) => ({ ...current, customProviderDraft: { ...current.customProviderDraft, [field]: value } }));
 
   const openOneLinkConfig = () => setState((current) => ({ ...current, childView: 'onelink-config' }));
-  const openCustomProviderForm = () =>
-    setState((current) => ({
+
+  const openOtherProviderConfig = (providerId) => {
+    const provider = state.otherProviders.find(p => p.id === providerId);
+    if (!provider) return;
+    setState(current => ({
       ...current,
-      childView: 'custom-provider-form',
-      activeCustomProviderId: null,
-      customProviderDraft: createCustomProviderDraft(),
-      customProviderModelDraft: createEmptyModelDraft(),
+      activeOtherProviderId: providerId,
+      editProviderApiKey: provider.apiKeyMasked,
+      editProviderApiKeyActual: provider.apiKeyMasked,
+      editProviderKeyIsFromServer: provider.configured,
+      editProviderApiTested: provider.configured,
+      editProviderModelsByTab: provider.modelsByTab,
+      editProviderModelDraft: createEmptyModelDraft(),
+      childView: 'other-provider-config',
       activeModelTab: '对话模型',
     }));
-  const openCustomProviderConfig = (providerId) =>
-    setState((current) => ({
+  };
+
+  // 通过 card_key 打开未配置服务商的配置页
+  const openUnconfiguredProviderConfig = (cardKey) => {
+    const provider = state.otherProviders.find(p => p.cardKey === cardKey);
+    if (!provider) return;
+    openOtherProviderConfig(provider.id);
+  };
+
+  const saveOtherProviderConfig = () => {
+    setState(current => {
+      const updatedOtherProviders = current.otherProviders.map(p =>
+        p.id === current.activeOtherProviderId
+          ? { ...p, modelsByTab: current.editProviderModelsByTab }
+          : p
+      );
+      return { ...current, otherProviders: updatedOtherProviders, childView: null };
+    });
+  };
+
+  const toggleOtherProvider = (providerId) => {
+    const provider = state.otherProviders.find(p => p.id === providerId);
+    if (!provider || !provider.configured) return;
+    const newEnabled = !provider.enabled;
+    apiUpdateProvider(providerId, { is_enabled: newEnabled }).catch(err => {
+      console.error('更新服务商状态失败:', err);
+    });
+    setState(current => ({
       ...current,
-      activeCustomProviderId: providerId,
-      childView: 'custom-provider-model-config',
-      customProviderModelDraft: createEmptyModelDraft(),
-      activeModelTab: '对话模型',
+      otherProviders: current.otherProviders.map(p =>
+        p.id === providerId ? { ...p, enabled: newEnabled } : p
+      ),
     }));
+  };
+
+  const testOtherProviderFromCard = async (providerId) => {
+    const provider = state.otherProviders.find(p => p.id === providerId);
+    if (!provider?.configured) return;
+    try {
+      const result = await apiTestConnection(providerId);
+      if (result?.test_success === false) {
+        showToast('error', result?.test_message || '连接失败，请检查API是否正确');
+      } else {
+        showToast('success', '连接成功！');
+      }
+    } catch (error) {
+      console.error('测试连接失败:', error);
+      showToast('error', '连接失败，请检查API是否正确');
+    }
+  };
+
+  const testOtherProviderConnection = async () => {
+    const providerId = state.activeOtherProviderId;
+    if (!providerId) return;
+    try {
+      if (!state.editProviderKeyIsFromServer && state.editProviderApiKeyActual.trim()) {
+        await apiUpdateProvider(providerId, { api_key: state.editProviderApiKeyActual.trim() });
+        setState(current => ({
+          ...current,
+          editProviderKeyIsFromServer: true,
+          otherProviders: current.otherProviders.map(p =>
+            p.id === providerId ? { ...p, apiKeyMasked: current.editProviderApiKey } : p
+          ),
+        }));
+      }
+      const result = await apiTestConnection(providerId);
+      if (result?.test_success === false) {
+        showToast('error', result?.test_message || '连接失败，请检查API是否正确');
+      } else {
+        showToast('success', '连接成功！');
+        setState(current => ({ ...current, editProviderApiTested: true }));
+      }
+    } catch (error) {
+      console.error('测试连接失败:', error);
+      showToast('error', '连接失败，请检查API是否正确');
+    }
+  };
+
+  const toggleEditProviderModel = (modelId) =>
+    setState((current) => {
+      const tab = current.activeModelTab;
+      const updated = (current.editProviderModelsByTab[tab] ?? []).map((model) => {
+        if (model.id !== modelId) return model;
+        const nowEnabled = !model.enabled;
+        const nowDefault = nowEnabled ? model.isDefault : false;
+        apiUpdateModel(model.id, {
+          is_enabled: nowEnabled,
+          ...(nowDefault !== model.isDefault ? { is_default: nowDefault } : {}),
+        }).catch(err => console.error('更新模型状态失败:', err));
+        return { ...model, enabled: nowEnabled, isDefault: nowDefault, isNew: false, justDisabled: !nowEnabled };
+      });
+      return {
+        ...current,
+        editProviderModelsByTab: { ...current.editProviderModelsByTab, [tab]: sortModels(updated) },
+      };
+    });
+
+  const setDefaultEditProviderModel = (modelId) => {
+    setState((current) => {
+      const tab = current.activeModelTab;
+      const targetModel = (current.editProviderModelsByTab[tab] ?? []).find(m => m.id === modelId);
+      const isCurrentlyDefault = targetModel?.isDefault;
+      const newIsDefault = !isCurrentlyDefault;
+      const needEnable = newIsDefault && !targetModel?.enabled;
+      apiUpdateModel(modelId, { is_default: newIsDefault, ...(needEnable ? { is_enabled: true } : {}) })
+        .catch(err => console.error('设为默认失败:', err));
+      const updated = (current.editProviderModelsByTab[tab] ?? []).map(model => ({
+        ...model,
+        isDefault: isCurrentlyDefault ? false : model.id === modelId,
+        enabled: model.id === modelId && needEnable ? true : model.enabled,
+      }));
+      return {
+        ...current,
+        editProviderModelsByTab: { ...current.editProviderModelsByTab, [tab]: sortModels(updated) },
+      };
+    });
+  };
+
+  const deleteEditProviderModel = (modelId) =>
+    setState((current) => {
+      const tab = current.activeModelTab;
+      return {
+        ...current,
+        editProviderModelsByTab: {
+          ...current.editProviderModelsByTab,
+          [tab]: (current.editProviderModelsByTab[tab] ?? []).filter(m => m.id !== modelId),
+        },
+      };
+    });
+
+  const addEditProviderModelWithValidation = async () => {
+    try {
+      const draft = state.editProviderModelDraft;
+      const tab = state.activeModelTab;
+      const category = getTabCategory(tab);
+      if (!draft.identifier.trim()) {
+        showToast('error', '请输入模型标识');
+        return;
+      }
+      const result = await apiCreateModel({
+        provider_id: state.activeOtherProviderId,
+        model_id: draft.identifier,
+        name: draft.name || draft.identifier,
+        category,
+        description: draft.note || null,
+        is_enabled: true,
+      });
+      const newModel = {
+        id: result.id,
+        name: result.name,
+        description: result.description || MODEL_DESCRIPTION,
+        enabled: result.is_enabled ?? true,
+        isNew: true,
+        modelId: result.model_id,
+      };
+      setState((current) => {
+        const sorted = sortModels([...(current.editProviderModelsByTab[tab] ?? []), newModel]);
+        return {
+          ...current,
+          editProviderModelsByTab: { ...current.editProviderModelsByTab, [tab]: sorted },
+          editProviderModelDraft: createEmptyModelDraft(),
+          childView: 'other-provider-config',
+        };
+      });
+      showToast('success', '模型添加成功！');
+    } catch (error) {
+      console.error('添加模型失败:', error);
+      showToast('error', '模型添加失败！id不匹配');
+    }
+  };
 
   const saveOneLinkConfig = () => {
     setState((current) => ({ ...current, mainConfigured: true, onelinkEnabled: true, childView: null }));
     onConfigured?.();
   };
 
-  const saveCustomProviderModelConfig = () => {
-    setState((current) => ({
-      ...current,
-      childView: null,
-      customProviderModelDraft: createEmptyModelDraft(),
-      customProviders: current.customProviders.map((provider) =>
-        provider.id === current.activeCustomProviderId ? { ...provider, configured: true, enabled: true } : provider,
-      ),
-    }));
-    onConfigured?.();
-  };
+  // const saveCustomProviderModelConfig = () => {
+  //   setState((current) => ({
+  //     ...current,
+  //     childView: null,
+  //     customProviderModelDraft: createEmptyModelDraft(),
+  //     customProviders: current.customProviders.map((provider) =>
+  //       provider.id === current.activeCustomProviderId ? { ...provider, configured: true, enabled: true } : provider,
+  //     ),
+  //   }));
+  //   onConfigured?.();
+  // };
 
-  const addCustomProvider = () =>
-    setState((current) => {
-      if (current.customProviders.length >= MAX_CUSTOM_PROVIDERS) return current;
-      const providerId = `custom-provider-${Date.now()}`;
-      const draft = current.customProviderDraft;
-      return {
-        ...current,
-        activeCustomProviderId: providerId,
-        childView: 'custom-provider-model-config',
-        customProviderDraft: createCustomProviderDraft(),
-        customProviderModelDraft: createEmptyModelDraft(),
-        customProviders: [
-          ...current.customProviders,
-          { id: providerId, configured: false, enabled: false, name: draft.name, vendor: draft.vendor, baseUrl: draft.baseUrl, apiKey: draft.apiKey, modelsByTab: createEmptyModelsByTab() },
-        ],
-      };
-    });
+  // const addCustomProvider = () =>
+  //   setState((current) => {
+  //     if (current.customProviders.length >= MAX_CUSTOM_PROVIDERS) return current;
+  //     const providerId = `custom-provider-${Date.now()}`;
+  //     const draft = current.customProviderDraft;
+  //     return {
+  //       ...current,
+  //       activeCustomProviderId: providerId,
+  //       childView: 'custom-provider-model-config',
+  //       customProviderDraft: createCustomProviderDraft(),
+  //       customProviderModelDraft: createEmptyModelDraft(),
+  //       customProviders: [
+  //         ...current.customProviders,
+  //         { id: providerId, configured: false, enabled: false, name: draft.name, vendor: draft.vendor, baseUrl: draft.baseUrl, apiKey: draft.apiKey, modelsByTab: createEmptyModelsByTab() },
+  //       ],
+  //     };
+  //   });
 
   const addOnelinkModel = () =>
     setState((current) => {
@@ -1149,28 +1495,70 @@ export default function ApiConfigModal({ open, onClose, onConfigured }) {
       };
     });
 
-  const addCustomProviderModel = () =>
-    setState((current) => {
-      const draft = current.customProviderModelDraft;
-      const tab = current.activeModelTab;
-      const newModel = { id: `customProviderModels-${Date.now()}`, name: draft.name || 'GPT5.1', description: draft.note || MODEL_DESCRIPTION, enabled: true, isNew: true };
-      return {
-        ...current,
-        customProviderModelDraft: createEmptyModelDraft(),
-        childView: 'custom-provider-model-config',
-        customProviders: current.customProviders.map((provider) =>
-          provider.id === current.activeCustomProviderId
-            ? {
-                ...provider,
-                modelsByTab: {
-                  ...(provider.modelsByTab ?? createEmptyModelsByTab()),
-                  [tab]: sortModels([...(provider.modelsByTab?.[tab] ?? []), newModel]),
-                },
-              }
-            : provider,
-        ),
+  const addOnelinkModelWithValidation = async () => {
+    try {
+      const draft = state.onelinkModelDraft;
+      const tab = state.activeModelTab;
+      const category = getTabCategory(tab);
+
+      if (!draft.identifier.trim()) {
+        showToast('error', '请输入模型标识');
+        return;
+      }
+
+      // 调用后端接口添加模型（CreateModelRequest 要求 provider_id/name/model_id/category）
+      const result = await apiCreateModel({
+        provider_id: state.onelinkProviderId,
+        model_id: draft.identifier,
+        name: draft.name || draft.identifier,
+        category,
+        description: draft.note || null,
+        is_enabled: true,
+      });
+
+      // 成功后添加到列表（ModelConfigResponse 字段：name / is_enabled）
+      const newModel = {
+        id: result.id,
+        name: result.name,
+        description: result.description || MODEL_DESCRIPTION,
+        enabled: result.is_enabled ?? true,
+        isNew: true,
+        modelId: result.model_id,
       };
-    });
+
+      setState((current) => {
+        const sorted = sortModels([...(current.onelinkModelsByTab[tab] ?? []), newModel]);
+        return {
+          ...current,
+          onelinkModelsByTab: { ...current.onelinkModelsByTab, [tab]: sorted },
+          onelinkModelDraft: createEmptyModelDraft(),
+          childView: 'onelink-config',
+        };
+      });
+
+      showToast('success', '模型添加成功！');
+    } catch (error) {
+      console.error('添加模型失败:', error);
+      showToast('error', '模型添加失败！id不匹配');
+    }
+  };
+
+  // const addCustomProviderModel = () =>
+  //   setState((current) => {
+  //     const draft = current.customProviderModelDraft;
+  //     const tab = current.activeModelTab;
+  //     const newModel = { id: `customProviderModels-${Date.now()}`, name: draft.name || 'GPT5.1', description: draft.note || MODEL_DESCRIPTION, enabled: true, isNew: true };
+  //     return {
+  //       ...current,
+  //       customProviderModelDraft: createEmptyModelDraft(),
+  //       childView: 'custom-provider-model-config',
+  //       customProviders: current.customProviders.map((provider) =>
+  //         provider.id === current.activeCustomProviderId
+  //           ? { ...provider, modelsByTab: { ...(provider.modelsByTab ?? createEmptyModelsByTab()), [tab]: sortModels([...(provider.modelsByTab?.[tab] ?? []), newModel]) } }
+  //           : provider,
+  //       ),
+  //     };
+  //   });
 
   const deleteOnelinkModel = (modelId) =>
     setState((current) => {
@@ -1184,27 +1572,21 @@ export default function ApiConfigModal({ open, onClose, onConfigured }) {
       };
     });
 
-  const deleteCustomProviderModel = (modelId) =>
-    setState((current) => {
-      const tab = current.activeModelTab;
-      return {
-        ...current,
-        customProviders: current.customProviders.map((provider) =>
-          provider.id === current.activeCustomProviderId
-            ? {
-                ...provider,
-                modelsByTab: {
-                  ...(provider.modelsByTab ?? createEmptyModelsByTab()),
-                  [tab]: (provider.modelsByTab?.[tab] ?? []).filter((m) => m.id !== modelId),
-                },
-              }
-            : provider,
-        ),
-      };
-    });
+  // const deleteCustomProviderModel = (modelId) =>
+  //   setState((current) => {
+  //     const tab = current.activeModelTab;
+  //     return {
+  //       ...current,
+  //       customProviders: current.customProviders.map((provider) =>
+  //         provider.id === current.activeCustomProviderId
+  //           ? { ...provider, modelsByTab: { ...(provider.modelsByTab ?? createEmptyModelsByTab()), [tab]: (provider.modelsByTab?.[tab] ?? []).filter((m) => m.id !== modelId) } }
+  //           : provider,
+  //       ),
+  //     };
+  //   });
 
-  const deleteCustomProvider = (providerId) =>
-    setState((current) => ({ ...current, customProviders: current.customProviders.filter((provider) => provider.id !== providerId) }));
+  // const deleteCustomProvider = (providerId) =>
+  //   setState((current) => ({ ...current, customProviders: current.customProviders.filter((provider) => provider.id !== providerId) }));
 
   const toggleOnelinkModel = (modelId) =>
     setState((current) => {
@@ -1212,7 +1594,18 @@ export default function ApiConfigModal({ open, onClose, onConfigured }) {
       const updated = (current.onelinkModelsByTab[tab] ?? []).map((model) => {
         if (model.id !== modelId) return model;
         const nowEnabled = !model.enabled;
-        return { ...model, enabled: nowEnabled, isNew: false, justDisabled: !nowEnabled };
+        // 如果关闭启用且该模型是默认模型，则清除默认状态
+        const nowDefault = nowEnabled ? model.isDefault : false;
+
+        // 同步后端
+        apiUpdateModel(model.id, {
+          is_enabled: nowEnabled,
+          ...(nowDefault !== model.isDefault ? { is_default: nowDefault } : {})
+        }).catch((err) => {
+          console.error('更新模型状态失败:', err);
+        });
+
+        return { ...model, enabled: nowEnabled, isDefault: nowDefault, isNew: false, justDisabled: !nowEnabled };
       });
       return {
         ...current,
@@ -1220,87 +1613,79 @@ export default function ApiConfigModal({ open, onClose, onConfigured }) {
       };
     });
 
-  const toggleCustomProviderModel = (modelId) =>
-    setState((current) => {
-      const tab = current.activeModelTab;
-      return {
-        ...current,
-        customProviders: current.customProviders.map((provider) =>
-          provider.id === current.activeCustomProviderId
-            ? {
-                ...provider,
-                modelsByTab: {
-                  ...(provider.modelsByTab ?? createEmptyModelsByTab()),
-                  [tab]: sortModels(
-                    (provider.modelsByTab?.[tab] ?? []).map((model) => {
-                      if (model.id !== modelId) return model;
-                      const nowEnabled = !model.enabled;
-                      return { ...model, enabled: nowEnabled, isNew: false, justDisabled: !nowEnabled };
-                    }),
-                  ),
-                },
-              }
-            : provider,
-        ),
-      };
-    });
+  // const toggleCustomProviderModel = (modelId) =>
+  //   setState((current) => {
+  //     const tab = current.activeModelTab;
+  //     return {
+  //       ...current,
+  //       customProviders: current.customProviders.map((provider) =>
+  //         provider.id === current.activeCustomProviderId
+  //           ? { ...provider, modelsByTab: { ...(provider.modelsByTab ?? createEmptyModelsByTab()), [tab]: sortModels((provider.modelsByTab?.[tab] ?? []).map((model) => { if (model.id !== modelId) return model; const nowEnabled = !model.enabled; return { ...model, enabled: nowEnabled, isNew: false, justDisabled: !nowEnabled }; })) } }
+  //           : provider,
+  //       ),
+  //     };
+  //   });
 
-  const setDefaultOnelinkModel = (modelId) =>
+  const setDefaultOnelinkModel = (modelId) => {
     setState((current) => {
       const tab = current.activeModelTab;
       const targetModel = (current.onelinkModelsByTab[tab] ?? []).find((m) => m.id === modelId);
       const isCurrentlyDefault = targetModel?.isDefault;
+      const newIsDefault = !isCurrentlyDefault;
+
+      // 如果设为默认且模型未启用，则同时启用
+      const needEnable = newIsDefault && !targetModel?.enabled;
+
+      // 同步后端
+      const updateData = { is_default: newIsDefault };
+      if (needEnable) {
+        updateData.is_enabled = true;
+      }
+      apiUpdateModel(modelId, updateData).catch((err) => {
+        console.error('设为默认失败:', err);
+      });
 
       const updated = (current.onelinkModelsByTab[tab] ?? []).map((model) => ({
         ...model,
         isDefault: isCurrentlyDefault ? false : model.id === modelId,
+        enabled: model.id === modelId && needEnable ? true : model.enabled,
       }));
       return {
         ...current,
-        onelinkModelsByTab: { ...current.onelinkModelsByTab, [tab]: updated },
+        onelinkModelsByTab: { ...current.onelinkModelsByTab, [tab]: sortModels(updated) },
       };
     });
+  };
 
-  const setDefaultCustomProviderModel = (modelId) =>
-    setState((current) => {
-      const tab = current.activeModelTab;
-      const provider = current.customProviders.find((p) => p.id === current.activeCustomProviderId);
-      const targetModel = (provider?.modelsByTab?.[tab] ?? []).find((m) => m.id === modelId);
-      const isCurrentlyDefault = targetModel?.isDefault;
+  // const setDefaultCustomProviderModel = (modelId) =>
+  //   setState((current) => {
+  //     const tab = current.activeModelTab;
+  //     const provider = current.customProviders.find((p) => p.id === current.activeCustomProviderId);
+  //     const targetModel = (provider?.modelsByTab?.[tab] ?? []).find((m) => m.id === modelId);
+  //     const isCurrentlyDefault = targetModel?.isDefault;
+  //     return {
+  //       ...current,
+  //       customProviders: current.customProviders.map((provider) =>
+  //         provider.id === current.activeCustomProviderId
+  //           ? { ...provider, modelsByTab: { ...(provider.modelsByTab ?? createEmptyModelsByTab()), [tab]: (provider.modelsByTab?.[tab] ?? []).map((model) => ({ ...model, isDefault: isCurrentlyDefault ? false : model.id === modelId })) } }
+  //           : provider,
+  //       ),
+  //     };
+  //   });
 
-      return {
-        ...current,
-        customProviders: current.customProviders.map((provider) =>
-          provider.id === current.activeCustomProviderId
-            ? {
-                ...provider,
-                modelsByTab: {
-                  ...(provider.modelsByTab ?? createEmptyModelsByTab()),
-                  [tab]: (provider.modelsByTab?.[tab] ?? []).map((model) => ({
-                    ...model,
-                    isDefault: isCurrentlyDefault ? false : model.id === modelId,
-                  })),
-                },
-              }
-            : provider,
-        ),
-      };
-    });
-
-  const toggleCustomProvider = (providerId) =>
-    setState((current) => ({
-      ...current,
-      customProviders: current.customProviders.map((provider) =>
-        provider.id === providerId && provider.configured ? { ...provider, enabled: !provider.enabled } : provider,
-      ),
-    }));
+  // const toggleCustomProvider = (providerId) =>
+  //   setState((current) => ({
+  //     ...current,
+  //     customProviders: current.customProviders.map((provider) =>
+  //       provider.id === providerId && provider.configured ? { ...provider, enabled: !provider.enabled } : provider,
+  //     ),
+  //   }));
 
   const handleConfirmDelete = () => {
     if (!confirmDelete) return;
     const { type, id } = confirmDelete;
     if (type === 'onelinkModel') deleteOnelinkModel(id);
-    else if (type === 'customProviderModel') deleteCustomProviderModel(id);
-    else if (type === 'customProvider') deleteCustomProvider(id);
+    else if (type === 'editProviderModel') deleteEditProviderModel(id);
     setConfirmDelete(null);
   };
 
@@ -1312,7 +1697,18 @@ export default function ApiConfigModal({ open, onClose, onConfigured }) {
             title="配置OneLinkAI API"
             apiValue={state.onelinkApiKey}
             apiPlaceholder="输入你的API"
-            onApiChange={(event) => updateState('onelinkApiKey', event.target.value)}
+            onApiChange={(event) => {
+              const inputValue = event.target.value;
+              const maskedValue = inputValue.length > 7
+                ? `${inputValue.slice(0, 3)}${'*'.repeat(Math.max(7, inputValue.length - 7))}${inputValue.slice(-4)}`
+                : inputValue;
+              setState((current) => ({
+                ...current,
+                onelinkApiKeyActual: inputValue,
+                onelinkApiKey: maskedValue,
+                onelinkKeyIsFromServer: false,
+              }));
+            }}
             activeTab={state.activeModelTab}
             onChangeTab={(tab) => updateState('activeModelTab', tab)}
             modelsByTab={state.onelinkModelsByTab}
@@ -1323,6 +1719,7 @@ export default function ApiConfigModal({ open, onClose, onConfigured }) {
             onDeleteModel={(id) => requestDelete('onelinkModel', id)}
             onSetDefaultModel={setDefaultOnelinkModel}
             onTest={testConnection}
+            apiTested={state.apiTested}
           />
         );
       case 'edit-onelink-model':
@@ -1332,38 +1729,50 @@ export default function ApiConfigModal({ open, onClose, onConfigured }) {
             title="添加模型"
             onChange={(field, value) => updateDraft('onelinkModelDraft', field, value)}
             onCancel={() => updateState('childView', 'onelink-config')}
-            onSave={addOnelinkModel}
+            onSave={addOnelinkModelWithValidation}
           />
         );
-      case 'custom-provider-form':
-        return <CustomProviderModal draft={state.customProviderDraft} onChange={updateCustomProviderDraft} onCancel={closeChild} onAdd={addCustomProvider} />;
-      case 'custom-provider-model-config':
+      case 'other-provider-config': {
+        const activeProvider = state.otherProviders.find(p => p.id === state.activeOtherProviderId);
         return (
           <ConfigModelModal
-            title="配置自定义API"
-            apiValue={customApiKey}
-            apiPlaceholder=""
-            apiDisabled
+            title={`配置${activeProvider?.name || 'API服务商'} API`}
+            apiValue={state.editProviderApiKey}
+            apiPlaceholder="输入你的API"
+            onApiChange={(event) => {
+              const inputValue = event.target.value;
+              const maskedValue = inputValue.length > 7
+                ? `${inputValue.slice(0, 3)}${'*'.repeat(Math.max(7, inputValue.length - 7))}${inputValue.slice(-4)}`
+                : inputValue;
+              setState((current) => ({
+                ...current,
+                editProviderApiKeyActual: inputValue,
+                editProviderApiKey: maskedValue,
+                editProviderKeyIsFromServer: false,
+              }));
+            }}
             activeTab={state.activeModelTab}
             onChangeTab={(tab) => updateState('activeModelTab', tab)}
-            modelsByTab={activeCustomProvider?.modelsByTab ?? createEmptyModelsByTab()}
-            onAddModel={() => updateState('childView', 'edit-custom-model')}
+            modelsByTab={state.editProviderModelsByTab}
+            onAddModel={() => updateState('childView', 'edit-other-provider-model')}
             onCancel={closeChild}
-            onSave={saveCustomProviderModelConfig}
-            onToggleModel={toggleCustomProviderModel}
-            onDeleteModel={(id) => requestDelete('customProviderModel', id)}
-            onSetDefaultModel={setDefaultCustomProviderModel}
-            onTest={testConnection}
+            onSave={saveOtherProviderConfig}
+            onToggleModel={toggleEditProviderModel}
+            onDeleteModel={(id) => requestDelete('editProviderModel', id)}
+            onSetDefaultModel={setDefaultEditProviderModel}
+            onTest={testOtherProviderConnection}
+            apiTested={state.editProviderApiTested}
           />
         );
-      case 'edit-custom-model':
+      }
+      case 'edit-other-provider-model':
         return (
           <EditModelModal
-            draft={state.customProviderModelDraft}
+            draft={state.editProviderModelDraft}
             title="添加模型"
-            onChange={(field, value) => updateDraft('customProviderModelDraft', field, value)}
-            onCancel={() => updateState('childView', 'custom-provider-model-config')}
-            onSave={addCustomProviderModel}
+            onChange={(field, value) => updateDraft('editProviderModelDraft', field, value)}
+            onCancel={() => updateState('childView', 'other-provider-config')}
+            onSave={addEditProviderModelWithValidation}
           />
         );
       default:
@@ -1386,9 +1795,9 @@ export default function ApiConfigModal({ open, onClose, onConfigured }) {
             configured={state.mainConfigured}
             onelinkEnabled={state.onelinkEnabled}
             onelinkModelsByTab={state.onelinkModelsByTab}
+            onelinkCreatedAt={state.onelinkCreatedAt}
             onClose={closeMain}
             onOpenOneLink={openOneLinkConfig}
-            onOpenCustomProvider={openCustomProviderForm}
             onComplete={closeMain}
             onEditOneLink={openOneLinkConfig}
             onToggleOneLink={() =>
@@ -1397,12 +1806,14 @@ export default function ApiConfigModal({ open, onClose, onConfigured }) {
                 return { ...current, onelinkEnabled: !current.onelinkEnabled };
               })
             }
-            customProviders={state.customProviders}
-            canAddCustomProvider={canAddCustomProvider}
-            onEditCustomProvider={openCustomProviderConfig}
-            onToggleCustomProvider={toggleCustomProvider}
-            onDeleteCustomProvider={(id) => requestDelete('customProvider', id)}
             onTestOneLink={testConnection}
+            availableModelCount={availableModelCount}
+            bannerData={bannerData}
+            otherProviders={state.otherProviders}
+            onEditOtherProvider={openOtherProviderConfig}
+            onToggleOtherProvider={toggleOtherProvider}
+            onTestOtherProvider={testOtherProviderFromCard}
+            onConfigureOtherProvider={openUnconfiguredProviderConfig}
           />
 
           {state.childView ? (

@@ -1,15 +1,10 @@
 const BASE = import.meta.env.VITE_API_BASE_URL;
-const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
 
 import { authFetch } from './request.js';
 
 // ── 创作会话（Session）───────────────────────────────────────────────────────
 
 export async function apiListCreationSessions({ project_id, status } = {}) {
-  if (USE_MOCK) {
-    console.log('[mock] list creation sessions');
-    return [];
-  }
   const params = new URLSearchParams();
   if (project_id) params.append('project_id', project_id);
   if (status) params.append('status', status);
@@ -20,10 +15,6 @@ export async function apiListCreationSessions({ project_id, status } = {}) {
 }
 
 export async function apiCreateSession(data) {
-  if (USE_MOCK) {
-    console.log('[mock] create session', data);
-    return { id: `sess-${Date.now()}` };
-  }
   const res = await authFetch(`${BASE}/api/creation/sessions`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -33,10 +24,6 @@ export async function apiCreateSession(data) {
 }
 
 export async function apiGetSession(sessionId) {
-  if (USE_MOCK) {
-    console.log('[mock] get session', sessionId);
-    return {};
-  }
   const res = await authFetch(`${BASE}/api/creation/sessions/${sessionId}`, {
     headers: { 'Content-Type': 'application/json' },
   });
@@ -44,10 +31,6 @@ export async function apiGetSession(sessionId) {
 }
 
 export async function apiUpdateSession(sessionId, data) {
-  if (USE_MOCK) {
-    console.log('[mock] update session', sessionId, data);
-    return;
-  }
   const res = await authFetch(`${BASE}/api/creation/sessions/${sessionId}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
@@ -57,10 +40,6 @@ export async function apiUpdateSession(sessionId, data) {
 }
 
 export async function apiDeleteSession(sessionId) {
-  if (USE_MOCK) {
-    console.log('[mock] delete session', sessionId);
-    return;
-  }
   await authFetch(`${BASE}/api/creation/sessions/${sessionId}`, {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
@@ -70,10 +49,6 @@ export async function apiDeleteSession(sessionId) {
 // ── 创作镜头（Shot）──────────────────────────────────────────────────────────
 
 export async function apiListShots(sessionId) {
-  if (USE_MOCK) {
-    console.log('[mock] list shots', sessionId);
-    return [];
-  }
   const res = await authFetch(`${BASE}/api/creation/sessions/${sessionId}/shots`, {
     headers: { 'Content-Type': 'application/json' },
   });
@@ -81,10 +56,6 @@ export async function apiListShots(sessionId) {
 }
 
 export async function apiCreateShot(sessionId, data) {
-  if (USE_MOCK) {
-    console.log('[mock] create shot', sessionId, data);
-    return { id: `shot-${Date.now()}` };
-  }
   const res = await authFetch(`${BASE}/api/creation/sessions/${sessionId}/shots`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -94,10 +65,6 @@ export async function apiCreateShot(sessionId, data) {
 }
 
 export async function apiGetShot(shotId) {
-  if (USE_MOCK) {
-    console.log('[mock] get shot', shotId);
-    return {};
-  }
   const res = await authFetch(`${BASE}/api/creation/shots/${shotId}`, {
     headers: { 'Content-Type': 'application/json' },
   });
@@ -105,10 +72,6 @@ export async function apiGetShot(shotId) {
 }
 
 export async function apiUpdateShot(shotId, data) {
-  if (USE_MOCK) {
-    console.log('[mock] update shot', shotId, data);
-    return;
-  }
   const res = await authFetch(`${BASE}/api/creation/shots/${shotId}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
@@ -118,10 +81,6 @@ export async function apiUpdateShot(shotId, data) {
 }
 
 export async function apiDeleteShot(shotId) {
-  if (USE_MOCK) {
-    console.log('[mock] delete shot', shotId);
-    return;
-  }
   await authFetch(`${BASE}/api/creation/shots/${shotId}`, {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
@@ -129,10 +88,6 @@ export async function apiDeleteShot(shotId) {
 }
 
 export async function apiReorderShots(sessionId, shot_ids) {
-  if (USE_MOCK) {
-    console.log('[mock] reorder shots', sessionId, shot_ids);
-    return [];
-  }
   const res = await authFetch(`${BASE}/api/creation/sessions/${sessionId}/shots/reorder`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -144,10 +99,6 @@ export async function apiReorderShots(sessionId, shot_ids) {
 // ── 创作图片 ──────────────────────────────────────────────────────────────────
 
 export async function apiListCreationImages(filters = {}) {
-  if (USE_MOCK) {
-    console.log('[mock] list creation images', filters);
-    return { list: [], total: 0, has_more: false, page: 1, page_size: 20 };
-  }
   const params = new URLSearchParams();
   Object.entries(filters).forEach(([k, v]) => {
     if (v !== undefined && v !== null && v !== '') params.append(k, v);
@@ -159,10 +110,6 @@ export async function apiListCreationImages(filters = {}) {
 }
 
 export async function apiGetCreationImage(imageId) {
-  if (USE_MOCK) {
-    console.log('[mock] get creation image', imageId);
-    return {};
-  }
   const res = await authFetch(`${BASE}/api/creation/images/${imageId}`, {
     headers: { 'Content-Type': 'application/json' },
   });
@@ -170,10 +117,6 @@ export async function apiGetCreationImage(imageId) {
 }
 
 export async function apiGenerateCreationImages(data) {
-  if (USE_MOCK) {
-    console.log('[mock] generate creation images', data);
-    return { id: `task-${Date.now()}`, task_id: `task-${Date.now()}`, status: 'pending' };
-  }
   const res = await authFetch(`${BASE}/api/creation/images/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -183,10 +126,6 @@ export async function apiGenerateCreationImages(data) {
 }
 
 export async function apiGenerateShotImage(shotId, data) {
-  if (USE_MOCK) {
-    console.log('[mock] generate shot image', shotId, data);
-    return { id: `task-${Date.now()}`, task_id: `task-${Date.now()}`, status: 'pending' };
-  }
   const res = await authFetch(`${BASE}/api/creation/shots/${shotId}/generate-image`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -196,19 +135,11 @@ export async function apiGenerateShotImage(shotId, data) {
 }
 
 export async function apiDeleteCreationImage(imageId) {
-  if (USE_MOCK) {
-    console.log('[mock] deleteCreationImage', imageId);
-    return { success: true };
-  }
   const res = await authFetch(`${BASE}/api/creation/images/${imageId}`, { method: 'DELETE' });
   return res.json();
 }
 
 export async function apiToggleImageFavorite(imageId, liked) {
-  if (USE_MOCK) {
-    console.log('[mock] toggleImageFavorite', imageId, liked);
-    return { success: true, is_liked: liked };
-  }
   const res = await authFetch(`${BASE}/api/creation/images/${imageId}/favorite`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -218,10 +149,6 @@ export async function apiToggleImageFavorite(imageId, liked) {
 }
 
 export async function apiBatchDeleteImages(ids) {
-  if (USE_MOCK) {
-    console.log('[mock] batchDeleteImages', ids);
-    return { success: true };
-  }
   const res = await authFetch(`${BASE}/api/creation/images/batch-delete`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -231,10 +158,6 @@ export async function apiBatchDeleteImages(ids) {
 }
 
 export async function apiBatchDownloadImages(ids) {
-  if (USE_MOCK) {
-    console.log('[mock] batchDownloadImages', ids);
-    return new Blob();
-  }
   const res = await authFetch(`${BASE}/api/creation/images/batch-download`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -244,10 +167,6 @@ export async function apiBatchDownloadImages(ids) {
 }
 
 export async function apiBatchFavoriteImages(ids, liked) {
-  if (USE_MOCK) {
-    console.log('[mock] batchFavoriteImages', ids, liked);
-    return { success: true };
-  }
   const res = await authFetch(`${BASE}/api/creation/images/batch-favorite`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -257,10 +176,6 @@ export async function apiBatchFavoriteImages(ids, liked) {
 }
 
 export async function apiDownloadCreationImage(imageId) {
-  if (USE_MOCK) {
-    console.log('[mock] download creation image', imageId);
-    return new Blob();
-  }
   const res = await authFetch(`${BASE}/api/creation/images/${imageId}/download`, {
     headers: { 'Content-Type': 'application/json' },
   });
@@ -270,10 +185,6 @@ export async function apiDownloadCreationImage(imageId) {
 // ── 创作视频 ──────────────────────────────────────────────────────────────────
 
 export async function apiListCreationVideos({ page, page_size } = {}) {
-  if (USE_MOCK) {
-    console.log('[mock] list creation videos');
-    return { list: [], total: 0, has_more: false, page: 1, page_size: 20 };
-  }
   const params = new URLSearchParams();
   if (page !== undefined) params.append('page', page);
   if (page_size !== undefined) params.append('page_size', page_size);
@@ -284,10 +195,6 @@ export async function apiListCreationVideos({ page, page_size } = {}) {
 }
 
 export async function apiGenerateCreationVideo(data) {
-  if (USE_MOCK) {
-    console.log('[mock] generate creation video', data);
-    return { id: `task-${Date.now()}`, task_id: `task-${Date.now()}`, status: 'pending' };
-  }
   const res = await authFetch(`${BASE}/api/creation/videos/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -297,10 +204,6 @@ export async function apiGenerateCreationVideo(data) {
 }
 
 export async function apiGenerateShotVideo(shotId, data) {
-  if (USE_MOCK) {
-    console.log('[mock] generate shot video', shotId, data);
-    return { clip_id: `clip-${Date.now()}`, video_url: '' };
-  }
   const res = await authFetch(`${BASE}/api/creation/shots/${shotId}/generate-video`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -310,28 +213,16 @@ export async function apiGenerateShotVideo(shotId, data) {
 }
 
 export async function apiDeleteCreationVideo(videoId) {
-  if (USE_MOCK) {
-    console.log('[mock] deleteCreationVideo', videoId);
-    return { success: true };
-  }
   const res = await authFetch(`${BASE}/api/creation/videos/${videoId}`, { method: 'DELETE' });
   return res.json();
 }
 
 export async function apiToggleVideoFavorite(videoId) {
-  if (USE_MOCK) {
-    console.log('[mock] toggleVideoFavorite', videoId);
-    return { success: true };
-  }
   const res = await authFetch(`${BASE}/api/creation/videos/${videoId}/favorite`, { method: 'POST' });
   return res.json();
 }
 
 export async function apiBatchDeleteVideos(ids) {
-  if (USE_MOCK) {
-    console.log('[mock] batchDeleteVideos', ids);
-    return { success: true };
-  }
   const res = await authFetch(`${BASE}/api/creation/videos/batch-delete`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -341,10 +232,6 @@ export async function apiBatchDeleteVideos(ids) {
 }
 
 export async function apiBatchDownloadVideos(ids) {
-  if (USE_MOCK) {
-    console.log('[mock] batchDownloadVideos', ids);
-    return new Blob();
-  }
   const res = await authFetch(`${BASE}/api/creation/videos/batch-download`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -354,10 +241,6 @@ export async function apiBatchDownloadVideos(ids) {
 }
 
 export async function apiDownloadCreationVideo(videoId) {
-  if (USE_MOCK) {
-    console.log('[mock] download creation video', videoId);
-    return new Blob();
-  }
   const res = await authFetch(`${BASE}/api/creation/videos/${videoId}/download`, {
     headers: { 'Content-Type': 'application/json' },
   });
@@ -367,10 +250,6 @@ export async function apiDownloadCreationVideo(videoId) {
 // ── 创作音频 ──────────────────────────────────────────────────────────────────
 
 export async function apiGenerateCreationAudio(data) {
-  if (USE_MOCK) {
-    console.log('[mock] generate creation audio', data);
-    return {};
-  }
   const res = await authFetch(`${BASE}/api/creation/audios/generate`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -380,10 +259,6 @@ export async function apiGenerateCreationAudio(data) {
 }
 
 export async function apiGenerateShotAudio(shotId, data) {
-  if (USE_MOCK) {
-    console.log('[mock] generate shot audio', shotId, data);
-    return { clip_id: `clip-${Date.now()}`, audio_url: '' };
-  }
   const res = await authFetch(`${BASE}/api/creation/shots/${shotId}/generate-audio`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -393,10 +268,6 @@ export async function apiGenerateShotAudio(shotId, data) {
 }
 
 export async function apiListCreationAudios({ page, page_size, is_favorite, search } = {}) {
-  if (USE_MOCK) {
-    console.log('[mock] list creation audios');
-    return [];
-  }
   const params = new URLSearchParams();
   if (page !== undefined) params.append('page', page);
   if (page_size !== undefined) params.append('page_size', page_size);
@@ -409,10 +280,6 @@ export async function apiListCreationAudios({ page, page_size, is_favorite, sear
 }
 
 export async function apiGetCreationAudio(audioId) {
-  if (USE_MOCK) {
-    console.log('[mock] get creation audio', audioId);
-    return {};
-  }
   const res = await authFetch(`${BASE}/api/creation/audios/${audioId}`, {
     headers: { 'Content-Type': 'application/json' },
   });
@@ -420,26 +287,14 @@ export async function apiGetCreationAudio(audioId) {
 }
 
 export async function apiDeleteCreationAudio(audioId) {
-  if (USE_MOCK) {
-    console.log('[mock] delete creation audio', audioId);
-    return;
-  }
   await authFetch(`${BASE}/api/creation/audios/${audioId}`, { method: 'DELETE' });
 }
 
 export async function apiToggleAudioFavorite(audioId) {
-  if (USE_MOCK) {
-    console.log('[mock] toggle audio favorite', audioId);
-    return;
-  }
   await authFetch(`${BASE}/api/creation/audios/${audioId}/favorite`, { method: 'POST' });
 }
 
 export async function apiBatchDeleteAudios(audio_ids) {
-  if (USE_MOCK) {
-    console.log('[mock] batch delete audios', audio_ids);
-    return;
-  }
   await authFetch(`${BASE}/api/creation/audios/batch-delete`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -448,10 +303,6 @@ export async function apiBatchDeleteAudios(audio_ids) {
 }
 
 export async function apiBatchDownloadAudios(audio_ids) {
-  if (USE_MOCK) {
-    console.log('[mock] batch download audios', audio_ids);
-    return new Blob();
-  }
   const res = await authFetch(`${BASE}/api/creation/audios/batch-download`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -461,10 +312,6 @@ export async function apiBatchDownloadAudios(audio_ids) {
 }
 
 export async function apiDownloadCreationAudio(audioId) {
-  if (USE_MOCK) {
-    console.log('[mock] download creation audio', audioId);
-    return new Blob();
-  }
   const res = await authFetch(`${BASE}/api/creation/audios/${audioId}/download`, {
     headers: { 'Content-Type': 'application/json' },
   });
@@ -474,10 +321,6 @@ export async function apiDownloadCreationAudio(audioId) {
 // ── 创作任务轮询 ──────────────────────────────────────────────────────────────
 
 export async function apiListCreationTasks({ status, task_type, session_id, shot_id } = {}) {
-  if (USE_MOCK) {
-    console.log('[mock] list creation tasks');
-    return [];
-  }
   const params = new URLSearchParams();
   if (status) params.append('status', status);
   if (task_type) params.append('task_type', task_type);
@@ -490,10 +333,6 @@ export async function apiListCreationTasks({ status, task_type, session_id, shot
 }
 
 export async function apiGetCreationImageTask(taskId) {
-  if (USE_MOCK) {
-    console.log('[mock] get creation image task', taskId);
-    return { task_id: taskId, status: 'done', progress: 100, images: [] };
-  }
   const res = await authFetch(`${BASE}/api/creation/tasks/${taskId}`, {
     headers: { 'Content-Type': 'application/json' },
   });
@@ -501,11 +340,14 @@ export async function apiGetCreationImageTask(taskId) {
 }
 
 export async function apiGetCreationVideoTask(taskId) {
-  if (USE_MOCK) {
-    console.log('[mock] get creation video task', taskId);
-    return { task_id: taskId, status: 'done', progress: 100, result: null };
-  }
   const res = await authFetch(`${BASE}/api/creation/videos/tasks/${taskId}`, {
+    headers: { 'Content-Type': 'application/json' },
+  });
+  return res.json();
+}
+
+export async function apiGetCreationAudioTask(taskId) {
+  const res = await authFetch(`${BASE}/api/creation/audios/tasks/${taskId}`, {
     headers: { 'Content-Type': 'application/json' },
   });
   return res.json();
@@ -514,10 +356,6 @@ export async function apiGetCreationVideoTask(taskId) {
 // ── 创作上传 ──────────────────────────────────────────────────────────────────
 
 export async function apiUploadCreationImage({ file, category, asset_name, session_id, shot_id, project_id }) {
-  if (USE_MOCK) {
-    console.log('[mock] upload creation image', file?.name);
-    return { asset_id: `mock-${Date.now()}`, uploaded_url: URL.createObjectURL(file) };
-  }
   const params = new URLSearchParams();
   if (category) params.append('category', category);
   if (asset_name) params.append('asset_name', asset_name);
@@ -534,10 +372,6 @@ export async function apiUploadCreationImage({ file, category, asset_name, sessi
 }
 
 export async function apiUploadCreationVideo({ file, category, asset_name, session_id, shot_id, project_id }) {
-  if (USE_MOCK) {
-    console.log('[mock] upload creation video', file?.name);
-    return { asset_id: `mock-${Date.now()}`, uploaded_url: URL.createObjectURL(file) };
-  }
   const params = new URLSearchParams();
   if (category) params.append('category', category);
   if (asset_name) params.append('asset_name', asset_name);
@@ -554,10 +388,6 @@ export async function apiUploadCreationVideo({ file, category, asset_name, sessi
 }
 
 export async function apiUploadCreationAudio({ file, category, asset_name, session_id, shot_id, project_id }) {
-  if (USE_MOCK) {
-    console.log('[mock] upload creation audio', file?.name);
-    return { asset_id: `mock-${Date.now()}`, uploaded_url: URL.createObjectURL(file) };
-  }
   const params = new URLSearchParams();
   if (category) params.append('category', category);
   if (asset_name) params.append('asset_name', asset_name);
@@ -576,10 +406,6 @@ export async function apiUploadCreationAudio({ file, category, asset_name, sessi
 // ── Legacy：apiGetVideoLastFrame（后端无此接口，暂返回 null）──────────────────
 
 export async function apiGetVideoLastFrame(videoUrl) {
-  if (USE_MOCK) {
-    console.log('[mock] get video last frame', videoUrl);
-    return { lastFrameUrl: null };
-  }
   // 后端无 /api/creation/video-last-frame 接口
   // 如需此功能，可在前端用 ffmpeg.wasm 提取，或等待后端提供
   console.warn('[api] apiGetVideoLastFrame: 后端无此接口，返回 null');
@@ -606,15 +432,6 @@ export async function apiGenerateCreation(params) {
       }
     }
     throw new Error('Generation timeout');
-  }
-
-  if (USE_MOCK) {
-    console.log('[mock] generate creation', params);
-    await new Promise((r) => setTimeout(r, 1000));
-    if (isVideo) {
-      return { taskId: `task-${Date.now()}`, videos: [], cardIds: [] };
-    }
-    return { taskId: `task-${Date.now()}`, images: [], cardIds: [] };
   }
 
   if (!isVideo) {

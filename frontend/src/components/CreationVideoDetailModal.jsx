@@ -5,6 +5,30 @@ const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba PuHuiTi 2.0',system-ui,sans
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
 
 // Confirm delete modal component
+function CopyPromptButton({ text, onCopy }) {
+  const [hovered, setHovered] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  return (
+    <button
+      type="button"
+      className={`p-0 m-0 border-0 bg-transparent cursor-pointer flex items-center shrink-0 transition-colors duration-[120ms] ease-linear ${pressed ? 'text-[#FFFFFF99]' : hovered ? 'text-[#FFFFFFCC]' : 'text-[#FFFFFF66]'}`}
+      onMouseEnter={() => setHovered(true)}
+      onMouseLeave={() => { setHovered(false); setPressed(false); }}
+      onMouseDown={() => setPressed(true)}
+      onMouseUp={() => setPressed(false)}
+      onClick={() => {
+        navigator.clipboard.writeText(text || '');
+        onCopy?.();
+      }}
+    >
+      <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <rect x="5.5" y="5.5" width="7" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.2"/>
+        <path d="M3.5 10.5V3.5A1.5 1.5 0 0 1 5 2h6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+      </svg>
+    </button>
+  );
+}
+
 function ConfirmDeleteModal({ onConfirm, onCancel }) {
   const [confirmHov, setConfirmHov] = useState(false);
   const [cancelHov, setCancelHov] = useState(false);
@@ -113,10 +137,16 @@ export default function CreationVideoDetailModal({
   const [videoDuration, setVideoDuration] = useState(0);
   const [volume, setVolume] = useState(0.7);
   const [hovClose, setHovClose] = useState(false);
+  const [toastVisible, setToastVisible] = useState(false);
   const videoRef = useRef(null);
   const progressBarRef = useRef(null);
   const volumeBarRef = useRef(null);
   const isDraggingRef = useRef(false);
+
+  function handleCopyPrompt() {
+    setToastVisible(true);
+    setTimeout(() => setToastVisible(false), 2500);
+  }
 
   function fmtTime(secs) {
     if (!isFinite(secs) || secs < 0) return '0:00';
@@ -334,8 +364,11 @@ export default function CreationVideoDetailModal({
               <div className="h-px shrink-0 bg-[#FFFFFF0A] my-0 mx-[20px]" />
             {/* Prompt */}
             <div className="flex flex-col py-[16px] px-[20px] gap-[10px]">
-              <div className="tracking-[0.66px] uppercase inline-block font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFF99] text-[11px]/[14px]">
-                提示词
+              <div className="flex items-center justify-between w-full">
+                <div className="tracking-[0.66px] uppercase font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFF99] text-[11px]/[14px]">
+                  提示词
+                </div>
+                <CopyPromptButton text={prompt} onCopy={handleCopyPrompt} />
               </div>
               <div className="tracking-[0.12px] font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFFCC] text-xs/5 m-0">
                 {prompt || '无'}
@@ -570,6 +603,14 @@ export default function CreationVideoDetailModal({
         }}
         onCancel={() => setConfirmDelete(false)}
       />
+    )}
+    {toastVisible && createPortal(
+      <div style={{ position: 'fixed', top: 24, left: '50%', zIndex: 1200, transform: 'translateX(-50%)', pointerEvents: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, borderRadius: 8, padding: '10px 16px', background: '#1D1E1E', boxShadow: '0px 4px 16px rgba(0,0,0,0.6), inset 0px 0px 0px 1px rgba(255,255,255,0.08)', fontFamily: FONT, fontSize: 14, lineHeight: '18px', color: '#52BF92', animation: 'toast-in 0.2s ease', whiteSpace: 'nowrap' }}>
+          您已复制提示词
+        </div>
+      </div>,
+      document.body
     )}
     </>
   );

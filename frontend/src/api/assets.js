@@ -1,5 +1,4 @@
 const BASE = import.meta.env.VITE_API_BASE_URL;
-const USE_MOCK = import.meta.env.VITE_USE_MOCK === 'true';
 
 import { authFetch } from './request.js';
 
@@ -8,10 +7,6 @@ import { authFetch } from './request.js';
  * @param {object} filters - { project_id, scope, asset_type, category, is_starred, is_primary, search, include_deleted, deleted_only }
  */
 export async function apiGetAssets(filters = {}) {
-  if (USE_MOCK) {
-    console.log('[mock] get assets', filters);
-    return [];
-  }
   const params = new URLSearchParams();
   Object.entries(filters).forEach(([k, v]) => {
     if (v !== undefined && v !== null && v !== '') params.append(k, v);
@@ -23,10 +18,6 @@ export async function apiGetAssets(filters = {}) {
 }
 
 export async function apiGetAssetDetail(assetId) {
-  if (USE_MOCK) {
-    console.log('[mock] get asset detail', assetId);
-    return {};
-  }
   const res = await authFetch(`${BASE}/api/assets/${assetId}`, {
     headers: { 'Content-Type': 'application/json' },
   });
@@ -34,10 +25,6 @@ export async function apiGetAssetDetail(assetId) {
 }
 
 export async function apiCreateAsset(data) {
-  if (USE_MOCK) {
-    console.log('[mock] create asset', data);
-    return { id: `asset-${Date.now()}` };
-  }
   const res = await authFetch(`${BASE}/api/assets`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -47,10 +34,6 @@ export async function apiCreateAsset(data) {
 }
 
 export async function apiUpdateAsset(assetId, updates) {
-  if (USE_MOCK) {
-    console.log('[mock] update asset', assetId, updates);
-    return { id: assetId, ...updates };
-  }
   const res = await authFetch(`${BASE}/api/assets/${assetId}`, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
@@ -60,18 +43,10 @@ export async function apiUpdateAsset(assetId, updates) {
 }
 
 export async function apiDeleteAsset(assetId) {
-  if (USE_MOCK) {
-    console.log('[mock] delete asset', assetId);
-    return { success: true };
-  }
   await authFetch(`${BASE}/api/assets/${assetId}`, { method: 'DELETE' });
 }
 
 export async function apiBatchDeleteAssets(asset_ids) {
-  if (USE_MOCK) {
-    console.log('[mock] batch delete assets', asset_ids);
-    return { success: true };
-  }
   await authFetch(`${BASE}/api/assets/batch-delete`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -80,10 +55,6 @@ export async function apiBatchDeleteAssets(asset_ids) {
 }
 
 export async function apiBatchRestoreAssets(asset_ids) {
-  if (USE_MOCK) {
-    console.log('[mock] batch restore assets', asset_ids);
-    return;
-  }
   await authFetch(`${BASE}/api/assets/restore`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -92,10 +63,6 @@ export async function apiBatchRestoreAssets(asset_ids) {
 }
 
 export async function apiRestoreAsset(assetId) {
-  if (USE_MOCK) {
-    console.log('[mock] restore asset', assetId);
-    return {};
-  }
   const res = await authFetch(`${BASE}/api/assets/${assetId}/restore`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -104,10 +71,6 @@ export async function apiRestoreAsset(assetId) {
 }
 
 export async function apiExtractAssetFrame(assetId, { position }) {
-  if (USE_MOCK) {
-    console.log('[mock] extract asset frame', assetId, position);
-    return {};
-  }
   const res = await authFetch(`${BASE}/api/assets/${assetId}/extract-frame`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -117,10 +80,6 @@ export async function apiExtractAssetFrame(assetId, { position }) {
 }
 
 export async function apiDownloadAsset(assetId, { prefer_origin } = {}) {
-  if (USE_MOCK) {
-    console.log('[mock] download asset', assetId);
-    return new Blob();
-  }
   const params = new URLSearchParams();
   if (prefer_origin !== undefined) params.append('prefer_origin', prefer_origin);
   const query = params.toString();
@@ -129,10 +88,48 @@ export async function apiDownloadAsset(assetId, { prefer_origin } = {}) {
   return res.blob();
 }
 
-// ── 兼容旧调用 ────────────────────────────────────────────────────────────────
+// ── 项目资产（按 tab key 分组） ────────────────────────────────────────────────
 
-export async function apiGetProjectAssets(projectId, { scope, asset_type, category, search } = {}) {
-  return apiGetAssets({ project_id: projectId, scope, asset_type, category, search });
+const CATEGORY_TO_TAB = {
+  character: 'chars',
+  scene: 'scenes',
+  prop: 'props',
+  audio: 'audio',
+  film: 'final',
+};
+
+function normalizeAsset(item) {
+  return {
+    id: item.id,
+    name: item.name,
+    url: item.thumbnail_url || item.file_url || null,
+    starred: item.is_starred ?? false,
+    description: item.description ?? '',
+    prompt: item.prompt ?? '',
+    model: item.model ?? '',
+    size: item.size ?? '',
+    created_at: item.created_at ?? '',
+  };
+}
+
+function groupByCategory(list) {
+  const grouped = { chars: [], scenes: [], props: [], storyboard_img: [], storyboard_video: [], audio: [], final: [] };
+  list.forEach((item) => {
+    const normalized = normalizeAsset(item);
+    if (item.category === 'storyboard') {
+      const tab = item.asset_type === 'video' ? 'storyboard_video' : 'storyboard_img';
+      grouped[tab].push(normalized);
+    } else {
+      const tab = CATEGORY_TO_TAB[item.category];
+      if (tab) grouped[tab].push(normalized);
+    }
+  });
+  return grouped;
+}
+
+export async function apiGetProjectAssets(projectId) {
+  const data = await apiGetAssets({ project_id: projectId, scope: 'project' });
+  return groupByCategory(Array.isArray(data) ? data : []);
 }
 
 export async function apiGetShotDetail(shotId) {
