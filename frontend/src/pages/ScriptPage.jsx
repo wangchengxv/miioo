@@ -3,7 +3,8 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { Markdown } from 'tiptap-markdown';
 import ReactMarkdown from 'react-markdown';
-import { apiSaveScriptWorkspace, apiGetScriptWorkspace, apiChatScriptWorkspace } from '../api/subject';
+import { apiSaveScriptWorkspace, apiGetScriptWorkspace, apiChatScriptWorkspace, apiUploadScriptWorkspace, apiFinalizeScriptWorkspace } from '../api/subject';
+import { apiListModels } from '../api/config';
 import { PulsingBorder } from '@paper-design/shaders-react';
 import DotsLoading from '../components/DotsLoading';
 
@@ -377,15 +378,15 @@ function UploadPlaceholder({ onFileSelect, disabled = false }) {
   );
 }
 
-const MODEL_OPTIONS_1 = ['Doubao-Seed-2.0-Pro', 'Doubao-Seed-1.6', 'Claude Sonnet 4.6', 'GPT-4o'];
-const MODEL_OPTIONS_2 = ['集数：自动适应', '集数：1集', '集数：3集', '集数：5集', '集数：10集'];
 
-function ModelSelector({ label, options, width, disabled = false }) {
+function ModelSelector({ label, options, width, disabled = false, onSelect }) {
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState(label);
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const ref = useRef(null);
+
+  useEffect(() => { setSelected(label); }, [label]);
 
   useEffect(() => {
     if (!open) return;
@@ -481,6 +482,7 @@ function ModelSelector({ label, options, width, disabled = false }) {
               onClick={() => {
                 setSelected(option);
                 setOpen(false);
+                onSelect?.(option);
               }}
               style={{
                 display: 'flex',
@@ -509,6 +511,140 @@ function ModelSelector({ label, options, width, disabled = false }) {
               {option}
             </button>
           ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EpisodeCountSelector({ value, onChange, disabled = false }) {
+  const [open, setOpen] = useState(false);
+  const [inputVal, setInputVal] = useState(typeof value === 'number' ? value : 1);
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const isActive = open || hovered;
+  const label = value == null ? '集数：自动适应' : `集数：${value} 集`;
+
+  const handleAutoSelect = () => { onChange(null); setOpen(false); };
+
+  const adjustCount = (delta) => {
+    const base = typeof inputVal === 'number' ? inputVal : 1;
+    const next = Math.max(1, base + delta);
+    setInputVal(next);
+    onChange(next);
+  };
+
+  const handleInputChange = (e) => {
+    const raw = e.target.value;
+    if (raw === '') { setInputVal(''); return; }
+    const n = parseInt(raw, 10);
+    if (!isNaN(n) && n >= 1) { setInputVal(n); onChange(n); }
+  };
+
+  const handleInputBlur = () => {
+    const n = parseInt(inputVal, 10);
+    if (isNaN(n) || n < 1) { setInputVal(1); onChange(1); }
+  };
+
+  return (
+    <div ref={ref} style={{ position: 'relative', width: '140px' }}>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => !disabled && setOpen((v) => !v)}
+        onMouseEnter={() => !disabled && setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          height: '32px',
+          paddingLeft: '12px',
+          paddingRight: '6px',
+          borderRadius: '8px',
+          justifyContent: 'space-between',
+          flexShrink: 0,
+          border: '1px solid',
+          width: '100%',
+          cursor: disabled ? 'not-allowed' : 'pointer',
+          background: open ? '#252525' : isActive ? '#222222' : '#1D1E1E',
+          borderColor: open ? '#FFFFFF33' : '#FFFFFF14',
+          outline: focused || open ? '1px solid #2DC3E180' : '1px solid #00000080',
+          transition: 'background 0.2s, border-color 0.2s, outline 0.2s, opacity 0.2s',
+          opacity: disabled ? 0.45 : 1,
+        }}
+      >
+        <div style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: '#FFFFFFCC', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {label}
+        </div>
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0, transition: 'transform 0.2s', transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+          <path d="M12 6.333L8 10.333L4 6.333H12Z" fill="#FFFFFF" stroke="#FFFFFF" strokeWidth="1.333" strokeLinejoin="round" />
+        </svg>
+      </button>
+
+      {open && !disabled && (
+        <div style={{ position: 'absolute', zIndex: 50, left: 0, marginBottom: '4px', borderRadius: '8px', overflow: 'hidden', background: '#1D1E1E', border: '1px solid #FFFFFF14', outline: '1px solid #00000080', minWidth: '100%', boxShadow: '0 -8px 24px #00000066', bottom: '100%' }}>
+          <button
+            type="button"
+            onClick={handleAutoSelect}
+            style={{
+              display: 'flex', alignItems: 'center', width: '100%', height: '32px',
+              paddingLeft: '12px', paddingRight: '12px', cursor: 'pointer', border: 'none',
+              textAlign: 'left', fontFamily: FONT, fontSize: '12px', lineHeight: '16px',
+              color: value == null ? '#FFFFFF' : '#FFFFFFCC',
+              background: value == null ? '#FFFFFF14' : 'transparent',
+              transition: 'background 0.15s',
+            }}
+            onMouseEnter={(e) => { if (value != null) e.currentTarget.style.background = '#FFFFFF0A'; }}
+            onMouseLeave={(e) => { if (value != null) e.currentTarget.style.background = 'transparent'; }}
+          >
+            集数：自动适应
+          </button>
+
+          <div
+            style={{ display: 'flex', alignItems: 'center', height: '32px', paddingLeft: '12px', paddingRight: '8px', gap: '4px', background: value != null ? '#FFFFFF14' : 'transparent' }}
+            onMouseEnter={(e) => { if (value == null) e.currentTarget.style.background = '#FFFFFF0A'; }}
+            onMouseLeave={(e) => { if (value == null) e.currentTarget.style.background = value != null ? '#FFFFFF14' : 'transparent'; }}
+          >
+            <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: '#FFFFFFCC', marginRight: '2px' }}>集数</span>
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); adjustCount(-1); }}
+              style={{ width: '20px', height: '20px', borderRadius: '4px', border: 'none', background: '#FFFFFF14', color: '#FFFFFFCC', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', flexShrink: 0 }}
+            >−</button>
+            <input
+              type="number"
+              min="1"
+              value={inputVal}
+              onChange={handleInputChange}
+              onBlur={handleInputBlur}
+              onClick={(e) => { e.stopPropagation(); if (value == null) { setInputVal(1); onChange(1); } }}
+              style={{
+                width: '36px', height: '20px', borderRadius: '4px', border: '1px solid #FFFFFF14',
+                background: '#FFFFFF0A', color: '#FFFFFFCC', fontFamily: FONT, fontSize: '12px',
+                textAlign: 'center', outline: 'none', MozAppearance: 'textfield',
+              }}
+              className="[&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+            />
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); adjustCount(1); }}
+              style={{ width: '20px', height: '20px', borderRadius: '4px', border: 'none', background: '#FFFFFF14', color: '#FFFFFFCC', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', flexShrink: 0 }}
+            >+</button>
+          </div>
         </div>
       )}
     </div>
@@ -670,16 +806,26 @@ function FileCard({ file, onRemove, disabled = false }) {
   );
 }
 
-function InputCard({ onSend, onStop, restoreText = '', restoreFiles = [], width = '700px', disabled = false }) {
+function InputCard({ onSend, onStop, restoreText = '', restoreFiles = [], selectedModel, onModelChange, episodeCount, onEpisodeCountChange, width = '700px', disabled = false }) {
   const [text, setText] = useState('');
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const [files, setFiles] = useState([]);
+  const [models, setModels] = useState([]);
   const prevDisabledRef = useRef(false);
 
   useEffect(() => {
     ensureRotateKeyframe();
     ensureThinkingStyle();
+  }, []);
+
+  useEffect(() => {
+    apiListModels().then((list) => {
+      if (Array.isArray(list) && list.length > 0) {
+        setModels(list);
+        if (!selectedModel) onModelChange?.(list[0].model_id);
+      }
+    }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -697,7 +843,7 @@ function InputCard({ onSend, onStop, restoreText = '', restoreFiles = [], width 
 
   const handleSend = () => {
     if (!canSend) return;
-    onSend(text.trim(), files);
+    onSend(text.trim(), files, selectedModel, episodeCount);
     setText('');
     setFiles([]);
   };
@@ -803,10 +949,19 @@ function InputCard({ onSend, onStop, restoreText = '', restoreFiles = [], width 
             onBlur={() => setFocused(false)}
           />
         </div>
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0px', justifyContent: 'space-between', alignSelf: 'stretch' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0px', justifyContent: 'space-between', alignSelf: 'stretch' }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', padding: 0 }}>
-            <ModelSelector label="Doubao-Seed-2.0-Pro" options={MODEL_OPTIONS_1} width="180px" disabled={disabled} />
-            <ModelSelector label="集数：自动适应" options={MODEL_OPTIONS_2} width="140px" disabled={disabled} />
+            <ModelSelector
+              label={selectedModel ? (models.find(m => m.model_id === selectedModel)?.name ?? selectedModel) : (models[0]?.name ?? '加载中…')}
+              options={models.map(m => m.name)}
+              width="180px"
+              disabled={disabled}
+              onSelect={(name) => {
+                const m = models.find(m => m.name === name);
+                if (m) onModelChange?.(m.model_id);
+              }}
+            />
+            <EpisodeCountSelector value={episodeCount} onChange={(v) => onEpisodeCountChange?.(v)} disabled={disabled} />
           </div>
           <SendButton onClick={disabled ? handleStop : handleSend} disabled={!canSend && !disabled} loading={disabled && !onStop} isGenerating={disabled && !!onStop} />
         </div>
@@ -815,7 +970,7 @@ function InputCard({ onSend, onStop, restoreText = '', restoreFiles = [], width 
   );
 }
 
-function ScriptEmptyState({ onSend }) {
+function ScriptEmptyState({ onSend, selectedModel, onModelChange, episodeCount, onEpisodeCountChange }) {
   return (
     <div
       style={{
@@ -829,7 +984,14 @@ function ScriptEmptyState({ onSend }) {
         paddingBottom: '24px',
       }}
     >
-      <InputCard onSend={onSend} width="700px" />
+      <InputCard
+        onSend={onSend}
+        width="700px"
+        selectedModel={selectedModel}
+        onModelChange={onModelChange}
+        episodeCount={episodeCount}
+        onEpisodeCountChange={onEpisodeCountChange}
+      />
     </div>
   );
 }
@@ -1457,6 +1619,9 @@ export default function ScriptPage({ projectId, onGoToSubject, onEpisodesChange,
   const [selectedEpisode, setSelectedEpisode] = useState(0);
   const [lastSentText, setLastSentText] = useState('');
   const [lastSentFiles, setLastSentFiles] = useState([]);
+  const [selectedModel, setSelectedModel] = useState(null);
+  const [episodeCount, setEpisodeCount] = useState(null);
+  const [backendEpisodes, setBackendEpisodes] = useState(null);
   const renderedContentRef = useRef(null);
   const editorContentRef = useRef(null);
   const stopTimerRef = useRef(null);
@@ -1473,8 +1638,9 @@ export default function ScriptPage({ projectId, onGoToSubject, onEpisodesChange,
 
     apiGetScriptWorkspace(projectId)
       .then((data) => {
-        if (data?.content) {
-          setScriptContent(data.content);
+        const content = data?.script?.content ?? data?.content;
+        if (content) {
+          setScriptContent(content);
           setPhase('view');
           setHasStarted(true);
         }
@@ -1485,7 +1651,10 @@ export default function ScriptPage({ projectId, onGoToSubject, onEpisodesChange,
   }, [projectId, setScriptContent, setPhase, setHasStarted]);
 
   const visibleContent = phase === 'edit' ? draftContent : scriptContent;
-  const outline = useMemo(() => parseScriptOutline(visibleContent).filter((item) => item.level === 2), [visibleContent]);
+  const markdownOutline = useMemo(() => parseScriptOutline(visibleContent).filter((item) => item.level === 2), [visibleContent]);
+  const outline = (phase !== 'edit' && backendEpisodes)
+    ? backendEpisodes.map((ep, idx) => ({ title: ep.title, level: 2, offset: idx }))
+    : markdownOutline;
 
   useEffect(() => {
     onEpisodesChange?.(outline.map((item) => item.title));
@@ -1516,7 +1685,7 @@ export default function ScriptPage({ projectId, onGoToSubject, onEpisodesChange,
     return () => window.removeEventListener('keydown', onKeyDown);
   }, [phase, handleStop]);
 
-  const handleSend = async (text, files) => {
+  const handleSend = async (text, files, model, epCount) => {
     if (!text && files.length === 0) return;
 
     setLastSentText(text);
@@ -1527,19 +1696,29 @@ export default function ScriptPage({ projectId, onGoToSubject, onEpisodesChange,
     setDraftContent('');
     setSelectedEpisode(0);
     setStreamingIndex(0);
+    setBackendEpisodes(null);
 
     try {
-      // 调用剧本对话接口
-      const result = await apiChatScriptWorkspace(projectId, {
-        message: text,
-        // files 暂不支持
-      });
+      let workspaceContent = null;
 
-      setScriptContent(result.content || MOCK_SCRIPT_MARKDOWN);
+      // 先上传文件（逐个上传，最后一个生效）
+      if (files.length > 0) {
+        for (const file of files) {
+          const uploadResult = await apiUploadScriptWorkspace(projectId, file);
+          workspaceContent = uploadResult?.script?.content ?? uploadResult?.content;
+        }
+      }
+
+      // 有文字消息时再走 chat 接口
+      if (text) {
+        const result = await apiChatScriptWorkspace(projectId, { message: text, model });
+        workspaceContent = result?.script?.content ?? result?.content;
+      }
+
+      setScriptContent(workspaceContent || MOCK_SCRIPT_MARKDOWN);
       setPhase('streaming');
     } catch (err) {
       console.error('[ScriptPage] 生成剧本失败:', err);
-      // 失败时使用 mock 数据
       setScriptContent(MOCK_SCRIPT_MARKDOWN);
       setPhase('streaming');
     }
@@ -1557,16 +1736,26 @@ export default function ScriptPage({ projectId, onGoToSubject, onEpisodesChange,
   const handleSave = async () => {
     if (!draftContent) return;
 
-    // 保存到后端
-    if (projectId) {
-      await apiSaveScriptWorkspace(projectId, {
-        content: draftContent,
-        episodes: episodes,
-        phase: 'view'
-      });
+    try {
+      // 1. 保存 markdown 内容
+      if (projectId) {
+        await apiSaveScriptWorkspace(projectId, { content: draftContent });
+      }
+
+      // 2. 定稿：拆分为分集
+      if (projectId) {
+        const finalizeResult = await apiFinalizeScriptWorkspace(projectId, {
+          episode_count: episodeCount,
+          model: selectedModel,
+        });
+        if (Array.isArray(finalizeResult?.items) && finalizeResult.items.length > 0) {
+          setBackendEpisodes(finalizeResult.items);
+        }
+      }
+    } catch (err) {
+      console.error('[ScriptPage] 定稿失败:', err);
     }
 
-    // 更新状态
     setScriptContent(draftContent);
     setPhase('view');
   };
@@ -1617,7 +1806,13 @@ export default function ScriptPage({ projectId, onGoToSubject, onEpisodesChange,
       }}
     >
       {!hasStarted ? (
-        <ScriptEmptyState onSend={handleSend} />
+        <ScriptEmptyState
+          onSend={handleSend}
+          selectedModel={selectedModel}
+          onModelChange={setSelectedModel}
+          episodeCount={episodeCount}
+          onEpisodeCountChange={setEpisodeCount}
+        />
       ) : (
         <div style={{ display: 'flex', minHeight: 0, flex: 1, alignItems: 'stretch', gap: '24px', alignSelf: 'stretch' }}>
           <EpisodeList outline={outline} selectedIndex={safeSelectedEpisode} onSelect={handleSelectEpisode} loading={episodeRailLoading} />
@@ -1645,7 +1840,18 @@ export default function ScriptPage({ projectId, onGoToSubject, onEpisodesChange,
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'center', alignSelf: 'stretch', paddingTop: '8px', overflow: 'visible', flexShrink: 0 }}>
-              <InputCard onSend={handleSend} onStop={handleStop} restoreText={lastSentText} restoreFiles={lastSentFiles} width="min(700px, 100%)" disabled={phase === 'thinking' || phase === 'streaming'} />
+              <InputCard
+                onSend={handleSend}
+                onStop={handleStop}
+                restoreText={lastSentText}
+                restoreFiles={lastSentFiles}
+                selectedModel={selectedModel}
+                onModelChange={setSelectedModel}
+                episodeCount={episodeCount}
+                onEpisodeCountChange={setEpisodeCount}
+                width="min(700px, 100%)"
+                disabled={phase === 'thinking' || phase === 'streaming'}
+              />
             </div>
           </div>
         </div>

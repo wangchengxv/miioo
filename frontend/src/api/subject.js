@@ -237,11 +237,39 @@ export async function apiSaveScriptWorkspace(projectId, data) {
   return res.json();
 }
 
-export async function apiChatScriptWorkspace(projectId, { message }) {
+export async function apiChatScriptWorkspace(projectId, { message, model } = {}) {
+  const body = { message, apply_to_script: true };
+  if (model) body.model = model;
   const res = await authFetch(`${BASE}/api/projects/${projectId}/script-workspace/chat`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ message }),
+    body: JSON.stringify(body),
   });
+  return res.json();
+}
+
+export async function apiUploadScriptWorkspace(projectId, file) {
+  const form = new FormData();
+  form.append('file', file);
+  const res = await authFetchForm(
+    `${BASE}/api/projects/${projectId}/script-workspace/upload`,
+    { method: 'POST', body: form }
+  );
+  return res.json();
+}
+
+export async function apiFinalizeScriptWorkspace(projectId, { episode_count, model } = {}) {
+  const res = await authFetch(
+    `${BASE}/api/projects/${projectId}/script-workspace/finalize`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        episode_count: episode_count ?? null,
+        model: model ?? null,
+        split_mode: 'rule_first',
+      }),
+    }
+  );
   return res.json();
 }
