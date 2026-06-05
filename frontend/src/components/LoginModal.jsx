@@ -827,6 +827,7 @@ export default function LoginModal({ open, onClose, onSuccess }) {
   };
 
   return (
+    <>
     <div
       style={{
         position: 'fixed',
@@ -841,7 +842,6 @@ export default function LoginModal({ open, onClose, onSuccess }) {
       }}
       onClick={handleClose}
     >
-      <Toast toasts={toasts} />
       <div
         style={{
           display: 'flex',
@@ -865,5 +865,7 @@ export default function LoginModal({ open, onClose, onSuccess }) {
         </div>
       </div>
     </div>
+    <Toast toasts={toasts} />
+    </>
   );
 }

@@ -25,7 +25,7 @@ src/
 ## 开发优先级
 1. 设计稿代码 → 完全复刻，不自行发挥
 2. Token 替换 → 颜色/圆角/字号用 token 类名
-3. 组件文档 → `design-system/components/xxx.md`
+3. 设计规范组件文档 → `design-system/components/xxx.md`
 4. frontend-design 插件 → 无设计稿时制定视觉规则
 
 **需求不清晰时，必须先向 Suzy 确认再动手。**
@@ -42,5 +42,5 @@ src/
 - 新建或修改页面组件 → 读 `src/pages/CLAUDE.md`
 
 ## 后端接口对接
-- 日常调接口 → 先查 `src/api/API差异报告.html`
+- 日常调接口 → 直接读 `src/api/api文档.json`
 - 后端更新 `api文档.json` → 遵循 `src/api/CLAUDE.md` 中的全量差异分析流程，AI 直接分析更新报告（不用脚本）

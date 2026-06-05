@@ -60,7 +60,19 @@ function Avatar({ size = 64, src }) {
   );
 }
 
-function ProfileField({ label, value, onChange, placeholder, maxLength, onBlurSave }) {
+// 白名单：字母、数字、中文、下划线、连字符、点号、空格（单个、非首尾）
+// 禁止首尾非字母数字中文，以及连续重复的符号（_ - . 空格）
+const ALLOWED_CHAR_RE = /[^\p{L}\p{N}\p{Script=Han}_\-. ]/gu;
+const REPEAT_SPECIAL_RE = /([_\-. ])\1+/g;
+const TRIM_SPECIAL_RE = /^[_\-. ]+|[_\-. ]+$/g;
+
+function filterUsername(raw) {
+  let v = raw.replace(ALLOWED_CHAR_RE, '');
+  v = v.replace(REPEAT_SPECIAL_RE, '$1');
+  return v;
+}
+
+function ProfileField({ label, value, onChange, placeholder, maxLength, onBlurSave, filterInput }) {
   const [editing, setEditing] = useState(false);
   const [focused, setFocused] = useState(false);
   const inputRef = useRef(null);
@@ -70,9 +82,27 @@ function ProfileField({ label, value, onChange, placeholder, maxLength, onBlurSa
     setTimeout(() => inputRef.current?.focus(), 0);
   };
 
+  const handleChange = (e) => {
+    if (filterInput) {
+      const filtered = filterInput(e.target.value);
+      onChange({ ...e, target: { ...e.target, value: filtered } });
+    } else {
+      onChange(e);
+    }
+  };
+
   const handleBlur = () => {
     setFocused(false);
     setEditing(false);
+    // trim首尾符号后再保存
+    if (filterInput) {
+      const trimmed = value.replace(TRIM_SPECIAL_RE, '');
+      if (trimmed !== value) {
+        onChange({ target: { value: trimmed } });
+        onBlurSave?.(trimmed);
+        return;
+      }
+    }
     onBlurSave?.();
   };
 
@@ -128,7 +158,7 @@ function ProfileField({ label, value, onChange, placeholder, maxLength, onBlurSa
         <input
           ref={inputRef}
           value={value}
-          onChange={onChange}
+          onChange={handleChange}
           placeholder={placeholder}
           maxLength={maxLength}
           className="flex-1 bg-transparent border-0 outline-none placeholder:text-[rgba(255,255,255,0.2)]"
@@ -867,10 +897,17 @@ export default function ProfileModal({
                 onChange={(e) => setNameVal(e.target.value)}
                 placeholder="请输入用户名"
                 maxLength={20}
-                onBlurSave={async () => {
-                  if (nameVal !== (currentUser.nickname ?? '')) {
-                    const updated = await apiUpdateProfile({ nickname: nameVal, avatar_url: avatarUrl }).catch(() => null);
-                    if (updated) onProfileUpdated?.(updated);
+                filterInput={filterUsername}
+                onBlurSave={async (overrideVal) => {
+                  const val = overrideVal ?? nameVal;
+                  if (val !== (currentUser.nickname ?? '')) {
+                    const updated = await apiUpdateProfile({ nickname: val, avatar_url: avatarUrl }).catch(() => null);
+                    if (updated) {
+                      onProfileUpdated?.(updated);
+                    } else {
+                      showToast('用户名修改失败，请稍后重试');
+                      setNameVal(currentUser.nickname ?? '');
+                    }
                   }
                 }}
               />

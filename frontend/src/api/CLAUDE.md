@@ -20,8 +20,8 @@ export async function apiXxx(params) {
 - 环境变量在 `.env.local`，不得提交 Git
 
 ## 日常开发 — 调接口前
-1. 先查 `API差异报告.html` 确认接口路径、字段、方法
-2. 若报告信息不足或存在歧义，找 Suzy 确认
+1. 直接读 `api文档.json` 确认接口路径、字段、方法
+2. 信息不足或有歧义时，找 Suzy 确认
 
 ## 后端更新 API 文档时
 当 Suzy 说后端更新了 `api文档.json`，通读 `src/api/*.js` 和 `api文档.json`，做全量对比（路径、方法、请求体字段、前端缺失、后端无接口），更新 `API差异报告.html` 全部六个章节。

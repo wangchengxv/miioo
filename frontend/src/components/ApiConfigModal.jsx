@@ -609,6 +609,7 @@ function MainModal({
   onTestOtherProvider,
   onConfigureOtherProvider,
 }) {
+  const [showQrCode, setShowQrCode] = useState(false);
   return (
     <div className="[font-synthesis:none] flex h-[600px] w-[800px] max-w-[calc(100vw-48px)] flex-col overflow-hidden text-xs/4 antialiased">
       <div className="flex items-center justify-between gap-[16px] rounded-t-2xl bg-surface-modal px-[24px] py-[16px]">
@@ -668,20 +669,46 @@ function MainModal({
           <div className="self-stretch text-sm/4.5 font-medium text-text-primary" style={{ fontFamily: FONT_MEDIUM }}>
             配置说明
           </div>
-        <div className="whitespace-pre-wrap text-[14px] leading-[150%] text-text-secondary" style={{ fontFamily: FONT }}>
-            我们已经为您配置好OneLink AI平台内的{availableModelCount}个主流模型，前往官网
+          <div className="text-[14px] leading-[150%] text-text-secondary" style={{ fontFamily: FONT }}>
+            平台已内置OneLinkAI、火山引擎主流模型列表，前往官网
             <span
               onClick={() => window.open('https://www.onelinkai.cloud/', '_blank')}
               className="cursor-pointer text-text-accent underline-offset-2 transition-all hover:underline hover:brightness-125 active:opacity-70"
             >获取API</span>
-            后即可开始使用
+            即可一键完成配置。
             <br />
-            您也可以使用其他API服务，添加自定义模型，
-            <span
-              className="cursor-pointer text-text-accent underline-offset-2 transition-all hover:underline hover:brightness-125 active:opacity-70"
-            >查看教程</span>
-            <br />
-            为保证安全，您的API配置仅保存在本地浏览器，不会上传到云端
+            如果您有其他厂商的API接入需求，
+            <span className="relative inline-block">
+              <span
+                onClick={() => setShowQrCode(v => !v)}
+                className="cursor-pointer text-text-accent underline-offset-2 transition-all hover:underline hover:brightness-125 active:opacity-70"
+              >请联系我们</span>
+              {showQrCode && (
+                <>
+                  <div className="fixed inset-0 z-[9998]" onClick={() => setShowQrCode(false)} />
+                  <div
+                    className="absolute z-[9999] flex flex-col items-center gap-[9px] rounded-lg p-[16px]"
+                    style={{
+                      bottom: 'calc(100% + 8px)',
+                      left: '50%',
+                      transform: 'translateX(-50%)',
+                      boxShadow: '#00000066 0px 4px 16px',
+                      backgroundColor: '#161616',
+                      border: '1px solid #FFFFFF14',
+                    }}
+                  >
+                    <div
+                      className="w-[120px] h-[120px] shrink-0 bg-cover bg-center"
+                      style={{ backgroundImage: 'url(https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KT856M9JGFA1FF8DBG9699ZM.png)' }}
+                    />
+                    <div className="text-xs/4 text-[#FFFFFFCC]" style={{ fontFamily: FONT }}>
+                      扫码添加工作人员
+                    </div>
+                  </div>
+                </>
+              )}
+            </span>
+            。
           </div>
         </div>
       </div>

@@ -11,55 +11,9 @@ import DotsLoading from '../components/DotsLoading';
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
 
-const ALLOWED_EXTS = ['.txt', '.md', '.pdf', '.docx'];
-
-const MOCK_SCRIPT_MARKDOWN = `# 两只老虎的青枫奇遇
-
-## 第一集：陌生的邻居
-
-**场景1：青枫林·晨光草地（0:00-1:30）**
-
-【镜头1】俯拍：青枫林被晨雾笼罩，金黄的枫叶落在草地上，露珠折射阳光。背景音乐：轻快的森林鸟鸣声，轻柔的钢琴旋律。
-
-【镜头2】近景：橙色皮毛的小老虎乐乐，额头上的"王"字歪歪扭扭，尾巴翘得老高，正追着一只蝴蝶跑，爪子偶尔扒拉一下地上的枫叶。
-
-乐乐（活泼大喊，耳朵抖动）：别跑呀！陪我玩一会儿～
-
-【镜头3】特写：蝴蝶停在一片枫叶上，乐乐猛地扑过去，摔了个四脚朝天，肚皮露在外面，一脸懊恼。
-
-乐乐（揉着鼻子，小声嘟囔）：哼，居然敢耍我！
-
-**场景2：青枫林·枫树下（1:30-4:00）**
-
-【镜头1】侧拍：一棵粗壮的枫树下，白色皮毛的小老虎安安正安静地趴在石头上，闭着眼睛晒太阳，耳朵时不时动一下，警惕周围的动静。它的"王"字整齐端正，眼神沉稳。
-
-【镜头2】全景：乐乐摔疼后，抬头看到安安，眼睛一亮，尾巴甩得更欢，踮着脚尖跑过去。
-
-乐乐（凑到安安身边，小声试探）：喂！你是谁呀？怎么和我长得不一样？你也是老虎吗？
-
-【镜头3】特写：安安缓缓睁开眼睛，眼神冷淡，瞥了乐乐一眼，没有说话，只是往石头里面挪了挪，避开乐乐。
-
-乐乐（不气馁，凑得更近，鼻子快碰到安安的皮毛）：我叫乐乐！我住在这片林子的东边，你住在这里吗？我们一起玩好不好？
-
-【镜头4】中景：安安猛地站起身，耳朵竖起来，对着乐乐低吼了一声，转身跳进枫树林深处，只留下一个白色的背影。
-
-乐乐（被吓了一跳，往后退了两步，挠了挠头）：奇怪，它怎么不理我呀？
-
-**场景3：青枫林·小溪边（4:00-6:00）**
-
-【镜头1】中景：乐乐跟着安安的脚印，走到小溪边，看到安安正低头喝水，动作优雅，尾巴轻轻搭在地上。
-
-【镜头2】近景：乐乐小心翼翼地走过去，蹲在小溪另一边，也低下头喝水，时不时偷偷瞥向安安。
-
-乐乐（小声说）：我知道啦，你是不是不喜欢热闹？我不吵你，我们一起喝水好不好？
-
-【镜头3】特写：安安喝水的动作顿了一下，没有回头，也没有回应，但尾巴轻轻动了一下，没有再赶走乐乐。
-
-【镜头4】全景：阳光穿透枫叶，洒在两只老虎身上，小溪潺潺流淌，画面安静又温暖。
-
-【音效】轻微的水流声，远处的鸟鸣声，背景音乐渐弱。
-
-**【结尾字幕】** 下集预告：意外降临，乐乐陷入麻烦，安安会出手相助吗？`;
+const ALLOWED_EXTS = ['.txt', '.md', '.pdf', '.docx', '.doc'];
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_CHARS = 100000;
 
 function parseScriptOutline(markdown) {
   if (!markdown) return [];
@@ -102,6 +56,52 @@ function truncateFileName(name) {
   const maxBase = 12;
   if (base.length <= maxBase) return name;
   return base.slice(0, maxBase) + '… ' + ext;
+}
+
+const TOAST_STYLE_ID = 'script-toast-style';
+function ensureToastStyle() {
+  if (document.getElementById(TOAST_STYLE_ID)) return;
+  const style = document.createElement('style');
+  style.id = TOAST_STYLE_ID;
+  style.textContent = `@keyframes script-toast-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }`;
+  document.head.appendChild(style);
+}
+
+const SPINNER_STYLE_ID = 'script-spinner-style';
+function ensureSpinnerStyle() {
+  if (document.getElementById(SPINNER_STYLE_ID)) return;
+  const style = document.createElement('style');
+  style.id = SPINNER_STYLE_ID;
+  style.textContent = `@keyframes btn-spin { to { transform: rotate(360deg); } }`;
+  document.head.appendChild(style);
+}
+
+function Toast({ toasts }) {
+  return (
+    <div style={{ position: 'fixed', top: '25vh', left: '50%', transform: 'translateX(-50%)', zIndex: 9999, display: 'flex', flexDirection: 'column', gap: '8px', pointerEvents: 'none' }}>
+      {toasts.map((t) => {
+        const isSuccess = t.type === 'success';
+        const color = isSuccess ? '#2DC3E1' : '#D13A3B';
+        return (
+          <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 16px', borderRadius: '8px', backgroundColor: '#1D1E1E', border: '1px solid #FFFFFF14', boxShadow: '0px 4px 16px #00000066', animation: 'script-toast-in 0.2s ease' }}>
+            {isSuccess ? (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <circle cx="8" cy="8" r="7" stroke={color} strokeWidth="1.5" />
+                <path d="M5 8.5L7 10.5L11 6" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <circle cx="8" cy="8" r="7" stroke={color} strokeWidth="1.5" />
+                <path d="M8 4.5V8.5" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
+                <circle cx="8" cy="11" r="0.5" fill={color} />
+              </svg>
+            )}
+            <span style={{ fontFamily: FONT, fontSize: '13px', lineHeight: '16px', color }}>{t.message}</span>
+          </div>
+        );
+      })}
+    </div>
+  );
 }
 
 const ROTATE_STYLE_ID = 'chatbox-rotate-keyframe';
@@ -288,18 +288,39 @@ function UploadPlaceholder({ onFileSelect, disabled = false }) {
   const icon = hovered ? hoverIcon : defaultIcon;
   const transition = 'all 0.35s cubic-bezier(0.4, 0, 0.2, 1)';
 
-  const handleChange = (e) => {
+  const handleChange = async (e) => {
     const selected = Array.from(e.target.files || []);
     if (!selected.length) return;
+
     const invalid = selected.filter((file) => {
       const ext = '.' + file.name.split('.').pop().toLowerCase();
       return !ALLOWED_EXTS.includes(ext);
     });
     if (invalid.length) {
-      alert('仅支持 txt、md、pdf、docx 格式的文件');
+      alert('仅支持 .txt/.docx/.pdf/.md/.doc 格式的文件');
       e.target.value = '';
       return;
     }
+
+    const tooLarge = selected.filter((file) => file.size > MAX_FILE_SIZE);
+    if (tooLarge.length) {
+      alert(`文件大小不能超过 10MB：${tooLarge.map((f) => f.name).join('、')}`);
+      e.target.value = '';
+      return;
+    }
+
+    for (const file of selected) {
+      const ext = '.' + file.name.split('.').pop().toLowerCase();
+      if (ext === '.txt' || ext === '.md') {
+        const content = await file.text();
+        if (content.length > MAX_CHARS) {
+          alert(`"${file.name}" 超过 10 万字符限制`);
+          e.target.value = '';
+          return;
+        }
+      }
+    }
+
     onFileSelect?.(selected);
     e.target.value = '';
   };
@@ -326,7 +347,7 @@ function UploadPlaceholder({ onFileSelect, disabled = false }) {
         borderRadius: '8px',
       }}
     >
-      <input ref={fileInputRef} type="file" multiple accept=".txt,.md,.pdf,.docx" className="hidden" onChange={handleChange} />
+      <input ref={fileInputRef} type="file" multiple accept=".txt,.md,.pdf,.docx,.doc" className="hidden" onChange={handleChange} />
       <div
         style={{
           width: '44px',
@@ -460,19 +481,18 @@ function ModelSelector({ label, options, width, disabled = false, onSelect }) {
 
       {open && !disabled && (
         <div
+          className="rounded-medium bg-select-bg border border-select-border p-[4px]"
           style={{
             position: 'absolute',
             zIndex: 50,
             left: 0,
             marginBottom: '4px',
-            borderRadius: '8px',
-            overflow: 'hidden',
-            background: '#1D1E1E',
-            border: '1px solid #FFFFFF14',
-            outline: '1px solid #00000080',
             minWidth: '100%',
-            boxShadow: '0 -8px 24px #00000066',
+            maxWidth: '100%',
+            width: '100%',
             bottom: '100%',
+            outline: '1px solid #00000080',
+            boxShadow: '0px -4px 16px var(--color-select-shadow)',
           }}
         >
           {options.map((option) => (
@@ -484,31 +504,14 @@ function ModelSelector({ label, options, width, disabled = false, onSelect }) {
                 setOpen(false);
                 onSelect?.(option);
               }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                width: '100%',
-                height: '32px',
-                paddingLeft: '12px',
-                paddingRight: '12px',
-                cursor: 'pointer',
-                border: 'none',
-                textAlign: 'left',
-                fontFamily: FONT,
-                fontSize: '12px',
-                lineHeight: '16px',
-                color: option === selected ? '#FFFFFF' : '#FFFFFFCC',
-                background: option === selected ? '#FFFFFF14' : 'transparent',
-                transition: 'background 0.15s',
-              }}
-              onMouseEnter={(event) => {
-                if (option !== selected) event.currentTarget.style.background = '#FFFFFF0A';
-              }}
-              onMouseLeave={(event) => {
-                if (option !== selected) event.currentTarget.style.background = 'transparent';
-              }}
+              className={`flex items-center px-[12px] py-[8px] self-stretch rounded-md text-font-size-14 w-full cursor-pointer border-none text-left transition-colors duration-150 ${
+                option === selected
+                  ? 'bg-select-item-bg-active text-select-item-text-active'
+                  : 'bg-select-item-bg-normal text-select-item-text-normal hover:bg-select-item-bg-hover hover:text-select-item-text-hover'
+              }`}
+              style={{ fontFamily: FONT }}
             >
-              {option}
+              <span className="truncate" title={option}>{option}</span>
             </button>
           ))}
         </div>
@@ -596,34 +599,39 @@ function EpisodeCountSelector({ value, onChange, disabled = false }) {
       </button>
 
       {open && !disabled && (
-        <div style={{ position: 'absolute', zIndex: 50, left: 0, marginBottom: '4px', borderRadius: '8px', overflow: 'hidden', background: '#1D1E1E', border: '1px solid #FFFFFF14', outline: '1px solid #00000080', minWidth: '100%', boxShadow: '0 -8px 24px #00000066', bottom: '100%' }}>
+        <div
+          className="rounded-medium bg-select-bg border border-select-border p-[4px]"
+          style={{
+            position: 'absolute', zIndex: 50, left: 0, marginBottom: '4px',
+            width: '100%', maxWidth: '100%', bottom: '100%',
+            outline: '1px solid #00000080',
+            boxShadow: '0px -4px 16px var(--color-select-shadow)',
+          }}
+        >
           <button
             type="button"
             onClick={handleAutoSelect}
-            style={{
-              display: 'flex', alignItems: 'center', width: '100%', height: '32px',
-              paddingLeft: '12px', paddingRight: '12px', cursor: 'pointer', border: 'none',
-              textAlign: 'left', fontFamily: FONT, fontSize: '12px', lineHeight: '16px',
-              color: value == null ? '#FFFFFF' : '#FFFFFFCC',
-              background: value == null ? '#FFFFFF14' : 'transparent',
-              transition: 'background 0.15s',
-            }}
-            onMouseEnter={(e) => { if (value != null) e.currentTarget.style.background = '#FFFFFF0A'; }}
-            onMouseLeave={(e) => { if (value != null) e.currentTarget.style.background = 'transparent'; }}
+            className={`flex items-center px-[12px] py-[8px] self-stretch rounded-md text-font-size-14 w-full cursor-pointer border-none text-left transition-colors duration-150 ${
+              value == null
+                ? 'bg-select-item-bg-active text-select-item-text-active'
+                : 'bg-select-item-bg-normal text-select-item-text-normal hover:bg-select-item-bg-hover hover:text-select-item-text-hover'
+            }`}
+            style={{ fontFamily: FONT }}
           >
             集数：自动适应
           </button>
 
           <div
-            style={{ display: 'flex', alignItems: 'center', height: '32px', paddingLeft: '12px', paddingRight: '8px', gap: '4px', background: value != null ? '#FFFFFF14' : 'transparent' }}
-            onMouseEnter={(e) => { if (value == null) e.currentTarget.style.background = '#FFFFFF0A'; }}
-            onMouseLeave={(e) => { if (value == null) e.currentTarget.style.background = value != null ? '#FFFFFF14' : 'transparent'; }}
+            className={`flex items-center px-[12px] py-[8px] rounded-md gap-[4px] ${
+              value != null
+                ? 'bg-select-item-bg-active'
+                : 'bg-select-item-bg-normal hover:bg-select-item-bg-hover'
+            }`}
           >
-            <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: '#FFFFFFCC', marginRight: '2px' }}>集数</span>
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); adjustCount(-1); }}
-              style={{ width: '20px', height: '20px', borderRadius: '4px', border: 'none', background: '#FFFFFF14', color: '#FFFFFFCC', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', flexShrink: 0 }}
+              className="w-[20px] h-[20px] rounded-[4px] border-none bg-white-8 text-select-item-text-normal cursor-pointer flex items-center justify-center text-[14px] shrink-0 hover:bg-white-20 transition-colors duration-150"
             >−</button>
             <input
               type="number"
@@ -632,17 +640,13 @@ function EpisodeCountSelector({ value, onChange, disabled = false }) {
               onChange={handleInputChange}
               onBlur={handleInputBlur}
               onClick={(e) => { e.stopPropagation(); if (value == null) { setInputVal(1); onChange(1); } }}
-              style={{
-                width: '36px', height: '20px', borderRadius: '4px', border: '1px solid #FFFFFF14',
-                background: '#FFFFFF0A', color: '#FFFFFFCC', fontFamily: FONT, fontSize: '12px',
-                textAlign: 'center', outline: 'none', MozAppearance: 'textfield',
-              }}
-              className="[&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+              className="[&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none text-select-item-text-normal bg-white-5 border border-stroke-normal rounded-[4px] text-center outline-none text-font-size-14 flex-1 min-w-0"
+              style={{ height: '20px', fontFamily: FONT, MozAppearance: 'textfield' }}
             />
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); adjustCount(1); }}
-              style={{ width: '20px', height: '20px', borderRadius: '4px', border: 'none', background: '#FFFFFF14', color: '#FFFFFFCC', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '14px', flexShrink: 0 }}
+              className="w-[20px] h-[20px] rounded-[4px] border-none bg-white-8 text-select-item-text-normal cursor-pointer flex items-center justify-center text-[14px] shrink-0 hover:bg-white-20 transition-colors duration-150"
             >+</button>
           </div>
         </div>
@@ -820,7 +824,7 @@ function InputCard({ onSend, onStop, restoreText = '', restoreFiles = [], select
   }, []);
 
   useEffect(() => {
-    apiListModels().then((list) => {
+    apiListModels({ category: 'chat' }).then((list) => {
       if (Array.isArray(list) && list.length > 0) {
         setModels(list);
         if (!selectedModel) onModelChange?.(list[0].model_id);
@@ -941,7 +945,7 @@ function InputCard({ onSend, onStop, restoreText = '', restoreFiles = [], select
               lineHeight: '18px',
               color: text ? '#FFFFFFCC' : '#FFFFFF66',
             }}
-            placeholder="告诉导演你想拍什么或者直接上传剧本"
+            placeholder="支持.txt/.docx/.pdf/.md/.doc格式，最大 10MB，剧本不超过10w字符"
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -954,7 +958,7 @@ function InputCard({ onSend, onStop, restoreText = '', restoreFiles = [], select
             <ModelSelector
               label={selectedModel ? (models.find(m => m.model_id === selectedModel)?.name ?? selectedModel) : (models[0]?.name ?? '加载中…')}
               options={models.map(m => m.name)}
-              width="180px"
+              width="200px"
               disabled={disabled}
               onSelect={(name) => {
                 const m = models.find(m => m.name === name);
@@ -1496,12 +1500,14 @@ function ScriptPanel({
   onSave,
   onCancelEdit,
   onGoToSubject,
+  isExtractingSubjects,
   onStreamingDone,
   onActiveIndexChange,
   streamingIndex,
   onStreamingIndexChange,
   renderedContentRef,
   editorContentRef,
+  isSaving,
 }) {
   const isThinking = phase === 'thinking';
   const isStreaming = phase === 'streaming';
@@ -1557,10 +1563,17 @@ function ScriptPanel({
         >
           {isEditing ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <SecondaryBtn onClick={onSave}>
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                  <path d="M13 4.5L6 11.5L3 8.5" stroke="#FFFFFF" strokeWidth="1.33" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
+              <SecondaryBtn onClick={onSave} disabled={isSaving}>
+                {isSaving ? (
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ animation: 'btn-spin 0.75s linear infinite', transformOrigin: '50% 50%' }}>
+                    <circle cx="8" cy="8" r="6" stroke="#FFFFFF33" strokeWidth="1.5" />
+                    <path d="M14 8a6 6 0 0 0-6-6" stroke="#FFFFFFCC" strokeWidth="1.5" strokeLinecap="round" />
+                  </svg>
+                ) : (
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <path d="M13 4.5L6 11.5L3 8.5" stroke="#FFFFFF" strokeWidth="1.33" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
                 <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFFCC' }}>定稿</span>
               </SecondaryBtn>
               <SecondaryBtn onClick={onCancelEdit}>
@@ -1581,14 +1594,18 @@ function ScriptPanel({
           )}
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <PrimaryBtn onClick={() => onGoToSubject?.('char')} disabled={!scriptContent}>
+            <PrimaryBtn onClick={() => onGoToSubject?.('char')} disabled={!scriptContent || isExtractingSubjects}>
               <span style={{ fontFamily: FONT_MEDIUM, fontSize: '14px', lineHeight: '18px', color: '#090909', whiteSpace: 'nowrap' }}>
-                开始提取主体
+                {isExtractingSubjects ? '提取中...' : '开始提取主体'}
               </span>
+              {isExtractingSubjects ? (
+                <DotsLoading size={3} color="#090909" gap={3} />
+              ) : (
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                 <path d="M14 8H2" stroke="#090909" strokeLinecap="round" strokeLinejoin="round" />
                 <path d="M10 4L14 8L10 12" stroke="#090909" strokeLinecap="round" strokeLinejoin="round" />
               </svg>
+              )}
             </PrimaryBtn>
           </div>
         </div>
@@ -1597,7 +1614,7 @@ function ScriptPanel({
   );
 }
 
-export default function ScriptPage({ projectId, onGoToSubject, onEpisodesChange, phase: phaseProp, onPhaseChange, hasStarted: hasStartedProp, onHasStartedChange, scriptContent: scriptContentProp, onScriptContentChange, draftContent: draftContentProp, onDraftContentChange, streamingIndex: streamingIndexProp, onStreamingIndexChange }) {
+export default function ScriptPage({ projectId, onGoToSubject, isExtractingSubjects = false, onEpisodesChange, phase: phaseProp, onPhaseChange, hasStarted: hasStartedProp, onHasStartedChange, scriptContent: scriptContentProp, onScriptContentChange, draftContent: draftContentProp, onDraftContentChange, streamingIndex: streamingIndexProp, onStreamingIndexChange }) {
   const [phaseLocal, setPhaseLocalRaw] = useState('initial');
   const [hasStartedLocal, setHasStartedLocalRaw] = useState(false);
   const [scriptContentLocal, setScriptContentLocalRaw] = useState('');
@@ -1622,6 +1639,8 @@ export default function ScriptPage({ projectId, onGoToSubject, onEpisodesChange,
   const [selectedModel, setSelectedModel] = useState(null);
   const [episodeCount, setEpisodeCount] = useState(null);
   const [backendEpisodes, setBackendEpisodes] = useState(null);
+  const [toasts, setToasts] = useState([]);
+  const [isSaving, setIsSaving] = useState(false);
   const renderedContentRef = useRef(null);
   const editorContentRef = useRef(null);
   const stopTimerRef = useRef(null);
@@ -1630,11 +1649,19 @@ export default function ScriptPage({ projectId, onGoToSubject, onEpisodesChange,
     ensureScrollbarStyle();
     ensureEditorStyle();
     ensureThinkingStyle();
+    ensureToastStyle();
+    ensureSpinnerStyle();
   }, []);
 
-  // 页面加载时从后端恢复剧本
+  const showToast = (message, type = 'error') => {
+    const id = Date.now();
+    setToasts((prev) => [...prev, { id, message, type }]);
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3000);
+  };
+
+  // 页面加载时从后端恢复剧本（仅非受控模式下自行加载，受控模式由父组件负责）
   useEffect(() => {
-    if (!projectId) return;
+    if (!projectId || isControlled) return;
 
     apiGetScriptWorkspace(projectId)
       .then((data) => {
@@ -1648,16 +1675,19 @@ export default function ScriptPage({ projectId, onGoToSubject, onEpisodesChange,
       .catch((err) => {
         console.error('[ScriptPage] 加载剧本失败:', err);
       });
-  }, [projectId, setScriptContent, setPhase, setHasStarted]);
+  }, [projectId, isControlled, setScriptContent, setPhase, setHasStarted]);
 
   const visibleContent = phase === 'edit' ? draftContent : scriptContent;
   const markdownOutline = useMemo(() => parseScriptOutline(visibleContent).filter((item) => item.level === 2), [visibleContent]);
-  const outline = (phase !== 'edit' && backendEpisodes)
-    ? backendEpisodes.map((ep, idx) => ({ title: ep.title, level: 2, offset: idx }))
-    : markdownOutline;
+  const outline = useMemo(
+    () => (phase !== 'edit' && backendEpisodes)
+      ? backendEpisodes.map((ep, idx) => ({ ...ep, title: ep.title, level: 2, offset: idx }))
+      : markdownOutline,
+    [phase, backendEpisodes, markdownOutline],
+  );
 
   useEffect(() => {
-    onEpisodesChange?.(outline.map((item) => item.title));
+    onEpisodesChange?.(outline.map((item) => ({ id: item.id, title: item.title, episode_number: item.episode_number })));
   }, [outline, onEpisodesChange]);
   const episodeRailLoading = hasStarted && (phase === 'thinking' || phase === 'streaming');
   const safeSelectedEpisode = outline.length > 0 ? Math.min(selectedEpisode, outline.length - 1) : 0;
@@ -1705,22 +1735,29 @@ export default function ScriptPage({ projectId, onGoToSubject, onEpisodesChange,
       if (files.length > 0) {
         for (const file of files) {
           const uploadResult = await apiUploadScriptWorkspace(projectId, file);
-          workspaceContent = uploadResult?.script?.content ?? uploadResult?.content;
+          workspaceContent = uploadResult?.script?.content ?? uploadResult?.script?.parsed_content ?? uploadResult?.content;
         }
       }
 
       // 有文字消息时再走 chat 接口
+      // chat 接口没有单独的 episode_count 字段，按 API 文档约定将集数注入消息文本
       if (text) {
-        const result = await apiChatScriptWorkspace(projectId, { message: text, model });
+        const chatMessage = epCount != null
+          ? `${text}（集数要求：${epCount} 集）`
+          : text;
+        const result = await apiChatScriptWorkspace(projectId, { message: chatMessage, model });
         workspaceContent = result?.script?.content ?? result?.content;
       }
 
-      setScriptContent(workspaceContent || MOCK_SCRIPT_MARKDOWN);
+      if (!workspaceContent) throw new Error('后端未返回剧本内容');
+
+      setScriptContent(workspaceContent);
       setPhase('streaming');
     } catch (err) {
       console.error('[ScriptPage] 生成剧本失败:', err);
-      setScriptContent(MOCK_SCRIPT_MARKDOWN);
-      setPhase('streaming');
+      setPhase('initial');
+      setHasStarted(false);
+      showToast('剧本生成失败，请稍后重试');
     }
   };
 
@@ -1736,6 +1773,7 @@ export default function ScriptPage({ projectId, onGoToSubject, onEpisodesChange,
   const handleSave = async () => {
     if (!draftContent) return;
 
+    setIsSaving(true);
     try {
       // 1. 保存 markdown 内容
       if (projectId) {
@@ -1752,12 +1790,16 @@ export default function ScriptPage({ projectId, onGoToSubject, onEpisodesChange,
           setBackendEpisodes(finalizeResult.items);
         }
       }
+
+      setScriptContent(draftContent);
+      setPhase('view');
+      showToast('保存定稿成功！', 'success');
     } catch (err) {
       console.error('[ScriptPage] 定稿失败:', err);
+      showToast('保存定稿失败，请重试', 'error');
+    } finally {
+      setIsSaving(false);
     }
-
-    setScriptContent(draftContent);
-    setPhase('view');
   };
 
   const handleCancelEdit = () => {
@@ -1787,6 +1829,7 @@ export default function ScriptPage({ projectId, onGoToSubject, onEpisodesChange,
   );
 
   return (
+    <>
     <div
       style={{
         display: 'flex',
@@ -1829,12 +1872,14 @@ export default function ScriptPage({ projectId, onGoToSubject, onEpisodesChange,
                   onSave={handleSave}
                   onCancelEdit={handleCancelEdit}
                   onGoToSubject={onGoToSubject}
+                  isExtractingSubjects={isExtractingSubjects}
                   onStreamingDone={handleStreamingDone}
                   onActiveIndexChange={setSelectedEpisode}
                   streamingIndex={streamingIndex}
                   onStreamingIndexChange={setStreamingIndex}
                   renderedContentRef={renderedContentRef}
                   editorContentRef={editorContentRef}
+                  isSaving={isSaving}
                 />
               </div>
             </div>
@@ -1857,5 +1902,7 @@ export default function ScriptPage({ projectId, onGoToSubject, onEpisodesChange,
         </div>
       )}
     </div>
+    <Toast toasts={toasts} />
+    </>
   );
 }

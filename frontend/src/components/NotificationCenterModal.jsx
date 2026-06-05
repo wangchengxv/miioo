@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react';
-import { apiGetNotifications, apiMarkAllNotificationsRead, apiClearAllNotifications } from '../api/user';
+import { apiGetNotifications, apiMarkAllNotificationsRead } from '../api/user';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
@@ -206,17 +206,6 @@ export default function NotificationCenterModal({ open, onClose, showToast }) {
     }
   };
 
-  const handleClearAll = async () => {
-    try {
-      await apiClearAllNotifications();
-      showToast?.('消息已清空', 'success');
-      loadNotifications();
-    } catch (error) {
-      console.error('清空消息失败:', error);
-      showToast?.('操作失败', 'warning');
-    }
-  };
-
   const handleTabClick = (tab) => {
     if (tab === 'team') {
       showToast?.('团队功能开发中，敬请期待！', 'warning');
@@ -291,16 +280,6 @@ export default function NotificationCenterModal({ open, onClose, showToast }) {
             >
               <span className="text-btn-primary-text text-font-size-14 font-font-weight-regular" style={{ fontFamily: FONT }}>
                 关闭
-              </span>
-            </button>
-
-            <button
-              type="button"
-              onClick={handleClearAll}
-              className="flex items-center h-[36px] shrink-0 rounded-medium px-[16px] gap-[4px] bg-btn-primary-bg-normal hover:bg-btn-primary-bg-hover active:bg-btn-primary-bg-active border border-btn-primary-border [outline:1px_solid_var(--color-stroke-outline)] outline-offset-0 [box-shadow:var(--color-shadow)_3px_3px_8px] cursor-pointer"
-            >
-              <span className="text-btn-primary-text text-font-size-14 font-font-weight-regular" style={{ fontFamily: FONT }}>
-                清空消息
               </span>
             </button>
 

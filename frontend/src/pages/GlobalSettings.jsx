@@ -120,7 +120,7 @@ const EPISODE_STATUS = {
 function EpisodeCard({ index, status = 'pending' }) {
   const [hovered, setHovered] = useState(false);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
-  const s = EPISODE_STATUS[status];
+  const s = EPISODE_STATUS[status] || EPISODE_STATUS.pending;
   const label = String(index + 1).padStart(2, '0');
 
   const handleMouseEnter = useCallback((e) => {
@@ -525,6 +525,7 @@ export default function GlobalSettings({
   onStepChange,
   onGoToSubject,
   isSubjectUnlocked = false,
+  isExtractingSubjects = false,
   onEpisodesChange,
   chars = [],
   scenes = [],
@@ -651,6 +652,7 @@ export default function GlobalSettings({
         <ScriptPage
           projectId={projectId}
           onGoToSubject={onGoToSubject}
+          isExtractingSubjects={isExtractingSubjects}
           onEpisodesChange={onEpisodesChange}
           phase={scriptPhase}
           onPhaseChange={onScriptPhaseChange}

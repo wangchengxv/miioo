@@ -141,8 +141,9 @@ function StyleCard({ item, selected, customDesc, onClick }) {
       <div
         className="w-full h-[88px] rounded-md overflow-hidden relative shrink-0 bg-[#2A2A2A]"
         style={{
-          border: `1.5px solid ${isCustom ? (selected ? '#2DC3E1' : '#FFFFFF33') : borderColor}`,
+          borderWidth: '1.5px',
           borderStyle: isCustom && !customDesc ? 'dashed' : 'solid',
+          borderColor: isCustom ? (selected ? '#2DC3E1' : '#FFFFFF33') : borderColor,
           transition: 'border-color 150ms ease',
           boxShadow: selected ? '0 0 8px rgba(45,195,225,0.25)' : hovered ? '0 0 6px rgba(255,255,255,0.06)' : 'none',
         }}

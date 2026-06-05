@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { PulsingBorder } from '@paper-design/shaders-react';
 import bgVideoPoster from '../assets/bg-video-poster.jpg';
@@ -12,7 +12,7 @@ import { apiGetProjects, apiUpdateProject, apiDeleteProject, apiGetProject, apiG
 import { clearTokens, apiLogout } from '../api/auth';
 import { apiListProviders } from '../api/config';
 import { apiGetCurrentUser, apiGetNotifications } from '../api/user';
-import { apiGetSubjects, apiGetEpisodes, apiGetScriptWorkspace } from '../api/subject';
+import { apiGetSubjects, apiGetEpisodes, apiGetScriptWorkspace, apiExtractSubjectsFromEpisode } from '../api/subject';
 import { apiGetStoryboards } from '../api/storyboard';
 import PrimaryNav from '../components/PrimaryNav';
 import LoginModal from '../components/LoginModal';
@@ -27,6 +27,7 @@ import ProjectList from './ProjectList';
 import GlobalSettings from './GlobalSettings';
 import SubjectPage from './SubjectPage';
 import StoryboardPage from './StoryboardPage';
+import DotsLoading from '../components/DotsLoading';
 import AssetsPage from './AssetsPage';
 import CreationPage from './CreationPage';
 
@@ -719,6 +720,15 @@ function WorkflowHeadbar({ activeStep, onStepChange, unlockedSteps, isLoggedIn, 
   );
 }
 
+// 归一化：后端 API 返回 snake_case -> 前端 camelCase/shorthand
+function normalizeSubjects(items) {
+  return items.map(item => ({
+    ...item,
+    desc: item.description ?? item.desc ?? '',
+    imageUrl: item.primary_image_url ?? item.image_url ?? item.imageUrl ?? null,
+  }));
+}
+
 export default function Home({ onProjectCreated }) {
   const [activeKey, setActiveKey] = useState(() => {
     // 只有明确保存了非 home 的 activeKey 才恢复，否则默认 home
@@ -739,14 +749,14 @@ export default function Home({ onProjectCreated }) {
   const [projects, setProjects] = useState([]);
   const [activeProject, setActiveProject] = useState(null);
   const [isLoadingProject, setIsLoadingProject] = useState(false);
+  const [projectsLoaded, setProjectsLoaded] = useState(false);
   const [activeProjectId, setActiveProjectId] = useState(null);
-  const [activeStep, setActiveStep] = useState(() => {
-    return localStorage.getItem('miioo_active_step') || 'script';
-  });
+  const [activeStep, setActiveStep] = useState('script'); // loadProjectDetails 会按项目恢复正确步骤
   const [subjectInitialTab, setSubjectInitialTab] = useState('char');
   const [sharedChars, setSharedChars] = useState(null);
   const [sharedScenes, setSharedScenes] = useState(null);
   const [sharedProps, setSharedProps] = useState(null);
+  const [isExtractingSubjects, setIsExtractingSubjects] = useState(false);
   const [scriptEpisodes, setScriptEpisodes] = useState([]);
   const [scriptPhase, setScriptPhase] = useState('initial');
   const [scriptHasStarted, setScriptHasStarted] = useState(false);
@@ -791,20 +801,25 @@ export default function Home({ onProjectCreated }) {
     window.location.replace('/');
   };
 
-  // 监听项目切换并保存 ID
+  // 监听项目切换并保存 ID（仅在有→无切换时清除，初始化/null→null 不操作）
+  const prevProjectIdRef = useRef();
   useEffect(() => {
-    if (activeProject?.id) {
-      localStorage.setItem('miioo_active_project_id', activeProject.id);
-    } else {
+    const prevId = prevProjectIdRef.current;
+    const currentId = activeProject?.id;
+    if (currentId) {
+      localStorage.setItem('miioo_active_project_id', currentId);
+    } else if (prevId) {
+      // 之前有项目，现在没了 → 用户主动退出项目
       localStorage.removeItem('miioo_active_project_id');
-      localStorage.removeItem('miioo_active_key');
     }
+    // 初始化时 prevId=undefined, currentId=undefined → 什么都不做
+    prevProjectIdRef.current = currentId;
   }, [activeProject?.id]);
 
-  // 监听步骤切换并保存
+  // 监听步骤切换并保存（按项目 ID 单独存储，避免不同项目间互相污染）
   useEffect(() => {
     if (activeProject?.id) {
-      localStorage.setItem('miioo_active_step', activeStep);
+      localStorage.setItem(`miioo_active_step_${activeProject.id}`, activeStep);
     }
   }, [activeStep, activeProject?.id]);
 
@@ -834,13 +849,18 @@ export default function Home({ onProjectCreated }) {
       const projectData = await apiGetProject(projectId);
       setActiveProject(projectData);
 
-      // 2. 恢复步骤解锁状态（从 localStorage）
+      // 2. 恢复步骤解锁状态（从 localStorage，按项目 ID）
       const savedUnlocked = localStorage.getItem(`miioo_unlocked_steps_${projectId}`);
       if (savedUnlocked) {
         setUnlockedSteps(new Set(JSON.parse(savedUnlocked)));
       } else {
         setUnlockedSteps(new Set());
       }
+
+      // 恢复当前步骤（按项目 ID，新项目默认回到 script）
+      // 注意：不使用全局 miioo_active_step，避免不同项目间互相污染
+      const savedStep = localStorage.getItem(`miioo_active_step_${projectId}`);
+      setActiveStep(savedStep || 'script');
 
       // 3. 并行加载所有数据
       const [scriptData, charsData, scenesData, propsData, episodesData, overviewData] = await Promise.all([
@@ -856,26 +876,32 @@ export default function Home({ onProjectCreated }) {
       ]);
 
       // 4. 更新状态
-      setScriptContent(scriptData.content || '');
-      setScriptEpisodes(scriptData.episodes || episodesData || []);
-      setScriptPhase(scriptData.phase || 'initial');
-      setScriptHasStarted(!!scriptData.content);
+      // API 返回结构: { script: { content, status, ... }, messages: [...] }
+      const scriptContent = scriptData.script?.content || scriptData.content || '';
+      setScriptContent(scriptContent);
+      setScriptEpisodes(episodesData || []);
+      setScriptPhase(scriptContent ? 'view' : 'initial');
+      setScriptHasStarted(!!scriptContent);
 
-      setSharedChars(charsData);
-      setSharedScenes(scenesData);
-      setSharedProps(propsData);
+      // 归一化：后端 API 返回 snake_case -> 前端 camelCase/shorthand
+      setSharedChars(normalizeSubjects(charsData));
+      setSharedScenes(normalizeSubjects(scenesData));
+      setSharedProps(normalizeSubjects(propsData));
 
       // 从后端数据中提取剧集状态，优先用 overview 的 episode_progress（状态更精准）
+      // 只接受 edited / generated / pending，其他值统一回退为 pending
+      const VALID_STATUSES = ['edited', 'generated', 'pending'];
+      const normalizeStatus = (s) => VALID_STATUSES.includes(s) ? s : 'pending';
       if (overviewData?.episode_progress?.length > 0) {
         const statusMap = {};
         overviewData.episode_progress.forEach((ep, index) => {
-          statusMap[index] = ep.status || 'pending';
+          statusMap[index] = normalizeStatus(ep.status);
         });
         setEpisodeStatuses(statusMap);
       } else if (episodesData.length > 0) {
         const statusMap = {};
         episodesData.forEach((episode, index) => {
-          statusMap[index] = episode.status || 'pending';
+          statusMap[index] = normalizeStatus(episode.status);
         });
         setEpisodeStatuses(statusMap);
       }
@@ -932,7 +958,9 @@ export default function Home({ onProjectCreated }) {
           localStorage.removeItem('miioo_active_key');
         }
       }
-    }).catch(() => {});
+    }).catch(() => {}).finally(() => {
+      setProjectsLoaded(true);
+    });
     apiGetCurrentUser().then(setCurrentUser).catch(() => {});
     apiGetNotifications().then(setNotifications).catch(() => {});
     apiListProviders().then((data) => {
@@ -971,7 +999,7 @@ export default function Home({ onProjectCreated }) {
 
   const showApiBubble = !apiConfigOpen && (!isLoggedIn || (isLoggedIn && !apiConfigured));
 
-  const bottomNavItems = BOTTOM_NAV_ITEMS.map((item) => {
+  const bottomNavItems = useMemo(() => BOTTOM_NAV_ITEMS.map((item) => {
     if (item.key === 'menu') {
       return {
         ...item,
@@ -1026,7 +1054,7 @@ export default function Home({ onProjectCreated }) {
         </div>
       ),
     };
-  });
+  }), [showApiBubble, setWatermarkSettingsOpen]);
 
   const handleBottomNavChange = (key) => {
     if (key === 'api') {
@@ -1177,7 +1205,12 @@ export default function Home({ onProjectCreated }) {
                 setNewProjectOpen(true);
               }} />
             )}
-            {activeKey === 'project' && !activeProject && !isLoadingProject && (
+            {activeKey === 'project' && isLoadingProject && (
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <DotsLoading size={6} color="#2DC3E1" gap={5} />
+              </div>
+            )}
+            {activeKey === 'project' && !activeProject && !isLoadingProject && projectsLoaded && (
               <ProjectList
                 projects={projects}
                 onNewProject={() => {
@@ -1247,12 +1280,51 @@ export default function Home({ onProjectCreated }) {
                 onScriptDraftContentChange={setScriptDraftContent}
                 scriptStreamingIndex={scriptStreamingIndex}
                 onScriptStreamingIndexChange={setScriptStreamingIndex}
-                onGoToSubject={(tab) => {
+                onGoToSubject={async (tab) => {
+                  // 1. 直接从后端拉取最新剧集列表，避免依赖前端 scriptEpisodes 状态
+                  // （ScriptPage 内部用 markdown 解析出的 outline 覆盖 scriptEpisodes 时，
+                  //   解析结果没有 id 字段，会导致 filter(ep => ep.id) 返回空数组）
+                  setIsExtractingSubjects(true);
+                  try {
+                    const freshEpisodes = await apiGetEpisodes(activeProject.id).catch(() => []);
+                    const episodesToExtract = (freshEpisodes || []).filter(ep => ep.id);
+
+                    if (episodesToExtract.length > 0) {
+                      await Promise.allSettled(
+                        episodesToExtract.map(ep =>
+                          apiExtractSubjectsFromEpisode(activeProject.id, ep.id).catch(err => {
+                            console.error(`提取剧集 ${ep.id} 主体失败:`, err);
+                          })
+                        )
+                      );
+
+                      // 2. 重新获取主体数据
+                      const [charsData, scenesData, propsData] = await Promise.all([
+                        apiGetSubjects(activeProject.id, { type: 'character' }).catch(() => []),
+                        apiGetSubjects(activeProject.id, { type: 'scene' }).catch(() => []),
+                        apiGetSubjects(activeProject.id, { type: 'prop' }).catch(() => []),
+                      ]);
+                      setSharedChars(normalizeSubjects(charsData));
+                      setSharedScenes(normalizeSubjects(scenesData));
+                      setSharedProps(normalizeSubjects(propsData));
+
+                      // 同步更新本地 scriptEpisodes（保持与后端一致）
+                      setScriptEpisodes(freshEpisodes);
+                    }
+                  } catch (err) {
+                    console.error('提取主体失败:', err);
+                    showToast('提取主体失败，请重试', 'error');
+                  } finally {
+                    setIsExtractingSubjects(false);
+                  }
+
+                  // 3. 导航到主体页面
                   setSubjectInitialTab(tab ?? 'char');
                   handleUnlockStep('subject');
                   setActiveStep('subject');
                 }}
                 isSubjectUnlocked={unlockedSteps.has('subject')}
+                isExtractingSubjects={isExtractingSubjects}
                 episodeStatuses={episodeStatuses}
               />
             )}
