@@ -1416,7 +1416,24 @@ export default function Home({ onProjectCreated }) {
                     setActiveStep('storyboard');
                   } catch (err) {
                     console.error('智能分镜生成失败:', err);
-                    showToast('分镜生成失败，请重试', 'error');
+                    const status = err?.status;
+                    const msg = err?.message || String(err);
+                    // 按后端常见错误分类提示
+                    if (status === 502) {
+                      showToast('服务器繁忙，请稍后重试', 'error');
+                    } else if (status === 504 || msg.includes('timeout') || msg.includes('Timeout') || msg.includes('abort')) {
+                      showToast('请求超时，请重试！', 'error');
+                    } else if (status === 500) {
+                      showToast('服务器内部错误，请稍后重试', 'error');
+                    } else if (status === 503) {
+                      showToast('服务暂时不可用，请稍后重试', 'error');
+                    } else if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('network')) {
+                      showToast('网络连接失败，请检查网络后重试', 'error');
+                    } else if (msg) {
+                      showToast(`分镜生成失败：${msg}`, 'error');
+                    } else {
+                      showToast('分镜生成失败，请重试', 'error');
+                    }
                   } finally {
                     setIsGeneratingStoryboards(false);
                   }

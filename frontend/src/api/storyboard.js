@@ -62,6 +62,18 @@ export async function apiGenerateStoryboardsFromFinalScript(projectId) {
     `${BASE}/api/projects/${projectId}/storyboards/generate-from-final-script`,
     { method: 'POST', headers: { 'Content-Type': 'application/json' } }
   );
+  if (!res.ok) {
+    let detail = '';
+    try {
+      const body = await res.json();
+      detail = body?.detail || body?.message || '';
+    } catch {
+      // 非 JSON 响应（如 502 HTML），忽略解析
+    }
+    const err = new Error(detail || `分镜生成失败（${res.status}）`);
+    err.status = res.status;
+    throw err;
+  }
   return res.json();
 }
 
