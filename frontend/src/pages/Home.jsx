@@ -14,7 +14,7 @@ import { clearTokens, apiLogout } from '../api/auth';
 import { apiListProviders } from '../api/config';
 import { apiGetCurrentUser, apiGetNotifications } from '../api/user';
 import { apiGetSubjects, apiGetEpisodes, apiGetScriptWorkspace, apiExtractSubjectsFromEpisode, apiFinalizeScriptWorkspace } from '../api/subject';
-import { apiGetStoryboards } from '../api/storyboard';
+import { apiGetStoryboards, apiGenerateStoryboardsFromFinalScript } from '../api/storyboard';
 import { normalizeImageUrl } from '../utils/imageUrl';
 import PrimaryNav from '../components/PrimaryNav';
 import LoginModal from '../components/LoginModal';
@@ -759,6 +759,7 @@ export default function Home({ onProjectCreated }) {
   const [sharedScenes, setSharedScenes] = useState(null);
   const [sharedProps, setSharedProps] = useState(null);
   const [isExtractingSubjects, setIsExtractingSubjects] = useState(false);
+  const [isGeneratingStoryboards, setIsGeneratingStoryboards] = useState(false);
   // 自上次提取主体后，剧本是否又重新定稿过（用于控制"开始提取主体"按钮行为）
   const [scriptFinalizedSinceExtraction, setScriptFinalizedSinceExtraction] = useState(false);
   const [scriptEpisodes, setScriptEpisodes] = useState([]);
@@ -1390,9 +1391,33 @@ export default function Home({ onProjectCreated }) {
                 onScenesChange={setSharedScenes}
                 props={sharedProps}
                 onPropsChange={setSharedProps}
-                onStartStoryboard={() => {
-                  handleUnlockStep('storyboard');
-                  setActiveStep('storyboard');
+                onStartStoryboard={async () => {
+                  if (isGeneratingStoryboards) return;
+                  setIsGeneratingStoryboards(true);
+                  try {
+                    // 1. 确保剧集已定稿（与提取主体的逻辑一致）
+                    let freshEpisodes = await apiGetEpisodes(activeProject.id).catch(() => []);
+                    if (freshEpisodes.length === 0 && scriptContent) {
+                      const finalizeResult = await apiFinalizeScriptWorkspace(activeProject.id, {
+                        episode_count: null, model: null,
+                      });
+                      const finalized = finalizeResult?.items || finalizeResult?.episodes || finalizeResult?.data;
+                      if (Array.isArray(finalized) && finalized.length > 0) {
+                        freshEpisodes = finalized;
+                        setScriptEpisodes(freshEpisodes);
+                      }
+                    }
+                    // 2. 调用智能分镜生成接口
+                    await apiGenerateStoryboardsFromFinalScript(activeProject.id);
+                    // 3. 导航到分镜页
+                    handleUnlockStep('storyboard');
+                    setActiveStep('storyboard');
+                  } catch (err) {
+                    console.error('智能分镜生成失败:', err);
+                    showToast('分镜生成失败，请重试', 'error');
+                  } finally {
+                    setIsGeneratingStoryboards(false);
+                  }
                 }}
               />
             )}
