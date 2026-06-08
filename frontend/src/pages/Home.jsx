@@ -1391,6 +1391,8 @@ export default function Home({ onProjectCreated }) {
                 onScenesChange={setSharedScenes}
                 props={sharedProps}
                 onPropsChange={setSharedProps}
+                isGeneratingStoryboards={isGeneratingStoryboards}
+                isStoryboardGenerated={unlockedSteps.has('storyboard')}
                 onStartStoryboard={async () => {
                   if (isGeneratingStoryboards) return;
                   setIsGeneratingStoryboards(true);
