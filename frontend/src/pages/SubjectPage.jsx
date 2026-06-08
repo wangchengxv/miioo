@@ -9,6 +9,8 @@ import { apiGetProjects } from '../api/project';
 import { apiGetAssets } from '../api/assets';
 import { apiListModels } from '../api/config';
 import placeholderImg from '../assets/placeholder-img.webp';
+import scenePlaceholderImg from '../assets/Mountain landscape.avif';
+import propPlaceholderImg from '../assets/Tool box silhouette.avif';
 import { normalizeImageUrl } from '../utils/imageUrl';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
@@ -903,7 +905,7 @@ function MoreMenu({ onDownload, onDelete }) {
   );
 }
 
-function CharCard({ name, desc, imageUrl, voice, onVoiceClick, onClick, onDownloadImage, onDeleteSubject }) {
+function CharCard({ name, desc, imageUrl, voice, onVoiceClick, onClick, onDownloadImage, onDeleteSubject, placeholderImg: cardPlaceholder = placeholderImg }) {
   const [hovered, setHovered] = useState(false);
   const [voicePlaying, setVoicePlaying] = useState(false);
 
@@ -920,7 +922,7 @@ function CharCard({ name, desc, imageUrl, voice, onVoiceClick, onClick, onDownlo
         className="flex items-center justify-center flex-1 self-stretch relative"
         style={{
           minHeight: '148px',
-          backgroundImage: `url(${imageUrl || placeholderImg})`,
+          backgroundImage: `url(${imageUrl || cardPlaceholder})`,
           backgroundSize: 'cover',
           backgroundPosition: '50%',
         }}
@@ -2381,6 +2383,7 @@ export default function SubjectPage({ projectId, projectName = '两只老虎的�
             name={scene.name}
             desc={scene.desc}
             imageUrl={scene.imageUrl}
+            placeholderImg={scenePlaceholderImg}
             onClick={() => setSelectedScene(scene)}
             onDownloadImage={() => handleDownloadSubjectImage(scene.id)}
             onDeleteSubject={() => handleDeleteSubject(scene.id)}
@@ -2393,6 +2396,7 @@ export default function SubjectPage({ projectId, projectName = '两只老虎的�
             name={prop.name}
             desc={prop.desc}
             imageUrl={prop.imageUrl}
+            placeholderImg={propPlaceholderImg}
             onClick={() => setSelectedProp(prop)}
             onDownloadImage={() => handleDownloadSubjectImage(prop.id)}
             onDeleteSubject={() => handleDeleteSubject(prop.id)}
