@@ -8,6 +8,83 @@ import { apiUploadFile, apiUploadImage, apiGenerateStoryboardImage, apiGenerateS
 import DotsLoading from '../components/DotsLoading';
 import { apiGetEpisodes } from '../api/subject';
 import { getImageModelParams, getVideoModelParams, getImageModelList, getVideoModelList } from '../config';
+import { normalizeImageUrl } from '../utils/imageUrl';
+
+// ─── 后端/前端数据模型双向映射 ───────────────────────────────────────────────
+
+/**
+ * 后端 StoryboardResponse (snake_case flat) → 前端 shot 模型 (camelCase nested)
+ */
+function normalizeStoryboard(be) {
+  if (!be || typeof be !== 'object') return be;
+  return {
+    id: be.id,
+    number: be.shot_number ?? be.number ?? 0,
+    description: be.content ?? be.description ?? '',
+    params: {
+      framing: be.shot_type ?? be.params?.framing ?? '远景',
+      cameraMotion: be.camera ?? be.params?.cameraMotion ?? '固定',
+      angle: be.camera_angle ?? be.params?.angle ?? '平视',
+      composition: be.composition ?? be.params?.composition ?? '三分线构图',
+      duration: be.duration != null
+        ? (typeof be.duration === 'string' ? be.duration : `${be.duration}s`)
+        : (be.params?.duration ?? '3s'),
+    },
+    lightShadow: be.lighting ?? be.lightShadow ?? '',
+    ambientSound: be.ambient_sound ?? be.ambientSound ?? '',
+    narration: be.narration ?? (
+      be.voiceover
+        ? { segments: [{ role: '', lines: be.voiceover }] }
+        : { segments: [] }
+    ),
+    mainRefs: be.mainRefs ?? (
+      (be.character_ids || []).map(cid =>
+        typeof cid === 'string' ? { id: cid, type: 'char' } : cid
+      )
+    ),
+    storyboardImage: be.storyboardImage ?? (
+      be.image_url
+        ? { id: `${be.id}_img`, url: normalizeImageUrl(be.image_url), name: '分镜图', type: 'image/jpeg' }
+        : null
+    ),
+    storyboardVideo: be.storyboardVideo ?? (
+      be.video_url
+        ? {
+            id: `${be.id}_vid`,
+            url: normalizeImageUrl(be.video_url),
+            name: '分镜视频',
+            type: 'video/mp4',
+            model: be.video_model,
+            resolution: be.video_resolution,
+            duration: be.video_duration,
+            thumbnail: be.video_thumbnail_url ? normalizeImageUrl(be.video_thumbnail_url) : undefined,
+            finalized: true,
+          }
+        : null
+    ),
+  };
+}
+
+/**
+ * 前端 shot 模型 → 后端 StoryboardCreate / StoryboardUpdate (snake_case flat)
+ */
+function toBackendStoryboard(shot) {
+  return {
+    shot_number: shot.number,
+    content: shot.description || undefined,
+    shot_type: shot.params?.framing || undefined,
+    camera: shot.params?.cameraMotion || undefined,
+    camera_angle: shot.params?.angle || undefined,
+    composition: shot.params?.composition || undefined,
+    duration: shot.params?.duration ? parseFloat(shot.params.duration) : undefined,
+    lighting: shot.lightShadow || undefined,
+    ambient_sound: shot.ambientSound || undefined,
+    voiceover: shot.narration?.segments?.length
+      ? shot.narration.segments.map(s => s.role ? `${s.role}：${s.lines}` : s.lines).join('\n')
+      : undefined,
+    character_ids: (shot.mainRefs || []).map(ref => ref?.id).filter(Boolean),
+  };
+}
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -4606,11 +4683,8 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
     // 当前 episode 是"第一集"这样的名称，需要后端提供 episode_id
     apiGetStoryboards(projectId, { episode_id: getEpisodeId(episode) })
       .then((data) => {
-        // 只在返回有效数据时更新状态
-        // null 或 undefined 表示无数据，保持现有状态
-        // 空数组表示该集数确实没有剧本，清空状态
         if (data !== null && data !== undefined) {
-          setShots(Array.isArray(data) ? data : []);
+          setShots((Array.isArray(data) ? data : []).map(normalizeStoryboard));
         }
       })
       .catch((err) => {
@@ -4709,8 +4783,7 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
 
   function updateShot(id, next) {
     setShots((prev) => prev.map((s) => (s.id === id ? next : s)));
-    // 调用后端接口
-    apiUpdateStoryboard(projectId, id, { ...next, episode_id: getEpisodeId(episode) }).catch((err) => {
+    apiUpdateStoryboard(projectId, id, toBackendStoryboard(next)).catch((err) => {
       console.error('[StoryboardPage] 更新分镜失败:', err);
     });
   }
@@ -4719,19 +4792,14 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
     const idx = shots.findIndex((s) => s.id === id);
     const newShot = makeShot(idx + 2);
 
-    // 先调用后端接口获取真实 ID
-    apiCreateStoryboard(projectId, { ...newShot, episode_id: getEpisodeId(episode), number: idx + 2 })
+    apiCreateStoryboard(projectId, { ...toBackendStoryboard(newShot), episode_id: getEpisodeId(episode) })
       .then((created) => {
-        // 使用后端返回的 ID 创建分镜
-        const shotWithRealId = { ...newShot, id: created.id };
+        const shotWithRealId = normalizeStoryboard(created);
         setShots((prev) => {
           const next = [...prev.slice(0, idx + 1), shotWithRealId, ...prev.slice(idx + 1)];
           const reordered = next.map((s, i) => ({ ...s, number: i + 1 }));
-
-          // 使用原子操作更新所有分镜的顺序
           const orderedIds = reordered.map(s => s.id);
           apiReorderStoryboards(projectId, orderedIds).catch(console.error);
-
           return reordered;
         });
       })
@@ -4743,20 +4811,17 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
   function copyShot(id) {
     const idx = shots.findIndex((s) => s.id === id);
     const original = shots[idx];
-    const copy = { ...original, id: undefined }; // 移除 ID，让后端生成新的
+    const copy = { ...original, id: undefined };
 
-    // 先调用后端接口获取真实 ID
-    apiCreateStoryboard(projectId, { ...copy, episode_id: getEpisodeId(episode), number: idx + 2 })
+    apiCreateStoryboard(projectId, { ...toBackendStoryboard(copy), episode_id: getEpisodeId(episode) })
       .then((created) => {
-        const shotWithRealId = { ...copy, id: created.id };
+        // 合并原始富数据 + 后端生成的 ID
+        const shotWithRealId = { ...copy, ...normalizeStoryboard(created) };
         setShots((prev) => {
           const next = [...prev.slice(0, idx + 1), shotWithRealId, ...prev.slice(idx + 1)];
           const reordered = next.map((s, i) => ({ ...s, number: i + 1 }));
-
-          // 使用原子操作更新所有分镜的顺序
           const orderedIds = reordered.map(s => s.id);
           apiReorderStoryboards(projectId, orderedIds).catch(console.error);
-
           return reordered;
         });
       })
@@ -4788,10 +4853,9 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
     const newNumber = shots.length + 1;
     const newShot = makeShot(newNumber);
 
-    // 先调用后端接口获取真实 ID
-    apiCreateStoryboard(projectId, { ...newShot, episode_id: getEpisodeId(episode) })
+    apiCreateStoryboard(projectId, { ...toBackendStoryboard(newShot), episode_id: getEpisodeId(episode) })
       .then((created) => {
-        const shotWithRealId = { ...newShot, id: created.id };
+        const shotWithRealId = normalizeStoryboard(created);
         setShots((prev) => [...prev, shotWithRealId]);
       })
       .catch((err) => {
