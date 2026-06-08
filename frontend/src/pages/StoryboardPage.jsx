@@ -34,7 +34,13 @@ function normalizeStoryboard(be) {
     ambientSound: be.ambient_sound ?? be.ambientSound ?? '',
     narration: be.narration ?? (
       be.voiceover
-        ? { segments: [{ role: '', lines: be.voiceover }] }
+        ? {
+            segments: be.voiceover.split('\n').filter(Boolean).map((line) => {
+              const idx = line.indexOf('：');
+              if (idx > 0) return { role: line.slice(0, idx), lines: line.slice(idx + 1) };
+              return { role: '', lines: line };
+            }),
+          }
         : { segments: [] }
     ),
     mainRefs: be.mainRefs ?? (
