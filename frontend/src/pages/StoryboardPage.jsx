@@ -22,10 +22,10 @@ function normalizeStoryboard(be) {
     number: be.shot_number ?? be.number ?? 0,
     description: be.content ?? be.description ?? '',
     params: {
-      framing: be.shot_type ?? be.params?.framing ?? '远景',
-      cameraMotion: be.camera ?? be.params?.cameraMotion ?? '固定',
-      angle: be.camera_angle ?? be.params?.angle ?? '平视',
-      composition: be.composition ?? be.params?.composition ?? '三分线构图',
+      framing: be.shot_type ?? be.params?.framing ?? '全景',
+      cameraMotion: be.camera ?? be.params?.cameraMotion ?? '固定机位',
+      angle: be.camera_angle ?? be.params?.angle ?? '平视拍摄',
+      composition: be.composition ?? be.params?.composition ?? '三分法构图',
       duration: be.duration != null
         ? (typeof be.duration === 'string' ? be.duration : `${be.duration}s`)
         : (be.params?.duration ?? '3s'),
@@ -2548,11 +2548,11 @@ function DeleteConfirmModal({ shotNumber, onConfirm, onCancel }) {
 // ─── 参数下拉选择器 ───────────────────────────────────────────────────────────
 
 const PARAM_OPTIONS = {
-  framing: ['远景', '全景', '中景', '近景', '特写', '大特写'],
-  cameraMotion: ['固定', '缓慢拉近', '缓慢推远', '横移', '跟随', '俯拍', '仰拍'],
-  angle: ['平视', '俯视', '仰视', '侧面', '背面'],
-  composition: ['三分线构图', '中心构图', '对角线构图', '框架构图', '引导线构图'],
-  duration: ['1s', '2s', '3s', '5s', '8s', '10s'],
+  framing: ['全景', '中景', '近景', '特写'],
+  cameraMotion: ['固定机位', '跟拍镜头', '环绕镜头', '缓推镜头', '缓拉镜头', '左摇镜头', '左移镜头', '右移镜头', '右摇镜头', '上升镜头', '下降镜头'],
+  angle: ['平视拍摄', '仰视拍摄', '俯视拍摄', '左侧45度拍摄', '右侧45度拍摄', '正面视角拍摄', '背面视角拍摄', '侧面视角拍摄', '过肩镜头拍摄', '主观镜头拍摄'],
+  composition: ['三分法构图', '中心构图', '前景构图', '对角线构图', '对称构图', '框架构图', '三角形构图', '留白构图', '引导线构图'],
+  duration: Array.from({ length: 13 }, (_, i) => `${i + 3}s`),
 };
 
 const PARAM_LABELS = {
@@ -4619,7 +4619,7 @@ function makeShot(number, overrides = {}) {
     id: `shot-${number}-${Date.now()}-${Math.random()}`,
     number,
     description: '',
-    params: { framing: '远景', cameraMotion: '固定', angle: '平视', composition: '三分线构图', duration: '3s' },
+    params: { framing: '全景', cameraMotion: '固定机位', angle: '平视拍摄', composition: '三分法构图', duration: '3s' },
     lightShadow: '',
     ambientSound: '',
     narration: { segments: [] },
