@@ -9,11 +9,13 @@ import bgVideo1 from '../assets/bg-video-1.mp4';
 //import bgVideo5 from '../assets/bg-video-5.mp4';
 //import bgVideo6 from '../assets/bg-video-6.mp4';
 import { apiGetProjects, apiUpdateProject, apiDeleteProject, apiGetProject, apiGetProjectOverview } from '../api/project';
+import { getToken, refreshAccessToken } from '../api/request';
 import { clearTokens, apiLogout } from '../api/auth';
 import { apiListProviders } from '../api/config';
 import { apiGetCurrentUser, apiGetNotifications } from '../api/user';
-import { apiGetSubjects, apiGetEpisodes, apiGetScriptWorkspace, apiExtractSubjectsFromEpisode } from '../api/subject';
+import { apiGetSubjects, apiGetEpisodes, apiGetScriptWorkspace, apiExtractSubjectsFromEpisode, apiFinalizeScriptWorkspace } from '../api/subject';
 import { apiGetStoryboards } from '../api/storyboard';
+import { normalizeImageUrl } from '../utils/imageUrl';
 import PrimaryNav from '../components/PrimaryNav';
 import LoginModal from '../components/LoginModal';
 import ApiConfigModal from '../components/ApiConfigModal';
@@ -725,7 +727,7 @@ function normalizeSubjects(items) {
   return items.map(item => ({
     ...item,
     desc: item.description ?? item.desc ?? '',
-    imageUrl: item.primary_image_url ?? item.image_url ?? item.imageUrl ?? null,
+    imageUrl: normalizeImageUrl(item.primary_image_url ?? item.image_url ?? item.imageUrl),
   }));
 }
 
@@ -757,12 +759,13 @@ export default function Home({ onProjectCreated }) {
   const [sharedScenes, setSharedScenes] = useState(null);
   const [sharedProps, setSharedProps] = useState(null);
   const [isExtractingSubjects, setIsExtractingSubjects] = useState(false);
+  // 自上次提取主体后，剧本是否又重新定稿过（用于控制"开始提取主体"按钮行为）
+  const [scriptFinalizedSinceExtraction, setScriptFinalizedSinceExtraction] = useState(false);
   const [scriptEpisodes, setScriptEpisodes] = useState([]);
   const [scriptPhase, setScriptPhase] = useState('initial');
   const [scriptHasStarted, setScriptHasStarted] = useState(false);
   const [scriptContent, setScriptContent] = useState('');
   const [scriptDraftContent, setScriptDraftContent] = useState('');
-  const [scriptStreamingIndex, setScriptStreamingIndex] = useState(0);
   const [episodeStatuses, setEpisodeStatuses] = useState({});
   // Tracks which non-alwaysEnabled steps have ever had content — once unlocked, stays unlocked
   const [unlockedSteps, setUnlockedSteps] = useState(new Set());
@@ -857,6 +860,10 @@ export default function Home({ onProjectCreated }) {
         setUnlockedSteps(new Set());
       }
 
+      // 恢复"定稿 flag"（按项目 ID）
+      const savedFinalized = localStorage.getItem(`miioo_finalized_since_extraction_${projectId}`);
+      setScriptFinalizedSinceExtraction(savedFinalized === 'true');
+
       // 恢复当前步骤（按项目 ID，新项目默认回到 script）
       // 注意：不使用全局 miioo_active_step，避免不同项目间互相污染
       const savedStep = localStorage.getItem(`miioo_active_step_${projectId}`);
@@ -932,41 +939,51 @@ export default function Home({ onProjectCreated }) {
   };
 
   useEffect(() => {
-    apiGetProjects().then((data) => {
-      const normalized = data.map((p) => ({ ...p, cover: p.cover ?? p.cover_url }));
-      // 按创建时间倒序排列，最新的在前
-      const sorted = [...normalized].sort((a, b) => {
-        const timeA = new Date(a.created_at || 0).getTime();
-        const timeB = new Date(b.created_at || 0).getTime();
-        return timeB - timeA;
-      });
-      setProjects(sorted);
-
-      // 只在项目页面（activeKey === 'project'）且有缓存项目 ID 时才恢复
-      const savedProjectId = localStorage.getItem('miioo_active_project_id');
-      const savedKey = localStorage.getItem('miioo_active_key');
-
-      if (savedKey === 'project' && savedProjectId) {
-        const exists = sorted.some(p => p.id === savedProjectId);
-        if (exists) {
-          setActiveProjectId(savedProjectId);
-          loadProjectDetails(savedProjectId);
-        } else {
-          // 项目已被删除，清除缓存
-          localStorage.removeItem('miioo_active_project_id');
-          localStorage.removeItem('miioo_active_step');
-          localStorage.removeItem('miioo_active_key');
-        }
-      }
-    }).catch(() => {}).finally(() => {
+    // 没有 token → 跳过所有鉴权请求，避免 401
+    if (!getToken()) {
       setProjectsLoaded(true);
+      return;
+    }
+
+    // 主动刷新 token（best-effort），减少过期 token 的 401 日志
+    // 无论刷新成功与否，authFetch 自带 401 → 刷新 → 重试 → 登出 兜底逻辑
+    refreshAccessToken().finally(() => {
+      apiGetProjects().then((data) => {
+        const normalized = data.map((p) => ({ ...p, cover: p.cover ?? p.cover_url }));
+        // 按创建时间倒序排列，最新的在前
+        const sorted = [...normalized].sort((a, b) => {
+          const timeA = new Date(a.created_at || 0).getTime();
+          const timeB = new Date(b.created_at || 0).getTime();
+          return timeB - timeA;
+        });
+        setProjects(sorted);
+
+        // 只在项目页面（activeKey === 'project'）且有缓存项目 ID 时才恢复
+        const savedProjectId = localStorage.getItem('miioo_active_project_id');
+        const savedKey = localStorage.getItem('miioo_active_key');
+
+        if (savedKey === 'project' && savedProjectId) {
+          const exists = sorted.some(p => p.id === savedProjectId);
+          if (exists) {
+            setActiveProjectId(savedProjectId);
+            loadProjectDetails(savedProjectId);
+          } else {
+            // 项目已被删除，清除缓存
+            localStorage.removeItem('miioo_active_project_id');
+            localStorage.removeItem('miioo_active_step');
+            localStorage.removeItem('miioo_active_key');
+          }
+        }
+      }).catch(() => {}).finally(() => {
+        setProjectsLoaded(true);
+      });
+      apiGetCurrentUser().then(setCurrentUser).catch(() => {});
+      apiGetNotifications().then(setNotifications).catch(() => {});
+      apiListProviders().then((data) => {
+        const providers = Array.isArray(data) ? data : (data?.providers || []);
+        if (providers.length > 0) setApiConfigured(true);
+      }).catch(() => {});
     });
-    apiGetCurrentUser().then(setCurrentUser).catch(() => {});
-    apiGetNotifications().then(setNotifications).catch(() => {});
-    apiListProviders().then((data) => {
-      const providers = Array.isArray(data) ? data : (data?.providers || []);
-      if (providers.length > 0) setApiConfigured(true);
-    }).catch(() => {});
   }, []);
 
   useEffect(() => {
@@ -986,6 +1003,14 @@ export default function Home({ onProjectCreated }) {
       next.add(stepKey);
       return next;
     });
+  };
+
+  // 定稿成功回调：标记"提取主体后已重新定稿"，允许用户再次提取（弹确认弹窗）
+  const handleScriptFinalized = () => {
+    setScriptFinalizedSinceExtraction(true);
+    if (activeProject?.id) {
+      localStorage.setItem(`miioo_finalized_since_extraction_${activeProject.id}`, 'true');
+    }
   };
 
   const handleNavChange = (key) => {
@@ -1073,8 +1098,9 @@ export default function Home({ onProjectCreated }) {
   };
 
   const handleProjectCreated = (project) => {
-    // 新项目插入到列表最前面
-    setProjects((prev) => [project, ...prev]);
+    // 新项目插入到列表最前面，统一字段映射：cover_url -> cover
+    const normalized = { ...project, cover: project.cover ?? project.cover_url };
+    setProjects((prev) => [normalized, ...prev]);
     setActiveKey('project');
   };
 
@@ -1278,16 +1304,29 @@ export default function Home({ onProjectCreated }) {
                 onScriptContentChange={setScriptContent}
                 scriptDraftContent={scriptDraftContent}
                 onScriptDraftContentChange={setScriptDraftContent}
-                scriptStreamingIndex={scriptStreamingIndex}
-                onScriptStreamingIndexChange={setScriptStreamingIndex}
                 onGoToSubject={async (tab) => {
                   // 1. 直接从后端拉取最新剧集列表，避免依赖前端 scriptEpisodes 状态
                   // （ScriptPage 内部用 markdown 解析出的 outline 覆盖 scriptEpisodes 时，
                   //   解析结果没有 id 字段，会导致 filter(ep => ep.id) 返回空数组）
                   setIsExtractingSubjects(true);
                   try {
-                    const freshEpisodes = await apiGetEpisodes(activeProject.id).catch(() => []);
-                    const episodesToExtract = (freshEpisodes || []).filter(ep => ep.id);
+                    let freshEpisodes = await apiGetEpisodes(activeProject.id).catch(() => []);
+                    let episodesToExtract = (freshEpisodes || []).filter(ep => ep.id);
+
+                    // 如果剧集尚未定稿（后端无剧集数据），先自动定稿生成剧集
+                    if (episodesToExtract.length === 0 && scriptContent) {
+                      const finalizeResult = await apiFinalizeScriptWorkspace(activeProject.id, {
+                        episode_count: null,
+                        model: null,
+                      });
+                      const finalized = finalizeResult?.items || finalizeResult?.episodes || finalizeResult?.data;
+                      if (Array.isArray(finalized) && finalized.length > 0) {
+                        freshEpisodes = finalized;
+                        episodesToExtract = finalized.filter(ep => ep.id);
+                        setScriptEpisodes(freshEpisodes);
+                        handleScriptFinalized?.();
+                      }
+                    }
 
                     if (episodesToExtract.length > 0) {
                       await Promise.allSettled(
@@ -1311,20 +1350,23 @@ export default function Home({ onProjectCreated }) {
                       // 同步更新本地 scriptEpisodes（保持与后端一致）
                       setScriptEpisodes(freshEpisodes);
                     }
+                    // 3. 导航到主体页面
+                    setSubjectInitialTab(tab ?? 'char');
+                    handleUnlockStep('subject');
+                    setScriptFinalizedSinceExtraction(false);
+                    localStorage.setItem(`miioo_finalized_since_extraction_${activeProject.id}`, 'false');
+                    setActiveStep('subject');
                   } catch (err) {
                     console.error('提取主体失败:', err);
                     showToast('提取主体失败，请重试', 'error');
                   } finally {
                     setIsExtractingSubjects(false);
                   }
-
-                  // 3. 导航到主体页面
-                  setSubjectInitialTab(tab ?? 'char');
-                  handleUnlockStep('subject');
-                  setActiveStep('subject');
                 }}
                 isSubjectUnlocked={unlockedSteps.has('subject')}
                 isExtractingSubjects={isExtractingSubjects}
+                scriptFinalizedSinceExtraction={scriptFinalizedSinceExtraction}
+                onScriptFinalized={handleScriptFinalized}
                 episodeStatuses={episodeStatuses}
               />
             )}
