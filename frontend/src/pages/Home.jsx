@@ -724,11 +724,22 @@ function WorkflowHeadbar({ activeStep, onStepChange, unlockedSteps, isLoggedIn, 
 
 // 归一化：后端 API 返回 snake_case -> 前端 camelCase/shorthand
 function normalizeSubjects(items) {
-  return items.map(item => ({
+  const list = items.map(item => ({
     ...item,
     desc: item.description ?? item.desc ?? '',
     imageUrl: normalizeImageUrl(item.primary_image_url ?? item.image_url ?? item.imageUrl),
   }));
+
+  // 按创建时间稳定排序，避免后端返回顺序不一致导致列表跳动
+  list.sort((a, b) => {
+    const timeA = a.created_at || a.createdAt || a.create_time || '';
+    const timeB = b.created_at || b.createdAt || b.create_time || '';
+    if (timeA && timeB) return timeA.localeCompare(timeB);
+    // 没有时间字段时按名称排序
+    return (a.name || '').localeCompare(b.name || '');
+  });
+
+  return list;
 }
 
 export default function Home({ onProjectCreated }) {
@@ -859,6 +870,21 @@ export default function Home({ onProjectCreated }) {
         setUnlockedSteps(new Set(JSON.parse(savedUnlocked)));
       } else {
         setUnlockedSteps(new Set());
+      }
+
+      // 如果后端已有主体数据，自动解锁 subject 步骤
+      // （避免换浏览器/清缓存后明明有数据却被锁住）
+      if (!savedUnlocked || !JSON.parse(savedUnlocked).includes('subject')) {
+        try {
+          const anySubjects = await apiGetSubjects(projectId, { type: 'character' }).catch(() => []);
+          if (Array.isArray(anySubjects) && anySubjects.length > 0) {
+            setUnlockedSteps(prev => {
+              const next = new Set(prev);
+              next.add('subject');
+              return next;
+            });
+          }
+        } catch {}
       }
 
       // 恢复"定稿 flag"（按项目 ID）
@@ -1329,7 +1355,14 @@ export default function Home({ onProjectCreated }) {
                       }
                     }
 
-                    if (episodesToExtract.length > 0) {
+                    // 先检查后端是否已有主体数据（之前提取过但 localStorage 丢了的情况）
+                    const [existingChars] = await Promise.all([
+                      apiGetSubjects(activeProject.id, { type: 'character' }).catch(() => []),
+                    ]);
+                    const hasExistingSubjects = Array.isArray(existingChars) && existingChars.length > 0;
+
+                    if (!hasExistingSubjects && episodesToExtract.length > 0) {
+                      // 后端无主体，需要提取
                       await Promise.allSettled(
                         episodesToExtract.map(ep =>
                           apiExtractSubjectsFromEpisode(activeProject.id, ep.id).catch(err => {
@@ -1337,20 +1370,31 @@ export default function Home({ onProjectCreated }) {
                           })
                         )
                       );
-
-                      // 2. 重新获取主体数据
-                      const [charsData, scenesData, propsData] = await Promise.all([
-                        apiGetSubjects(activeProject.id, { type: 'character' }).catch(() => []),
-                        apiGetSubjects(activeProject.id, { type: 'scene' }).catch(() => []),
-                        apiGetSubjects(activeProject.id, { type: 'prop' }).catch(() => []),
-                      ]);
-                      setSharedChars(normalizeSubjects(charsData));
-                      setSharedScenes(normalizeSubjects(scenesData));
-                      setSharedProps(normalizeSubjects(propsData));
-
-                      // 同步更新本地 scriptEpisodes（保持与后端一致）
-                      setScriptEpisodes(freshEpisodes);
                     }
+
+                    // 2. 获取主体数据
+                    const [charsData, scenesData, propsData] = await Promise.all([
+                      apiGetSubjects(activeProject.id, { type: 'character' }).catch(() => []),
+                      apiGetSubjects(activeProject.id, { type: 'scene' }).catch(() => []),
+                      apiGetSubjects(activeProject.id, { type: 'prop' }).catch(() => []),
+                    ]);
+                    const normalizedChars = normalizeSubjects(charsData);
+                    const normalizedScenes = normalizeSubjects(scenesData);
+                    const normalizedProps = normalizeSubjects(propsData);
+
+                    // 如果没有任何主体数据（提取失败或服务不可用），不跳转
+                    if (normalizedChars.length === 0 && normalizedScenes.length === 0 && normalizedProps.length === 0) {
+                      showToast('提取主体失败，请稍后重试', 'error');
+                      return;
+                    }
+
+                    setSharedChars(normalizedChars);
+                    setSharedScenes(normalizedScenes);
+                    setSharedProps(normalizedProps);
+
+                    // 同步更新本地 scriptEpisodes（保持与后端一致）
+                    setScriptEpisodes(freshEpisodes);
+
                     // 3. 导航到主体页面
                     setSubjectInitialTab(tab ?? 'char');
                     handleUnlockStep('subject');

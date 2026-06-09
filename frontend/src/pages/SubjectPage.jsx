@@ -1,10 +1,10 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import DotsLoading from '../components/DotsLoading';
 import BatchGenerateModal from '../components/BatchGenerateModal';
 import AssetPickerModal from '../components/AssetPickerModal';
-import { apiCreateSubject, apiUpdateSubject, apiDeleteSubject, apiGenerateSubjectImage, apiBatchGenerate, apiGetEpisodes, apiGetSubjectDetail, apiGetSubjectImages, apiBindSubjectReferenceImages, apiDownloadSubjectImage, apiSetPrimarySubjectImage } from '../api/subject';
-import { getImageModelParams } from '../config';
+import { apiCreateSubject, apiUpdateSubject, apiDeleteSubject, apiGenerateSubjectImage, apiGetSubjects, apiBatchGenerateStream, apiGetEpisodes, apiGetSubjectDetail, apiGetSubjectImages, apiBindSubjectReferenceImages, apiDownloadSubjectImage, apiSetPrimarySubjectImage } from '../api/subject';
+// 模型能力直接从后端 capabilities 获取
 import { apiGetProjects } from '../api/project';
 import { apiGetAssets } from '../api/assets';
 import { apiListModels } from '../api/config';
@@ -905,7 +905,7 @@ function MoreMenu({ onDownload, onDelete }) {
   );
 }
 
-function CharCard({ name, desc, imageUrl, voice, onVoiceClick, onClick, onDownloadImage, onDeleteSubject, placeholderImg: cardPlaceholder = placeholderImg }) {
+function CharCard({ name, desc, imageUrl, voice, onVoiceClick, onClick, onDownloadImage, onDeleteSubject, placeholderImg: cardPlaceholder = placeholderImg, loading = false }) {
   const [hovered, setHovered] = useState(false);
   const [voicePlaying, setVoicePlaying] = useState(false);
 
@@ -915,7 +915,7 @@ function CharCard({ name, desc, imageUrl, voice, onVoiceClick, onClick, onDownlo
       style={{ height: '246px', outline: hovered ? '1px solid #FFFFFF26' : '1px solid transparent', transition: 'outline-color 0.15s' }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      onClick={onClick}
+      onClick={loading ? undefined : onClick}
     >
       {/* image area */}
       <div
@@ -927,10 +927,23 @@ function CharCard({ name, desc, imageUrl, voice, onVoiceClick, onClick, onDownlo
           backgroundPosition: '50%',
         }}
       >
-        {/* top-right actions */}
+        {/* 批量生成加载遮罩 */}
+        {loading && (
+          <div
+            className="absolute inset-0 z-10"
+            style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ position: 'absolute', top: '33%', left: '50%', transform: 'translate(-50%, -50%)' }}>
+              <DotsLoading size={6} color="#2DC3E1" gap={4} />
+            </div>
+          </div>
+        )}
+
+        {/* top-right actions — 加载中隐藏 */}
         <div
           className="absolute flex gap-[4px]"
-          style={{ top: '8px', right: '8px', opacity: hovered ? 1 : 0, transition: 'opacity 0.15s' }}
+          style={{ top: '8px', right: '8px', opacity: hovered && !loading ? 1 : 0, transition: 'opacity 0.15s' }}
           onClick={(e) => e.stopPropagation()}
         >
           <MoreMenu onDownload={() => onDownloadImage?.()} onDelete={() => onDeleteSubject?.()} />
@@ -1323,12 +1336,7 @@ function RadioOption({ label, checked, onChange }) {
 }
 
 // Per-model upload limits
-const MODEL_MAX_IMAGES = {
-  'Doubao-Seed-2.0-Pro': 3,
-  'Doubao-Seed-1.6': 2,
-  'FLUX.1-dev': 1,
-  'Stable Diffusion XL': 1,
-};
+
 
 function RefImageItem({ url, onRemove }) {
   const [hovered, setHovered] = useState(false);
@@ -1488,8 +1496,12 @@ function RefImageField({ maxImages = 3, projectId, subjectId, refImageIds = [], 
   );
 }
 
+// 模块级缓存：跨弹窗打开/关闭保留生成中的图片状态
+// key: subjectId, value: { placeholderId, status: 'pending'|'done', imageUrl?, rawUrl? }
+const pendingGenerations = new Map();
+
 function EditSubjectPanel({ projectId, char, tabLabel = '角色', onClose, onCommit, onCoverChange }) {
-  // ── 从后端拉取模型列表，与本地能力表合并 ──────────────────────
+  // ── 从后端拉取模型列表，直接使用后端 capabilities ──────────────
   const [imageModels, setImageModels] = useState([]);
   const [modelsLoading, setModelsLoading] = useState(true);
 
@@ -1498,13 +1510,19 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', onClose, onCom
       try {
         const data = await apiListModels({ category: 'image' });
         const list = Array.isArray(data) ? data : (data?.items || data?.models || []);
-        // 后端模型字段：id, name, display_name, provider_id, category 等
         const merged = list.map((m) => {
-          const caps = getImageModelParams(m.id);
+          const modelId = m.model_id || m.id;
+          const caps = m.capabilities || {};
+          const resolutions = caps.supported_resolutions || [];
+          const resolutionSizeMap = caps.resolution_size_map || {};
+          const ratios = caps.supported_aspect_ratios || [];
           return {
-            value: m.id,
-            label: m.display_name || m.name || m.id,
-            hasCapabilities: !!caps,
+            value: modelId,
+            label: m.name || modelId,
+            resolutions,
+            resolutionSizeMap,
+            ratios,
+            maxRefImages: caps.max_reference_images || 3,
           };
         });
         setImageModels(merged.length > 0 ? merged : getFallbackModels());
@@ -1519,9 +1537,9 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', onClose, onCom
   // 本地兜底（后端不可用时）
   function getFallbackModels() {
     return [
-      { value: 'doubao-seedream-5.0-lite', label: 'Doubao-Seed-5.0-Lite', hasCapabilities: true },
-      { value: 'doubao-seedream-4.5', label: 'Doubao-Seed-4.5', hasCapabilities: true },
-      { value: 'doubao-seedream-4.0', label: 'Doubao-Seed-4.0', hasCapabilities: true },
+      { value: 'doubao-seedream-5.0-lite', label: 'Doubao-Seed-5.0-Lite', resolutions: ['2K','3K','4K'], resolutionSizeMap: {}, ratios: ['1:1','16:9','9:16','4:3','3:4'], maxRefImages: 3 },
+      { value: 'doubao-seedream-4.5', label: 'Doubao-Seed-4.5', resolutions: ['2K','4K'], resolutionSizeMap: {}, ratios: ['1:1','16:9','9:16','4:3','3:4'], maxRefImages: 3 },
+      { value: 'doubao-seedream-4.0', label: 'Doubao-Seed-4.0', resolutions: ['1K','2K','4K'], resolutionSizeMap: {}, ratios: ['1:1','16:9','9:16','4:3','3:4'], maxRefImages: 3 },
     ];
   }
 
@@ -1541,13 +1559,13 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', onClose, onCom
   const [ratioOpen, setRatioOpen] = useState(false);
   const [selectedRatio, setSelectedRatio] = useState(char?.ratio || '16:9');
   const ratioTriggerRef = useRef(null);
-  const [qualityHovered, setQualityHovered] = useState(false);
-  const [qualityOpen, setQualityOpen] = useState(false);
-  const [selectedQuality, setSelectedQuality] = useState(char?.resolution || '2K');
-  const qualityTriggerRef = useRef(null);
+  const [resolutionHovered, setResolutionHovered] = useState(false);
+  const [resolutionOpen, setResolutionOpen] = useState(false);
+  const [selectedResolution, setSelectedResolution] = useState(char?.resolution || '2K');
+  const resolutionTriggerRef = useRef(null);
   const modelDropdownRef = useRef(null);
   const ratioDropdownRef = useRef(null);
-  const qualityDropdownRef = useRef(null);
+  const resolutionDropdownRef = useRef(null);
   const [genMode, setGenMode] = useState('main');
   const [generatedImages, setGeneratedImages] = useState([]);
   const [refImageIds, setRefImageIds] = useState(Array.isArray(char?.reference_image_ids) ? char.reference_image_ids : []);
@@ -1555,7 +1573,13 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', onClose, onCom
   const [viewImageId, setViewImageId] = useState(null);
   const [toast, setToast] = useState(null);
   const toastTimerRef = useRef(null);
+  const isMountedRef = useRef(true); // 跟踪组件是否已挂载，关闭弹窗后仍让请求跑完
   const [detailLoaded, setDetailLoaded] = useState(false);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => { isMountedRef.current = false; };
+  }, []);
 
   // ── 从后端拉取主体详情和已生成图片 ─────────────────────────────
   useEffect(() => {
@@ -1581,7 +1605,7 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', onClose, onCom
           setSelectedModel(detail.model || detail.default_image_model);
         }
         if (detail.ratio) setSelectedRatio(detail.ratio);
-        if (detail.resolution) setSelectedQuality(detail.resolution);
+        if (detail.resolution) setSelectedResolution(detail.resolution);
         if (Array.isArray(detail.reference_image_ids)) setRefImageIds(detail.reference_image_ids);
       } else if (!promptText) {
         // 如果 char 对象没有 prompt 且后端也没返回，使用默认提示词
@@ -1591,16 +1615,43 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', onClose, onCom
       // 处理已生成图片列表
       const imgList = imagesRes.status === 'fulfilled' ? imagesRes.value : [];
       const imgs = Array.isArray(imgList) ? imgList : (imgList?.images || imgList?.items || []);
+      let finalImages;
       if (imgs.length > 0) {
-        setGeneratedImages(imgs.map((img) => ({
+        finalImages = imgs.map((img) => ({
           id: img.id || img.image_id || `img-${Math.random()}`,
           rawUrl: img.image_url || img.file_url || img.url || null,
           url: normalizeImageUrl(img.image_url || img.file_url || img.url),
           settled: img.is_primary || img.is_settled || false,
-        })));
+        }));
+      } else {
+        finalImages = [];
+      }
+
+      // 检查是否有进行中/已完成的跨弹窗生成
+      const pending = pendingGenerations.get(char.id);
+      if (pending) {
+        if (pending.status === 'pending') {
+          // 生成中：在列表最前面插入加载占位
+          finalImages.unshift({ url: null, settled: false, id: pending.placeholderId });
+        } else if (pending.status === 'done') {
+          // 弹窗关闭期间生成完成：在列表最前面插入结果图
+          finalImages.unshift({
+            rawUrl: pending.rawUrl,
+            url: normalizeImageUrl(pending.rawUrl),
+            settled: false,
+            id: pending.placeholderId,
+          });
+          pendingGenerations.delete(char.id);
+        }
+      }
+
+      if (finalImages.length > 0) {
+        setGeneratedImages(finalImages);
       } else if (char?.imageUrl) {
         // 兜底用 char 的封面图
         setGeneratedImages([{ rawUrl: char.imageUrl, url: normalizeImageUrl(char.imageUrl), settled: true, id: char.imageUrl }]);
+      } else {
+        setGeneratedImages([]);
       }
 
       setDetailLoaded(true);
@@ -1620,13 +1671,18 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', onClose, onCom
     return defaults[tab] || '高质量设定图，细节清晰。';
   }
 
-  // 获取当前模型支持的参数
-  const modelParams = getImageModelParams(selectedModel);
-  const availableRatios = modelParams?.ratios.map(r => r.value) || ['1:1', '2:1', '16:9', '4:3', '3:4', '9:16'];
-  const availableResolutions = modelParams?.resolutions || ['720P', '1K', '2K', '4K'];
-  const maxRefImages = modelParams ? (getImageModelParams(selectedModel)?.counts?.length || 4) : 4;
+  // 获取当前模型的能力配置（直接从后端 capabilities 读取）
+  const currentModel = imageModels.find(m => m.value === selectedModel) || {};
+  // 比例根据当前选中的分辨率动态获取，不同分辨率可能支持不同比例
+  const availableRatios = useMemo(() => {
+    const resRatios = currentModel.resolutionSizeMap?.[selectedResolution];
+    if (resRatios) return Object.keys(resRatios);
+    return currentModel.ratios || [];
+  }, [currentModel, selectedResolution]);
+  const availableResolutions = currentModel.resolutions || [];
+  const maxRefImages = currentModel.maxRefImages || 3;
 
-  // 当模型切换时（非首次加载），使用 defaults 重置参数
+  // 当模型切换时（非首次加载），使用模型能力重置参数
   const prevModelRef = useRef(selectedModel);
   useEffect(() => {
     // 跳过首次渲染（初始化）
@@ -1638,12 +1694,31 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', onClose, onCom
     if (prevModelRef.current === selectedModel) return;
     prevModelRef.current = selectedModel;
 
-    const params = getImageModelParams(selectedModel);
-    if (params?.defaults) {
-      setSelectedRatio(params.defaults.ratio);
-      setSelectedQuality(params.defaults.resolution);
+    const newModel = imageModels.find(m => m.value === selectedModel);
+    const resList = newModel?.resolutions || [];
+    if (resList.length > 0) {
+      setSelectedResolution(resList[0]);
+      const resRatios = newModel?.resolutionSizeMap?.[resList[0]];
+      if (resRatios) {
+        setSelectedRatio(Object.keys(resRatios)[0] || '16:9');
+      }
+    } else {
+      setSelectedResolution('');
+      setSelectedRatio('16:9');
     }
-  }, [selectedModel, detailLoaded]);
+  }, [selectedModel, detailLoaded, imageModels]);
+
+  // 当选中的分辨率/比例不在当前模型支持列表中时，自动修正到第一个可用值
+  useEffect(() => {
+    if (!availableResolutions.includes(selectedResolution)) {
+      setSelectedResolution(availableResolutions[0]);
+    }
+  }, [availableResolutions, selectedResolution]);
+  useEffect(() => {
+    if (!availableRatios.includes(selectedRatio)) {
+      setSelectedRatio(availableRatios[0]);
+    }
+  }, [availableRatios, selectedRatio]);
 
   // 点击外部关闭下拉菜单
   useEffect(() => {
@@ -1654,13 +1729,13 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', onClose, onCom
       if (ratioOpen && ratioTriggerRef.current && !ratioTriggerRef.current.contains(e.target) && ratioDropdownRef.current && !ratioDropdownRef.current.contains(e.target)) {
         setRatioOpen(false);
       }
-      if (qualityOpen && qualityTriggerRef.current && !qualityTriggerRef.current.contains(e.target) && qualityDropdownRef.current && !qualityDropdownRef.current.contains(e.target)) {
-        setQualityOpen(false);
+      if (resolutionOpen && resolutionTriggerRef.current && !resolutionTriggerRef.current.contains(e.target) && resolutionDropdownRef.current && !resolutionDropdownRef.current.contains(e.target)) {
+        setResolutionOpen(false);
       }
     }
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
-  }, [modelOpen, ratioOpen, qualityOpen]);
+  }, [modelOpen, ratioOpen, resolutionOpen]);
 
   function showToast(msg, type = 'success') {
     clearTimeout(toastTimerRef.current);
@@ -1928,28 +2003,28 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', onClose, onCom
 
           {/* quality */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', position: 'relative' }}>
-            <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF99' }}>质量</span>
+            <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF99' }}>分辨率</span>
             <div
-              ref={qualityTriggerRef}
-              style={{ ...selectStyle(qualityHovered || qualityOpen), border: `1px solid ${qualityOpen ? 'rgba(45,195,225,0.6)' : qualityHovered ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.08)'}` }}
-              onMouseEnter={() => setQualityHovered(true)}
-              onMouseLeave={() => setQualityHovered(false)}
+              ref={resolutionTriggerRef}
+              style={{ ...selectStyle(resolutionHovered || resolutionOpen), border: `1px solid ${resolutionOpen ? 'rgba(45,195,225,0.6)' : resolutionHovered ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.08)'}` }}
+              onMouseEnter={() => setResolutionHovered(true)}
+              onMouseLeave={() => setResolutionHovered(false)}
               onClick={() => {
-                console.log('[SubjectPage] 点击质量选择器，当前状态:', qualityOpen);
-                setQualityOpen((v) => !v);
+                console.log('[SubjectPage] 点击分辨率选择器，当前状态:', resolutionOpen);
+                setResolutionOpen((v) => !v);
               }}
             >
-              <span style={{ flex: 1, fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF' }}>{selectedQuality}</span>
+              <span style={{ flex: 1, fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF' }}>{selectedResolution}</span>
               <ChevronDownIcon />
             </div>
-            {qualityOpen && createPortal(
+            {resolutionOpen && createPortal(
               <div
-                ref={qualityDropdownRef}
+                ref={resolutionDropdownRef}
                 style={{
                   position: 'fixed',
-                  top: `${(qualityTriggerRef.current?.getBoundingClientRect().bottom || 0) + 4}px`,
-                  left: `${qualityTriggerRef.current?.getBoundingClientRect().left || 0}px`,
-                  width: `${qualityTriggerRef.current?.getBoundingClientRect().width || 200}px`,
+                  top: `${(resolutionTriggerRef.current?.getBoundingClientRect().bottom || 0) + 4}px`,
+                  left: `${resolutionTriggerRef.current?.getBoundingClientRect().left || 0}px`,
+                  width: `${resolutionTriggerRef.current?.getBoundingClientRect().width || 200}px`,
                   zIndex: 9999,
                   background: '#1D1E1E',
                   border: '1px solid rgba(255,255,255,0.12)',
@@ -1960,23 +2035,23 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', onClose, onCom
                   overflowY: 'auto'
                 }}
               >
-                {console.log('[SubjectPage] 渲染质量下拉菜单，选项:', availableResolutions)}
+                {console.log('[SubjectPage] 渲染分辨率下拉菜单，选项:', availableResolutions)}
                 {availableResolutions.map((opt) => (
                   <div
                     key={opt}
                     onClick={() => {
-                      console.log('[SubjectPage] 点击质量选项:', opt);
-                      setSelectedQuality(opt);
-                      setQualityOpen(false);
+                      console.log('[SubjectPage] 点击分辨率选项:', opt);
+                      setSelectedResolution(opt);
+                      setResolutionOpen(false);
                     }}
                     style={{
                       padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', fontFamily: FONT, fontSize: '14px', lineHeight: '18px',
-                      color: selectedQuality === opt ? '#2DC3E1' : '#FFFFFFCC',
-                      background: selectedQuality === opt ? 'rgba(45,195,225,0.08)' : 'transparent',
+                      color: selectedResolution === opt ? '#2DC3E1' : '#FFFFFFCC',
+                      background: selectedResolution === opt ? 'rgba(45,195,225,0.08)' : 'transparent',
                       transition: 'background 80ms',
                     }}
-                    onMouseEnter={(e) => { if (selectedQuality !== opt) e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = selectedQuality === opt ? 'rgba(45,195,225,0.08)' : 'transparent'; }}
+                    onMouseEnter={(e) => { if (selectedResolution !== opt) e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = selectedResolution === opt ? 'rgba(45,195,225,0.08)' : 'transparent'; }}
                   >
                     {opt}
                   </div>
@@ -1988,7 +2063,7 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', onClose, onCom
 
           {/* ref image */}
           <RefImageField
-            maxImages={MODEL_MAX_IMAGES[selectedModel] ?? 3}
+            maxImages={maxRefImages}
             projectId={projectId}
             subjectId={char?.id}
             refImageIds={refImageIds}
@@ -2044,26 +2119,24 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', onClose, onCom
                 }
               }}
               onSettledChange={(newSettled) => {
-                setGeneratedImages((prev) => {
-                  const next = prev.map((item, idx) =>
-                    idx === i
-                      ? { ...item, settled: newSettled }
-                      : { ...item, settled: newSettled ? false : item.settled }
-                  );
-                  const settledImg = next.find((item) => item.settled);
-
-                  // 通知父组件更新封面图（用原始相对路径，非完整 URL）
-                  onCoverChange?.(settledImg?.rawUrl ?? settledImg?.url ?? null);
-
-                  // 调后端接口：将当前图片设为定稿图
-                  if (newSettled && img.id) {
+                // 先处理副作用（通知父组件 + 调后端接口），放在 setState 外部
+                if (newSettled) {
+                  onCoverChange?.(img?.rawUrl ?? img?.url ?? null);
+                  // 仅当 ID 不是前端占位符时才调后端接口
+                  if (img.id && !String(img.id).startsWith('generated-')) {
                     apiSetPrimarySubjectImage(projectId, char.id, img.id).catch((err) => {
                       console.error('[SubjectPage] 设置定稿图失败:', err);
                     });
                   }
+                }
 
-                  return next;
-                });
+                setGeneratedImages((prev) =>
+                  prev.map((item, idx) =>
+                    idx === i
+                      ? { ...item, settled: newSettled }
+                      : { ...item, settled: newSettled ? false : item.settled }
+                  )
+                );
               }}
             />
           ))}
@@ -2096,49 +2169,76 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', onClose, onCom
               showToast('请输入提示词', 'error');
               return;
             }
+
+            // 防止同一主体重复点击生成
+            const existing = pendingGenerations.get(char.id);
+            if (existing && existing.status === 'pending') {
+              showToast('该主体已有生成任务进行中', 'error');
+              return;
+            }
+
             const placeholder = `generated-${Date.now()}`;
+            // 写入模块级缓存，跨弹窗打开/关闭保持
+            pendingGenerations.set(char.id, { placeholderId: placeholder, status: 'pending' });
             setGeneratedImages((prev) => [{ url: null, settled: false, id: placeholder }, ...prev]);
-            try {
-              const genParams = {
-                model: selectedModel,
-                ratio: selectedRatio,
-                resolution: selectedQuality,
-                prompt: promptText,
-                generation_mode: genMode,
-              };
-              // 包含参考图 ID（如果有）
-              if (Array.isArray(refImageIds) && refImageIds.length > 0) {
-                genParams.ref_image_ids = refImageIds;
-                // 第一个参考图设为主参考图
-                if (refImageIds[0]) genParams.primary_ref_image_id = refImageIds[0];
-              }
-              const result = await apiGenerateSubjectImage(projectId, char.id, genParams);
-              const rawUrl = result.image_url || result.imageUrl || result.url || null;
-              const imageUrl = normalizeImageUrl(rawUrl);
 
-              // 更新生成的图片（同时保留原始相对路径 rawUrl）
-              setGeneratedImages((prev) => {
-                const updated = prev.map((img) => img.id === placeholder ? { ...img, rawUrl, url: imageUrl, settled: false } : img);
+            const genParams = {
+              model: selectedModel,
+              ratio: selectedRatio,
+              resolution: selectedResolution,
+              prompt: promptText,
+              generation_mode: genMode,
+            };
+            if (Array.isArray(refImageIds) && refImageIds.length > 0) {
+              genParams.reference_mode = 'subject';
+            }
 
-                const hasSettled = updated.some((img) => img.settled);
-                if (!hasSettled && rawUrl) {
+            // 使用 .then() 代替 await，使回调在组件卸载后仍能更新缓存
+            apiGenerateSubjectImage(projectId, char.id, genParams)
+              .then((result) => {
+                const rawUrl = result.image_url || result.imageUrl || result.url || null;
+                if (rawUrl) {
                   onCoverChange?.(rawUrl);
                 }
 
-                return updated;
+                if (isMountedRef.current) {
+                  // 弹窗仍打开：正常更新图片列表
+                  const imageUrl = normalizeImageUrl(rawUrl);
+                  const realImageId = result.id || result.image_id || null;
+                  setGeneratedImages((prev) => {
+                    const updated = prev.map((img) =>
+                      img.id === placeholder
+                        ? { ...img, id: realImageId || placeholder, rawUrl, url: imageUrl, settled: false }
+                        : img
+                    );
+                    return updated;
+                  });
+                  showToast('图片生成成功', 'success');
+                  pendingGenerations.delete(char.id);
+                } else {
+                  // 弹窗已关闭：缓存结果，下次打开弹窗时显示
+                  pendingGenerations.set(char.id, {
+                    placeholderId: placeholder,
+                    status: 'done',
+                    rawUrl,
+                    imageUrl: result.image_url || result.imageUrl || result.url || null,
+                  });
+                  console.log('[SubjectPage] 弹窗已关闭，图片后台生成完成，结果已缓存');
+                }
+              })
+              .catch((err) => {
+                console.error('[SubjectPage] 生成图片失败:', err);
+                pendingGenerations.delete(char.id);
+                if (isMountedRef.current) {
+                  setGeneratedImages((prev) => prev.filter((img) => img.id !== placeholder));
+                }
+                const errMsg = err?.message || '图片生成失败';
+                showToast(errMsg, 'error');
               });
-
-              showToast('图片生成成功', 'success');
-            } catch (err) {
-              console.error('[SubjectPage] 生成图片失败:', err);
-              setGeneratedImages((prev) => prev.filter((img) => img.id !== placeholder));
-              const errMsg = err?.message || '图片生成失败';
-              showToast(errMsg, 'error');
-            }
           }}
           style={{
             display: 'flex', alignItems: 'center', height: '36px', borderRadius: '8px', padding: '0 16px', gap: '4px', cursor: 'pointer',
-            background: genPressed ? '#28AFCA' : genHovered ? '#35D4F5' : '#2DC3E1',
+            backgroundColor: genPressed ? '#28AFCA' : genHovered ? '#35D4F5' : '#2DC3E1',
             border: '1px solid #FFFFFF33',
             outline: '1px solid #00000080',
             backgroundImage: 'linear-gradient(in oklab 107.51deg, oklab(84.6% -0.114 0.031 / 30%) 8.14%, oklab(84.6% -0.114 0.031 / 0%) 54.48%)',
@@ -2188,6 +2288,145 @@ export default function SubjectPage({ projectId, projectName = '两只老虎的�
   const [episodes, setEpisodes] = useState([]);
   const [activeEpisode, setActiveEpisode] = useState('');
   const [batchGenOpen, setBatchGenOpen] = useState(false);
+  const [batchGenerating, setBatchGenerating] = useState(false);
+  const [batchToast, setBatchToast] = useState(null);
+  const batchToastTimerRef = useRef(null);
+  // 批量生成加载状态：{ [subjectId]: true }
+  const [batchLoadingSubjects, setBatchLoadingSubjects] = useState({});
+  // 批量生成前的封面 URL 快照
+  const prevCoverUrlsRef = useRef({});
+  // 批量生成 AbortController，组件卸载时取消
+  const batchAbortRef = useRef(null);
+
+  function showBatchToast(msg, type = 'success') {
+    if (batchToastTimerRef.current) clearTimeout(batchToastTimerRef.current);
+    setBatchToast({ msg, type });
+    batchToastTimerRef.current = setTimeout(() => setBatchToast(null), 3000);
+  }
+
+  // 归一化后端返回的主体数据（对齐 Home.jsx 的 normalizeSubjects）
+  function normalizeSubjectList(items) {
+    const list = (items || []).map(item => ({
+      ...item,
+      desc: item.description ?? item.desc ?? '',
+      imageUrl: normalizeImageUrl(item.primary_image_url ?? item.image_url ?? item.imageUrl),
+    }));
+    list.sort((a, b) => {
+      const timeA = a.created_at || a.createdAt || a.create_time || '';
+      const timeB = b.created_at || b.createdAt || b.create_time || '';
+      if (timeA && timeB) return timeA.localeCompare(timeB);
+      return (a.name || '').localeCompare(b.name || '');
+    });
+    return list;
+  }
+
+  const handleBatchGenerate = async (params) => {
+    // 收集当前 tab 下的主体 ID 列表
+    const currentSubjects = activeTab === 'char' ? chars : activeTab === 'scene' ? scenes : props;
+    const subjectIds = (currentSubjects || []).map(s => s.id).filter(Boolean);
+    if (subjectIds.length === 0) {
+      showBatchToast('当前没有可生成的主体', 'error');
+      return;
+    }
+
+    // 防止重复触发（已有加载中的主体）
+    if (Object.keys(batchLoadingSubjects).length > 0) {
+      showBatchToast('批量生成进行中，请等待当前任务完成', 'error');
+      return;
+    }
+
+    // 关闭弹窗
+    setBatchGenOpen(false);
+
+    // 保存当前 tab 引用（stream 期间 tab 不会变）
+    const captureTab = activeTab;
+    // 根据 tab 确定 setter 函数
+    const targetSetter =
+      captureTab === 'char' ? setChars :
+      captureTab === 'scene' ? setScenes :
+      setProps;
+
+    // 快照当前所有封面 URL
+    prevCoverUrlsRef.current = {};
+    (currentSubjects || []).forEach(s => {
+      prevCoverUrlsRef.current[s.id] = s.imageUrl;
+    });
+
+    // 所有卡片进入 loading 状态
+    const loadingMap = {};
+    subjectIds.forEach(id => { loadingMap[id] = true; });
+    setBatchLoadingSubjects(loadingMap);
+
+    setBatchGenerating(true);
+
+    // 创建 AbortController，用于组件卸载时取消
+    const controller = new AbortController();
+    batchAbortRef.current = controller;
+
+    // 统计成功/失败数
+    let successCount = 0;
+    let failCount = 0;
+
+    try {
+      await apiBatchGenerateStream(projectId, { ...params, subject_ids: subjectIds }, {
+        signal: controller.signal,
+        onSubjectImage: (subjectId, imageUrl) => {
+          successCount++;
+          const fullUrl = normalizeImageUrl(imageUrl);
+          // 更新对应 tab 的主体封面
+          targetSetter(prev => prev.map(s =>
+            s.id === subjectId ? { ...s, imageUrl: fullUrl } : s
+          ));
+          // 该主体退出 loading
+          setBatchLoadingSubjects(prev => {
+            const next = { ...prev };
+            delete next[subjectId];
+            return next;
+          });
+        },
+        onSubjectError: (subjectId, errorMsg) => {
+          failCount++;
+          console.error(`[SubjectPage] 主体 ${subjectId} 批量生成失败:`, errorMsg);
+          // Toast 提示单个失败
+          const sub = (currentSubjects || []).find(s => s.id === subjectId);
+          const label = sub?.name || subjectId;
+          showBatchToast(`「${label}」生成失败: ${errorMsg || '未知错误'}`, 'error');
+          // 该主体退出 loading（封面恢复为之前的图片或占位图）
+          setBatchLoadingSubjects(prev => {
+            const next = { ...prev };
+            delete next[subjectId];
+            return next;
+          });
+        },
+        onComplete: () => {
+          if (successCount > 0) {
+            showBatchToast(successCount === subjectIds.length
+              ? '批量生成全部完成'
+              : `批量生成完成（成功 ${successCount}，失败 ${failCount}）`, 'success');
+          }
+        },
+      });
+    } catch (err) {
+      // 忽略用户主动取消的错误
+      if (err?.name === 'AbortError') return;
+
+      console.error('[SubjectPage] 批量生成流失败:', err);
+      // 网络断开或整体请求失败 — toast 后统一恢复
+      const errMsg = err?.isNetworkError
+        ? '网络连接失败，请检查网络后重试'
+        : (err?.message || '批量生成失败，请重试');
+      showBatchToast(errMsg, 'error');
+
+      // 整体失败时，所有卡片的 loading 都会由于 finally 清除而消失，
+      // 封面自然恢复为之前的图片（因为我们没有修改过 imageUrl）
+    } finally {
+      // 清空所有 loading 状态
+      setBatchLoadingSubjects({});
+      setBatchGenerating(false);
+      batchAbortRef.current = null;
+    }
+  };
+
   const [confirmStoryboardOpen, setConfirmStoryboardOpen] = useState(false);
   const [selectedChar, setSelectedChar] = useState(null);
   const [selectedScene, setSelectedScene] = useState(null);
@@ -2240,6 +2479,13 @@ export default function SubjectPage({ projectId, projectName = '两只老虎的�
       setActiveEpisode((prev) => prev || list[0] || '');
     });
   }, [projectId]);
+
+  // 组件卸载时取消进行中的批量生成流
+  useEffect(() => {
+    return () => {
+      batchAbortRef.current?.abort();
+    };
+  }, []);
 
   // 初始化时把内部默认数据同步给父组件（仅当父组件尚未持有数据时）
   useEffect(() => {
@@ -2374,6 +2620,7 @@ export default function SubjectPage({ projectId, projectName = '两只老虎的�
             onClick={() => setSelectedChar(char)}
             onDownloadImage={() => handleDownloadSubjectImage(char.id)}
             onDeleteSubject={() => handleDeleteSubject(char.id)}
+            loading={!!batchLoadingSubjects[char.id]}
           />
         ))}
         {activeTab === 'char' && <AddCard onClick={handleAdd} />}
@@ -2387,6 +2634,7 @@ export default function SubjectPage({ projectId, projectName = '两只老虎的�
             onClick={() => setSelectedScene(scene)}
             onDownloadImage={() => handleDownloadSubjectImage(scene.id)}
             onDeleteSubject={() => handleDeleteSubject(scene.id)}
+            loading={!!batchLoadingSubjects[scene.id]}
           />
         ))}
         {activeTab === 'scene' && <AddCard onClick={handleAdd} />}
@@ -2400,6 +2648,7 @@ export default function SubjectPage({ projectId, projectName = '两只老虎的�
             onClick={() => setSelectedProp(prop)}
             onDownloadImage={() => handleDownloadSubjectImage(prop.id)}
             onDeleteSubject={() => handleDeleteSubject(prop.id)}
+            loading={!!batchLoadingSubjects[prop.id]}
           />
         ))}
         {activeTab === 'prop' && <AddCard onClick={handleAdd} />}
@@ -2481,8 +2730,9 @@ export default function SubjectPage({ projectId, projectName = '两只老虎的�
 
       <BatchGenerateModal
         open={batchGenOpen}
-        onClose={() => setBatchGenOpen(false)}
-        onConfirm={(params) => apiBatchGenerate(projectId, params)}
+        onClose={() => { if (!batchGenerating) setBatchGenOpen(false); }}
+        onConfirm={handleBatchGenerate}
+        generating={batchGenerating}
       />
 
       {confirmStoryboardOpen && (
@@ -2493,6 +2743,30 @@ export default function SubjectPage({ projectId, projectName = '两只老虎的�
           }}
           onCancel={() => setConfirmStoryboardOpen(false)}
         />
+      )}
+
+      {/* 批量生成 toast */}
+      {batchToast && createPortal(
+        <div style={{ position: 'fixed', top: '25vh', left: '50%', transform: 'translateX(-50%)', zIndex: 9999, pointerEvents: 'none' }}>
+          <div className="flex items-center gap-[8px] px-[16px] py-[8px] rounded-medium bg-toast-bg backdrop-blur-[20px]" style={{ whiteSpace: 'nowrap' }}>
+            {batchToast.type === 'success' ? (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+                <path d="M8 14.667A6.667 6.667 0 108 1.333a6.667 6.667 0 000 13.334z" fill="#52BF92" stroke="#52BF92" strokeWidth="1.333" strokeLinejoin="round" />
+                <path d="M5.333 8l2 2 4-4" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            ) : (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+                <path d="M8 14.667A6.667 6.667 0 108 1.333a6.667 6.667 0 000 13.334z" fill="#F75F5F" stroke="#F75F5F" strokeWidth="1.333" strokeLinejoin="round" />
+                <path d="M8 5.333V8.667" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" strokeLinejoin="round" />
+                <circle cx="8" cy="11" r="0.667" fill="#FFFFFF" />
+              </svg>
+            )}
+            <span style={{ fontFamily: "'AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif", fontSize: '14px', color: '#FFFFFF' }}>
+              {batchToast.msg}
+            </span>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );

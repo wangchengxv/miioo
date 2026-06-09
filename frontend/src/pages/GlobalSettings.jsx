@@ -1,6 +1,7 @@
 import { useState, useRef, useCallback, useEffect } from 'react';
 import ScriptPage from './ScriptPage';
 import { apiUpdateProject, apiUploadProjectCover } from '../api/project';
+import { normalizeImageUrl } from '../utils/imageUrl';
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -355,6 +356,7 @@ function CoverUpload({ coverUrl, onUpload, isSaving }) {
   const handleChange = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { alert('抱歉，平台暂不支持上传5M以上的图片资源！'); e.target.value = ''; return; }
     e.target.value = '';
 
     setIsUploading(true);
@@ -397,7 +399,7 @@ function CoverUpload({ coverUrl, onUpload, isSaving }) {
       <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handleChange} />
       {coverUrl ? (
         <>
-          <img src={coverUrl} alt="项目封面" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+          <img src={normalizeImageUrl(coverUrl)} alt="项目封面" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
           {busy && (
             <div style={{
               position: 'absolute', inset: 0,
@@ -526,6 +528,8 @@ export default function GlobalSettings({
   onGoToSubject,
   isSubjectUnlocked = false,
   isExtractingSubjects = false,
+  scriptFinalizedSinceExtraction = false,
+  onScriptFinalized,
   onEpisodesChange,
   chars = [],
   scenes = [],
@@ -539,8 +543,6 @@ export default function GlobalSettings({
   onScriptContentChange,
   scriptDraftContent,
   onScriptDraftContentChange,
-  scriptStreamingIndex,
-  onScriptStreamingIndexChange,
   episodeStatuses = {}
 }) {
   const [name, setName] = useState(projectName);
@@ -548,6 +550,8 @@ export default function GlobalSettings({
   const [coverUrl, setCoverUrl] = useState(projectCoverUrl);
   const [isSaving, setIsSaving] = useState(false);
   const saveTimerRef = useRef(null);
+  const onProjectUpdateRef = useRef(onProjectUpdate);
+  useEffect(() => { onProjectUpdateRef.current = onProjectUpdate; }, [onProjectUpdate]);
 
   // 立即保存函数（返回 Promise）
   const saveImmediately = async () => {
@@ -561,7 +565,7 @@ export default function GlobalSettings({
       description !== projectDescription ||
       coverUrl !== projectCoverUrl;
 
-    if (hasChanges && projectId && onProjectUpdate) {
+    if (hasChanges && projectId && onProjectUpdateRef.current) {
       const updates = {};
       if (name !== projectName) updates.name = name;
       if (description !== projectDescription) updates.description = description;
@@ -570,7 +574,7 @@ export default function GlobalSettings({
       if (Object.keys(updates).length > 0) {
         setIsSaving(true);
         try {
-          await onProjectUpdate(updates);
+          await onProjectUpdateRef.current(updates);
         } finally {
           setIsSaving(false);
         }
@@ -610,7 +614,7 @@ export default function GlobalSettings({
       coverChanged: coverUrl !== projectCoverUrl
     });
 
-    if (hasChanges && projectId && onProjectUpdate) {
+    if (hasChanges && projectId && onProjectUpdateRef.current) {
       console.log('[GlobalSettings] Setting save timer');
       saveTimerRef.current = setTimeout(async () => {
         const updates = {};
@@ -623,7 +627,7 @@ export default function GlobalSettings({
         if (Object.keys(updates).length > 0) {
           setIsSaving(true);
           try {
-            await onProjectUpdate(updates);
+            await onProjectUpdateRef.current(updates);
           } finally {
             setIsSaving(false);
           }
@@ -634,7 +638,7 @@ export default function GlobalSettings({
     return () => {
       if (saveTimerRef.current) clearTimeout(saveTimerRef.current);
     };
-  }, [name, description, coverUrl, projectId, projectName, projectDescription, projectCoverUrl, onProjectUpdate]);
+  }, [name, description, coverUrl, projectId, projectName, projectDescription, projectCoverUrl]);
 
   if (activeStep === 'script') {
     return (
@@ -653,6 +657,9 @@ export default function GlobalSettings({
           projectId={projectId}
           onGoToSubject={onGoToSubject}
           isExtractingSubjects={isExtractingSubjects}
+          isSubjectExtracted={isSubjectUnlocked}
+          scriptFinalizedSinceExtraction={scriptFinalizedSinceExtraction}
+          onScriptFinalized={onScriptFinalized}
           onEpisodesChange={onEpisodesChange}
           phase={scriptPhase}
           onPhaseChange={onScriptPhaseChange}
@@ -662,8 +669,6 @@ export default function GlobalSettings({
           onScriptContentChange={onScriptContentChange}
           draftContent={scriptDraftContent}
           onDraftContentChange={onScriptDraftContentChange}
-          streamingIndex={scriptStreamingIndex}
-          onStreamingIndexChange={onScriptStreamingIndexChange}
         />
       </div>
     );

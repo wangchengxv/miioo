@@ -1805,7 +1805,7 @@ function ModuleTabBar({ tabs, active, onChange }) {
             style={{
               background: 'none',
               border: 'none',
-              borderBottom: isActive ? '2px solid #2DC3E1' : '2px solid transparent',
+              borderBottom: '2px solid transparent',
               paddingTop: '12px',
               paddingBottom: '6px',
               cursor: 'pointer',

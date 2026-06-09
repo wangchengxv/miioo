@@ -417,6 +417,7 @@ export async function apiGetVideoLastFrame(videoUrl) {
 export async function apiGenerateCreation(params) {
   const isVideo = params.genType === 'video';
 
+  // ── 内部：轮询任务 ──────────────────────────────────────────────────────
   async function pollTask(pollUrl, extractFn, timeoutMs = 300000) {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
@@ -434,22 +435,66 @@ export async function apiGenerateCreation(params) {
     throw new Error('Generation timeout');
   }
 
+  // ── 上传参考文件，拿到 URL / asset_id ──────────────────────────────────
+  const uploadContext = {
+    session_id: params.session_id || undefined,
+    shot_id: params.shot_id || undefined,
+    project_id: params.project_id || undefined,
+  };
+
+  // 上传参考图片（InputCard 的 files 数组，均为图片类参考）
+  const files = params.files ? (Array.isArray(params.files) ? params.files : [params.files]) : [];
+  const refUrls = [];
+  const refAssetIds = [];
+  for (const f of files) {
+    if (!(f instanceof File)) continue;
+    try {
+      const result = await apiUploadCreationImage({ file: f, category: 'reference', ...uploadContext });
+      const url = result.uploaded_url || result.uploadedUrl || '';
+      if (url) refUrls.push(url);
+      const assetId = result.asset_id;
+      if (assetId) refAssetIds.push(assetId);
+    } catch { /* 单个文件上传失败不阻塞整体 */ }
+  }
+
+  // 上传首帧 / 尾帧（图片），用于视频生成
+  let firstFrameUrl, lastFrameUrl, firstFrameAssetId, lastFrameAssetId;
+  if (params.firstFrameFile instanceof File) {
+    try {
+      const r = await apiUploadCreationImage({ file: params.firstFrameFile, category: 'first_frame', ...uploadContext });
+      firstFrameUrl = r.uploaded_url || r.uploadedUrl || undefined;
+      firstFrameAssetId = r.asset_id || undefined;
+    } catch {}
+  }
+  if (params.lastFrameFile instanceof File) {
+    try {
+      const r = await apiUploadCreationImage({ file: params.lastFrameFile, category: 'last_frame', ...uploadContext });
+      lastFrameUrl = r.uploaded_url || r.uploadedUrl || undefined;
+      lastFrameAssetId = r.asset_id || undefined;
+    } catch {}
+  }
+
+  // ── 图片生成 ────────────────────────────────────────────────────────────
   if (!isVideo) {
+    const countNum = parseInt(params.count) || 1;
     const body = {
       prompt: params.prompt,
       model: params.model || undefined,
-      image_count: parseInt(params.count) || 1,
-      aspect_ratio: params.ratio || undefined,
+      size: params.resolution || undefined,
       resolution: params.resolution || undefined,
-      reference_images: params.reference_images || undefined,
+      aspect_ratio: params.ratio || undefined,
+      image_count: countNum,
+      count: countNum,
+      imageCount: countNum,
+      reference_images: refUrls.length > 0 ? refUrls : undefined,
       category: params.category || undefined,
       asset_name: params.asset_name || undefined,
-      session_id: params.session_id || undefined,
-      shot_id: params.shot_id || undefined,
-      project_id: params.project_id || undefined,
+      watercolor: params.watermark || undefined,
       save_to_assets: params.save_to_assets ?? true,
       inherit_project_style: params.inherit_project_style ?? false,
-      watermark: params.watermark || undefined,
+      session_id: uploadContext.session_id,
+      shot_id: uploadContext.shot_id,
+      project_id: uploadContext.project_id,
     };
     const genData = await apiGenerateCreationImages(body);
     const taskId = genData.task_id || genData.id;
@@ -463,29 +508,31 @@ export async function apiGenerateCreation(params) {
           images: imgs.map((img) => img.original_url || img.originalUrl || img.thumbnail_url || img.thumbnailUrl),
           cardIds: imgs.map((img) => img.id),
         };
-      }
+      },
     );
     return { taskId, images, cardIds };
   }
 
-  // Video generation
+  // ── 视频生成 ────────────────────────────────────────────────────────────
   const body = {
     prompt: params.prompt,
     model: params.model || 'doubao-seedance-2.0',
     ratio: params.ratio || params.videoRatio || '16:9',
     resolution: params.resolution || params.videoResolution || '720P',
     duration: parseInt(params.videoDuration) || 5,
-    first_frame_url: params.firstFrameUrl || undefined,
-    last_frame_url: params.lastFrameUrl || undefined,
-    reference_mode: params.reference_mode || undefined,
+    reference_mode: params.refMode || undefined,
     generation_mode: params.generation_mode || undefined,
-    with_audio: params.with_audio || false,
-    watermark: params.watermark || undefined,
-    first_frame_asset_id: params.first_frame_asset_id || undefined,
-    last_frame_asset_id: params.last_frame_asset_id || undefined,
+    with_audio: params.soundEnabled ?? false,
+    // 首尾帧（URL + asset_id 双通道，后端优先看 asset_id）
+    first_frame_url: firstFrameUrl || params.firstFrameUrl || undefined,
+    last_frame_url: lastFrameUrl || params.lastFrameUrl || undefined,
+    first_frame_asset_id: firstFrameAssetId || params.first_frame_asset_id || undefined,
+    last_frame_asset_id: lastFrameAssetId || params.last_frame_asset_id || undefined,
+    // 参考资源
+    reference_image_asset_ids: refAssetIds.length > 0 ? refAssetIds : undefined,
     reference_video_url: params.reference_video_url || undefined,
     reference_audio_url: params.reference_audio_url || undefined,
-    reference_image_asset_ids: params.reference_image_asset_ids || undefined,
+    watercolor: params.watermark || undefined,
   };
   const genData = await apiGenerateCreationVideo(body);
   const taskId = genData.task_id || genData.id;
@@ -500,7 +547,8 @@ export async function apiGenerateCreation(params) {
         videos: [result.video_url || result.videoUrl],
         cardIds: [result.id],
       };
-    }
+    },
   );
   return { taskId, videos, cardIds };
 }
+

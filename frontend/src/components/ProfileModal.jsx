@@ -989,7 +989,7 @@ function AvatarEditButton({ avatarSrc, onLocalPreview, onUploaded, showToast }) 
     const file = e.target.files?.[0];
     if (!file) return;
     if (file.size > 5 * 1024 * 1024) {
-      showToast('不得上传超过5M的图像！');
+      showToast('抱歉，平台暂不支持上传5M以上的图片资源！');
       e.target.value = '';
       return;
     }

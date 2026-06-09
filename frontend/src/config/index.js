@@ -39,11 +39,21 @@ export function getImageModelParams(modelId) {
     h: parseInt(item.ratio.split(':')[1]),
   })) || [];
 
+  // 按分辨率映射可用比例：{ '2K': ['1:1', '16:9', ...], '3K': [...] }
+  const resolutionRatios = {};
+  for (const res of resolutions) {
+    const items = capabilities.resolutions[res];
+    if (Array.isArray(items)) {
+      resolutionRatios[res] = items.map(item => item.ratio);
+    }
+  }
+
   const maxCount = Math.min(capabilities.features?.maxImagesTotal || 4, 4);
   const counts = Array.from({ length: maxCount }, (_, i) => `${i + 1}张`);
 
   return {
     ratios,
+    resolutionRatios,
     resolutions,
     counts,
     defaults: capabilities.defaults || {

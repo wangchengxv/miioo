@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import defaultCover from '../assets/project-default-cover.png';
 import { formatRelativeTime } from '../utils/formatTime';
+import { normalizeImageUrl } from '../utils/imageUrl';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
@@ -552,7 +553,7 @@ function ProjectCard({ project, onRename, onDelete, onOpen }) {
         }}
       >
         <img
-          src={project.cover || defaultCover}
+          src={normalizeImageUrl(project.cover) || defaultCover}
           alt=""
           style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
         />

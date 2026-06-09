@@ -4,10 +4,11 @@ import BatchDownloadModal from '../components/BatchDownloadModal';
 import ShotViewerModal from '../components/ShotViewerModal';
 import Toggle from '../components/Toggle';
 import AssetPickerModal from '../components/AssetPickerModal';
-import { apiUploadFile, apiUploadImage, apiGenerateStoryboardImage, apiGenerateStoryboardVideo, apiCreateStoryboard, apiUpdateStoryboard, apiDeleteStoryboard, apiReorderStoryboards, apiGetStoryboards } from '../api/storyboard';
+import { apiUploadFile, apiUploadImage, apiGenerateStoryboardImage, apiGenerateStoryboardVideo, apiCreateStoryboard, apiUpdateStoryboard, apiDeleteStoryboard, apiReorderStoryboards, apiGetStoryboards, apiBatchDownloadStoryboardImages, apiBatchDownloadStoryboardVideos } from '../api/storyboard';
+import { apiListModels } from '../api/config';
 import DotsLoading from '../components/DotsLoading';
 import { apiGetEpisodes } from '../api/subject';
-import { getImageModelParams, getVideoModelParams, getImageModelList, getVideoModelList } from '../config';
+import { getImageModelParams, getVideoModelParams, getVideoModelCapabilities } from '../config';
 import { normalizeImageUrl } from '../utils/imageUrl';
 
 // ─── 后端/前端数据模型双向映射 ───────────────────────────────────────────────
@@ -105,7 +106,8 @@ const EPISODE_MAX_VISIBLE = 10;
 function getEpisodeLabel(ep) {
   if (!ep) return '';
   if (typeof ep === 'string') return ep;
-  return ep.title || `第${ep.episode_number}集` || JSON.stringify(ep);
+  const label = ep.title || `第${ep.episode_number}集` || JSON.stringify(ep);
+  return label.length > 20 ? label.slice(0, 20) + '…' : label;
 }
 function getEpisodeId(ep) {
   if (!ep) return '';
@@ -469,10 +471,53 @@ const ModalToggle = Toggle;
 
 // ─── 批量生成分镜图弹窗 ───────────────────────────────────────────────────────
 
+
 function BatchImageModal({ shotCount, onClose, onConfirm }) {
-  const modelList = getImageModelList();
-  const [model, setModel] = useState(modelList[0]?.value || '');
-  const [resolution, setResolution] = useState('1K');
+  const [modelList, setModelList] = useState([]);
+  const [modelsLoading, setModelsLoading] = useState(true);
+  const [model, setModel] = useState('');
+  const [resolution, setResolution] = useState('');
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await apiListModels({ category: 'image' });
+        const list = Array.isArray(data) ? data : (data?.items || data?.models || []);
+        const merged = list.map((m) => {
+          const modelId = m.model_id || m.id;
+          const name = m.name || '';
+          const caps = m.capabilities || {};
+          const resolutions = caps.supported_resolutions || [];
+          return { value: modelId, label: name || modelId, capabilities: caps, resolutions };
+        });
+        setModelList(merged);
+        if (merged.length > 0) {
+          const first = merged[0];
+          setModel(first.value);
+          if (first.resolutions.length > 0) {
+            setResolution(first.resolutions[0]);
+          }
+        }
+      } catch {
+        setModelList([]);
+      } finally {
+        setModelsLoading(false);
+      }
+    })();
+  }, []);
+
+  const resolutionOptions = useMemo(() => {
+    const selected = modelList.find(m => m.value === model);
+    return selected?.resolutions || [];
+  }, [model, modelList]);
+
+  const handleModelChange = useCallback((label) => {
+    const selected = modelList.find(m => m.label === label);
+    if (!selected) return;
+    setModel(selected.value);
+    setResolution(selected.resolutions.length > 0 ? selected.resolutions[0] : '');
+  }, [modelList]);
+
   return (
     <ModalOverlay onClose={onClose}>
       <div style={{
@@ -491,11 +536,13 @@ function BatchImageModal({ shotCount, onClose, onConfirm }) {
             <span style={{ fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.60)', fontFamily: FONT, flexShrink: 0 }}>待生成的分镜图数量</span>
             <span style={{ fontSize: '14px', lineHeight: '18px', color: '#FFFFFF', fontFamily: FONT, flexShrink: 0 }}>{shotCount}个</span>
           </div>
-          <ModalSelect label="选择模型" value={modelList.find(m => m.value === model)?.label || ''} options={modelList.map(m => m.label)} onChange={(label) => {
-            const selected = modelList.find(m => m.label === label);
-            if (selected) setModel(selected.value);
-          }} />
-          <ModalSelect label="分辨率" value={resolution} options={['1K', '2K', '4K']} onChange={setResolution} />
+          <ModalSelect
+            label="选择模型"
+            value={modelsLoading ? '加载中...' : (modelList.find(m => m.value === model)?.label || '请选择')}
+            options={modelList.map(m => m.label)}
+            onChange={handleModelChange}
+          />
+          <ModalSelect label="分辨率" value={resolution} options={resolutionOptions} onChange={setResolution} />
         </div>
         {/* 底部 */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '16px', padding: '16px 24px' }}>
@@ -510,10 +557,74 @@ function BatchImageModal({ shotCount, onClose, onConfirm }) {
 // ─── 批量生成分镜视频弹窗 ─────────────────────────────────────────────────────
 
 function BatchVideoModal({ shotCount, onClose, onConfirm }) {
-  const modelList = getVideoModelList();
-  const [model, setModel] = useState(modelList[0]?.value || '');
-  const [quality, setQuality] = useState('720P');
+  const [modelList, setModelList] = useState([]);
+  const [modelsLoading, setModelsLoading] = useState(true);
+  const [model, setModel] = useState('');
+  const [resolution, setResolution] = useState('');
+  const [duration, setDuration] = useState('');
   const [sound, setSound] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await apiListModels({ category: 'video' });
+        const list = Array.isArray(data) ? data : (data?.items || data?.models || []);
+        const merged = list.map((m) => {
+          const modelId = m.model_id || m.id;
+          const name = m.name || '';
+          const caps = m.capabilities || {};
+          const resolutions = caps.supported_resolutions || [];
+          // 时长：优先用后端 capabilities 中的时长范围，其次用本地能力表兜底
+          let durationRange = caps.supported_duration_range || null;
+          if (!durationRange) {
+            const localCaps = getVideoModelCapabilities(modelId);
+            if (localCaps?.outputVideo?.durationRange) {
+              durationRange = localCaps.outputVideo.durationRange;
+            }
+          }
+          return { value: modelId, label: name || modelId, capabilities: caps, resolutions, durationRange };
+        });
+        setModelList(merged);
+        if (merged.length > 0) {
+          const first = merged[0];
+          setModel(first.value);
+          if (first.resolutions.length > 0) {
+            setResolution(first.resolutions[0]);
+          }
+          if (first.durationRange) {
+            setDuration(`${first.durationRange[0]}s`);
+          }
+        }
+      } catch {
+        setModelList([]);
+      } finally {
+        setModelsLoading(false);
+      }
+    })();
+  }, []);
+
+  const resolutionOptions = useMemo(() => {
+    const selected = modelList.find(m => m.value === model);
+    return selected?.resolutions || [];
+  }, [model, modelList]);
+
+  const durationOptions = useMemo(() => {
+    const selected = modelList.find(m => m.value === model);
+    if (!selected?.durationRange) return [];
+    const [min, max] = selected.durationRange;
+    return Array.from({ length: max - min + 1 }, (_, i) => `${min + i}s`);
+  }, [model, modelList]);
+
+  const handleModelChange = useCallback((label) => {
+    const selected = modelList.find(m => m.label === label);
+    if (!selected) return;
+    setModel(selected.value);
+    setResolution(selected.resolutions.length > 0 ? selected.resolutions[0] : '');
+    if (selected.durationRange) {
+      setDuration(`${selected.durationRange[0]}s`);
+    }
+  }, [modelList]);
+
   return (
     <ModalOverlay onClose={onClose}>
       <div style={{
@@ -532,23 +643,14 @@ function BatchVideoModal({ shotCount, onClose, onConfirm }) {
             <span style={{ fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.60)', fontFamily: FONT, flexShrink: 0 }}>待生成的分镜视频数量</span>
             <span style={{ fontSize: '14px', lineHeight: '18px', color: '#FFFFFF', fontFamily: FONT, flexShrink: 0 }}>{shotCount}个</span>
           </div>
-          <ModalSelect label="选择模型" value={modelList.find(m => m.value === model)?.label || ''} options={modelList.map(m => m.label)} onChange={(label) => {
-            const selected = modelList.find(m => m.label === label);
-            if (selected) setModel(selected.value);
-          }} />
-          {/* 时长（只读） */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignSelf: 'stretch' }}>
-            <span style={{ fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.60)', fontFamily: FONT }}>时长</span>
-            <div style={{
-              display: 'flex', alignItems: 'center', height: '36px', width: '100%',
-              borderRadius: '8px', paddingInline: '12px', gap: '8px',
-              backgroundColor: '#131313', outline: '1px solid #00000080',
-              boxSizing: 'border-box',
-            }}>
-              <span style={{ flex: 1, fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.40)', fontFamily: FONT }}>自动匹配</span>
-            </div>
-          </div>
-          <ModalSelect label="清晰度" value={quality} options={['720P', '1080P', '4K']} onChange={setQuality} />
+          <ModalSelect
+            label="选择模型"
+            value={modelsLoading ? '加载中...' : (modelList.find(m => m.value === model)?.label || '请选择')}
+            options={modelList.map(m => m.label)}
+            onChange={handleModelChange}
+          />
+          <ModalSelect label="分辨率" value={resolution} options={resolutionOptions} onChange={setResolution} />
+          <ModalSelect label="时长" value={duration} options={durationOptions} onChange={setDuration} />
           {/* 音效 toggle */}
           <div style={{ display: 'flex', gap: '8px', alignSelf: 'stretch', alignItems: 'center', justifyContent: 'space-between' }}>
             <span style={{ fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.60)', fontFamily: FONT, flexShrink: 0 }}>音效</span>
@@ -558,7 +660,7 @@ function BatchVideoModal({ shotCount, onClose, onConfirm }) {
         {/* 底部 */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '16px', padding: '16px 24px' }}>
           <ModalGhostBtn onClick={onClose}>取消</ModalGhostBtn>
-          <ModalPrimaryBtn onClick={() => { onConfirm({ model, quality, sound }); onClose(); }}>开始生成</ModalPrimaryBtn>
+          <ModalPrimaryBtn onClick={() => { onConfirm({ model, resolution, duration, sound }); onClose(); }}>开始生成</ModalPrimaryBtn>
         </div>
       </div>
     </ModalOverlay>
@@ -653,7 +755,7 @@ function ImgUploadBtn({ label, onClick }) {
 }
 
 // 上传占位卡
-function ImgUploadCard({ onUpload }) {
+function ImgUploadCard({ onUpload, projectId }) {
   const [hovered, setHovered] = useState(false);
   const [assetPickerOpen, setAssetPickerOpen] = useState(false);
   const fileInputRef = useRef(null);
@@ -680,7 +782,7 @@ function ImgUploadCard({ onUpload }) {
         <ImgUploadBtn label="本地上传" onClick={() => fileInputRef.current?.click()} />
         <ImgUploadBtn label="从资产库选择" onClick={() => setAssetPickerOpen(true)} />
       </div>
-      <AssetPickerModal accept="image" open={assetPickerOpen} onClose={() => setAssetPickerOpen(false)} onConfirm={() => {}} />
+      <AssetPickerModal accept="image" open={assetPickerOpen} onClose={() => setAssetPickerOpen(false)} projectId={projectId} onConfirm={() => {}} />
     </>
   );
 }
@@ -944,14 +1046,14 @@ function FrameUploadSlot({ label, media, onUpload, onRemove, shortcutLabel, shor
           )}
         </div>
       </div>
-      <AssetPickerModal accept="image" open={assetPickerOpen} onClose={() => setAssetPickerOpen(false)} onConfirm={() => {}} />
+      <AssetPickerModal accept="image" open={assetPickerOpen} onClose={() => setAssetPickerOpen(false)} projectId={projectId} onConfirm={() => {}} />
     </>
   );
 }
 
 // ─── 面板上传区（虚线框）────────────────────────────────────────────────────────
 
-function PanelUploadSlot({ label, onUpload, media, onRemove, accept = 'image/*' }) {
+function PanelUploadSlot({ label, onUpload, media, onRemove, accept = 'image/*', projectId }) {
   const fileRef = useRef(null);
   const [hov, setHov] = useState(false);
   const [btn1Hov, setBtn1Hov] = useState(false);
@@ -1040,7 +1142,7 @@ function PanelUploadSlot({ label, onUpload, media, onRemove, accept = 'image/*' 
           )}
         </div>
       </div>
-      <AssetPickerModal accept={accept.startsWith('video') ? 'video' : accept.startsWith('image') ? 'image' : accept.startsWith('audio') ? 'audio' : 'all'} open={assetPickerOpen} onClose={() => setAssetPickerOpen(false)} onConfirm={() => {}} />
+      <AssetPickerModal accept={accept.startsWith('video') ? 'video' : accept.startsWith('image') ? 'image' : accept.startsWith('audio') ? 'audio' : 'all'} open={assetPickerOpen} onClose={() => setAssetPickerOpen(false)} projectId={projectId} onConfirm={() => {}} />
     </>
   );
 }
@@ -1665,10 +1767,37 @@ function RefSlotBtn({ onClick, children }) {
   );
 }
 
-function GenerateImagePanel({ shot, chars = [], scenes = [], props = [], onClose, onGenerate, onShowToast, generatedImages = [], onSetGeneratedImages }) {
-  const modelList = getImageModelList();
-  const [model, setModel] = useState(modelList[0]?.value || '');
-  const [resolution, setResolution] = useState('2K');
+function GenerateImagePanel({ shot, projectId, chars = [], scenes = [], props = [], onClose, onGenerate, onShowToast, generatedImages = [], onSetGeneratedImages }) {
+  const [modelList, setModelList] = useState([]);
+  const [modelsLoading, setModelsLoading] = useState(true);
+  const [model, setModel] = useState('');
+  const [resolution, setResolution] = useState('');
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await apiListModels({ category: 'image' });
+        const list = Array.isArray(data) ? data : (data?.items || data?.models || []);
+        const merged = list.map((m) => {
+          const modelId = m.model_id || m.id;
+          return { value: modelId, label: m.name || modelId, capabilities: m.capabilities || {} };
+        });
+        setModelList(merged);
+        if (merged.length > 0) {
+          const first = merged[0];
+          setModel(first.value);
+          const caps = first.capabilities;
+          if (caps?.supported_resolutions?.length > 0) {
+            setResolution(caps.supported_resolutions[0]);
+          }
+        }
+      } catch {
+        setModelList([]);
+      } finally {
+        setModelsLoading(false);
+      }
+    })();
+  }, []);
   // 提示词：仅暂存在当前弹窗的本地 state，编辑不回写分镜列表字段。
   // 关闭面板时组件卸载、本地态丢弃，下次打开按 shot 当前字段重新生成初始内容。
   // 点击「生成分镜图」时才把 prompt 随 onGenerate 传回后端。
@@ -1690,16 +1819,17 @@ function GenerateImagePanel({ shot, chars = [], scenes = [], props = [], onClose
   const [viewImageUrl, setViewImageUrl] = useState(null);
   const refFileRef = useRef(null);
 
-  // 获取当前模型支持的分辨率
-  const modelParams = useMemo(() => getImageModelParams(model), [model]);
-  const availableResolutions = modelParams?.resolutions || ['1K', '2K', '4K'];
+  // 获取当前模型支持的分辨率（从后端 capabilities 派生）
+  const currentModel = useMemo(() => modelList.find(m => m.value === model), [model, modelList]);
+  const availableResolutions = currentModel?.capabilities?.supported_resolutions || [];
 
-  // 当模型切换时，使用 defaults 重置参数
+  // 当模型切换时，重置分辨率
+  const currentResolutions = currentModel?.capabilities?.supported_resolutions;
   useEffect(() => {
-    if (modelParams?.defaults) {
-      setResolution(modelParams.defaults.resolution);
+    if (currentResolutions?.length > 0) {
+      setResolution(currentResolutions[0]);
     }
-  }, [modelParams]);
+  }, [model, currentResolutions]);
 
   async function handleRefImageUpload(file) {
     try {
@@ -1805,7 +1935,7 @@ function GenerateImagePanel({ shot, chars = [], scenes = [], props = [], onClose
             </div>
 
             <PanelPromptInput value={prompt} onChange={setPrompt} chars={chars} scenes={scenes} props={props} mainRefs={shot?.mainRefs || []} />
-            <PanelSelect label="选择模型" value={modelList.find(m => m.value === model)?.label || ''} options={modelList.map(m => m.label)} onChange={(label) => {
+            <PanelSelect label="选择模型" value={modelsLoading ? '加载中...' : (modelList.find(m => m.value === model)?.label || '请选择')} options={modelList.map(m => m.label)} onChange={(label) => {
               const selected = modelList.find(m => m.label === label);
               if (selected) setModel(selected.value);
             }} />
@@ -1842,7 +1972,7 @@ function GenerateImagePanel({ shot, chars = [], scenes = [], props = [], onClose
                 </div>
               </div>
             </div>
-            <AssetPickerModal accept="image" open={refImgPickerOpen} onClose={() => setRefImgPickerOpen(false)} onConfirm={() => {}} />
+            <AssetPickerModal accept="image" open={refImgPickerOpen} onClose={() => setRefImgPickerOpen(false)} projectId={projectId} onConfirm={() => {}} />
 
             <PanelSelect label="分辨率" value={resolution} options={availableResolutions} onChange={setResolution} />
 
@@ -1851,6 +1981,7 @@ function GenerateImagePanel({ shot, chars = [], scenes = [], props = [], onClose
           {/* 右侧图片列表 */}
           <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', paddingLeft: '12px', paddingRight: '24px', paddingTop: '8px', paddingBottom: '8px', background: '#161616', height: '100%', boxSizing: 'border-box' }}>
             <ImgUploadCard
+              projectId={projectId}
               onUpload={(file) => {
                 const url = URL.createObjectURL(file);
                 onSetGeneratedImages((prev) => [{ url, settled: false, id: url }, ...prev]);
@@ -1927,11 +2058,38 @@ function GenerateImagePanel({ shot, chars = [], scenes = [], props = [], onClose
   );
 }
 
-function GenerateVideoPanel({ shot, nextShot = null, chars = [], scenes = [], props = [], onClose, onGenerate, onShowToast }) {
+function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scenes = [], props = [], onClose, onGenerate, onShowToast }) {
   const [mode, setMode] = useState('all'); // 'all' | 'first-last' | 'multi'
-  const modelList = getVideoModelList();
-  const [model, setModel] = useState(modelList[0]?.value || '');
-  const [resolution, setResolution] = useState('720p');
+  const [modelList, setModelList] = useState([]);
+  const [modelsLoading, setModelsLoading] = useState(true);
+  const [model, setModel] = useState('');
+  const [resolution, setResolution] = useState('');
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const data = await apiListModels({ category: 'video' });
+        const list = Array.isArray(data) ? data : (data?.items || data?.models || []);
+        const merged = list.map((m) => {
+          const modelId = m.model_id || m.id;
+          return { value: modelId, label: m.name || modelId, capabilities: m.capabilities || {} };
+        });
+        setModelList(merged);
+        if (merged.length > 0) {
+          const first = merged[0];
+          setModel(first.value);
+          const caps = first.capabilities;
+          if (caps?.supported_resolutions?.length > 0) {
+            setResolution(caps.supported_resolutions[0]);
+          }
+        }
+      } catch {
+        setModelList([]);
+      } finally {
+        setModelsLoading(false);
+      }
+    })();
+  }, []);
   const [duration, setDuration] = useState('自动匹配');
   const [sound, setSound] = useState(true);
   // 提示词：仅暂存在当前弹窗的本地 state，编辑不回写分镜列表字段。
@@ -1956,20 +2114,52 @@ function GenerateVideoPanel({ shot, nextShot = null, chars = [], scenes = [], pr
   const [generatedVideos, setGeneratedVideos] = useState([]);
   const [viewerShot, setViewerShot] = useState(null);
 
-  // 获取当前模型支持的参数
-  const modelParams = useMemo(() => getVideoModelParams(model), [model]);
-  const availableResolutions = modelParams?.resolutions || ['720p', '1080p', '2K', '4K'];
-  const availableDurations = modelParams?.durations || ['4s', '5s', '6s', '7s', '8s', '9s', '10s'];
-  const availableRefModes = modelParams?.refModes || [];
+  // 获取当前模型支持的参数（优先从后端 capabilities 派生）
+  const currentVideoModel = useMemo(() => modelList.find(m => m.value === model), [model, modelList]);
+  const availableResolutions = currentVideoModel?.capabilities?.supported_resolutions || [];
 
-  // 当模型切换时，使用 defaults 重置参数
-  useEffect(() => {
-    if (modelParams?.defaults) {
-      setResolution(modelParams.defaults.resolution);
-      setMode(modelParams.defaults.refMode);
-      // duration 保持"自动匹配"，不使用 defaults
+  // 时长：后端 capabilities 中的时长范围
+  const availableDurations = useMemo(() => {
+    const range = currentVideoModel?.capabilities?.supported_duration_range;
+    if (range && range.length === 2) {
+      const [min, max] = range;
+      return Array.from({ length: max - min + 1 }, (_, i) => `${min + i}s`);
     }
-  }, [modelParams]);
+    return [];
+  }, [currentVideoModel]);
+
+  // 参考模式：暂从本地能力表获取（后端暂未提供此字段）
+  const availableRefModes = useMemo(() => {
+    // 从后端 capabilities 获取生成方式
+    const currentModel = modelList.find(m => m.value === model);
+    const caps = currentModel?.capabilities || {};
+    const modes = [];
+    const genModes = caps.supported_generation_modes || [];
+    // 后端字段映射：
+    //   start_end / first_frame / first_last_frame → 首尾帧生视频
+    //   reference_image / reference_subjects / multiframe / full / video_ref → 多参生视频
+    const hasStartEnd = genModes.some(m => ['start_end', 'first_frame', 'first_last_frame'].includes(m));
+    const hasMultiRef = genModes.some(m => ['reference_image', 'reference_subjects', 'multiframe', 'full', 'video_ref'].includes(m));
+    if (hasStartEnd) modes.push({ value: 'frame', label: '首尾帧生视频' });
+    if (hasMultiRef) modes.push({ value: 'all', label: '多参生视频' });
+    // 后端没返回时，用本地能力表兜底
+    if (modes.length === 0) {
+      const localCaps = getVideoModelCapabilities(model);
+      if (localCaps) {
+        if (localCaps.category.includes('multi-modal-ref')) modes.push({ value: 'all', label: '多参生视频' });
+        if (localCaps.category.includes('first-last-frame')) modes.push({ value: 'frame', label: '首尾帧生视频' });
+      }
+    }
+    return modes;
+  }, [model, modelList]);
+
+  // 当模型切换时，重置参数
+  const currentVidResolutions = currentVideoModel?.capabilities?.supported_resolutions;
+  useEffect(() => {
+    if (currentVidResolutions?.length > 0) {
+      setResolution(currentVidResolutions[0]);
+    }
+  }, [model, currentVidResolutions]);
 
   async function handleRefMediaUpload(file, type = 'image') {
     try {
@@ -2075,7 +2265,7 @@ function GenerateVideoPanel({ shot, nextShot = null, chars = [], scenes = [], pr
             </div>
             </div>
 
-            <PanelSelect label="选择模型" value={modelList.find(m => m.value === model)?.label || ''} options={modelList.map(m => m.label)} onChange={(label) => {
+            <PanelSelect label="选择模型" value={modelsLoading ? '加载中...' : (modelList.find(m => m.value === model)?.label || '请选择')} options={modelList.map(m => m.label)} onChange={(label) => {
               const selected = modelList.find(m => m.label === label);
               if (selected) setModel(selected.value);
             }} />
@@ -2083,7 +2273,7 @@ function GenerateVideoPanel({ shot, nextShot = null, chars = [], scenes = [], pr
             {/* 全能参考字段 */}
             {mode === 'all' && (
               <>
-                <PanelUploadSlot label="参考主体" accept="image/*" media={refSubject} onUpload={async (media) => {
+                <PanelUploadSlot projectId={projectId} label="参考主体" accept="image/*" media={refSubject} onUpload={async (media) => {
                   if (media.id?.startsWith('blob:')) {
                     // 本地文件，需要上传
                     try {
@@ -2099,7 +2289,7 @@ function GenerateVideoPanel({ shot, nextShot = null, chars = [], scenes = [], pr
                     setRefSubject(media);
                   }
                 }} onRemove={() => setRefSubject(null)} />
-                <PanelUploadSlot label="参考图" accept="image/*" media={refImage} onUpload={async (media) => {
+                <PanelUploadSlot projectId={projectId} label="参考图" accept="image/*" media={refImage} onUpload={async (media) => {
                   if (media.id?.startsWith('blob:')) {
                     try {
                       const response = await fetch(media.url);
@@ -2114,7 +2304,7 @@ function GenerateVideoPanel({ shot, nextShot = null, chars = [], scenes = [], pr
                     setRefImage(media);
                   }
                 }} onRemove={() => setRefImage(null)} />
-                <PanelUploadSlot label="参考视频" accept="video/*" media={refVideo} onUpload={async (media) => {
+                <PanelUploadSlot projectId={projectId} label="参考视频" accept="video/*" media={refVideo} onUpload={async (media) => {
                   if (media.id?.startsWith('blob:')) {
                     try {
                       const response = await fetch(media.url);
@@ -2129,7 +2319,7 @@ function GenerateVideoPanel({ shot, nextShot = null, chars = [], scenes = [], pr
                     setRefVideo(media);
                   }
                 }} onRemove={() => setRefVideo(null)} />
-                <PanelUploadSlot label="参考音频" accept="audio/*" media={refAudio} onUpload={async (media) => {
+                <PanelUploadSlot projectId={projectId} label="参考音频" accept="audio/*" media={refAudio} onUpload={async (media) => {
                   if (media.id?.startsWith('blob:')) {
                     try {
                       const response = await fetch(media.url);
@@ -2174,7 +2364,7 @@ function GenerateVideoPanel({ shot, nextShot = null, chars = [], scenes = [], pr
             {/* 多图参考字段 */}
             {mode === 'multi' && (
               <>
-                <PanelUploadSlot label="参考主体" accept="image/*" media={refSubject} onUpload={async (media) => {
+                <PanelUploadSlot projectId={projectId} label="参考主体" accept="image/*" media={refSubject} onUpload={async (media) => {
                   if (media.id?.startsWith('blob:')) {
                     try {
                       const response = await fetch(media.url);
@@ -2189,7 +2379,7 @@ function GenerateVideoPanel({ shot, nextShot = null, chars = [], scenes = [], pr
                     setRefSubject(media);
                   }
                 }} onRemove={() => setRefSubject(null)} />
-                <PanelUploadSlot label="参考图" accept="image/*" media={refImage} onUpload={async (media) => {
+                <PanelUploadSlot projectId={projectId} label="参考图" accept="image/*" media={refImage} onUpload={async (media) => {
                   if (media.id?.startsWith('blob:')) {
                     try {
                       const response = await fetch(media.url);
@@ -2221,6 +2411,7 @@ function GenerateVideoPanel({ shot, nextShot = null, chars = [], scenes = [], pr
           {/* 右侧视频列表 */}
           <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', paddingLeft: '12px', paddingRight: '24px', paddingTop: '8px', paddingBottom: '8px', background: '#161616', height: '100%', boxSizing: 'border-box' }}>
             <VideoUploadCard
+              projectId={projectId}
               onUpload={(file) => {
                 const url = URL.createObjectURL(file);
                 setGeneratedVideos((prev) => [{ url, settled: false, id: url }, ...prev]);
@@ -2308,7 +2499,7 @@ function GenerateVideoPanel({ shot, nextShot = null, chars = [], scenes = [], pr
 }
 
 // 视频上传占位卡
-function VideoUploadCard({ onUpload }) {
+function VideoUploadCard({ onUpload, projectId }) {
   const [hovered, setHovered] = useState(false);
   const [assetPickerOpen, setAssetPickerOpen] = useState(false);
   const fileInputRef = useRef(null);
@@ -2335,7 +2526,7 @@ function VideoUploadCard({ onUpload }) {
         <ImgUploadBtn label="本地上传" onClick={() => fileInputRef.current?.click()} />
         <ImgUploadBtn label="从资产库选择" onClick={() => setAssetPickerOpen(true)} />
       </div>
-      <AssetPickerModal accept="video" open={assetPickerOpen} onClose={() => setAssetPickerOpen(false)} onConfirm={() => {}} />
+      <AssetPickerModal accept="video" open={assetPickerOpen} onClose={() => setAssetPickerOpen(false)} projectId={projectId} onConfirm={() => {}} />
     </>
   );
 }
@@ -3669,7 +3860,7 @@ function AddSlotDropdown({ anchorRef, onUpload, onAssetPicker, onClose }) {
   );
 }
 
-function MainRefCol({ shot, onChange, chars }) {
+function MainRefCol({ shot, onChange, chars, projectId }) {
   const [hoveredIdx, setHoveredIdx] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [assetPickerOpen, setAssetPickerOpen] = useState(false);
@@ -3725,6 +3916,7 @@ function MainRefCol({ shot, onChange, chars }) {
       <input ref={fileInputRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFileSelect} />
       <AssetPickerModal
         open={assetPickerOpen}
+        projectId={projectId}
         onClose={() => setAssetPickerOpen(false)}
         onConfirm={handleAssetConfirm}
       />
@@ -3868,6 +4060,7 @@ function MainRefModal({ shot, onChange, onClose }) {
     <>
       <AssetPickerModal
         accept="image"
+        projectId={projectId}
         open={assetPickerOpen}
         onClose={() => setAssetPickerOpen(false)}
         onConfirm={handleAssetConfirm}
@@ -4071,7 +4264,7 @@ function MediaIconBtn({ children, onClick }) {
   );
 }
 
-function MediaCol({ media, onUpload, accept, isVideo, label, onAIGenerate, shotMeta }) {
+function MediaCol({ media, onUpload, accept, isVideo, label, onAIGenerate, shotMeta, generating }) {
   const [hovered, setHovered] = useState(false);
   const [viewUrl, setViewUrl] = useState(null);
   const [viewerShot, setViewerShot] = useState(null);
@@ -4122,8 +4315,15 @@ function MediaCol({ media, onUpload, accept, isVideo, label, onAIGenerate, shotM
           }),
         }}
       >
+        {/* 生成中显示 DotsLoading */}
+        {generating && (
+          <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#1D1E1E', borderRadius: '6px', zIndex: 2 }}>
+            <DotsLoading size={4} color="#2DC3E1" gap={3} />
+          </div>
+        )}
+
         {/* 有内容时展示 */}
-        {!isEmpty && (
+        {!isEmpty && !generating && (
           isVideo ? (
             <video
               src={media.url}
@@ -4169,7 +4369,7 @@ function MediaCol({ media, onUpload, accept, isVideo, label, onAIGenerate, shotM
         )}
 
         {/* 空状态默认图标 */}
-        {isEmpty && !hovered && (
+        {isEmpty && !hovered && !generating && (
           <div style={{
             width: '32px', height: '32px',
             display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -4182,7 +4382,7 @@ function MediaCol({ media, onUpload, accept, isVideo, label, onAIGenerate, shotM
         )}
 
         {/* hover 时弹出按钮（仅空白虚线区域） */}
-        {isEmpty && hovered && (
+        {isEmpty && hovered && !generating && (
           <div
             onMouseDown={(e) => { e.stopPropagation(); onAIGenerate?.(); }}
             style={{
@@ -4458,7 +4658,7 @@ function NarrationColWrapper({ shot, onChange, chars, globalVoiceParams, onSaveG
 
 // ─── 主体参考列容器 ───────────────────────────────────────────────────────────
 
-function MainRefColWrapper({ shot, onChange, chars }) {
+function MainRefColWrapper({ shot, onChange, chars, projectId }) {
   return (
     <div style={{
       display: 'flex',
@@ -4476,6 +4676,7 @@ function MainRefColWrapper({ shot, onChange, chars }) {
         shot={shot}
         onChange={onChange}
         chars={chars}
+        projectId={projectId}
       />
     </div>
   );
@@ -4483,7 +4684,7 @@ function MainRefColWrapper({ shot, onChange, chars }) {
 
 // ─── 媒体列容器 ───────────────────────────────────────────────────────────────
 
-function MediaColWrapper({ label, media, onUpload, accept, isVideo, isLast = false, onAIGenerate, shotMeta }) {
+function MediaColWrapper({ label, media, onUpload, accept, isVideo, isLast = false, onAIGenerate, shotMeta, generating }) {
   return (
     <div style={{
       width: 'calc(15% - 1px)',
@@ -4506,6 +4707,7 @@ function MediaColWrapper({ label, media, onUpload, accept, isVideo, isLast = fal
         label={label}
         onAIGenerate={onAIGenerate}
         shotMeta={shotMeta}
+        generating={generating}
       />
     </div>
   );
@@ -4513,7 +4715,7 @@ function MediaColWrapper({ label, media, onUpload, accept, isVideo, isLast = fal
 
 // ─── 分镜行 ───────────────────────────────────────────────────────────────────
 
-function ShotRow({ shot, onChange, onAdd, onCopy, onDelete, chars, isDragging, onDragStart, onDragOver, onDrop, insertBefore, insertAfter, onGenerateImage, onGenerateVideo, globalVoiceParams, onSaveGlobalVoice }) {
+function ShotRow({ shot, onChange, onAdd, onCopy, onDelete, chars, isDragging, onDragStart, onDragOver, onDrop, insertBefore, insertAfter, onGenerateImage, onGenerateVideo, globalVoiceParams, onSaveGlobalVoice, projectId, generatingImage, generatingVideo }) {
   const [hovered, setHovered] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   // 仅当拖拽动作由「拖拽手柄」按钮发起时才允许排序，鼠标在卡片其他区域拖拽无效。
@@ -4575,7 +4777,7 @@ function ShotRow({ shot, onChange, onAdd, onCopy, onDelete, chars, isDragging, o
           onChange={(v) => onChange({ ...shot, ambientSound: v })}
         />
         <NarrationColWrapper shot={shot} onChange={onChange} chars={chars} globalVoiceParams={globalVoiceParams} onSaveGlobalVoice={onSaveGlobalVoice} />
-        <MainRefColWrapper shot={shot} onChange={onChange} chars={chars} />
+        <MainRefColWrapper shot={shot} onChange={onChange} chars={chars} projectId={projectId} />
         <MediaColWrapper
           label="分镜图"
           media={shot.storyboardImage}
@@ -4583,6 +4785,7 @@ function ShotRow({ shot, onChange, onAdd, onCopy, onDelete, chars, isDragging, o
           accept=".jpg,.jpeg,.png,.webp,.gif,.bmp,.svg"
           isVideo={false}
           onAIGenerate={onGenerateImage}
+          generating={generatingImage}
         />
         <MediaColWrapper
           label="分镜视频"
@@ -4592,6 +4795,7 @@ function ShotRow({ shot, onChange, onAdd, onCopy, onDelete, chars, isDragging, o
           isVideo={true}
           isLast={true}
           onAIGenerate={onGenerateVideo}
+          generating={generatingVideo}
           shotMeta={{
             label: `镜头 ${String(shot.number).padStart(2, '0')}`,
             prompt: shot.description,
@@ -4670,11 +4874,15 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
   const [overId, setOverId] = useState(null);
   const [generatingImages, setGeneratingImages] = useState(false);
   const [generatingVideos, setGeneratingVideos] = useState(false);
+  const [generatingImageShotIds, setGeneratingImageShotIds] = useState(new Set());
+  const [generatingVideoShotIds, setGeneratingVideoShotIds] = useState(new Set());
   const [toast, setToast] = useState(null);
   const [showImageModal, setShowImageModal] = useState(false);
   const [showVideoModal, setShowVideoModal] = useState(false);
   const [batchExpanded, setBatchExpanded] = useState(false);
   const batchBtnRef = useRef(null);
+  const [downloadMode, setDownloadMode] = useState(false);
+  const [selectedShotIds, setSelectedShotIds] = useState(new Set());
   const [showDownloadModal, setShowDownloadModal] = useState(false);
   // 单镜头生成面板
   const [imagePanel, setImagePanel] = useState(null); // { shot }
@@ -4686,8 +4894,10 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
     if (!projectId) return;
 
     // TODO: 需要将 episode 名称映射为 episode_id
-    // 当前 episode 是"第一集"这样的名称，需要后端提供 episode_id
-    apiGetStoryboards(projectId, { episode_id: getEpisodeId(episode) })
+    // 只有 episode 是后端真实数据（对象含 id 字段）时才传 episode_id
+    const episodeId = typeof episode === 'string' ? '' : getEpisodeId(episode);
+    const params = episodeId ? { episode_id: episodeId } : {};
+    apiGetStoryboards(projectId, params)
       .then((data) => {
         if (data !== null && data !== undefined) {
           setShots((Array.isArray(data) ? data : []).map(normalizeStoryboard));
@@ -4721,42 +4931,87 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
     setTimeout(() => setToast(null), 2500);
   }
 
-  async function startBatchGenImages() {
+  async function startBatchGenImages(params) {
     if (generatingImages) return;
     setGeneratingImages(true);
-    const ids = shots.map((s) => s.id);
-    for (const id of ids) {
-      await new Promise((r) => setTimeout(r, 800));
-      const mockUrl = `https://picsum.photos/seed/${id}/400/225`;
-      setShots((prev) =>
-        prev.map((s) =>
-          s.id === id && !s.storyboardImage
-            ? { ...s, storyboardImage: { id: mockUrl, url: mockUrl, name: 'generated.jpg', type: 'image/jpeg' } }
-            : s
-        )
-      );
+    const episodeId = getEpisodeId(episode);
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const shot of shots) {
+      setGeneratingImageShotIds(prev => new Set([...prev, shot.id]));
+      try {
+        const result = await apiGenerateStoryboardImage(projectId, shot.id, {
+          model: params.model,
+          resolution: params.resolution,
+          episode_id: episodeId,
+        });
+        const imageUrl = result.image_url || result.url;
+        setShots((prev) => prev.map((s) => s.id === shot.id
+          ? { ...s, storyboardImage: { id: imageUrl, url: imageUrl, name: 'generated.jpg', type: 'image/jpeg' } }
+          : s
+        ));
+        successCount++;
+      } catch (err) {
+        console.error('[StoryboardPage] 生成分镜图失败:', err);
+        failCount++;
+      } finally {
+        setGeneratingImageShotIds(prev => {
+          const next = new Set(prev);
+          next.delete(shot.id);
+          return next;
+        });
+      }
     }
     setGeneratingImages(false);
-    showToast('分镜图生成完成');
+    if (failCount > 0) {
+      showToast(`分镜图生成完成，成功 ${successCount} 个，失败 ${failCount} 个`, 'warning');
+    } else {
+      showToast('分镜图生成完成');
+    }
   }
 
-  async function startBatchGenVideos() {
+  async function startBatchGenVideos(params) {
     if (generatingVideos) return;
     setGeneratingVideos(true);
-    const ids = shots.map((s) => s.id);
-    for (const id of ids) {
-      await new Promise((r) => setTimeout(r, 1200));
-      setShots((prev) =>
-        prev.map((s) =>
-          s.id === id && !s.storyboardVideo
-            ? { ...s, storyboardVideo: { id: `vid-${id}`, url: '', name: 'generated.mp4', type: 'video/mp4', pending: true } }
-            : s
-        )
-      );
+    const episodeId = getEpisodeId(episode);
+    let successCount = 0;
+    let failCount = 0;
+
+    for (const shot of shots) {
+      setGeneratingVideoShotIds(prev => new Set([...prev, shot.id]));
+      try {
+        const result = await apiGenerateStoryboardVideo(projectId, shot.id, {
+          model: params.model,
+          resolution: params.resolution,
+          duration: params.duration,
+          sound_effect: params.sound,
+          episode_id: episodeId,
+        });
+        const videoUrl = result.video_url || result.url;
+        setShots((prev) => prev.map((s) => s.id === shot.id
+          ? { ...s, storyboardVideo: { id: `vid-${shot.id}`, url: videoUrl, name: 'generated.mp4', type: 'video/mp4' } }
+          : s
+        ));
+        successCount++;
+      } catch (err) {
+        console.error('[StoryboardPage] 生成分镜视频失败:', err);
+        failCount++;
+      } finally {
+        setGeneratingVideoShotIds(prev => {
+          const next = new Set(prev);
+          next.delete(shot.id);
+          return next;
+        });
+      }
     }
     setGeneratingVideos(false);
     onVideoGenerated?.(activeEpisodes.findIndex(ep => getEpisodeId(ep) === getEpisodeId(episode)));
-    showToast('分镜视频生成完成');
+    if (failCount > 0) {
+      showToast(`分镜视频生成完成，成功 ${successCount} 个，失败 ${failCount} 个`, 'warning');
+    } else {
+      showToast('分镜视频生成完成');
+    }
   }
 
   function handleBatchDownload() {
@@ -4777,6 +5032,69 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
       document.body.removeChild(a);
     });
     showToast(`已下载 ${assets.length} 个素材`, 'success');
+  }
+
+  /* ── 批量下载模式 ── */
+  function enterDownloadMode() {
+    setDownloadMode(true);
+    setSelectedShotIds(new Set());
+  }
+
+  function exitDownloadMode() {
+    setDownloadMode(false);
+    setSelectedShotIds(new Set());
+  }
+
+  function toggleSelectAll() {
+    setSelectedShotIds(prev => {
+      if (prev.size === shots.length) return new Set();
+      return new Set(shots.map(s => s.id));
+    });
+  }
+
+  function toggleShotSelection(id) {
+    setSelectedShotIds(prev => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id); else next.add(id);
+      return next;
+    });
+  }
+
+  async function handleDownloadImages() {
+    const ids = [...selectedShotIds];
+    if (ids.length === 0) { showToast('暂无可下载的分镜图', 'warning'); return; }
+    try {
+      const blob = await apiBatchDownloadStoryboardImages(projectId, ids);
+      triggerDownload(blob, 'storyboard-images.zip');
+      showToast(`已下载 ${ids.length} 个分镜图`, 'success');
+    } catch (err) {
+      console.error('批量下载图片失败:', err);
+      showToast('批量下载图片失败', 'error');
+    }
+  }
+
+  async function handleDownloadVideos() {
+    const ids = [...selectedShotIds];
+    if (ids.length === 0) { showToast('暂无可下载的分镜视频', 'warning'); return; }
+    try {
+      const blob = await apiBatchDownloadStoryboardVideos(projectId, ids);
+      triggerDownload(blob, 'storyboard-videos.zip');
+      showToast(`已下载 ${ids.length} 个分镜视频`, 'success');
+    } catch (err) {
+      console.error('批量下载视频失败:', err);
+      showToast('批量下载视频失败', 'error');
+    }
+  }
+
+  function triggerDownload(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
   }
 
   function handleStartEdit() {
@@ -4885,7 +5203,9 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
         if (targetIdx === -1) return prev;
         next.splice(targetIdx, 0, dragged);
       }
-      return next.map((s, i) => ({ ...s, number: i + 1 }));
+      const reordered = next.map((s, i) => ({ ...s, number: i + 1 }));
+      apiReorderStoryboards(projectId, reordered.map(s => s.id)).catch(console.error);
+      return reordered;
     });
     setDragId(null);
     setOverId(null);
@@ -4920,16 +5240,68 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
           <EpisodeSelector episodes={activeEpisodes} value={episode} onChange={setEpisode} />
         </div>
         <div ref={batchBtnRef} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-          {batchExpanded ? (
+          {downloadMode ? (
             <>
-              <GhostBtn icon={<IconBatchImage />} onClick={() => { setBatchExpanded(false); setShowImageModal(true); }} loading={generatingImages || generatingVideos} disabled={generatingImages || generatingVideos}>批量生成分镜图</GhostBtn>
-              <GhostBtn icon={<IconBatchVideo />} onClick={() => { setBatchExpanded(false); setShowVideoModal(true); }} loading={generatingImages || generatingVideos} disabled={generatingImages || generatingVideos}>批量生成分镜视频</GhostBtn>
+              {/* 已选数量 / 总数 */}
+              <span style={{
+                fontFamily: FONT,
+                fontSize: '14px',
+                lineHeight: '18px',
+                color: 'rgba(255,255,255,0.45)',
+                whiteSpace: 'nowrap',
+                userSelect: 'none',
+              }}>
+                已选 {selectedShotIds.size} / {shots.length}
+              </span>
+
+              {/* 全选 / 取消全选 */}
+              <GhostBtn
+                icon={
+                  selectedShotIds.size === shots.length ? (
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{flexShrink: 0}}>
+                      <rect x="2" y="2" width="12" height="12" rx="3" stroke="#FFFFFF" strokeWidth="1.5"/>
+                      <path d="M5 8L7 10L11 6" stroke="#FFFFFF" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
+                    </svg>
+                  ) : (
+                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{flexShrink: 0}}>
+                      <rect x="2" y="2" width="12" height="12" rx="3" stroke="#FFFFFF" strokeWidth="1.5"/>
+                    </svg>
+                  )
+                }
+                onClick={toggleSelectAll}
+              >
+                {selectedShotIds.size === shots.length ? '取消全选' : '全选'}
+              </GhostBtn>
+
+              {/* 下载图片 */}
+              <GhostBtn icon={<IconDownload />} onClick={handleDownloadImages}>
+                下载图片
+              </GhostBtn>
+
+              {/* 下载视频 */}
+              <GhostBtn icon={<IconDownload />} onClick={handleDownloadVideos}>
+                下载视频
+              </GhostBtn>
+
+              {/* 取消 */}
+              <GhostBtn onClick={exitDownloadMode}>
+                取消
+              </GhostBtn>
             </>
           ) : (
-            <GhostBtn icon={<IconBatchImage />} onClick={() => setBatchExpanded(true)} loading={generatingImages || generatingVideos} disabled={generatingImages || generatingVideos}>批量生成</GhostBtn>
+            <>
+              {batchExpanded ? (
+                <>
+                  <GhostBtn icon={<IconBatchImage />} onClick={() => { setBatchExpanded(false); setShowImageModal(true); }} loading={generatingImages || generatingVideos} disabled={generatingImages || generatingVideos}>批量生成分镜图</GhostBtn>
+                  <GhostBtn icon={<IconBatchVideo />} onClick={() => { setBatchExpanded(false); setShowVideoModal(true); }} loading={generatingImages || generatingVideos} disabled={generatingImages || generatingVideos}>批量生成分镜视频</GhostBtn>
+                </>
+              ) : (
+                <GhostBtn icon={<IconBatchImage />} onClick={() => setBatchExpanded(true)} loading={generatingImages || generatingVideos} disabled={generatingImages || generatingVideos}>批量生成</GhostBtn>
+              )}
+              <GhostBtn icon={<IconDownload />} onClick={enterDownloadMode} disabled={generatingImages || generatingVideos}>批量下载</GhostBtn>
+              <PrimaryBtn icon={<IconEdit />} onClick={handleStartEdit}>开始剪辑</PrimaryBtn>
+            </>
           )}
-          <GhostBtn icon={<IconDownload />} onClick={() => setShowDownloadModal(true)} disabled={generatingImages || generatingVideos}>批量下载</GhostBtn>
-          <PrimaryBtn icon={<IconEdit />} onClick={handleStartEdit}>开始剪辑</PrimaryBtn>
         </div>
       </div>
 
@@ -4960,6 +5332,7 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
           <ShotRow
             key={shot.id}
             shot={shot}
+            projectId={projectId}
             onChange={(next) => updateShot(shot.id, next)}
             onAdd={() => addShotAfter(shot.id)}
             onCopy={() => copyShot(shot.id)}
@@ -4975,6 +5348,8 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
             onGenerateVideo={() => setVideoPanel({ shot, nextShot: shots[idx + 1] ?? null })}
             globalVoiceParams={globalVoiceParams}
             onSaveGlobalVoice={(role, params) => setGlobalVoiceParams((prev) => ({ ...prev, [role]: params }))}
+            generatingImage={generatingImageShotIds.has(shot.id)}
+            generatingVideo={generatingVideoShotIds.has(shot.id)}
           />
         ))}
         {/* bottom sentinel — drop zone for placing after the last card */}
@@ -5022,14 +5397,14 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
       <BatchImageModal
         shotCount={shots.length}
         onClose={() => setShowImageModal(false)}
-        onConfirm={() => startBatchGenImages()}
+        onConfirm={(params) => startBatchGenImages(params)}
       />
     )}
     {showVideoModal && (
       <BatchVideoModal
         shotCount={shots.length}
         onClose={() => setShowVideoModal(false)}
-        onConfirm={() => startBatchGenVideos()}
+        onConfirm={(params) => startBatchGenVideos(params)}
       />
     )}
     {showDownloadModal && (
@@ -5054,6 +5429,7 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
       <GenerateImagePanel
         shot={imagePanel.shot}
         chars={chars}
+        projectId={projectId}
         scenes={scenes}
         props={props}
         generatedImages={genImageHistoryMap[imagePanel.shot?.id] ?? []}
@@ -5088,6 +5464,7 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
     {videoPanel && (
       <GenerateVideoPanel
         shot={videoPanel.shot}
+        projectId={projectId}
         nextShot={videoPanel.nextShot}
         chars={chars}
         scenes={scenes}

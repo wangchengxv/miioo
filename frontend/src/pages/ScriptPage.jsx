@@ -3,7 +3,7 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { Markdown } from 'tiptap-markdown';
 import ReactMarkdown from 'react-markdown';
-import { apiSaveScriptWorkspace, apiGetScriptWorkspace, apiChatScriptWorkspace, apiUploadScriptWorkspace, apiFinalizeScriptWorkspace } from '../api/subject';
+import { apiSaveScriptWorkspace, apiGetScriptWorkspace, apiChatScriptWorkspaceStream, apiUploadScriptWorkspace, apiFinalizeScriptWorkspace } from '../api/subject';
 import { apiListModels } from '../api/config';
 import { PulsingBorder } from '@paper-design/shaders-react';
 import DotsLoading from '../components/DotsLoading';
@@ -14,6 +14,7 @@ const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-u
 const ALLOWED_EXTS = ['.txt', '.md', '.pdf', '.docx', '.doc'];
 const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_CHARS = 100000;
+const CHAT_TIMEOUT_MS = 120_000; // 2 分钟客户端超时兜底（后端通常先返回 504）
 
 function parseScriptOutline(markdown) {
   if (!markdown) return [];
@@ -811,7 +812,7 @@ function FileCard({ file, onRemove, disabled = false }) {
 }
 
 function InputCard({ onSend, onStop, restoreText = '', restoreFiles = [], selectedModel, onModelChange, episodeCount, onEpisodeCountChange, width = '700px', disabled = false }) {
-  const [text, setText] = useState('');
+  const [text, setText] = useState(restoreText); // 挂载时使用 restoreText 作为初始值（超时回到空状态时预填充）
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const [files, setFiles] = useState([]);
@@ -974,7 +975,7 @@ function InputCard({ onSend, onStop, restoreText = '', restoreFiles = [], select
   );
 }
 
-function ScriptEmptyState({ onSend, selectedModel, onModelChange, episodeCount, onEpisodeCountChange }) {
+function ScriptEmptyState({ onSend, selectedModel, onModelChange, episodeCount, onEpisodeCountChange, restoreText = '', restoreFiles = [] }) {
   return (
     <div
       style={{
@@ -995,6 +996,8 @@ function ScriptEmptyState({ onSend, selectedModel, onModelChange, episodeCount, 
         onModelChange={onModelChange}
         episodeCount={episodeCount}
         onEpisodeCountChange={onEpisodeCountChange}
+        restoreText={restoreText}
+        restoreFiles={restoreFiles}
       />
     </div>
   );
@@ -1159,41 +1162,59 @@ function AiThinkingMessage() {
   );
 }
 
-const CHAR_INTERVAL = 5;
+// 流式打字动画速度：每个字符之间的间隔（毫秒）
+const CHAR_INTERVAL = 15;
 
-function AiStreamingContent({ content, index: indexProp, onIndexChange, onDone }) {
+// 流式内容渲染组件：逐字打字动画 + 自动滚动到底部
+// content 由 SSE 实时推送逐步增长，组件负责以打字机效果逐字展示
+// 当浏览器标签页切到后台时，跳过打字动画直接展示全部内容，避免 setTimeout 被浏览器节流导致卡顿
+function AiStreamingContent({ content, onDone }) {
   const allChars = useMemo(() => [...content], [content]);
-  const [indexLocal, setIndexLocal] = useState(0);
-  const isControlled = indexProp !== undefined;
-  const index = isControlled ? indexProp : indexLocal;
-  const setIndex = isControlled
-    ? (updater) => {
-        const next = typeof updater === 'function' ? updater(indexProp) : updater;
-        onIndexChange?.(next);
-      }
-    : setIndexLocal;
-
+  const [renderIndex, setRenderIndex] = useState(0);
+  const [pageVisible, setPageVisible] = useState(true);
   const containerRef = useRef(null);
   const shouldStickToBottomRef = useRef(true);
+  const onDoneRef = useRef(onDone);
+  onDoneRef.current = onDone;
 
+  // 监听标签页可见性
   useEffect(() => {
-    if (index >= allChars.length) {
-      onDone?.();
+    const handle = () => setPageVisible(document.visibilityState === 'visible');
+    document.addEventListener('visibilitychange', handle);
+    return () => document.removeEventListener('visibilitychange', handle);
+  }, []);
+
+  // 标签页隐藏时，直接跳到末尾展示全部已接收内容（跳过逐字动画）
+  useEffect(() => {
+    if (!pageVisible && renderIndex < allChars.length && allChars.length > 0) {
+      setRenderIndex(allChars.length);
+    }
+  }, [pageVisible, allChars.length, renderIndex]);
+
+  // 逐字渲染定时器 —— 仅在标签页可见时运行
+  useEffect(() => {
+    if (!pageVisible) return undefined;
+
+    if (renderIndex >= allChars.length) {
+      if (allChars.length > 0) {
+        onDoneRef.current?.();
+      }
       return undefined;
     }
 
     const timer = window.setTimeout(() => {
-      setIndex((value) => value + 1);
+      setRenderIndex((value) => value + 1);
     }, CHAR_INTERVAL);
 
     return () => window.clearTimeout(timer);
-  }, [allChars.length, index, onDone]);
+  }, [pageVisible, allChars.length, renderIndex]);
 
+  // 自动滚动到底部
   useEffect(() => {
     const container = containerRef.current;
     if (!container || !shouldStickToBottomRef.current) return;
     container.scrollTop = container.scrollHeight;
-  }, [index]);
+  }, [renderIndex]);
 
   const handleScroll = useCallback(() => {
     const container = containerRef.current;
@@ -1202,20 +1223,15 @@ function AiStreamingContent({ content, index: indexProp, onIndexChange, onDone }
     shouldStickToBottomRef.current = distanceToBottom <= 24;
   }, []);
 
-  const displayed = allChars.slice(0, index).join('');
-  const done = index >= allChars.length;
+  const displayed = allChars.slice(0, renderIndex).join('');
+  const done = renderIndex >= allChars.length;
 
   return (
     <div
       ref={containerRef}
       onScroll={handleScroll}
       className={done ? 'script-md script-scroll' : 'script-md script-scroll ai-text--typing'}
-      style={{
-        alignSelf: 'stretch',
-        flex: 1,
-        minHeight: 0,
-        overflowY: 'auto',
-      }}
+      style={{ alignSelf: 'stretch', flex: 1, minHeight: 0, overflowY: 'auto' }}
     >
       <ReactMarkdown
         components={{
@@ -1491,6 +1507,111 @@ function PrimaryBtn({ onClick, children, disabled = false }) {
   );
 }
 
+function ConfirmExtractModal({ onConfirm, onCancel }) {
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 9999,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'rgba(0,0,0,0.5)',
+        backdropFilter: 'blur(12px)',
+        WebkitBackdropFilter: 'blur(12px)',
+      }}
+      onClick={onCancel}
+    >
+      <div
+        style={{
+          width: '360px',
+          background: '#161616',
+          borderRadius: '16px',
+          padding: '24px',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: '24px',
+          boxShadow: '#00000099 0px 8px 32px',
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <span style={{ fontFamily: FONT_MEDIUM, fontWeight: 500, fontSize: '16px', lineHeight: '20px', color: '#FFFFFF' }}>
+              确定要提取主体吗？
+            </span>
+            <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.6)' }}>
+              本次提取主体会覆盖之前的主体内容，一旦提取不可撤销，请谨慎操作！
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={onCancel}
+            style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', cursor: 'pointer', borderRadius: '8px', padding: 0, flexShrink: 0 }}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+              <path d="M2.667 2.667L13.333 13.333" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M2.667 13.333L13.333 2.667" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px' }}>
+          <button
+            type="button"
+            onClick={onCancel}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: '36px',
+              flexShrink: 0,
+              borderRadius: '8px',
+              paddingLeft: '16px',
+              paddingRight: '16px',
+              boxShadow: '#00000066 3px 3px 8px',
+              backgroundColor: '#161616',
+              border: '1px solid #FFFFFF14',
+              outline: '1px solid #00000080',
+              cursor: 'pointer',
+              fontFamily: FONT,
+              fontSize: '14px',
+              lineHeight: '18px',
+              color: 'rgba(255,255,255,0.6)',
+            }}
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              height: '36px',
+              flexShrink: 0,
+              borderRadius: '8px',
+              paddingLeft: '16px',
+              paddingRight: '16px',
+              backgroundColor: '#E87B35',
+              border: '1px solid rgba(255,255,255,0.2)',
+              cursor: 'pointer',
+              fontFamily: FONT_MEDIUM,
+              fontWeight: 500,
+              fontSize: '14px',
+              lineHeight: '18px',
+              color: '#FFFFFF',
+            }}
+          >
+            确认提取主体
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function ScriptPanel({
   phase,
   scriptContent,
@@ -1499,12 +1620,11 @@ function ScriptPanel({
   onEdit,
   onSave,
   onCancelEdit,
-  onGoToSubject,
+  onExtractRequest,
   isExtractingSubjects,
+  isSubjectUnlocked,
   onStreamingDone,
   onActiveIndexChange,
-  streamingIndex,
-  onStreamingIndexChange,
   renderedContentRef,
   editorContentRef,
   isSaving,
@@ -1515,6 +1635,9 @@ function ScriptPanel({
   const hasScript = Boolean(scriptContent);
   const displayContent = isEditing ? draftContent : scriptContent;
   const showActions = phase === 'view' || phase === 'edit';
+
+  // 按钮禁用：无剧本 / 提取中
+  const isExtractDisabled = !scriptContent || isExtractingSubjects;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', alignSelf: 'stretch', minHeight: 0, flex: 1 }}>
@@ -1542,7 +1665,7 @@ function ScriptPanel({
             <AiThinkingMessage />
           </div>
         ) : isStreaming ? (
-          <AiStreamingContent key={scriptContent} content={scriptContent} index={streamingIndex} onIndexChange={onStreamingIndexChange} onDone={onStreamingDone} />
+          <AiStreamingContent content={scriptContent} onDone={onStreamingDone} />
         ) : isEditing ? (
           <ScriptEditor initialContent={draftContent} onContentChange={onDraftChange} containerRef={editorContentRef} />
         ) : (
@@ -1594,17 +1717,17 @@ function ScriptPanel({
           )}
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <PrimaryBtn onClick={() => onGoToSubject?.('char')} disabled={!scriptContent || isExtractingSubjects}>
+            <PrimaryBtn onClick={isExtractDisabled ? undefined : onExtractRequest} disabled={isExtractDisabled}>
               <span style={{ fontFamily: FONT_MEDIUM, fontSize: '14px', lineHeight: '18px', color: '#090909', whiteSpace: 'nowrap' }}>
                 {isExtractingSubjects ? '提取中...' : '开始提取主体'}
               </span>
               {isExtractingSubjects ? (
                 <DotsLoading size={3} color="#090909" gap={3} />
               ) : (
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <path d="M14 8H2" stroke="#090909" strokeLinecap="round" strokeLinejoin="round" />
-                <path d="M10 4L14 8L10 12" stroke="#090909" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path d="M14 8H2" stroke="#090909" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M10 4L14 8L10 12" stroke="#090909" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
               )}
             </PrimaryBtn>
           </div>
@@ -1614,20 +1737,17 @@ function ScriptPanel({
   );
 }
 
-export default function ScriptPage({ projectId, onGoToSubject, isExtractingSubjects = false, onEpisodesChange, phase: phaseProp, onPhaseChange, hasStarted: hasStartedProp, onHasStartedChange, scriptContent: scriptContentProp, onScriptContentChange, draftContent: draftContentProp, onDraftContentChange, streamingIndex: streamingIndexProp, onStreamingIndexChange }) {
+export default function ScriptPage({ projectId, onGoToSubject, isExtractingSubjects = false, isSubjectUnlocked = false, onScriptFinalized, onEpisodesChange, phase: phaseProp, onPhaseChange, hasStarted: hasStartedProp, onHasStartedChange, scriptContent: scriptContentProp, onScriptContentChange, draftContent: draftContentProp, onDraftContentChange }) {
   const [phaseLocal, setPhaseLocalRaw] = useState('initial');
   const [hasStartedLocal, setHasStartedLocalRaw] = useState(false);
   const [scriptContentLocal, setScriptContentLocalRaw] = useState('');
   const [draftContentLocal, setDraftContentLocalRaw] = useState('');
-  const [streamingIndexLocal, setStreamingIndexLocal] = useState(0);
 
   const isControlled = phaseProp !== undefined;
   const phase = isControlled ? phaseProp : phaseLocal;
   const hasStarted = isControlled ? hasStartedProp : hasStartedLocal;
   const scriptContent = isControlled ? scriptContentProp : scriptContentLocal;
   const draftContent = isControlled ? draftContentProp : draftContentLocal;
-  const streamingIndex = (isControlled && streamingIndexProp !== undefined) ? streamingIndexProp : streamingIndexLocal;
-  const setStreamingIndex = (isControlled && onStreamingIndexChange) ? onStreamingIndexChange : setStreamingIndexLocal;
 
   const setPhase = isControlled ? onPhaseChange : setPhaseLocalRaw;
   const setHasStarted = isControlled ? onHasStartedChange : setHasStartedLocalRaw;
@@ -1636,14 +1756,18 @@ export default function ScriptPage({ projectId, onGoToSubject, isExtractingSubje
   const [selectedEpisode, setSelectedEpisode] = useState(0);
   const [lastSentText, setLastSentText] = useState('');
   const [lastSentFiles, setLastSentFiles] = useState([]);
+  // 仅在超时时设为已发送的内容，触发输入框恢复；成功/用户主动停止保持 '' 不恢复
+  const [inputRestoreText, setInputRestoreText] = useState('');
+  const [inputRestoreFiles, setInputRestoreFiles] = useState([]);
   const [selectedModel, setSelectedModel] = useState(null);
   const [episodeCount, setEpisodeCount] = useState(null);
   const [backendEpisodes, setBackendEpisodes] = useState(null);
   const [toasts, setToasts] = useState([]);
   const [isSaving, setIsSaving] = useState(false);
+  const [confirmExtractOpen, setConfirmExtractOpen] = useState(false);
   const renderedContentRef = useRef(null);
   const editorContentRef = useRef(null);
-  const stopTimerRef = useRef(null);
+  const abortControllerRef = useRef(null); // 用于取消进行中的流式请求
 
   useEffect(() => {
     ensureScrollbarStyle();
@@ -1665,7 +1789,7 @@ export default function ScriptPage({ projectId, onGoToSubject, isExtractingSubje
 
     apiGetScriptWorkspace(projectId)
       .then((data) => {
-        const content = data?.script?.content ?? data?.content;
+        const content = data?.script?.content || data?.content;
         if (content) {
           setScriptContent(content);
           setPhase('view');
@@ -1693,17 +1817,9 @@ export default function ScriptPage({ projectId, onGoToSubject, isExtractingSubje
   const safeSelectedEpisode = outline.length > 0 ? Math.min(selectedEpisode, outline.length - 1) : 0;
 
   const handleStop = useCallback(() => {
-    if (stopTimerRef.current) {
-      clearTimeout(stopTimerRef.current);
-      stopTimerRef.current = null;
-    }
-    if (scriptContent) {
-      setPhase('view');
-    } else {
-      setPhase('initial');
-      setHasStarted(false);
-    }
-  }, [scriptContent, setPhase, setHasStarted]);
+    // 中止流式请求，后续状态由 handleSend 的 catch(AbortError) 分支处理
+    abortControllerRef.current?.abort();
+  }, []);
 
   useEffect(() => {
     const onKeyDown = (e) => {
@@ -1718,6 +1834,25 @@ export default function ScriptPage({ projectId, onGoToSubject, isExtractingSubje
   const handleSend = async (text, files, model, epCount) => {
     if (!text && files.length === 0) return;
 
+    // 发送前保存当前内容，超时时可恢复（避免丢失已有剧本）
+    const prevContent = scriptContent;
+
+    // 每次发送前清除上次的恢复内容（成功时不恢复）
+    setInputRestoreText('');
+    setInputRestoreFiles([]);
+
+    // 取消上一次未完成的请求
+    abortControllerRef.current?.abort();
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
+    // 客户端兜底超时：后端通常先返回 504，此处作为最后保障
+    let isClientTimeout = false;
+    const timeoutId = setTimeout(() => {
+      isClientTimeout = true;
+      abortController.abort();
+    }, CHAT_TIMEOUT_MS);
+
     setLastSentText(text);
     setLastSentFiles(files);
     setHasStarted(true);
@@ -1725,39 +1860,125 @@ export default function ScriptPage({ projectId, onGoToSubject, isExtractingSubje
     setScriptContent('');
     setDraftContent('');
     setSelectedEpisode(0);
-    setStreamingIndex(0);
     setBackendEpisodes(null);
 
-    try {
-      let workspaceContent = null;
+    let receivedContent = '';
 
-      // 先上传文件（逐个上传，最后一个生效）
+    // 超时统一处理：toast + 恢复输入 + 恢复内容
+    // 关键：不调用 setHasStarted(false)，保持底部 InputCard 同一实例，
+    // 通过 disabled(true→false) 转换触发 restoreText 机制，避免重新挂载的时序问题
+    const handleTimeout = () => {
+      showToast('请求超时，请稍后重试');
+      setInputRestoreText(text);
+      setInputRestoreFiles(files);
+      if (receivedContent) {
+        // 流式已收到部分内容则保留
+        setScriptContent(receivedContent);
+        setPhase('view');
+      } else {
+        // 恢复发送前的内容（如有），否则退回 initial；hasStarted 保持 true
+        setScriptContent(prevContent);
+        setPhase(prevContent ? 'view' : 'initial');
+      }
+    };
+
+    try {
+      // 1. 先上传文件（逐个上传，最后一个生效）
+      //    上传内容仅在后端存储为上下文，不在前端展示为剧本
       if (files.length > 0) {
         for (const file of files) {
           const uploadResult = await apiUploadScriptWorkspace(projectId, file);
-          workspaceContent = uploadResult?.script?.content ?? uploadResult?.script?.parsed_content ?? uploadResult?.content;
+          const uploadContent = uploadResult?.script?.content ?? uploadResult?.script?.parsed_content ?? uploadResult?.content;
+          if (uploadContent) {
+            receivedContent = uploadContent;
+            // 仅在纯上传路径（无提示词）时直接展示内容
+            if (!text) {
+              setScriptContent(uploadContent);
+            }
+          }
         }
       }
 
-      // 有文字消息时再走 chat 接口
-      // chat 接口没有单独的 episode_count 字段，按 API 文档约定将集数注入消息文本
+      // 2. 有文字消息时走流式 chat 接口
       if (text) {
         const chatMessage = epCount != null
           ? `${text}（集数要求：${epCount} 集）`
           : text;
-        const result = await apiChatScriptWorkspace(projectId, { message: chatMessage, model });
-        workspaceContent = result?.script?.content ?? result?.content;
+
+        // 保持 thinking 阶段（DotsLoading 加载动画），等首个 SSE chunk 到达后再切 streaming
+        receivedContent = '';
+
+        let hasStartedStreaming = false;
+
+        await apiChatScriptWorkspaceStream(
+          projectId,
+          { message: chatMessage, model, episode_count: epCount },
+          {
+            onChunk: (accumulated) => {
+              receivedContent = accumulated;
+              if (!hasStartedStreaming) {
+                hasStartedStreaming = true;
+                setScriptContent(accumulated);
+                setPhase('streaming');
+              } else {
+                setScriptContent(accumulated);
+              }
+            },
+            signal: abortController.signal,
+          }
+        );
+        // SSE 完成后不立即切 view，由 AiStreamingContent 的打字动画播完后
+        // 通过 onDone → handleStreamingDone 来切换到 view 阶段
+      } else {
+        // 无文字消息 → 纯上传路径，直接展示内容，无打字动画
+        if (!receivedContent) {
+          throw new Error('后端未返回剧本内容');
+        }
+        setPhase('view');
+      }
+    } catch (err) {
+      // 504 网关超时
+      if (err.isGatewayTimeout) {
+        handleTimeout();
+        return;
       }
 
-      if (!workspaceContent) throw new Error('后端未返回剧本内容');
+      // 网络层错误（DNS 失败、连接被拒等）→ 保留已有内容，不丢失
+      if (err.isNetworkError) {
+        if (receivedContent) {
+          setScriptContent(receivedContent);
+          setPhase('view');
+        } else {
+          setScriptContent(prevContent);
+          setPhase(prevContent ? 'view' : 'initial');
+        }
+        showToast('网络连接失败，请检查网络后重试');
+        return;
+      }
 
-      setScriptContent(workspaceContent);
-      setPhase('streaming');
-    } catch (err) {
+      if (err.name === 'AbortError') {
+        if (isClientTimeout) {
+          // 客户端兜底超时触发
+          handleTimeout();
+        } else {
+          // 用户主动点击停止
+          if (receivedContent) {
+            setScriptContent(receivedContent);
+            setPhase('view');
+          } else {
+            setPhase('initial');
+            setHasStarted(false);
+          }
+        }
+        return;
+      }
+
       console.error('[ScriptPage] 生成剧本失败:', err);
       setPhase('initial');
       setHasStarted(false);
       showToast('剧本生成失败，请稍后重试');
+    } finally {
+      clearTimeout(timeoutId);
     }
   };
 
@@ -1786,13 +2007,16 @@ export default function ScriptPage({ projectId, onGoToSubject, isExtractingSubje
           episode_count: episodeCount,
           model: selectedModel,
         });
-        if (Array.isArray(finalizeResult?.items) && finalizeResult.items.length > 0) {
-          setBackendEpisodes(finalizeResult.items);
+        // 兼容后端可能返回的不同字段名：items / episodes / data
+        const episodesFromFinalize = finalizeResult?.items || finalizeResult?.episodes || finalizeResult?.data;
+        if (Array.isArray(episodesFromFinalize) && episodesFromFinalize.length > 0) {
+          setBackendEpisodes(episodesFromFinalize);
         }
       }
 
       setScriptContent(draftContent);
       setPhase('view');
+      onScriptFinalized?.();
       showToast('保存定稿成功！', 'success');
     } catch (err) {
       console.error('[ScriptPage] 定稿失败:', err);
@@ -1805,6 +2029,15 @@ export default function ScriptPage({ projectId, onGoToSubject, isExtractingSubje
   const handleCancelEdit = () => {
     setDraftContent(scriptContent);
     setPhase('view');
+  };
+
+  // 提取主体按钮点击：已提取过主体 → 弹窗二次确认（覆盖风险）；首次 → 直接提取
+  const handleExtractRequest = () => {
+    if (isSubjectUnlocked) {
+      setConfirmExtractOpen(true);
+    } else {
+      onGoToSubject?.('char');
+    }
   };
 
   const handleSelectEpisode = useCallback(
@@ -1855,6 +2088,8 @@ export default function ScriptPage({ projectId, onGoToSubject, isExtractingSubje
           onModelChange={setSelectedModel}
           episodeCount={episodeCount}
           onEpisodeCountChange={setEpisodeCount}
+          restoreText={inputRestoreText}
+          restoreFiles={inputRestoreFiles}
         />
       ) : (
         <div style={{ display: 'flex', minHeight: 0, flex: 1, alignItems: 'stretch', gap: '24px', alignSelf: 'stretch' }}>
@@ -1871,12 +2106,11 @@ export default function ScriptPage({ projectId, onGoToSubject, isExtractingSubje
                   onEdit={handleEdit}
                   onSave={handleSave}
                   onCancelEdit={handleCancelEdit}
-                  onGoToSubject={onGoToSubject}
+                  onExtractRequest={handleExtractRequest}
                   isExtractingSubjects={isExtractingSubjects}
+                  isSubjectUnlocked={isSubjectUnlocked}
                   onStreamingDone={handleStreamingDone}
                   onActiveIndexChange={setSelectedEpisode}
-                  streamingIndex={streamingIndex}
-                  onStreamingIndexChange={setStreamingIndex}
                   renderedContentRef={renderedContentRef}
                   editorContentRef={editorContentRef}
                   isSaving={isSaving}
@@ -1888,8 +2122,8 @@ export default function ScriptPage({ projectId, onGoToSubject, isExtractingSubje
               <InputCard
                 onSend={handleSend}
                 onStop={handleStop}
-                restoreText={lastSentText}
-                restoreFiles={lastSentFiles}
+                restoreText={inputRestoreText}
+                restoreFiles={inputRestoreFiles}
                 selectedModel={selectedModel}
                 onModelChange={setSelectedModel}
                 episodeCount={episodeCount}
@@ -1903,6 +2137,14 @@ export default function ScriptPage({ projectId, onGoToSubject, isExtractingSubje
       )}
     </div>
     <Toast toasts={toasts} />
-    </>
-  );
+    {confirmExtractOpen && (
+      <ConfirmExtractModal
+        onConfirm={() => {
+          setConfirmExtractOpen(false);
+          onGoToSubject?.('char');
+        }}
+        onCancel={() => setConfirmExtractOpen(false)}
+      />
+    )}
+    </>  );
 }

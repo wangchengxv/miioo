@@ -1,6 +1,7 @@
 const BASE = import.meta.env.VITE_API_BASE_URL;
 
 import { authFetch } from './request.js';
+import { normalizeImageUrl } from '../utils/imageUrl.js';
 
 /**
  * 资产列表（支持多维过滤）
@@ -102,7 +103,7 @@ function normalizeAsset(item) {
   return {
     id: item.id,
     name: item.name,
-    url: item.thumbnail_url || item.file_url || null,
+    url: normalizeImageUrl(item.thumbnail_url || item.file_url) || null,
     starred: item.is_starred ?? false,
     description: item.description ?? '',
     prompt: item.prompt ?? '',

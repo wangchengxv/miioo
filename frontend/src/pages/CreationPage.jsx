@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import { PulsingBorder } from '@paper-design/shaders-react';
-import { apiGenerateCreation, apiGetVideoLastFrame, apiDeleteCreationImage, apiDeleteCreationVideo, apiToggleImageFavorite, apiToggleVideoFavorite, apiBatchDeleteImages, apiBatchDeleteVideos } from '../api/creation';
+import { apiGenerateCreation, apiGetVideoLastFrame, apiDeleteCreationImage, apiDeleteCreationVideo, apiToggleImageFavorite, apiToggleVideoFavorite, apiBatchDeleteImages, apiBatchDeleteVideos, apiCreateSession, apiGetSession, apiListShots, apiCreateShot, apiUpdateShot } from '../api/creation';
 import { useCreationStore } from '../stores/creationStore';
-import { getImageModelList, getVideoModelList, getImageModelParams, getVideoModelParams } from '../config';
+import { apiListModels } from '../api/config';
+import { adaptModels, getModelParams } from '../utils/modelAdapter';
 import AssetPickerModal from '../components/AssetPickerModal';
 import CreationVideoDetailModal from '../components/CreationVideoDetailModal';
 
@@ -327,6 +328,12 @@ function UploadPlaceholder({ onFileSelect, onAssetPick, disabled = false, allowe
       e.target.value = '';
       return;
     }
+    const oversizedImg = selected.find((file) => isImageFile(file) && file.size > 5 * 1024 * 1024);
+    if (oversizedImg) {
+      alert('抱歉，平台暂不支持上传5M以上的图片资源！');
+      e.target.value = '';
+      return;
+    }
     onFileSelect?.(selected);
     e.target.value = '';
   };
@@ -440,6 +447,11 @@ function FrameUploader({ firstFile, lastFile, onFirstChange, onLastChange, onSwa
     const ext = '.' + file.name.split('.').pop().toLowerCase();
     if (!ALLOWED_IMAGE_EXTS.includes(ext)) {
       alert(`仅支持 ${ALLOWED_IMAGE_EXTS.join('、')} 格式的图片`);
+      e.target.value = '';
+      return;
+    }
+    if (file.size > 5 * 1024 * 1024) {
+      alert('抱歉，平台暂不支持上传5M以上的图片资源！');
       e.target.value = '';
       return;
     }
@@ -1955,6 +1967,11 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
   const uploadAcceptAttr = uploadAllowedExts.join(',');
 
   const handleFileSelect = (newFiles) => {
+    const oversized = newFiles.filter((f) => isImageFile(f) && f.size > 5 * 1024 * 1024);
+    if (oversized.length > 0) {
+      alert('抱歉，平台暂不支持上传5M以上的图片资源！');
+      return;
+    }
     const enriched = newFiles.map((f) => {
       if (isImageFile(f)) {
         const previewUrl = URL.createObjectURL(f);
@@ -3533,9 +3550,6 @@ function CreationTabBar({ activeTab, onChange }) {
             >
               {label}
             </span>
-            {isActive && (
-              <div style={{ height: '2px', alignSelf: 'stretch', backgroundColor: '#DDDDDD', borderRadius: '1px' }} />
-            )}
           </button>
         );
       })}
@@ -3728,7 +3742,74 @@ export default function CreationPage({ isLoggedIn, onLoginClick, apiConfigured =
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3000);
   };
 
+
+  // Session state for backend persistence
+  const SESSION_KEY = 'miioo_creation_session_id';
+  const sessionIdRef = useRef(localStorage.getItem(SESSION_KEY));
+  const sessionInitRef = useRef(false);
+  // Prevent duplicate restored shots on re-mount
+  const restoredShotIdsRef = useRef(new Set());
   // Video detail modal state
+
+  // Session init: create or resume backend session when logged in
+  useEffect(() => {
+    if (!isLoggedIn || sessionInitRef.current) return;
+    sessionInitRef.current = true;
+
+    const initSession = async () => {
+      try {
+        let sid = sessionIdRef.current;
+        if (sid) {
+          try { await apiGetSession(sid); } catch { sid = null; }
+        }
+        if (!sid) {
+          const now = new Date();
+          const pad = (n) => String(n).padStart(2, '0');
+          const title = `创作 - ${now.getFullYear()}-${pad(now.getMonth()+1)}-${pad(now.getDate())} ${pad(now.getHours())}:${pad(now.getMinutes())}`;
+          const session = await apiCreateSession({ title });
+          sid = session.id;
+          sessionIdRef.current = sid;
+          localStorage.setItem(SESSION_KEY, sid);
+        } else if (sid !== sessionIdRef.current) {
+          sessionIdRef.current = sid;
+          localStorage.setItem(SESSION_KEY, sid);
+        }
+
+        // Restore shots from backend
+        const shotList = await apiListShots(sid);
+        const shots = Array.isArray(shotList) ? shotList : (shotList.shots || shotList.list || []);
+        for (const shot of shots) {
+          if (restoredShotIdsRef.current.has(shot.id)) continue;
+          const hasImage = shot.image_url;
+          const hasVideo = shot.video_url;
+          if (!hasImage && !hasVideo) continue;
+          restoredShotIdsRef.current.add(shot.id);
+          const tab = hasVideo ? 'video' : 'image';
+          const genId = `shot-${shot.id}`;
+          const meta = shot.metadata_json || {};
+          addGeneration(tab, {
+            id: genId,
+            shot_id: shot.id,
+            ratio: meta.ratio || shot.aspect_ratio || '16:9',
+            resolution: meta.resolution || '',
+            duration: shot.duration,
+            model: meta.model || '',
+            prompt: shot.prompt || '',
+            refImages: [],
+            createdAt: shot.created_at || new Date().toISOString(),
+            cards: [{
+              id: shot.id,
+              type: hasVideo ? 'video' : 'image',
+              status: 'done',
+              imageUrl: hasImage ? shot.image_url : null,
+              videoUrl: hasVideo ? shot.video_url : null,
+            }],
+          });
+        }
+      } catch { /* session init fails silently; local-only mode */ }
+    };
+    initSession();
+  }, [isLoggedIn]);
   const [videoDetailModal, setVideoDetailModal] = useState(null);
 
   // Toggle favorite with API linkage
@@ -3753,24 +3834,38 @@ export default function CreationPage({ isLoggedIn, onLoginClick, apiConfigured =
   // Models and params are backend-driven; loaded on genType change and model change
   const [modelOptions, setModelOptions] = useState([]);
   const [model, setModel] = useState('');
-  const [creationParams, setCreationParams] = useState(null); // { ratios, resolutions, counts/durations, refModes? }
+  const [creationParams, setCreationParams] = useState(null);
+  const capabilitiesMapRef = useRef({});
 
   const [batchMode, setBatchMode] = useState(false);
   const [selected, setSelected] = useState(new Set());
 
-  // Load model list when genType changes; reset model to first option
+  // Load model list from backend (fallback to local config) when genType changes
   useEffect(() => {
-    const list = genType === 'image' ? getImageModelList() : getVideoModelList();
-    setModelOptions(list);
-    setModel(list[0]?.value ?? '');
+    let cancelled = false;
+    (async () => {
+      try {
+        const models = await apiListModels({ category: genType });
+        const { modelOptions: opts, capabilitiesMap } = adaptModels(models, genType);
+        if (cancelled) return;
+        capabilitiesMapRef.current = capabilitiesMap;
+        setModelOptions(opts);
+        setModel(opts[0]?.value ?? '');
+      } catch {
+        if (cancelled) return;
+        const { modelOptions: opts, capabilitiesMap } = adaptModels([], genType);
+        capabilitiesMapRef.current = capabilitiesMap;
+        setModelOptions(opts);
+        setModel(opts[0]?.value ?? '');
+      }
+    })();
+    return () => { cancelled = true; };
   }, [genType]);
 
-  // Load params when model changes (model is bound to genType)
+  // Load params when model changes (backend-first, local fallback)
   useEffect(() => {
     if (!model) return;
-    const params = genType === 'image'
-      ? getImageModelParams(model)
-      : getVideoModelParams(model);
+    const params = getModelParams(genType, model, capabilitiesMapRef.current);
     setCreationParams(params);
   }, [genType, model]);
 
@@ -3891,6 +3986,24 @@ export default function CreationPage({ isLoggedIn, onLoginClick, apiConfigured =
     setGenerating(true);
     // Parse count: '2张' → 2, fallback to 1
     const countNum = parseInt(params.count) || 1;
+    let shotId = null;
+
+    // Create a backend shot if session is active
+    if (isLoggedIn && sessionIdRef.current) {
+      try {
+        const now = new Date();
+        const ts = now.toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit', second: '2-digit' });
+        const shotTitle = (isVideoGen ? '视频' : '图片') + ' - ' + ts;
+        const shot = await apiCreateShot(sessionIdRef.current, {
+          title: shotTitle,
+          prompt: params.prompt || undefined,
+          duration: isVideoGen ? (parseInt(params.videoDuration) || 5) : undefined,
+        });
+        shotId = shot.id;
+        params.session_id = sessionIdRef.current;
+        params.shot_id = shotId;
+      } catch (e) { /* shot creation fails silently; generation still proceeds */ }
+    }
     const genId = `gen-${Date.now()}`;
     const currentTab = activeTab;
     const isVideoGen = params.genType === 'video';
@@ -3919,6 +4032,7 @@ export default function CreationPage({ isLoggedIn, onLoginClick, apiConfigured =
       // 添加成功生成的卡片
       addGeneration(currentTab, {
         id: genId,
+        shot_id: shotId || undefined,
         ratio: genMeta.ratio,
         resolution: genMeta.resolution,
         duration: genMeta.duration,
@@ -3934,6 +4048,21 @@ export default function CreationPage({ isLoggedIn, onLoginClick, apiConfigured =
           videoUrl: isVideoGen ? url : null,
         })),
       });
+
+      // Update backend shot with result URLs
+      if (shotId) {
+        try {
+          const updateData = {};
+          if (isVideoGen && mediaUrls.length > 0) {
+            updateData.video_url = mediaUrls[0];
+          } else if (mediaUrls.length > 0) {
+            updateData.image_url = mediaUrls[0];
+          }
+          if (Object.keys(updateData).length > 0) {
+            await apiUpdateShot(shotId, updateData);
+          }
+        } catch { /* shot update fails silently */ }
+      }
     } catch (error) {
       showToast('error', '生成失败，请稍后重试');
     } finally {
