@@ -171,7 +171,9 @@ export default function ImageDetailModal({ card, onClose, onDelete, favorited, o
               </div>
 
               {/* Right: info panel */}
-              <div style={{ width: '280px', flexShrink: 0, backgroundColor: '#161616', borderLeft: '1px solid #FFFFFF0F', display: 'flex', flexDirection: 'column', height: '540px', overflowY: 'auto' }}>
+              <div style={{ width: '280px', flexShrink: 0, backgroundColor: '#161616', borderLeft: '1px solid #FFFFFF0F', display: 'flex', flexDirection: 'column', height: '540px' }}>
+                {/* Scrollable content area */}
+                <div style={{ flex: 1, overflowY: 'auto', minHeight: 0 }}>
                 {DETAIL_PANEL_DIVIDER}
 
                 {/* 提示词 */}
@@ -244,11 +246,10 @@ export default function ImageDetailModal({ card, onClose, onDelete, favorited, o
 
                 {DETAIL_PANEL_DIVIDER}
 
-                {/* Spacer */}
-                <div style={{ flex: 1 }} />
+                </div>
 
-                {/* Bottom actions */}
-                <div style={{ display: 'flex', gap: '8px', padding: '16px 20px 20px', flexShrink: 0 }}>
+                {/* Bottom actions — fixed at bottom */}
+                <div style={{ display: 'flex', gap: '8px', padding: '16px 20px 20px', flexShrink: 0, borderTop: '1px solid #FFFFFF0A' }}>
                   <ModalActionBtn
                     label="收藏"
                     onClick={handleStarClick}

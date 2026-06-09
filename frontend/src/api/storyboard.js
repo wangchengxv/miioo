@@ -88,6 +88,13 @@ export async function apiGenerateStoryboardImage(projectId, storyboardId, params
       body: JSON.stringify(params),
     }
   );
+  if (!res.ok) {
+    let detail = '';
+    try { const body = await res.json(); detail = body?.detail || body?.message || ''; } catch {}
+    const err = new Error(detail || `生成失败（${res.status}）`);
+    err.status = res.status;
+    throw err;
+  }
   return res.json();
 }
 
@@ -100,6 +107,13 @@ export async function apiGenerateStoryboardVideo(projectId, storyboardId, params
       body: JSON.stringify(params),
     }
   );
+  if (!res.ok) {
+    let detail = '';
+    try { const body = await res.json(); detail = body?.detail || body?.message || ''; } catch {}
+    const err = new Error(detail || `生成失败（${res.status}）`);
+    err.status = res.status;
+    throw err;
+  }
   return res.json();
 }
 

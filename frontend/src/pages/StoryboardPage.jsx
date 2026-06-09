@@ -45,9 +45,14 @@ function normalizeStoryboard(be) {
         : { segments: [] }
     ),
     mainRefs: be.mainRefs ?? (
-      (be.character_ids || []).map(cid =>
-        typeof cid === 'string' ? { id: cid, type: 'char' } : cid
-      )
+      [
+        ...(be.character_ids || []).map(cid =>
+          typeof cid === 'string' ? { id: cid, type: 'char' } : cid
+        ),
+        ...(be.reference_image_urls || []).map(url =>
+          ({ id: url, url, name: '参考图', type: 'image/jpeg' })
+        ),
+      ]
     ),
     storyboardImage: be.storyboardImage ?? (
       be.image_url
@@ -90,6 +95,10 @@ function toBackendStoryboard(shot) {
       ? shot.narration.segments.map(s => s.role ? `${s.role}：${s.lines}` : s.lines).join('\n')
       : undefined,
     character_ids: (shot.mainRefs || []).map(ref => ref?.id).filter(Boolean),
+    reference_image_urls: (shot.mainRefs || [])
+      .filter(ref => ref?.url && !ref.uploading)
+      .map(ref => ref.url)
+      .filter(Boolean),
   };
 }
 
@@ -315,6 +324,42 @@ function PrimaryBtn({ icon, children, onClick, disabled, loading }) {
     </div>
   );
 }
+// Secondary 次要按钮 — 单层，无渐变，文字色 white 60%
+function SecondaryBtn({ icon, children, onClick, disabled }) {
+  const [hov, setHov] = useState(false);
+  const [pressed, setPressed] = useState(false);
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        height: '36px',
+        flexShrink: 0,
+        borderRadius: '8px',
+        paddingInline: '16px',
+        gap: '4px',
+        boxShadow: 'rgba(0,0,0,0.40) 3px 3px 8px',
+        backgroundColor: pressed ? '#1a1a1a' : hov ? '#1e1e1e' : '#161616',
+        border: '1px solid rgba(255,255,255,0.05)',
+        outline: '1px solid #00000080',
+        cursor: disabled ? 'not-allowed' : 'pointer',
+        opacity: disabled ? 0.5 : 1,
+        transition: 'background-color 0.10s, opacity 0.12s',
+      }}
+      onClick={disabled ? undefined : onClick}
+      onMouseEnter={() => !disabled && setHov(true)}
+      onMouseLeave={() => { setHov(false); setPressed(false); }}
+      onMouseDown={() => !disabled && setPressed(true)}
+      onMouseUp={() => setPressed(false)}
+    >
+      {icon && <span style={{ flexShrink: 0, display: 'flex', alignItems: 'center' }}>{icon}</span>}
+      <span style={{ fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.60)', whiteSpace: 'nowrap', fontFamily: '"Alibaba PuHuiTi 2.0", system-ui, sans-serif' }}>
+        {children}
+      </span>
+    </div>
+  );
+}
+
 
 // ─── 弹窗通用背景 ─────────────────────────────────────────────────────────────
 
@@ -899,7 +944,7 @@ function PanelSelect({ label, value, options, onChange, disabled = false }) {
 
 // ─── 首尾帧专用上传区（含快捷按钮）────────────────────────────────────────────────
 
-function FrameUploadSlot({ label, media, onUpload, onRemove, shortcutLabel, shortcutImage, shortcutTooltip }) {
+function FrameUploadSlot({ label, media, onUpload, onRemove, shortcutLabel, shortcutImage, shortcutTooltip, projectId }) {
   const fileRef = useRef(null);
   const [hov, setHov] = useState(false);
   const [btn1Hov, setBtn1Hov] = useState(false);
@@ -1787,8 +1832,9 @@ function GenerateImagePanel({ shot, projectId, chars = [], scenes = [], props = 
           const first = merged[0];
           setModel(first.value);
           const caps = first.capabilities;
-          if (caps?.supported_resolutions?.length > 0) {
-            setResolution(caps.supported_resolutions[0]);
+          {
+            const resList = (caps?.supported_resolutions?.length ? caps.supported_resolutions : caps?.supported_sizes) || [];
+            if (resList.length > 0) setResolution(resList[0]);
           }
         }
       } catch {
@@ -1886,9 +1932,23 @@ function GenerateImagePanel({ shot, projectId, chars = [], scenes = [], props = 
         prev.map((item) => item.id === placeholder ? { ...item, url: result?.url ?? null } : item)
       );
       onShowToast?.('图片生成成功', 'success');
-    } catch {
+    } catch (err) {
       onSetGeneratedImages((prev) => prev.filter((item) => item.id !== placeholder));
-      onShowToast?.('图片生成失败', 'error');
+      const status = err?.status;
+      const msg = err?.message || '';
+      if (status === 502 || status === 504 || msg.includes('fetch') || msg.includes('Network')) {
+        onShowToast?.('生成服务暂时不可用，请稍后重试', 'error');
+      } else if (status === 429) {
+        onShowToast?.('生成请求过于频繁，请稍后再试', 'error');
+      } else if (status === 401 || status === 403) {
+        onShowToast?.('登录已过期，请重新登录', 'error');
+      } else if (status === 422) {
+        onShowToast?.('生成参数有误，请检查后重试', 'error');
+      } else if (status) {
+        onShowToast?.(`生成失败（${status}），请稍后重试`, 'error');
+      } else {
+        onShowToast?.('生成失败，请检查网络连接后重试', 'error');
+      }
     } finally {
       setLoading(false);
     }
@@ -1929,14 +1989,14 @@ function GenerateImagePanel({ shot, projectId, chars = [], scenes = [], props = 
           {/* 左侧表单 */}
           <div style={{ display: 'flex', flexDirection: 'column', width: '419px', flexShrink: 0, padding: '8px 12px 80px 24px', gap: '20px', overflowY: 'auto' }}>
             {/* 分镜编号 */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '20px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
               <span style={{ fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.60)', fontFamily: FONT, flexShrink: 0 }}>分镜编号</span>
               <span style={{ fontSize: '14px', lineHeight: '20px', color: '#FFFFFF', fontFamily: FONT, flexShrink: 0 }}>{String(shot?.number ?? 1).padStart(2, '0')}</span>
             </div>
 
             <PanelPromptInput value={prompt} onChange={setPrompt} chars={chars} scenes={scenes} props={props} mainRefs={shot?.mainRefs || []} />
-            <PanelSelect label="选择模型" value={modelsLoading ? '加载中...' : (modelList.find(m => m.value === model)?.label || '请选择')} options={modelList.map(m => m.label)} onChange={(label) => {
-              const selected = modelList.find(m => m.label === label);
+            <PanelSelect label="选择模型" value={modelsLoading ? '加载中...' : (tabModels.find(m => m.value === model)?.label || '请选择')} options={tabModels.map(m => m.label)} onChange={(label) => {
+              const selected = tabModels.find(m => m.label === label);
               if (selected) setModel(selected.value);
             }} />
 
@@ -2059,10 +2119,13 @@ function GenerateImagePanel({ shot, projectId, chars = [], scenes = [], props = 
 }
 
 function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scenes = [], props = [], onClose, onGenerate, onShowToast }) {
-  const [mode, setMode] = useState('all'); // 'all' | 'first-last' | 'multi'
+  // 生成方式 Tab：'all' 全能参考 | 'frame' 首尾帧
+  const [tab, setTab] = useState('all');
   const [modelList, setModelList] = useState([]);
   const [modelsLoading, setModelsLoading] = useState(true);
   const [model, setModel] = useState('');
+  const [frameModels, setFrameModels] = useState([]);
+  const [allModels, setAllModels] = useState([]);
   const [resolution, setResolution] = useState('');
 
   useEffect(() => {
@@ -2074,9 +2137,24 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
           const modelId = m.model_id || m.id;
           return { value: modelId, label: m.name || modelId, capabilities: m.capabilities || {} };
         });
+
+        // 按 reference_modes 分类模型
+        const frameModes = ['first_frame', 'last_frame', 'start_end'];
+        const isFrameModel = (m) => {
+          const refs = m.capabilities?.reference_modes || [];
+          return refs.some(r => frameModes.includes(r));
+        };
+        const frameModels = merged.filter(isFrameModel);
+        const allModels = merged.filter(m => !isFrameModel(m));
+
         setModelList(merged);
-        if (merged.length > 0) {
-          const first = merged[0];
+        // 缓存分类列表供 Tab 切换使用
+        setFrameModels(frameModels);
+        setAllModels(allModels);
+
+        // 默认选中全能参考
+        if (allModels.length > 0) {
+          const first = allModels[0];
           setModel(first.value);
           const caps = first.capabilities;
           if (caps?.supported_resolutions?.length > 0) {
@@ -2115,8 +2193,36 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
   const [viewerShot, setViewerShot] = useState(null);
 
   // 获取当前模型支持的参数（优先从后端 capabilities 派生）
-  const currentVideoModel = useMemo(() => modelList.find(m => m.value === model), [model, modelList]);
-  const availableResolutions = currentVideoModel?.capabilities?.supported_resolutions || [];
+  // 当前 Tab 对应的模型列表
+  const tabModels = useMemo(() => {
+    return tab === 'frame' ? frameModels : allModels;
+  }, [tab, frameModels, allModels]);
+
+  const currentVideoModel = useMemo(() => tabModels.find(m => m.value === model), [model, tabModels]);
+  function handleTabChange(newTab) {
+    setTab(newTab);
+    const newList = newTab === 'frame' ? frameModels : allModels;
+    if (newList.length > 0) {
+      // 如果当前模型不在新列表中，切到新列表第一个
+      const inList = newList.some(m => m.value === model);
+      let targetModel = model;
+      if (!inList) {
+        targetModel = newList[0].value;
+        setModel(targetModel);
+      }
+      // 重置分辨率
+      const target = newList.find(m => m.value === targetModel);
+      {
+        const resList = (target?.capabilities?.supported_resolutions?.length ? target.capabilities.supported_resolutions : target?.capabilities?.supported_sizes) || [];
+        if (resList.length > 0) setResolution(resList[0]);
+      }
+    }
+  }
+
+  const availableResolutions = (() => {
+    const caps = currentVideoModel?.capabilities || {};
+    return (caps.supported_resolutions?.length ? caps.supported_resolutions : caps.supported_sizes) || [];
+  })();
 
   // 时长：后端 capabilities 中的时长范围
   const availableDurations = useMemo(() => {
@@ -2128,38 +2234,15 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
     return [];
   }, [currentVideoModel]);
 
-  // 参考模式：暂从本地能力表获取（后端暂未提供此字段）
-  const availableRefModes = useMemo(() => {
-    // 从后端 capabilities 获取生成方式
-    const currentModel = modelList.find(m => m.value === model);
-    const caps = currentModel?.capabilities || {};
-    const modes = [];
-    const genModes = caps.supported_generation_modes || [];
-    // 后端字段映射：
-    //   start_end / first_frame / first_last_frame → 首尾帧生视频
-    //   reference_image / reference_subjects / multiframe / full / video_ref → 多参生视频
-    const hasStartEnd = genModes.some(m => ['start_end', 'first_frame', 'first_last_frame'].includes(m));
-    const hasMultiRef = genModes.some(m => ['reference_image', 'reference_subjects', 'multiframe', 'full', 'video_ref'].includes(m));
-    if (hasStartEnd) modes.push({ value: 'frame', label: '首尾帧生视频' });
-    if (hasMultiRef) modes.push({ value: 'all', label: '多参生视频' });
-    // 后端没返回时，用本地能力表兜底
-    if (modes.length === 0) {
-      const localCaps = getVideoModelCapabilities(model);
-      if (localCaps) {
-        if (localCaps.category.includes('multi-modal-ref')) modes.push({ value: 'all', label: '多参生视频' });
-        if (localCaps.category.includes('first-last-frame')) modes.push({ value: 'frame', label: '首尾帧生视频' });
-      }
-    }
-    return modes;
-  }, [model, modelList]);
+  // 当前模型的前端本地能力表
+  const localVideoCaps = useMemo(() => getVideoModelCapabilities(model), [model]);
 
-  // 当模型切换时，重置参数
-  const currentVidResolutions = currentVideoModel?.capabilities?.supported_resolutions;
+  // 模型切换时重置分辨率为第一个可用值
   useEffect(() => {
-    if (currentVidResolutions?.length > 0) {
-      setResolution(currentVidResolutions[0]);
+    if (availableResolutions.length > 0) {
+      setResolution(availableResolutions[0]);
     }
-  }, [model, currentVidResolutions]);
+  }, [model, availableResolutions]);
 
   async function handleRefMediaUpload(file, type = 'image') {
     try {
@@ -2194,9 +2277,23 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
         prev.map((item) => item.id === placeholder ? { ...item, url: result?.url ?? null } : item)
       );
       onShowToast?.('视频生成成功', 'success');
-    } catch {
+    } catch (err) {
       setGeneratedVideos((prev) => prev.filter((item) => item.id !== placeholder));
-      onShowToast?.('视频生成失败', 'error');
+      const status = err?.status;
+      const msg = err?.message || '';
+      if (status === 502 || status === 504 || msg.includes('fetch') || msg.includes('Network')) {
+        onShowToast?.('生成服务暂时不可用，请稍后重试', 'error');
+      } else if (status === 429) {
+        onShowToast?.('生成请求过于频繁，请稍后再试', 'error');
+      } else if (status === 401 || status === 403) {
+        onShowToast?.('登录已过期，请重新登录', 'error');
+      } else if (status === 422) {
+        onShowToast?.('生成参数有误，请检查后重试', 'error');
+      } else if (status) {
+        onShowToast?.(`生成失败（${status}），请稍后重试`, 'error');
+      } else {
+        onShowToast?.('生成失败，请检查网络连接后重试', 'error');
+      }
     } finally {
       setLoading(false);
     }
@@ -2241,37 +2338,53 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
               <span style={{ fontSize: '14px', lineHeight: '20px', color: '#FFFFFF', fontFamily: FONT, flexShrink: 0 }}>{String(shot?.number ?? 1).padStart(2, '0')}</span>
             </div>
 
+            {/* Tab：全能参考 / 首尾帧 */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '24px', alignSelf: 'stretch' }}>
+              <div
+                onClick={() => handleTabChange('all')}
+                style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', cursor: 'pointer' }}
+              >
+                <span style={{
+                  fontSize: '14px', lineHeight: '18px',
+                  color: tab === 'all' ? '#FFFFFF' : 'rgba(255,255,255,0.60)',
+                  fontFamily: tab === 'all' ? FONT_MEDIUM : FONT,
+                  fontWeight: tab === 'all' ? 500 : 400,
+                  transition: 'color 0.12s',
+                }}>
+                  全能参考
+                </span>
+                {tab === 'all' && (
+                  <div style={{ height: '2px', alignSelf: 'stretch', backgroundColor: '#DDDDDD', flexShrink: 0 }} />
+                )}
+              </div>
+              <div
+                onClick={() => handleTabChange('frame')}
+                style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', cursor: 'pointer' }}
+              >
+                <span style={{
+                  fontSize: '14px', lineHeight: '18px',
+                  color: tab === 'frame' ? '#FFFFFF' : 'rgba(255,255,255,0.60)',
+                  fontFamily: tab === 'frame' ? FONT_MEDIUM : FONT,
+                  fontWeight: tab === 'frame' ? 500 : 400,
+                  transition: 'color 0.12s',
+                }}>
+                  首尾帧
+                </span>
+                {tab === 'frame' && (
+                  <div style={{ height: '2px', alignSelf: 'stretch', backgroundColor: '#DDDDDD', flexShrink: 0 }} />
+                )}
+              </div>
+            </div>
+
             <PanelPromptInput value={prompt} onChange={setPrompt} chars={chars} scenes={scenes} props={props} mainRefs={shot?.mainRefs || []} />
 
-            {/* 模式 radio 单选器 */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-              <span style={{ fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.60)', fontFamily: FONT }}>生成方式</span>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '20px' }}>
-              {availableRefModes.map(({ value, label }) => (
-                <div key={value} onClick={() => setMode(value)} style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer' }}>
-                  <div style={{
-                    width: '16px', height: '16px', borderRadius: '50%', flexShrink: 0,
-                    border: `1.5px solid ${mode === value ? '#2DC3E1' : 'rgba(255,255,255,0.30)'}`,
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    transition: 'border-color 0.12s',
-                  }}>
-                    {mode === value && <div style={{ width: '8px', height: '8px', borderRadius: '50%', backgroundColor: '#2DC3E1' }} />}
-                  </div>
-                  <span style={{ fontSize: '14px', lineHeight: '18px', color: mode === value ? '#FFFFFF' : 'rgba(255,255,255,0.60)', fontFamily: mode === value ? FONT_MEDIUM : FONT, fontWeight: mode === value ? 500 : 400, transition: 'color 0.12s' }}>
-                    {label}
-                  </span>
-                </div>
-              ))}
-            </div>
-            </div>
-
-            <PanelSelect label="选择模型" value={modelsLoading ? '加载中...' : (modelList.find(m => m.value === model)?.label || '请选择')} options={modelList.map(m => m.label)} onChange={(label) => {
-              const selected = modelList.find(m => m.label === label);
+            <PanelSelect label="选择模型" value={modelsLoading ? '加载中...' : (tabModels.find(m => m.value === model)?.label || '请选择')} options={tabModels.map(m => m.label)} onChange={(label) => {
+              const selected = tabModels.find(m => m.label === label);
               if (selected) setModel(selected.value);
             }} />
 
             {/* 全能参考字段 */}
-            {mode === 'all' && (
+            {tab === 'all' && (
               <>
                 <PanelUploadSlot projectId={projectId} label="参考主体" accept="image/*" media={refSubject} onUpload={async (media) => {
                   if (media.id?.startsWith('blob:')) {
@@ -2338,7 +2451,7 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
             )}
 
             {/* 首尾帧字段 */}
-            {mode === 'first-last' && (
+            {tab === 'frame' && (
               <>
                 <FrameUploadSlot
                   label="首帧图"
@@ -2348,6 +2461,7 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
                   shortcutLabel="使用当前分镜图"
                   shortcutImage={shot?.storyboardImage ?? null}
                   shortcutTooltip="当前分镜尚未生成分镜图"
+                  projectId={projectId}
                 />
                 <FrameUploadSlot
                   label="尾帧图（可选）"
@@ -2357,43 +2471,8 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
                   shortcutLabel="使用下一分镜图"
                   shortcutImage={nextShot?.storyboardImage ?? null}
                   shortcutTooltip="下一分镜尚未生成分镜图"
+                  projectId={projectId}
                 />
-              </>
-            )}
-
-            {/* 多图参考字段 */}
-            {mode === 'multi' && (
-              <>
-                <PanelUploadSlot projectId={projectId} label="参考主体" accept="image/*" media={refSubject} onUpload={async (media) => {
-                  if (media.id?.startsWith('blob:')) {
-                    try {
-                      const response = await fetch(media.url);
-                      const blob = await response.blob();
-                      const file = new File([blob], media.name, { type: media.type });
-                      const uploaded = await handleRefMediaUpload(file, 'image');
-                      setRefSubject(uploaded);
-                    } catch (error) {
-                      // 错误已处理
-                    }
-                  } else {
-                    setRefSubject(media);
-                  }
-                }} onRemove={() => setRefSubject(null)} />
-                <PanelUploadSlot projectId={projectId} label="参考图" accept="image/*" media={refImage} onUpload={async (media) => {
-                  if (media.id?.startsWith('blob:')) {
-                    try {
-                      const response = await fetch(media.url);
-                      const blob = await response.blob();
-                      const file = new File([blob], media.name, { type: media.type });
-                      const uploaded = await handleRefMediaUpload(file, 'image');
-                      setRefImage(uploaded);
-                    } catch (error) {
-                      // 错误已处理
-                    }
-                  } else {
-                    setRefImage(media);
-                  }
-                }} onRemove={() => setRefImage(null)} />
               </>
             )}
 
@@ -2401,7 +2480,7 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
             <PanelSelect label="分辨率" value={resolution} options={availableResolutions} onChange={setResolution} />
 
             {/* 音效 toggle */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '16px' }}>
               <span style={{ fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.60)', fontFamily: FONT, flexShrink: 0 }}>音效</span>
               <ModalToggle value={sound} onChange={setSound} />
             </div>
@@ -4944,7 +5023,6 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
         const result = await apiGenerateStoryboardImage(projectId, shot.id, {
           model: params.model,
           resolution: params.resolution,
-          episode_id: episodeId,
         });
         const imageUrl = result.image_url || result.url;
         setShots((prev) => prev.map((s) => s.id === shot.id
@@ -4986,7 +5064,6 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
           resolution: params.resolution,
           duration: params.duration,
           sound_effect: params.sound,
-          episode_id: episodeId,
         });
         const videoUrl = result.video_url || result.url;
         setShots((prev) => prev.map((s) => s.id === shot.id
@@ -5254,24 +5331,41 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
                 已选 {selectedShotIds.size} / {shots.length}
               </span>
 
-              {/* 全选 / 取消全选 */}
-              <GhostBtn
-                icon={
-                  selectedShotIds.size === shots.length ? (
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{flexShrink: 0}}>
-                      <rect x="2" y="2" width="12" height="12" rx="3" stroke="#FFFFFF" strokeWidth="1.5"/>
-                      <path d="M5 8L7 10L11 6" stroke="#FFFFFF" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" fill="none"/>
-                    </svg>
-                  ) : (
-                    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{flexShrink: 0}}>
-                      <rect x="2" y="2" width="12" height="12" rx="3" stroke="#FFFFFF" strokeWidth="1.5"/>
-                    </svg>
-                  )
-                }
+              {/* 全选 / 取消全选 — checkbox + 文字 */}
+              <label
                 onClick={toggleSelectAll}
+                className="flex items-center gap-[4px] h-[36px] px-[16px] cursor-pointer select-none shrink-0"
               >
-                {selectedShotIds.size === shots.length ? '取消全选' : '全选'}
-              </GhostBtn>
+                {/* checkbox — 按组件规范，p-[2px] 外层 + token 类名 + border-solid + outline */}
+                <div className="flex items-center gap-0 p-[2px] cursor-pointer">
+                  <div className={
+                    "relative rounded-sm shrink-0 border border-solid w-[16px] h-[16px] [outline:1px_solid_var(--color-stroke-outline)] outline-offset-0 " +
+                    (selectedShotIds.size === shots.length
+                      ? "bg-checkbox-bg-active border-checkbox-border-active"
+                      : "bg-checkbox-bg-normal border-checkbox-border-normal")
+                  }>
+                    {selectedShotIds.size === shots.length && (
+                      <svg width="16" height="16" viewBox="0 0 16 16" fill="none"
+                        xmlns="http://www.w3.org/2000/svg"
+                        style={{ position: "absolute", left: "50%", top: "50%", translate: "-50% -50%" }}>
+                        <path d="M3.333 8L6.667 11.333L13.333 4.667"
+                          stroke="#FFFFFF"
+                          strokeLinecap="round" strokeLinejoin="round" />
+                      </svg>
+                    )}
+                  </div>
+                </div>
+                {/* 文字 */}
+                <span style={{
+                  fontFamily: '"Alibaba PuHuiTi 2.0", system-ui, sans-serif',
+                  fontSize: '14px',
+                  lineHeight: '18px',
+                  color: '#FFFFFF',
+                  whiteSpace: 'nowrap',
+                }}>
+                  {selectedShotIds.size === shots.length ? '取消全选' : '全选'}
+                </span>
+              </label>
 
               {/* 下载图片 */}
               <GhostBtn icon={<IconDownload />} onClick={handleDownloadImages}>
@@ -5283,10 +5377,10 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
                 下载视频
               </GhostBtn>
 
-              {/* 取消 */}
-              <GhostBtn onClick={exitDownloadMode}>
+              {/* 取消 — Secondary 按钮 */}
+              <SecondaryBtn onClick={exitDownloadMode}>
                 取消
-              </GhostBtn>
+              </SecondaryBtn>
             </>
           ) : (
             <>
@@ -5445,7 +5539,7 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
         onGenerate={async (params) => {
           const shot = imagePanel.shot;
           try {
-            const result = await apiGenerateStoryboardImage(projectId, shot.id, { ...params, episode_id: getEpisodeId(episode) });
+            const result = await apiGenerateStoryboardImage(projectId, shot.id, { model: params.model, resolution: params.resolution, prompt: params.prompt, reference_images: params.refImages });
             const imageUrl = result.image_url || result.url;
 
             setShots((prev) => prev.map((s) => s.id === shot.id && !s.storyboardImage
@@ -5474,7 +5568,7 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
         onGenerate={async (params) => {
           const shot = videoPanel.shot;
           try {
-            const result = await apiGenerateStoryboardVideo(projectId, shot.id, { ...params, episode_id: getEpisodeId(episode) });
+            const result = await apiGenerateStoryboardVideo(projectId, shot.id, { model: params.model, resolution: params.resolution, duration: params.duration, sound_effect: params.sound, reference_images: params.refImages });
             const videoUrl = result.video_url || result.url;
 
             setShots((prev) => prev.map((s) => s.id === shot.id && !s.storyboardVideo

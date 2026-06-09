@@ -1047,6 +1047,19 @@ export default function Home({ onProjectCreated }) {
     localStorage.removeItem('miioo_active_project_id');
     localStorage.removeItem('miioo_active_step');
           localStorage.removeItem('miioo_active_key');
+
+    // 每次切到项目列表都从后端拉取最新数据
+    if (key === 'project') {
+      apiGetProjects().then((data) => {
+        const normalized = data.map((p) => ({ ...p, cover: p.cover ?? p.cover_url }));
+        const sorted = [...normalized].sort((a, b) => {
+          const timeA = new Date(a.created_at || 0).getTime();
+          const timeB = new Date(b.created_at || 0).getTime();
+          return timeB - timeA;
+        });
+        setProjects(sorted);
+      }).catch(() => {});
+    }
   };
 
   const showApiBubble = !apiConfigOpen && (!isLoggedIn || (isLoggedIn && !apiConfigured));
@@ -1519,6 +1532,15 @@ export default function Home({ onProjectCreated }) {
       <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} onSuccess={() => {
         setLoginOpen(false);
         setIsLoggedIn(true);
+        apiGetProjects().then((data) => {
+          const normalized = data.map((p) => ({ ...p, cover: p.cover ?? p.cover_url }));
+          const sorted = [...normalized].sort((a, b) => {
+            const timeA = new Date(a.created_at || 0).getTime();
+            const timeB = new Date(b.created_at || 0).getTime();
+            return timeB - timeA;
+          });
+          setProjects(sorted);
+        }).catch(() => {});
         apiListProviders().then((data) => {
           const providers = Array.isArray(data) ? data : (data?.providers || []);
           if (providers.length > 0) setApiConfigured(true);

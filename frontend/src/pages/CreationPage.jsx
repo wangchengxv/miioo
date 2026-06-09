@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { PulsingBorder } from '@paper-design/shaders-react';
 import { apiGenerateCreation, apiGetVideoLastFrame, apiDeleteCreationImage, apiDeleteCreationVideo, apiToggleImageFavorite, apiToggleVideoFavorite, apiBatchDeleteImages, apiBatchDeleteVideos, apiCreateSession, apiGetSession, apiListShots, apiCreateShot, apiUpdateShot } from '../api/creation';
@@ -1888,6 +1888,29 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
   const editorRef = useRef(null);
   const mentionFromTagRef = useRef(false);
 
+
+  // Video: filter modelOptions by refMode
+  const filteredModelOptions = useMemo(() => {
+    if (genType !== 'video') return modelOptions;
+    if (!refMode) return modelOptions;
+    if (refMode === 'frame') {
+      return modelOptions.filter(m => m.hasFrame);
+    }
+    // 'all' (全能参考): 只显示支持全能参考的模型
+    return modelOptions.filter(m => m.hasFull);
+  }, [genType, refMode, modelOptions]);
+
+  // Video: sync model when refMode changes
+  const handleRefModeChange = useCallback((newRefMode) => {
+    setRefMode(newRefMode);
+    const filtered = newRefMode === 'frame'
+      ? modelOptions.filter(m => m.hasFrame)
+      : modelOptions.filter(m => m.hasFull);
+    const inList = filtered.some(m => m.value === model);
+    if (!inList && filtered.length > 0) {
+      onModelChange(filtered[0].value);
+    }
+  }, [modelOptions, model, onModelChange]);
   // Reset param selections when creationParams changes (model or genType changed)
   useEffect(() => {
     if (!creationParams) return;
@@ -2010,6 +2033,7 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
       name: asset.name || asset.id,
       size: 0,
       url: asset.url,
+      assetId: asset.id || asset.asset_id || undefined,
       isAsset: true,
     }));
     setFiles((prev) => [...prev, ...assetFiles]);
@@ -2130,22 +2154,35 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
 
   const canSend = !disabled && (hasContent || files.length > 0 || firstFrameFile || lastFrameFile);
 
-  const handleSend = () => {
+  const handleSend = async () => {
     if (!canSend) return;
     const currentText = editorRef.current?.innerText?.trim() ?? '';
-    onGenerate?.({
+    // 视频模式：把「全能参考」/「首尾帧」映射为当前模型支持的实际 reference_mode
+    let actualRefMode = refMode;
+    if (genType === 'video') {
+      const currentModel = modelOptions.find(m => m.value === model);
+      if (refMode === 'all') {
+        actualRefMode = currentModel?.actualAllRefMode || 'full';
+      } else if (refMode === 'frame') {
+        actualRefMode = currentModel?.actualFrameRefMode || 'first_frame';
+      }
+    }
+    const result = await onGenerate?.({
       prompt: currentText,
       genType,
       model,
       ...(genType === 'image' ? { ratio, resolution, count } : {}),
-      ...(genType === 'video' ? { refMode, videoRatio, videoResolution, videoDuration, soundEnabled, firstFrameFile, lastFrameFile } : {}),
+      ...(genType === 'video' ? { refMode: actualRefMode, videoRatio, videoResolution, videoDuration, soundEnabled, firstFrameFile, lastFrameFile } : {}),
       files,
     });
-    if (editorRef.current) editorRef.current.innerHTML = '';
-    setHasContent(false);
-    setFiles([]);
-    setFirstFrameFile(null);
-    setLastFrameFile(null);
+    // 只有成功才清空输入框和附件
+    if (result && result.success) {
+      if (editorRef.current) editorRef.current.innerHTML = '';
+      setHasContent(false);
+      setFiles([]);
+      setFirstFrameFile(null);
+      setLastFrameFile(null);
+    }
   };
 
   const handleKeyDown = (e) => {
@@ -2423,7 +2460,7 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
         <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0px', justifyContent: 'space-between', alignSelf: 'stretch' }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', padding: 0 }}>
             <GenTypeSelector value={genType} onChange={onGenTypeChange} disabled={disabled} />
-            <ModelSelector value={model} onChange={onModelChange} options={modelOptions} disabled={disabled} onBeforeOpen={onBeforeModelOpen} />
+            <ModelSelector value={model} onChange={onModelChange} options={genType === 'video' ? filteredModelOptions : modelOptions} disabled={disabled} onBeforeOpen={onBeforeModelOpen} />
             {genType === 'image' && (
               <ParamsSelector
                 ratio={ratio}
@@ -2440,7 +2477,7 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
             )}
             {genType === 'video' && (
               <>
-                <RefModeSelector value={refMode} onChange={setRefMode} disabled={disabled} options={creationParams?.refModes ?? []} />
+                <RefModeSelector value={refMode} onChange={handleRefModeChange} disabled={disabled} options={creationParams?.refModes ?? []} />
                 <VideoParamsSelector
                   ratio={videoRatio}
                   resolution={videoResolution}
@@ -3414,7 +3451,7 @@ function CreationResultState({ generations, onGenerate, genType, onGenTypeChange
                 }}
                 onUseAsRef={() => {
                   setPrefillData({
-                    files: [{ name: 'creation.png', url: card.imageUrl, previewUrl: card.imageUrl, isAsset: true, size: 0 }],
+                    files: [{ name: 'creation.png', url: card.imageUrl, previewUrl: card.imageUrl, assetId: card.assetId || card.id || undefined, isAsset: true, size: 0 }],
                   });
                   setPrefillVersion((v) => v + 1);
                 }}
@@ -4016,7 +4053,7 @@ export default function CreationPage({ isLoggedIn, onLoginClick, apiConfigured =
       if (!mediaUrls || mediaUrls.length === 0) {
         showToast('error', '生成失败，请稍后重试');
         setGenerating(false);
-        return;
+        return { success: false };
       }
 
       const genMeta = {
@@ -4038,7 +4075,13 @@ export default function CreationPage({ isLoggedIn, onLoginClick, apiConfigured =
         duration: genMeta.duration,
         model: genMeta.model,
         prompt: genMeta.prompt,
-        refImages: [],  // File 对象不可序列化，持久化时丢弃
+        refImages: (result.referenceImages || []).map((url) => ({
+          url,
+          previewUrl: url,
+          isAsset: true,
+          name: url.split('/').pop() || 'ref.png',
+          size: 0,
+        })),
         createdAt: genMeta.createdAt,
         cards: mediaUrls.map((url) => ({
           id: null,  // 后端 ID，待轮询返回后回写
@@ -4063,8 +4106,10 @@ export default function CreationPage({ isLoggedIn, onLoginClick, apiConfigured =
           }
         } catch { /* shot update fails silently */ }
       }
+      return { success: true };
     } catch (error) {
       showToast('error', '生成失败，请稍后重试');
+      return { success: false };
     } finally {
       setGenerating(false);
     }

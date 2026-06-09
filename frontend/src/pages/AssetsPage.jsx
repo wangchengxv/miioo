@@ -1,9 +1,9 @@
 import { useState, useRef, useEffect } from 'react';
-import { apiGetAssetDetail, apiGetShotDetail, apiGetShotVideoDetail, apiGetProjectAssets, apiDeleteAsset, apiBatchDeleteAssets, apiUpdateAsset } from '../api/assets';
+import { apiGetAssetDetail, apiGetShotDetail, apiGetShotVideoDetail, apiGetProjectAssets, apiDeleteAsset, apiBatchDeleteAssets, apiUpdateAsset, apiDownloadAsset } from '../api/assets';
 import { apiDeleteCreationImage, apiDeleteCreationVideo, apiBatchDeleteImages, apiBatchDeleteVideos, apiToggleImageFavorite, apiToggleVideoFavorite } from '../api/creation';
 import { useCreationStore } from '../stores/creationStore';
 import { generationsToDays } from '../utils/creativeDaysAdapter';
-import { apiGetProjects, apiGetProjectOverview } from '../api/project';
+import { apiGetProjects, apiGetProjectOverview, apiDeleteProject, apiUpdateProject, apiDownloadProjectAssets } from '../api/project';
 import ImageDetailModal from '../components/ImageDetailModal';
 import CreationVideoDetailModal from '../components/CreationVideoDetailModal';
 
@@ -1776,9 +1776,6 @@ function TabBar({ tabs, active, onChange }) {
             onClick={() => onChange(tab.key)}
           >
             <span>{tab.label}</span>
-            {isActive && (
-              <div style={{ height: '2px', alignSelf: 'stretch', flexShrink: 0, backgroundColor: '#DDDDDD' }} />
-            )}
           </button>
         );
       })}
@@ -1923,9 +1920,21 @@ function FavFilterCheckbox({ checked, onChange }) {
 
 function ProjectListItem({ project, active, onClick }) {
   const [hov, setHov] = useState(false);
+  const [menuOpen, setMenuOpen] = useState(false);
+  const [hovIdx, setHovIdx] = useState(null);
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    if (!menuOpen) return;
+    function onDown(e) {
+      if (menuRef.current && !menuRef.current.contains(e.target)) setMenuOpen(false);
+    }
+    document.addEventListener('mousedown', onDown);
+    return () => document.removeEventListener('mousedown', onDown);
+  }, [menuOpen]);
+
   return (
-    <button
-      type="button"
+    <div
       style={{
         display: 'flex',
         alignItems: 'center',
@@ -1936,35 +1945,223 @@ function ProjectListItem({ project, active, onClick }) {
         paddingLeft: '12px',
         paddingRight: '12px',
         borderRadius: '8px',
-        border: 'none',
         backgroundColor: active ? '#FFFFFF0F' : hov ? '#FFFFFF08' : 'transparent',
         cursor: 'pointer',
         transition: 'background-color 0.12s',
-        textAlign: 'left',
+        position: 'relative',
       }}
       onMouseEnter={() => setHov(true)}
-      onMouseLeave={() => setHov(false)}
-      onClick={onClick}
+      onMouseLeave={() => { setHov(false); setMenuOpen(false); }}
     >
-      <span style={{
-        flex: 1,
-        fontFamily: active ? FONT_MEDIUM : FONT,
-        fontWeight: active ? 500 : 400,
-        fontSize: '14px',
-        color: active ? '#FFFFFF' : '#FFFFFF99',
-        overflow: 'hidden',
-        textOverflow: 'ellipsis',
-        whiteSpace: 'nowrap',
-        minWidth: 0,
-      }}>{project.name}</span>
-      <span style={{
-        fontFamily: FONT,
-        fontSize: '12px',
-        color: '#FFFFFF99',
-        flexShrink: 0,
-      }}>{project.count}</span>
-    </button>
+      <button
+        type="button"
+        style={{
+          flex: 1,
+          background: 'none',
+          border: 'none',
+          padding: 0,
+          textAlign: 'left',
+          cursor: 'pointer',
+          minWidth: 0,
+        }}
+        onClick={onClick}
+      >
+        <span style={{
+          display: 'block',
+          fontFamily: active ? FONT_MEDIUM : FONT,
+          fontWeight: active ? 500 : 400,
+          fontSize: '14px',
+          color: active ? '#FFFFFF' : '#FFFFFF99',
+          overflow: 'hidden',
+          textOverflow: 'ellipsis',
+          whiteSpace: 'nowrap',
+        }}>{project.name}</span>
+      </button>
+
+      {/* count + hover more button — button overlays count on hover */}
+      <div ref={menuRef} style={{ position: 'relative', flexShrink: 0 }}>
+        <span style={{
+          fontFamily: FONT,
+          fontSize: '12px',
+          color: '#FFFFFF99',
+          flexShrink: 0,
+          visibility: hov ? 'hidden' : 'visible',
+        }}>{project.count}</span>
+        {hov && (
+          <button
+            type="button"
+            style={{
+              position: 'absolute',
+              top: '50%',
+              right: 0,
+              transform: 'translateY(-50%)',
+              width: '24px',
+              height: '24px',
+              borderRadius: '6px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              backgroundColor: menuOpen ? 'rgba(255,255,255,0.15)' : '#00000080',
+              border: 'none',
+              cursor: 'pointer',
+              transition: 'background-color 0.12s',
+              flexShrink: 0,
+            }}
+            onMouseEnter={(e) => { if (!menuOpen) e.currentTarget.style.backgroundColor = '#FFFFFF1A'; }}
+            onMouseLeave={(e) => { if (!menuOpen) e.currentTarget.style.backgroundColor = '#00000080'; }}
+            onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); }}
+            aria-label="更多操作"
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+              <circle cx="8" cy="4" r="1.2" fill="#fff" />
+              <circle cx="8" cy="8" r="1.2" fill="#fff" />
+              <circle cx="8" cy="12" r="1.2" fill="#fff" />
+            </svg>
+          </button>
+        )}
+        {menuOpen && (
+          <div
+            style={{
+              position: 'absolute',
+              top: 'calc(100% + 4px)',
+              right: 0,
+              zIndex: 50,
+              minWidth: '110px',
+              padding: '4px',
+              borderRadius: '8px',
+              backgroundColor: '#1C1C1C',
+              border: '1px solid rgba(255,255,255,0.1)',
+              boxShadow: '0px 4px 16px rgba(0,0,0,0.5)',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            {[
+              { label: '重命名', icon: (
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+                  <path d="M11 2L14 5L5 14H2V11L11 2Z" stroke="rgba(255,255,255,0.8)" strokeLinejoin="round" />
+                  <path d="M10 3L13 6" stroke="rgba(255,255,255,0.8)" />
+                </svg>
+              ), action: () => { setMenuOpen(false); project.onRename?.(); }, danger: false },
+              { label: '删除', icon: <TrashIcon color="#F75F5F" />, action: () => { setMenuOpen(false); project.onDelete?.(); }, danger: true },
+              { label: '下载项目', icon: <DownloadIcon color="rgba(255,255,255,0.8)" />, action: () => { setMenuOpen(false); project.onDownload?.(); }, danger: false },
+            ].map((item, i) => (
+              <button
+                key={item.label}
+                type="button"
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '8px',
+                  width: '100%',
+                  padding: '8px 10px',
+                  borderRadius: '6px',
+                  border: 'none',
+                  background: hovIdx === i ? 'rgba(255,255,255,0.08)' : 'transparent',
+                  cursor: 'pointer',
+                  fontFamily: FONT,
+                  fontSize: '14px',
+                  lineHeight: '18px',
+                  color: item.danger ? '#F75F5F' : 'rgba(255,255,255,0.8)',
+                  transition: 'background 0.1s',
+                }}
+                onMouseEnter={() => setHovIdx(i)}
+                onMouseLeave={() => setHovIdx(null)}
+                onClick={item.action}
+              >
+                {item.icon}
+                {item.label}
+              </button>
+            ))}
+          </div>
+        )}
+      </div>
+    </div>
   );
+}
+
+// 图片空状态 — 面性风景图占位
+function EmptyIconImage() {
+  return (
+    <svg width="80" height="80" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="10" y="14" width="60" height="46" rx="7" fill="rgba(255,255,255,0.06)" />
+      <rect x="10" y="14" width="60" height="22" rx="7" fill="rgba(255,255,255,0.04)" />
+      <circle cx="26" cy="27" r="8" fill="rgba(255,255,255,0.10)" />
+      <circle cx="26" cy="27" r="5" fill="rgba(255,255,255,0.18)" />
+      <path d="M10 48 L24 30 L36 42 L48 28 L60 40 L70 32 L70 60 L10 60 Z" fill="rgba(255,255,255,0.07)" />
+      <path d="M10 60 L10 52 L22 38 L34 50 L44 38 L58 52 L70 44 L70 60 Z" fill="rgba(255,255,255,0.13)" />
+      <rect x="10" y="14" width="60" height="46" rx="7" fill="none" stroke="rgba(255,255,255,0.1)" strokeWidth="1" />
+    </svg>
+  );
+}
+
+// 视频空状态 — 面性播放器占位
+function EmptyIconVideo() {
+  return (
+    <svg width="80" height="80" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <rect x="8" y="18" width="52" height="38" rx="7" fill="rgba(255,255,255,0.08)" />
+      <rect x="8" y="18" width="52" height="9" rx="4" fill="rgba(0,0,0,0.2)" />
+      <circle cx="34" cy="42" r="12" fill="rgba(255,255,255,0.13)" />
+      <path d="M30.5 36.5 L30.5 47.5 L42 42 Z" fill="rgba(255,255,255,0.5)" />
+      <rect x="64" y="18" width="12" height="12" rx="4" fill="rgba(255,255,255,0.11)" />
+      <rect x="64" y="33" width="12" height="12" rx="4" fill="rgba(255,255,255,0.07)" />
+      <rect x="64" y="48" width="12" height="8" rx="4" fill="rgba(255,255,255,0.04)" />
+      <rect x="8" y="58" width="52" height="3" rx="1.5" fill="rgba(255,255,255,0.07)" />
+      <rect x="8" y="58" width="20" height="3" rx="1.5" fill="rgba(255,255,255,0.22)" />
+      <circle cx="28" cy="59.5" r="3.5" fill="rgba(255,255,255,0.4)" />
+    </svg>
+  );
+}
+
+// 音频空状态 — 面性音波占位
+function EmptyIconAudio() {
+  return (
+    <svg width="80" height="80" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+      <circle cx="40" cy="40" r="28" fill="rgba(255,255,255,0.06)" />
+      <circle cx="40" cy="40" r="18" fill="rgba(255,255,255,0.05)" />
+      <rect x="14" y="34" width="3" height="12" rx="1.5" fill="rgba(255,255,255,0.12)" />
+      <rect x="19" y="30" width="3" height="20" rx="1.5" fill="rgba(255,255,255,0.18)" />
+      <rect x="24" y="26" width="3" height="28" rx="1.5" fill="rgba(255,255,255,0.22)" />
+      <rect x="29" y="30" width="3" height="20" rx="1.5" fill="rgba(255,255,255,0.28)" />
+      <rect x="34" y="33" width="3" height="14" rx="1.5" fill="rgba(255,255,255,0.32)" />
+      <circle cx="40" cy="40" r="5" fill="rgba(255,255,255,0.28)" />
+      <circle cx="40" cy="40" r="2.5" fill="rgba(255,255,255,0.5)" />
+      <rect x="43" y="33" width="3" height="14" rx="1.5" fill="rgba(255,255,255,0.32)" />
+      <rect x="48" y="30" width="3" height="20" rx="1.5" fill="rgba(255,255,255,0.28)" />
+      <rect x="53" y="26" width="3" height="28" rx="1.5" fill="rgba(255,255,255,0.22)" />
+      <rect x="58" y="30" width="3" height="20" rx="1.5" fill="rgba(255,255,255,0.18)" />
+      <rect x="63" y="34" width="3" height="12" rx="1.5" fill="rgba(255,255,255,0.12)" />
+    </svg>
+  );
+}
+
+// 根据 mediaType 选图标
+function EmptyAssetState({ mediaType = 'image' }) {
+  let Icon;
+  if (mediaType === 'video') Icon = EmptyIconVideo;
+  else if (mediaType === 'audio') Icon = EmptyIconAudio;
+  else Icon = EmptyIconImage;
+
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+      <Icon />
+    </div>
+  );
+}
+
+// category → mediaType 映射
+function categoryToMediaType(category) {
+  if (category === 'storyboard_video' || category === 'final') return 'video';
+  if (category === 'audio') return 'audio';
+  return 'image';
+}
+
+function EmptyProjectAssets({ category }) {
+  return <EmptyAssetState mediaType={categoryToMediaType(category)} />;
+}
+
+function EmptyCreativeAssets({ type }) {
+  const mediaType = type === 'dubbing' ? 'audio' : type;
+  return <EmptyAssetState mediaType={mediaType} />;
 }
 
 function ProjectAssetsPanel() {
@@ -1975,6 +2172,9 @@ function ProjectAssetsPanel() {
   const [selected, setSelected] = useState(new Set());
   const [favOnly, setFavOnly] = useState(false);
   const [assetsMap, setAssetsMap] = useState({});
+  const [renameTarget, setRenameTarget] = useState(null);
+  const [renameValue, setRenameValue] = useState('');
+  const [deleteTarget, setDeleteTarget] = useState(null);
 
   useEffect(() => {
     apiGetProjects().then(async (list) => {
@@ -2053,6 +2253,55 @@ function ProjectAssetsPanel() {
     setSelected(new Set());
   }
 
+  function handleRenameProject(project) {
+    setRenameTarget(project);
+    setRenameValue(project.name);
+  }
+
+  function confirmRename() {
+    if (!renameTarget || !renameValue.trim()) return;
+    apiUpdateProject(renameTarget.id, { name: renameValue.trim() }).then(() => {
+      setProjects((prev) => prev.map((p) => p.id === renameTarget.id ? { ...p, name: renameValue.trim() } : p));
+      setRenameTarget(null);
+    }).catch(console.error);
+  }
+
+  function handleDeleteProject(project) {
+    setDeleteTarget(project);
+  }
+
+  function confirmDeleteProject() {
+    if (!deleteTarget) return;
+    apiDeleteProject(deleteTarget.id).then(() => {
+      setProjects((prev) => prev.filter((p) => p.id !== deleteTarget.id));
+      if (activeProject === deleteTarget.id) {
+        setActiveProject(null);
+        setAssetsMap({});
+      }
+      setDeleteTarget(null);
+    }).catch(console.error);
+  }
+
+  function handleDownloadProject(project) {
+    apiDownloadProjectAssets(project.id).catch(console.error);
+  }
+
+  async function downloadAsset(assetId, assetName) {
+    try {
+      const blob = await apiDownloadAsset(assetId);
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = assetName || 'asset';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error('下载失败', err);
+    }
+  }
+
   return (
     <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
       <div style={{
@@ -2078,7 +2327,7 @@ function ProjectAssetsPanel() {
         {projects.map((p) => (
           <ProjectListItem
             key={p.id}
-            project={p}
+            project={{ ...p, onRename: () => handleRenameProject(p), onDelete: () => handleDeleteProject(p), onDownload: () => handleDownloadProject(p) }}
             active={activeProject === p.id}
             onClick={() => { setActiveProject(p.id); exitBatch(); }}
           />
@@ -2140,12 +2389,16 @@ function ProjectAssetsPanel() {
           paddingLeft: '24px',
           paddingRight: '24px',
           display: 'flex',
-          flexDirection: activeCategory === 'audio' ? 'column' : 'row',
-          flexWrap: activeCategory === 'audio' ? 'nowrap' : 'wrap',
+          flexDirection: filtered.length === 0 ? 'column' : (activeCategory === 'audio' ? 'column' : 'row'),
+          flexWrap: filtered.length === 0 ? 'nowrap' : (activeCategory === 'audio' ? 'nowrap' : 'wrap'),
           gap: '8px',
-          alignContent: 'flex-start',
+          alignContent: filtered.length === 0 ? undefined : 'flex-start',
+          alignItems: filtered.length === 0 ? 'center' : undefined,
+          justifyContent: filtered.length === 0 ? 'center' : undefined,
         }}>
-          {filtered.map((asset) => (
+          {filtered.length === 0 ? (
+            <EmptyProjectAssets category={activeCategory} />
+          ) : filtered.map((asset) => (
             activeCategory === 'audio' ? (
               <AudioCard
                 key={asset.id}
@@ -2156,7 +2409,7 @@ function ProjectAssetsPanel() {
                 batchMode={batchMode}
                 onSelect={() => toggleSelect(asset.id)}
                 onStar={() => toggleStar(asset.id)}
-                onDownload={() => {}}
+                onDownload={() => downloadAsset(asset.id, asset.name)}
                 onDelete={() => deleteAsset(asset.id)}
               />
             ) : SUBJECT_CARD_CATEGORIES.has(activeCategory) ? (
@@ -2168,7 +2421,7 @@ function ProjectAssetsPanel() {
                 selected={batchMode && selected.has(asset.id)}
                 batchMode={batchMode}
                 onSelect={() => toggleSelect(asset.id)}
-                onDownload={() => {}}
+                onDownload={() => downloadAsset(asset.id, asset.name)}
                 onDelete={() => deleteAsset(asset.id)}
                 asset={asset}
               />
@@ -2184,7 +2437,7 @@ function ProjectAssetsPanel() {
                 assetType={activeCategory === 'storyboard_img' ? 'shot' : activeCategory === 'storyboard_video' ? 'shot_video' : 'asset'}
                 onSelect={() => toggleSelect(asset.id)}
                 onStar={() => toggleStar(asset.id)}
-                onDownload={() => {}}
+                onDownload={() => downloadAsset(asset.id, asset.name)}
                 onDelete={() => deleteAsset(asset.id)}
                 asset={asset}
               />
@@ -2192,6 +2445,287 @@ function ProjectAssetsPanel() {
           ))}
         </div>
       </div>
+
+      {/* Rename Modal — matches ProjectList RenameModal */}
+      {renameTarget && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 100,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            backdropFilter: 'blur(12px)',
+            WebkitBackdropFilter: 'blur(12px)',
+          }}
+          onClick={() => setRenameTarget(null)}
+        >
+          <div
+            style={{
+              width: '400px',
+              background: '#161616',
+              border: '1px solid rgba(255,255,255,0.08)',
+              borderRadius: '16px',
+              overflow: 'hidden',
+              display: 'flex',
+              flexDirection: 'column',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'space-between',
+                padding: '16px 24px',
+                background: '#161616',
+              }}
+            >
+              <span style={{ fontFamily: FONT_MEDIUM, fontWeight: 500, fontSize: '16px', lineHeight: '20px', color: '#FFFFFF' }}>
+                重命名
+              </span>
+              <button
+                type="button"
+                onClick={() => setRenameTarget(null)}
+                style={{
+                  width: '28px',
+                  height: '28px',
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  background: 'transparent',
+                  border: 'none',
+                  cursor: 'pointer',
+                  borderRadius: '6px',
+                  padding: 0,
+                }}
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path d="M2.667 2.667L13.333 13.333" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M2.667 13.333L13.333 2.667" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            </div>
+
+            <div style={{ padding: '8px 24px', background: '#161616' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.6)' }}>
+                  项目名称
+                </span>
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '8px',
+                    height: '36px',
+                    paddingLeft: '12px',
+                    paddingRight: '6px',
+                    borderRadius: '8px',
+                    background: '#1D1E1E',
+                    border: '1px solid rgba(255,255,255,0.08)',
+                    outline: '1px solid #00000080',
+                    outlineOffset: '0',
+                  }}
+                >
+                  <input
+                    autoFocus
+                    value={renameValue}
+                    onChange={(e) => setRenameValue(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter') confirmRename(); if (e.key === 'Escape') setRenameTarget(null); }}
+                    style={{
+                      flex: 1,
+                      background: 'transparent',
+                      border: 'none',
+                      outline: 'none',
+                      fontFamily: FONT,
+                      fontSize: '14px',
+                      lineHeight: '18px',
+                      color: '#FFFFFF',
+                      caretColor: '#2DC3E1',
+                    }}
+                  />
+                </div>
+              </div>
+            </div>
+
+            <div
+              style={{
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'flex-end',
+                gap: '16px',
+                padding: '16px 24px',
+                background: '#161616',
+              }}
+            >
+              <button
+                type="button"
+                onClick={() => setRenameTarget(null)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  height: '36px',
+                  flexShrink: 0,
+                  borderRadius: '8px',
+                  padding: '0 16px',
+                  gap: '4px',
+                  boxShadow: 'rgba(0,0,0,0.4) 3px 3px 8px',
+                  background: '#161616',
+                  border: '1px solid rgba(255,255,255,0.05)',
+                  outline: '1px solid #00000080',
+                  cursor: 'pointer',
+                  fontFamily: FONT,
+                  fontSize: '14px',
+                  lineHeight: '18px',
+                  color: 'rgba(255,255,255,0.6)',
+                }}
+              >
+                取消
+              </button>
+              <div
+                style={{
+                  display: 'flex',
+                  flexDirection: 'column',
+                  height: '36px',
+                  flexShrink: 0,
+                  borderRadius: '8px',
+                  boxShadow: 'rgba(0,0,0,0.4) 3px 3px 8px',
+                  outline: '1px solid #00000080',
+                  padding: '1px',
+                  backgroundImage: !renameValue.trim()
+                    ? 'linear-gradient(in oklab 180deg, #FFFFFF14, #FFFFFF14)'
+                    : 'linear-gradient(in oklab 148.76deg, oklab(94.7% -0.078 -0.022 / 30%) 3.64%, oklab(75.5% -0.102 -0.072 / 0%) 42.81%), linear-gradient(in oklab 180deg, #FFFFFF14, #FFFFFF14)',
+                  opacity: !renameValue.trim() ? 0.5 : 1,
+                  cursor: !renameValue.trim() ? 'not-allowed' : 'pointer',
+                }}
+                onClick={renameValue.trim() ? confirmRename : undefined}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    flexGrow: 1,
+                    borderRadius: '7px',
+                    padding: '0 15px',
+                    gap: '4px',
+                    background: '#161616',
+                  }}
+                >
+                  <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF', whiteSpace: 'nowrap' }}>
+                    确认
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal — matches ProjectList DeleteProjectDialog */}
+      {deleteTarget && (
+        <div
+          style={{
+            position: 'fixed',
+            inset: 0,
+            zIndex: 100,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            backgroundColor: 'rgba(0,0,0,0.5)',
+            backdropFilter: 'blur(12px)',
+            WebkitBackdropFilter: 'blur(12px)',
+          }}
+          onClick={() => setDeleteTarget(null)}
+        >
+          <div
+            style={{
+              width: '360px',
+              background: '#161616',
+              borderRadius: '16px',
+              padding: '24px',
+              display: 'flex',
+              flexDirection: 'column',
+              gap: '24px',
+              boxShadow: '#00000099 0px 8px 32px',
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                <span style={{ fontFamily: FONT_MEDIUM, fontWeight: 500, fontSize: '16px', lineHeight: '20px', color: '#FFFFFF' }}>
+                  确定要删除吗？
+                </span>
+                <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.6)' }}>
+                  「{deleteTarget.name}」将被永久删除，无法恢复。
+                </span>
+              </div>
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', cursor: 'pointer', borderRadius: '8px', padding: 0, flexShrink: 0 }}
+              >
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+                  <path d="M2.667 2.667L13.333 13.333" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M2.667 13.333L13.333 2.667" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              </button>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px' }}>
+              <button
+                type="button"
+                onClick={() => setDeleteTarget(null)}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  height: '36px',
+                  flexShrink: 0,
+                  borderRadius: '8px',
+                  paddingLeft: '16px',
+                  paddingRight: '16px',
+                  boxShadow: '#00000066 3px 3px 8px',
+                  backgroundColor: '#161616',
+                  border: '1px solid #FFFFFF14',
+                  outline: '1px solid #00000080',
+                  cursor: 'pointer',
+                  fontFamily: FONT,
+                  fontSize: '14px',
+                  lineHeight: '18px',
+                  color: 'rgba(255,255,255,0.6)',
+                }}
+              >
+                取消
+              </button>
+              <button
+                type="button"
+                onClick={confirmDeleteProject}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  justifyContent: 'center',
+                  height: '36px',
+                  flexShrink: 0,
+                  borderRadius: '8px',
+                  paddingLeft: '16px',
+                  paddingRight: '16px',
+                  backgroundColor: '#D13B3B',
+                  border: '1px solid rgba(255,255,255,0.2)',
+                  cursor: 'pointer',
+                  fontFamily: FONT_MEDIUM,
+                  fontWeight: 500,
+                  fontSize: '14px',
+                  lineHeight: '18px',
+                  color: '#FFFFFF',
+                }}
+              >
+                删除
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -2307,8 +2841,12 @@ function CreativeAssetsPanel() {
         display: 'flex',
         flexDirection: 'column',
         gap: '32px',
+        alignItems: days.length === 0 ? 'center' : undefined,
+        justifyContent: days.length === 0 ? 'center' : undefined,
       }}>
-        {days.map((day) => (
+        {days.length === 0 ? (
+          <EmptyCreativeAssets type={activeType} />
+        ) : days.map((day) => (
           <div key={day.date} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               <span style={{ fontFamily: FONT, fontSize: '14px', color: '#FFFFFF99', flexShrink: 0 }}>{day.date}</span>

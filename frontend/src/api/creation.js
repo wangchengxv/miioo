@@ -447,6 +447,12 @@ export async function apiGenerateCreation(params) {
   const refUrls = [];
   const refAssetIds = [];
   for (const f of files) {
+    // 已经有 URL 的资产（如「用作参考图」、资产库选择的图片），直接使用
+    if (f && typeof f === 'object' && !(f instanceof File) && f.url) {
+      refUrls.push(f.url);
+      if (f.assetId) refAssetIds.push(f.assetId);
+      continue;
+    }
     if (!(f instanceof File)) continue;
     try {
       const result = await apiUploadCreationImage({ file: f, category: 'reference', ...uploadContext });
@@ -500,17 +506,18 @@ export async function apiGenerateCreation(params) {
     const taskId = genData.task_id || genData.id;
     if (!taskId) throw new Error('No task_id returned');
 
-    const { images, cardIds } = await pollTask(
+    const pollResult = await pollTask(
       `${BASE}/api/creation/tasks/${taskId}`,
       (pollData) => {
         const imgs = pollData.images || [];
         return {
           images: imgs.map((img) => img.original_url || img.originalUrl || img.thumbnail_url || img.thumbnailUrl),
           cardIds: imgs.map((img) => img.id),
+          referenceImages: pollData.reference_images || pollData.referenceImages || [],
         };
       },
     );
-    return { taskId, images, cardIds };
+    return { taskId, images: pollResult.images, cardIds: pollResult.cardIds, referenceImages: pollResult.referenceImages };
   }
 
   // ── 视频生成 ────────────────────────────────────────────────────────────

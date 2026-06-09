@@ -32,7 +32,19 @@ export function adaptModels(backendModels, genType) {
     if (genType === 'image' && !cat.includes('image')) continue;
     if (genType === 'video' && !cat.includes('video')) continue;
 
-    options.push({ value: m.model_id, label: m.name });
+    const refModes = m.capabilities?.reference_modes || [];
+    const frameKeys = ['first_frame', 'last_frame', 'start_end', 'multiframe'];
+    const hasFrame = refModes.some(r => frameKeys.includes(r));
+    const hasFull = refModes.some(r => r === 'full') || refModes.length === 0;
+    // 「全能参考」对应的实际后端值：第一个非首尾帧的 reference_mode，或 'full'
+    const actualAllRefMode = refModes.find(r => !frameKeys.includes(r)) || 'full';
+    // 「首尾帧」对应的实际后端值（含 multiframe）
+    const actualFrameRefMode = refModes.find(r => frameKeys.includes(r)) || 'first_frame';
+    options.push({
+      value: m.model_id, label: m.name,
+      refModes, hasFrame, hasFull,
+      actualAllRefMode, actualFrameRefMode,
+    });
 
     if (m.capabilities && typeof m.capabilities === 'object' && Object.keys(m.capabilities).length > 0) {
       caps[m.model_id] = m.capabilities;
@@ -60,15 +72,28 @@ export function getModelParams(genType, modelId, capabilitiesMap) {
 function getImageModelParamsFromCap(capabilities) {
   // Support both backend format and local config format
   const hasBackendFormat = capabilities.resolution_size_map !== undefined
-    || capabilities.supported_resolutions !== undefined;
+    || capabilities.supported_resolutions !== undefined
+    || capabilities.supported_sizes !== undefined;
 
   let resolutions, ratios, resolutionRatios, maxCount;
 
   if (hasBackendFormat) {
     // Backend format: resolution_size_map + supported_resolutions + supported_aspect_ratios
     const sizeMap = capabilities.resolution_size_map || {};
-    resolutions = (capabilities.supported_resolutions || [])
+    const supportedResolutions = (capabilities.supported_resolutions?.length ? capabilities.supported_resolutions : capabilities.supported_sizes) || [];
+    resolutions = supportedResolutions
       .filter(r => sizeMap[r] && Object.keys(sizeMap[r]).length > 0);
+
+    // Fallback: if resolution_size_map filtering yields empty results,
+    // use supported_resolutions directly (each model has its own resolution set)
+    if (resolutions.length === 0 && supportedResolutions.length > 0) {
+      resolutions = supportedResolutions;
+      const aspectRatiosAll = (capabilities.supported_aspect_ratios || [])
+        .filter(r => /^\d+:\d+$/.test(r));
+      resolutionRatios = Object.fromEntries(
+        supportedResolutions.map(r => [r, aspectRatiosAll])
+      );
+    }
 
     // Filter out non-standard ratios like 'adaptive'
     const aspectRatios = (capabilities.supported_aspect_ratios || [])
@@ -81,7 +106,9 @@ function getImageModelParamsFromCap(capabilities) {
     }));
 
     // Build resolutionRatios from sizeMap: which ratios are available per resolution
-    resolutionRatios = {};
+    if (!resolutionRatios) {
+      resolutionRatios = {};
+    }
     for (const res of resolutions) {
       const map = sizeMap[res] || {};
       resolutionRatios[res] = Object.keys(map).filter(r => /^\d+:\d+$/.test(r));
@@ -90,6 +117,14 @@ function getImageModelParamsFromCap(capabilities) {
     maxCount = Math.min(capabilities.max_output_images || 4, 4);
   } else {
     // Local config format: resolutions = { "2K": [{ratio, width, height}, ...] }
+
+    if (!capabilities.resolutions || typeof capabilities.resolutions !== 'object') {
+      return {
+        ratios: [], resolutionRatios: {}, resolutions: [], counts: [],
+        defaults: { ratio: '', resolution: '', count: '' },
+      };
+    }
+
     resolutions = Object.keys(capabilities.resolutions || {})
       .filter(k => capabilities.resolutions[k] !== null);
 
@@ -130,7 +165,8 @@ function getImageModelParamsFromCap(capabilities) {
 function getVideoModelParamsFromCap(capabilities) {
   // Support both backend format and local config format
   const hasBackendFormat = capabilities.supported_durations !== undefined
-    || capabilities.supported_resolutions !== undefined;
+    || capabilities.supported_resolutions !== undefined
+    || capabilities.supported_sizes !== undefined;
 
   let ratios, resolutions, durations, refModes, supportsAudio;
 
@@ -146,7 +182,7 @@ function getVideoModelParamsFromCap(capabilities) {
       h: parseInt(ratio.split(':')[1]),
     }));
 
-    resolutions = capabilities.supported_resolutions || [];
+    resolutions = (capabilities.supported_resolutions?.length ? capabilities.supported_resolutions : capabilities.supported_sizes) || [];
 
     // Durations come as string array ["4", "5", ..., "12"]
     const durationNums = (capabilities.supported_durations || [])
@@ -154,21 +190,17 @@ function getVideoModelParamsFromCap(capabilities) {
       .filter(n => !isNaN(n));
     durations = durationNums.map(d => `${d}s`);
 
-    // Reference modes mapping
+    // Reference modes mapping: only two categories — 全能参考 / 首尾帧
     const backendRefModes = capabilities.reference_modes || [];
     refModes = [];
-    if (backendRefModes.includes('full')) refModes.push({ value: 'all', label: '全能参考' });
-    if (backendRefModes.includes('first_frame') && backendRefModes.includes('last_frame')) {
-      refModes.push({ value: 'frame', label: '首尾帧' });
-    } else if (backendRefModes.includes('first_frame')) {
-      refModes.push({ value: 'first_frame', label: '首帧' });
-    }
-    if (capabilities.max_reference_images > 1 && !refModes.some(r => r.value === 'multi')) {
-      refModes.push({ value: 'multi', label: '智能多帧' });
-    }
-    if (backendRefModes.includes('video_ref')) {
-      refModes.push({ value: 'video_ref', label: '视频参考' });
-    }
+    // 首尾帧: first_frame / last_frame / start_end / multiframe
+    const frameKeys = ['first_frame', 'last_frame', 'start_end', 'multiframe'];
+    const hasFrame = backendRefModes.some(r => frameKeys.includes(r));
+    // 全能参考: 只要存在非首尾帧的项（如 full / video_ref），或为空则默认全能
+    const nonFrame = backendRefModes.filter(r => !frameKeys.includes(r));
+    const hasAll = nonFrame.length > 0 || backendRefModes.length === 0;
+    if (hasAll) refModes.push({ value: 'all', label: '全能参考' });
+    if (hasFrame) refModes.push({ value: 'frame', label: '首尾帧' });
 
     // Audio support
     supportsAudio = capabilities.supports_reference_audio || false;
@@ -195,11 +227,13 @@ function getVideoModelParamsFromCap(capabilities) {
 
     refModes = [];
     const cat = capabilities.category || [];
-    if (cat.includes('multi-modal-ref')) refModes.push({ value: 'all', label: '全能参考' });
-    if (cat.includes('first-last-frame')) refModes.push({ value: 'frame', label: '首尾帧' });
-    if (capabilities.features?.multiImageInput && !refModes.some(r => r.value === 'multi')) {
-      refModes.push({ value: 'multi', label: '智能多帧' });
+    // 首尾帧: first-last-frame 或 multiframe
+    if (cat.includes('first-last-frame') || cat.includes('multiframe')) {
+      refModes.push({ value: 'frame', label: '首尾帧' });
     }
+    // 全能参考: multi-modal-ref 或 cat 为空
+    const hasAllLocal = cat.includes('multi-modal-ref') || cat.length === 0;
+    if (hasAllLocal) refModes.push({ value: 'all', label: '全能参考' });
 
     supportsAudio = Array.isArray(capabilities.inputAudio?.formats)
       && capabilities.inputAudio.formats.length > 0;
