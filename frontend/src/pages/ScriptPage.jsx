@@ -3,7 +3,7 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { Markdown } from 'tiptap-markdown';
 import ReactMarkdown from 'react-markdown';
-import { apiSaveScriptWorkspace, apiGetScriptWorkspace, apiChatScriptWorkspaceStream, apiUploadScriptWorkspace, apiFinalizeScriptWorkspace } from '../api/subject';
+import { apiSaveScriptWorkspace, apiGetScriptWorkspace, apiChatScriptWorkspaceStream, apiUploadScriptWorkspace, apiFinalizeScriptWorkspace, apiUpdateEpisode, apiGetEpisodes } from '../api/subject';
 import { apiListModels } from '../api/config';
 import { PulsingBorder } from '@paper-design/shaders-react';
 import DotsLoading from '../components/DotsLoading';
@@ -1811,11 +1811,13 @@ export default function ScriptPage({ projectId, onGoToSubject, isExtractingSubje
   );
 
   useEffect(() => {
-    onEpisodesChange?.(outline.map((item) => ({ id: item.id, title: item.title, episode_number: item.episode_number })));
-  }, [outline, onEpisodesChange]);
-  const episodeRailLoading = hasStarted && (phase === 'thinking' || phase === 'streaming');
+    if (backendEpisodes) {
+      onEpisodesChange?.(backendEpisodes.map((ep) => ({ id: ep.id, title: ep.title, episode_number: ep.episode_number })));
+    }
+  }, [backendEpisodes, onEpisodesChange]);
   const safeSelectedEpisode = outline.length > 0 ? Math.min(selectedEpisode, outline.length - 1) : 0;
 
+  const episodeRailLoading = hasStarted && (phase === "thinking" || phase === "streaming");
   const handleStop = useCallback(() => {
     // 中止流式请求，后续状态由 handleSend 的 catch(AbortError) 分支处理
     abortControllerRef.current?.abort();
@@ -2001,19 +2003,42 @@ export default function ScriptPage({ projectId, onGoToSubject, isExtractingSubje
         await apiSaveScriptWorkspace(projectId, { content: draftContent });
       }
 
-      // 2. 定稿：拆分为分集
+      // 2. 从编辑内容解析分集结构（## 标题 + 序号），确保定稿时传给后端
+      const parsedEpisodes = parseScriptOutline(draftContent)
+        .filter(item => item.level === 2)
+        .map((item, i) => ({
+          title: item.title,
+          episode_number: i + 1,
+        }));
+      const resolvedEpisodeCount = episodeCount ?? (parsedEpisodes.length > 0 ? parsedEpisodes.length : null);
+
+      // 3. 定稿：拆分为分集
       if (projectId) {
         const finalizeResult = await apiFinalizeScriptWorkspace(projectId, {
-          episode_count: episodeCount,
+          episode_count: resolvedEpisodeCount,
           model: selectedModel,
         });
         // 兼容后端可能返回的不同字段名：items / episodes / data
         const episodesFromFinalize = finalizeResult?.items || finalizeResult?.episodes || finalizeResult?.data;
         if (Array.isArray(episodesFromFinalize) && episodesFromFinalize.length > 0) {
-          setBackendEpisodes(episodesFromFinalize);
+          // 重新获取分集列表（含正确 ID），再用每集 content 中第一个 ## 标题更新
+          const episodesWithIds = await apiGetEpisodes(projectId);
+          if (Array.isArray(episodesWithIds)) {
+           for (const ep of episodesWithIds) {
+             const firstHeading = ep.content?.match(/^##\s+(.+)/m)?.[1];
+             if (firstHeading && firstHeading !== ep.title) {
+               try {
+                 await apiUpdateEpisode(projectId, ep.id, { title: firstHeading });
+                ep.title = firstHeading;
+               } catch (e) {
+                 console.error('更新分集标题失败:', e);
+               }
+             }
+           }
+            setBackendEpisodes(episodesWithIds);
+          }
         }
       }
-
       setScriptContent(draftContent);
       setPhase('view');
       onScriptFinalized?.();

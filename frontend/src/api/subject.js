@@ -508,18 +508,17 @@ export async function apiUploadScriptWorkspace(projectId, file) {
 }
 
 export async function apiFinalizeScriptWorkspace(projectId, { episode_count, model } = {}) {
+  const body = { split_mode: 'rule_first' };
+  if (model) body.model = model;
+  if (episode_count != null) body.episode_count = episode_count;
+
   const res = await authFetch(
     `${BASE}/api/projects/${projectId}/script-workspace/finalize`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        episode_count: episode_count ?? null,
-        model: model ?? null,
-        split_mode: 'rule_first',
-      }),
+      body: JSON.stringify(body),
     }
   );
   return res.json();
 }
-
