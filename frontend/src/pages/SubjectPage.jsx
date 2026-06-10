@@ -304,7 +304,7 @@ function EpisodeSelector({ episodes, value, onChange }) {
 
 // ── Toolbar ────────────────────────────────────────────────────────────────
 
-function Toolbar({ projectName, onBack, onAddChar, onBatchGen, onStartStoryboard, addLabel = '添加角色', tabLabel = '角色', isGeneratingStoryboards = false }) {
+function Toolbar({ projectName, onBack, onAddChar, onBatchGen, onStartStoryboard, addLabel = '添加角色', tabLabel = '角色' }) {
   const [arrowHovered, setArrowHovered] = useState(false);
   return (
     <div className="flex items-center justify-between self-stretch shrink-0">
@@ -350,8 +350,8 @@ function Toolbar({ projectName, onBack, onAddChar, onBatchGen, onStartStoryboard
         <PrimaryButton
           label="开始智能分镜"
           onClick={onStartStoryboard}
-          disabled={isGeneratingStoryboards}
-          loading={isGeneratingStoryboards}
+          disabled={false}
+          loading={false}
           icon={
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
               <path d="M5.333 2H2.667C2.298 2 2 2.298 2 2.667V5.333" stroke="#090909" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
@@ -2283,11 +2283,38 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', onClose, onCom
 
 // ── Main export ────────────────────────────────────────────────────────────
 
-export default function SubjectPage({ projectId, projectName = '两只老虎的奇遇', onBack, onUnlockStep, onStartStoryboard, isGeneratingStoryboards = false, isStoryboardGenerated = false, initialTab = 'char', chars: externalChars, onCharsChange, scenes: externalScenes, onScenesChange, props: externalProps, onPropsChange }) {
+export default function SubjectPage({ projectId, projectName = '两只老虎的奇遇', onBack, onUnlockStep, onStartStoryboard, onExtractSubjects, extractError = null, initialTab = 'char', chars: externalChars, onCharsChange, scenes: externalScenes, onScenesChange, props: externalProps, onPropsChange }) {
   const [activeTab, setActiveTab] = useState(initialTab);
   const [episodes, setEpisodes] = useState([]);
   const [activeEpisode, setActiveEpisode] = useState('');
   const [batchGenOpen, setBatchGenOpen] = useState(false);
+  const [isExtracting, setIsExtracting] = useState(false);
+  const [extractAttempted, setExtractAttempted] = useState(false);
+
+  // 挂载时自动调用提取主体（仅当数据为空且未尝试过）
+  useEffect(() => {
+    if (!onExtractSubjects) return;
+    const hasAnyData = (externalChars && externalChars.length > 0) || (externalScenes && externalScenes.length > 0) || (externalProps && externalProps.length > 0);
+    if (hasAnyData || extractAttempted) return;
+    setExtractAttempted(true);
+    setIsExtracting(true);
+    onExtractSubjects().finally(() => {
+      setIsExtracting(false);
+    });
+  }, [onExtractSubjects, externalChars, externalScenes, externalProps, extractAttempted]);
+
+  // 循环 loading 文案
+  const [loadingTextIndex, setLoadingTextIndex] = useState(0);
+  const loadingTexts = ['正在抽取剧本灵魂', '正在抽取剧本主角', '正在抽取剧本配角', '正在抽取场景', '正在抽取道具'];
+
+  useEffect(() => {
+    if (!isExtracting) return;
+    const timer = setInterval(() => {
+      setLoadingTextIndex(prev => (prev + 1) % loadingTexts.length);
+    }, 2500);
+    return () => clearInterval(timer);
+  }, [isExtracting]);
+
   const [batchGenerating, setBatchGenerating] = useState(false);
   const [batchToast, setBatchToast] = useState(null);
   const batchToastTimerRef = useRef(null);
@@ -2560,14 +2587,75 @@ export default function SubjectPage({ projectId, projectName = '两只老虎的�
     if (chars.length > 0) onUnlockStep?.('subject');
   }, [chars.length]);
 
-  // 开始智能分镜：已生成过 → 二次确认弹窗；首次 → 直接调生成接口
+  // 开始智能分镜：跳转到分镜页（由 Home 处理解锁和导航）
   const handleStartStoryboardRequest = () => {
-    if (isStoryboardGenerated) {
-      setConfirmStoryboardOpen(true);
-    } else {
-      onStartStoryboard?.();
-    }
+    onStartStoryboard?.();
   };
+
+  // 判断是否显示 loading / 错误态
+  const allEmpty = (!externalChars || externalChars.length === 0) && (!externalScenes || externalScenes.length === 0) && (!externalProps || externalProps.length === 0);
+  const showLoading = isExtracting && allEmpty;
+  const showError = !!extractError && allEmpty;
+
+  if (showLoading) {
+    return (
+      <div
+        style={{
+          position: 'absolute', inset: 0, marginBottom: '24px', marginRight: '32px',
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', gap: '16px',
+          backgroundColor: '#161616', borderRadius: '16px',
+          border: '1px solid #FFFFFF14',
+        }}
+      >
+        <DotsLoading size={4} color="#2DC3E1" gap={4} />
+        <span style={{ fontFamily: "'AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif", fontSize: '12px', color: '#FFFFFF99' }}>
+          {loadingTexts[loadingTextIndex]}
+        </span>
+      </div>
+    );
+  }
+
+  if (showError) {
+    return (
+      <div
+        style={{
+          position: 'absolute', inset: 0, marginBottom: '24px', marginRight: '32px',
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', gap: '24px',
+          backgroundColor: '#161616', borderRadius: '16px',
+          border: '1px solid #FFFFFF14',
+        }}
+      >
+        <svg width="32" height="32" viewBox="0 0 32 32" fill="none" style={{ flexShrink: 0 }}>
+          <circle cx="16" cy="16" r="15" stroke="#FFFFFF66" strokeWidth="1.5" />
+          <circle cx="10" cy="13" r="2" fill="#FFFFFF66" />
+          <circle cx="22" cy="13" r="2" fill="#FFFFFF66" />
+          <path d="M10 23 Q16 19 22 23" stroke="#FFFFFF66" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+        <span style={{ fontFamily: "'AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif", fontSize: '14px', color: '#FFFFFF99' }}>
+          糟糕，提取主体失败了，待会儿再试试吧！
+        </span>
+        <button
+          type="button"
+          onClick={() => {
+            setIsExtracting(true);
+            onExtractSubjects?.().finally(() => setIsExtracting(false));
+          }}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            height: '36px', borderRadius: '8px', paddingInline: '16px',
+            backgroundColor: '#2DC3E1', border: '1px solid #FFFFFF33',
+            cursor: 'pointer', outline: '1px solid #00000080',
+            fontFamily: "'AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif",
+            fontSize: '14px', lineHeight: '18px', color: '#090909',
+          }}
+        >
+          重新提取主体
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -2589,7 +2677,6 @@ export default function SubjectPage({ projectId, projectName = '两只老虎的�
         onAddChar={handleAdd}
         onBatchGen={() => setBatchGenOpen(true)}
         onStartStoryboard={handleStartStoryboardRequest}
-        isGeneratingStoryboards={isGeneratingStoryboards}
         tabLabel={TABS.find((t) => t.key === activeTab)?.label ?? '主体'}
       />
 

@@ -532,7 +532,7 @@ function BatchImageModal({ shotCount, onClose, onConfirm }) {
           const modelId = m.model_id || m.id;
           const name = m.name || '';
           const caps = m.capabilities || {};
-          const resolutions = caps.supported_resolutions || [];
+          const resolutions = (caps.supported_resolutions?.length ? caps.supported_resolutions : caps.supported_sizes) || [];
           return { value: modelId, label: name || modelId, capabilities: caps, resolutions };
         });
         setModelList(merged);
@@ -618,7 +618,7 @@ function BatchVideoModal({ shotCount, onClose, onConfirm }) {
           const modelId = m.model_id || m.id;
           const name = m.name || '';
           const caps = m.capabilities || {};
-          const resolutions = caps.supported_resolutions || [];
+          const resolutions = (caps.supported_resolutions?.length ? caps.supported_resolutions : caps.supported_sizes) || [];
           // 时长：优先用后端 capabilities 中的时长范围，其次用本地能力表兜底
           let durationRange = caps.supported_duration_range || null;
           if (!durationRange) {
@@ -1867,12 +1867,18 @@ function GenerateImagePanel({ shot, projectId, chars = [], scenes = [], props = 
 
   // 获取当前模型支持的分辨率（从后端 capabilities 派生）
   const currentModel = useMemo(() => modelList.find(m => m.value === model), [model, modelList]);
-  const availableResolutions = currentModel?.capabilities?.supported_resolutions || [];
+  const availableResolutions = (() => {
+    const caps = currentModel?.capabilities || {};
+    return (caps.supported_resolutions?.length ? caps.supported_resolutions : caps.supported_sizes) || [];
+  })();
 
   // 当模型切换时，重置分辨率
-  const currentResolutions = currentModel?.capabilities?.supported_resolutions;
+  const currentResolutions = (() => {
+    const caps = currentModel?.capabilities || {};
+    return (caps.supported_resolutions?.length ? caps.supported_resolutions : caps.supported_sizes) || [];
+  })();
   useEffect(() => {
-    if (currentResolutions?.length > 0) {
+    if (currentResolutions.length > 0) {
       setResolution(currentResolutions[0]);
     }
   }, [model, currentResolutions]);
@@ -2157,8 +2163,9 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
           const first = allModels[0];
           setModel(first.value);
           const caps = first.capabilities;
-          if (caps?.supported_resolutions?.length > 0) {
-            setResolution(caps.supported_resolutions[0]);
+          {
+            const resList = (caps?.supported_resolutions?.length ? caps.supported_resolutions : caps?.supported_sizes) || [];
+            if (resList.length > 0) setResolution(resList[0]);
           }
         }
       } catch {
@@ -4944,13 +4951,39 @@ const INITIAL_SHOTS = [
 
 const EPISODES = ['第一集', '第二集'];
 
-export default function StoryboardPage({ projectId, projectName = '两只老虎的奇遇', chars = [], scenes = [], props = [], episodes = EPISODES, onUnlockStep, onVideoGenerated }) {
+export default function StoryboardPage({ projectId, projectName = '两只老虎的奇遇', chars = [], scenes = [], props = [], episodes = EPISODES, onUnlockStep, onVideoGenerated, onGenerateStoryboards, generateError = null }) {
   const activeEpisodes = episodes.length > 0 ? episodes : EPISODES;
   const [shots, setShots] = useState([]);
   const [globalVoiceParams, setGlobalVoiceParams] = useState({});
   const [episode, setEpisode] = useState(() => activeEpisodes[0] ?? '第一集');
   const [dragId, setDragId] = useState(null);
   const [overId, setOverId] = useState(null);
+  const [isGenerating, setIsGenerating] = useState(false);
+  const [genAttempted, setGenAttempted] = useState(false);
+
+  // 挂载时自动调用智能分镜生成（仅当分镜为空、未尝试过、且无已有错误）
+  useEffect(() => {
+    if (!onGenerateStoryboards) return;
+    if (shots.length > 0 || generateError || genAttempted) return;
+    setGenAttempted(true);
+    setIsGenerating(true);
+    onGenerateStoryboards().finally(() => {
+      setIsGenerating(false);
+    });
+  }, [onGenerateStoryboards, shots.length, generateError, genAttempted]);
+
+  // 循环 loading 文案
+  const [loadingTextIndex, setLoadingTextIndex] = useState(0);
+  const loadingTexts = ['正在智能分镜中', '请稍等', '等待时间大约5分钟', '请耐心等待'];
+
+  useEffect(() => {
+    if (!isGenerating) return;
+    const timer = setInterval(() => {
+      setLoadingTextIndex(prev => (prev + 1) % loadingTexts.length);
+    }, 3000);
+    return () => clearInterval(timer);
+  }, [isGenerating]);
+
   const [generatingImages, setGeneratingImages] = useState(false);
   const [generatingVideos, setGeneratingVideos] = useState(false);
   const [generatingImageShotIds, setGeneratingImageShotIds] = useState(new Set());
@@ -5286,6 +5319,84 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
     });
     setDragId(null);
     setOverId(null);
+  }
+
+  // 判断是否显示 loading / 错误态
+  const showGeneratingLoading = isGenerating && shots.length === 0;
+  const showGeneratingError = !!generateError && shots.length === 0;
+
+  if (showGeneratingLoading) {
+    return (
+      <div style={{
+        position: 'absolute', inset: 0, marginBottom: '24px', marginRight: '32px',
+        display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center', gap: '16px',
+        backgroundColor: '#161616', borderRadius: '16px',
+        border: '1px solid rgba(255,255,255,0.08)',
+      }}>
+        <DotsLoading size={4} color="#2DC3E1" gap={4} />
+        <span style={{ fontFamily: "'AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif", fontSize: '12px', color: '#FFFFFF99' }}>
+          {loadingTexts[loadingTextIndex]}
+        </span>
+      </div>
+    );
+  }
+
+  if (showGeneratingError) {
+    return (
+      <div style={{
+        position: 'absolute', inset: 0, marginBottom: '24px', marginRight: '32px',
+        display: 'flex', flexDirection: 'column',
+        alignItems: 'center', justifyContent: 'center', gap: '24px',
+        backgroundColor: '#161616', borderRadius: '16px',
+        border: '1px solid rgba(255,255,255,0.08)',
+      }}>
+        <svg width="32" height="32" viewBox="0 0 32 32" fill="none" style={{ flexShrink: 0 }}>
+          <circle cx="16" cy="16" r="15" stroke="#FFFFFF66" strokeWidth="1.5" />
+          <circle cx="10" cy="13" r="2" fill="#FFFFFF66" />
+          <circle cx="22" cy="13" r="2" fill="#FFFFFF66" />
+          <path d="M10 23 Q16 19 22 23" stroke="#FFFFFF66" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+        <span style={{ fontFamily: "'AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif", fontSize: '14px', color: '#FFFFFF99' }}>
+          糟糕，智能分镜失败了，待会儿再试试吧！
+        </span>
+        <button
+          type="button"
+          onClick={() => {
+            setIsGenerating(true);
+            onGenerateStoryboards?.().finally(() => setIsGenerating(false));
+          }}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            height: '36px', borderRadius: '8px', paddingInline: '16px',
+            backgroundColor: '#2DC3E1', border: '1px solid #FFFFFF33',
+            cursor: 'pointer', outline: '1px solid #00000080',
+            fontFamily: "'AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif",
+            fontSize: '14px', lineHeight: '18px', color: '#090909',
+          }}
+        >
+          重新提取分镜
+        </button>
+        <button
+          type="button"
+          onClick={addNewShot}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            height: '36px', borderRadius: '8px', paddingInline: '16px',
+            backgroundColor: '#161616',
+            border: '1px solid rgba(255, 255, 255, 0.08)',
+            cursor: 'pointer',
+            outline: '1px solid rgba(0, 0, 0, 0.50)',
+            boxShadow: 'rgba(0, 0, 0, 0.40) 3px 3px 8px',
+            fontFamily: "'AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif",
+            fontSize: '14px', fontWeight: 400, lineHeight: '18px',
+            color: 'rgba(255, 255, 255, 0.60)',
+          }}
+        >
+          手动添加分镜
+        </button>
+      </div>
+    );
   }
 
   return (

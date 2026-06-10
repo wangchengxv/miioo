@@ -1637,7 +1637,7 @@ function ScriptPanel({
   const showActions = phase === 'view' || phase === 'edit';
 
   // 按钮禁用：无剧本 / 提取中
-  const isExtractDisabled = !scriptContent || isExtractingSubjects;
+  const isExtractDisabled = !scriptContent;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', alignSelf: 'stretch', minHeight: 0, flex: 1 }}>
@@ -1719,16 +1719,12 @@ function ScriptPanel({
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
             <PrimaryBtn onClick={isExtractDisabled ? undefined : onExtractRequest} disabled={isExtractDisabled}>
               <span style={{ fontFamily: FONT_MEDIUM, fontSize: '14px', lineHeight: '18px', color: '#090909', whiteSpace: 'nowrap' }}>
-                {isExtractingSubjects ? '提取中...' : '开始提取主体'}
+                开始提取主体
               </span>
-              {isExtractingSubjects ? (
-                <DotsLoading size={3} color="#090909" gap={3} />
-              ) : (
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                  <path d="M14 8H2" stroke="#090909" strokeLinecap="round" strokeLinejoin="round" />
-                  <path d="M10 4L14 8L10 12" stroke="#090909" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
-              )}
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                <path d="M14 8H2" stroke="#090909" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M10 4L14 8L10 12" stroke="#090909" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
             </PrimaryBtn>
           </div>
         </div>
@@ -1737,7 +1733,7 @@ function ScriptPanel({
   );
 }
 
-export default function ScriptPage({ projectId, onGoToSubject, isExtractingSubjects = false, isSubjectUnlocked = false, onScriptFinalized, onEpisodesChange, phase: phaseProp, onPhaseChange, hasStarted: hasStartedProp, onHasStartedChange, scriptContent: scriptContentProp, onScriptContentChange, draftContent: draftContentProp, onDraftContentChange }) {
+export default function ScriptPage({ projectId, onGoToSubject, onScriptFinalized, onEpisodesChange, phase: phaseProp, onPhaseChange, hasStarted: hasStartedProp, onHasStartedChange, scriptContent: scriptContentProp, onScriptContentChange, draftContent: draftContentProp, onDraftContentChange }) {
   const [phaseLocal, setPhaseLocalRaw] = useState('initial');
   const [hasStartedLocal, setHasStartedLocalRaw] = useState(false);
   const [scriptContentLocal, setScriptContentLocalRaw] = useState('');
@@ -1764,7 +1760,6 @@ export default function ScriptPage({ projectId, onGoToSubject, isExtractingSubje
   const [backendEpisodes, setBackendEpisodes] = useState(null);
   const [toasts, setToasts] = useState([]);
   const [isSaving, setIsSaving] = useState(false);
-  const [confirmExtractOpen, setConfirmExtractOpen] = useState(false);
   const renderedContentRef = useRef(null);
   const editorContentRef = useRef(null);
   const abortControllerRef = useRef(null); // 用于取消进行中的流式请求
@@ -2058,11 +2053,7 @@ export default function ScriptPage({ projectId, onGoToSubject, isExtractingSubje
 
   // 提取主体按钮点击：已提取过主体 → 弹窗二次确认（覆盖风险）；首次 → 直接提取
   const handleExtractRequest = () => {
-    if (isSubjectUnlocked) {
-      setConfirmExtractOpen(true);
-    } else {
-      onGoToSubject?.('char');
-    }
+    onGoToSubject?.('char');
   };
 
   const handleSelectEpisode = useCallback(
@@ -2132,8 +2123,7 @@ export default function ScriptPage({ projectId, onGoToSubject, isExtractingSubje
                   onSave={handleSave}
                   onCancelEdit={handleCancelEdit}
                   onExtractRequest={handleExtractRequest}
-                  isExtractingSubjects={isExtractingSubjects}
-                  isSubjectUnlocked={isSubjectUnlocked}
+
                   onStreamingDone={handleStreamingDone}
                   onActiveIndexChange={setSelectedEpisode}
                   renderedContentRef={renderedContentRef}
@@ -2162,14 +2152,6 @@ export default function ScriptPage({ projectId, onGoToSubject, isExtractingSubje
       )}
     </div>
     <Toast toasts={toasts} />
-    {confirmExtractOpen && (
-      <ConfirmExtractModal
-        onConfirm={() => {
-          setConfirmExtractOpen(false);
-          onGoToSubject?.('char');
-        }}
-        onCancel={() => setConfirmExtractOpen(false)}
-      />
-    )}
+
     </>  );
 }

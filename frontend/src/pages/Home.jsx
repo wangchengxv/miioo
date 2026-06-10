@@ -769,8 +769,8 @@ export default function Home({ onProjectCreated }) {
   const [sharedChars, setSharedChars] = useState(null);
   const [sharedScenes, setSharedScenes] = useState(null);
   const [sharedProps, setSharedProps] = useState(null);
-  const [isExtractingSubjects, setIsExtractingSubjects] = useState(false);
-  const [isGeneratingStoryboards, setIsGeneratingStoryboards] = useState(false);
+  const [extractError, setExtractError] = useState(null);
+  const [generateError, setGenerateError] = useState(null);
   // 自上次提取主体后，剧本是否又重新定稿过（用于控制"开始提取主体"按钮行为）
   const [scriptFinalizedSinceExtraction, setScriptFinalizedSinceExtraction] = useState(false);
   const [scriptEpisodes, setScriptEpisodes] = useState([]);
@@ -860,6 +860,8 @@ export default function Home({ onProjectCreated }) {
   const loadProjectDetails = async (projectId) => {
     setIsLoadingProject(true);
     try {
+      // 0. 先重置步骤为默认值，防止 activeProject 切换时 useEffect 把旧项目的 step 写入新项目缓存
+      setActiveStep('script');
       // 1. 加载项目基本信息
       const projectData = await apiGetProject(projectId);
       setActiveProject(projectData);
@@ -1032,6 +1034,113 @@ export default function Home({ onProjectCreated }) {
     });
   };
 
+  // 提取主体回调（由 SubjectPage 在挂载时调用）
+  const handleExtractSubjects = async () => {
+    setExtractError(null);
+    try {
+      let freshEpisodes = await apiGetEpisodes(activeProject.id).catch(() => []);
+      let episodesToExtract = (freshEpisodes || []).filter(ep => ep.id);
+
+      if (episodesToExtract.length === 0 && scriptContent) {
+        const finalizeResult = await apiFinalizeScriptWorkspace(activeProject.id, {
+          episode_count: null,
+          model: null,
+        });
+        const finalized = finalizeResult?.items || finalizeResult?.episodes || finalizeResult?.data;
+        if (Array.isArray(finalized) && finalized.length > 0) {
+          freshEpisodes = finalized;
+          episodesToExtract = finalized.filter(ep => ep.id);
+          setScriptEpisodes(freshEpisodes);
+          handleScriptFinalized?.();
+        }
+      }
+
+      const [existingChars] = await Promise.all([
+        apiGetSubjects(activeProject.id, { type: 'character' }).catch(() => []),
+      ]);
+      const hasExistingSubjects = Array.isArray(existingChars) && existingChars.length > 0;
+
+      if (!hasExistingSubjects && episodesToExtract.length > 0) {
+        await Promise.allSettled(
+          episodesToExtract.map(ep =>
+            apiExtractSubjectsFromEpisode(activeProject.id, ep.id).catch(err => {
+              console.error(`提取剧集 ${ep.id} 主体失败:`, err);
+            })
+          )
+        );
+      }
+
+      const [charsData, scenesData, propsData] = await Promise.all([
+        apiGetSubjects(activeProject.id, { type: 'character' }).catch(() => []),
+        apiGetSubjects(activeProject.id, { type: 'scene' }).catch(() => []),
+        apiGetSubjects(activeProject.id, { type: 'prop' }).catch(() => []),
+      ]);
+      const normalizedChars = normalizeSubjects(charsData);
+      const normalizedScenes = normalizeSubjects(scenesData);
+      const normalizedProps = normalizeSubjects(propsData);
+
+      if (normalizedChars.length === 0 && normalizedScenes.length === 0 && normalizedProps.length === 0) {
+        setExtractError('提取主体失败，请稍后重试');
+        showToast('提取主体失败，请稍后重试', 'error');
+        return;
+      }
+
+      setSharedChars(normalizedChars);
+      setSharedScenes(normalizedScenes);
+      setSharedProps(normalizedProps);
+      setScriptEpisodes(freshEpisodes);
+      setScriptFinalizedSinceExtraction(false);
+      if (activeProject?.id) {
+        localStorage.setItem(`miioo_finalized_since_extraction_${activeProject.id}`, 'false');
+      }
+    } catch (err) {
+      console.error('提取主体失败:', err);
+      setExtractError('提取主体失败，请重试');
+      showToast('提取主体失败，请重试', 'error');
+    }
+  };
+
+  // 智能分镜生成回调（由 StoryboardPage 在挂载时调用）
+  const handleGenerateStoryboards = async () => {
+    setGenerateError(null);
+    try {
+      let freshEpisodes = await apiGetEpisodes(activeProject.id).catch(() => []);
+      if (freshEpisodes.length === 0 && scriptContent) {
+        const finalizeResult = await apiFinalizeScriptWorkspace(activeProject.id, {
+          episode_count: null, model: null,
+        });
+        const finalized = finalizeResult?.items || finalizeResult?.episodes || finalizeResult?.data;
+        if (Array.isArray(finalized) && finalized.length > 0) {
+          freshEpisodes = finalized;
+          setScriptEpisodes(freshEpisodes);
+        }
+      }
+      await apiGenerateStoryboardsFromFinalScript(activeProject.id);
+    } catch (err) {
+      console.error('智能分镜生成失败:', err);
+      const status = err?.status;
+      const msg = err?.message || String(err);
+      let errorMsg;
+      if (status === 502) {
+        errorMsg = '服务器繁忙，请稍后重试';
+      } else if (status === 504 || msg.includes('timeout') || msg.includes('Timeout') || msg.includes('abort')) {
+        errorMsg = '请求超时，请重试！';
+      } else if (status === 500) {
+        errorMsg = '服务器内部错误，请稍后重试';
+      } else if (status === 503) {
+        errorMsg = '服务暂时不可用，请稍后重试';
+      } else if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('network')) {
+        errorMsg = '网络连接失败，请检查网络后重试';
+      } else if (msg) {
+        errorMsg = `分镜生成失败：${msg}`;
+      } else {
+        errorMsg = '分镜生成失败，请重试';
+      }
+      setGenerateError(errorMsg);
+      showToast(errorMsg, 'error');
+    }
+  };
+
   // 定稿成功回调：标记"提取主体后已重新定稿"，允许用户再次提取（弹确认弹窗）
   const handleScriptFinalized = () => {
     setScriptFinalizedSinceExtraction(true);
@@ -1174,7 +1283,7 @@ export default function Home({ onProjectCreated }) {
         <div className="absolute inset-0 bg-neutral-400" />
       )}
 
-      <div className="flex flex-col items-start absolute inset-0">
+      <div className="flex flex-col items-start absolute inset-0" style={{ paddingBottom: "44px" }}>
         {/* headbar */}
         {!activeProject ? (
         <div className="flex items-center px-24 py-12 justify-between gap-[37px] self-stretch">
@@ -1344,85 +1453,11 @@ export default function Home({ onProjectCreated }) {
                 onScriptContentChange={setScriptContent}
                 scriptDraftContent={scriptDraftContent}
                 onScriptDraftContentChange={setScriptDraftContent}
-                onGoToSubject={async (tab) => {
-                  // 1. 直接从后端拉取最新剧集列表，避免依赖前端 scriptEpisodes 状态
-                  // （ScriptPage 内部用 markdown 解析出的 outline 覆盖 scriptEpisodes 时，
-                  //   解析结果没有 id 字段，会导致 filter(ep => ep.id) 返回空数组）
-                  setIsExtractingSubjects(true);
-                  try {
-                    let freshEpisodes = await apiGetEpisodes(activeProject.id).catch(() => []);
-                    let episodesToExtract = (freshEpisodes || []).filter(ep => ep.id);
-
-                    // 如果剧集尚未定稿（后端无剧集数据），先自动定稿生成剧集
-                    if (episodesToExtract.length === 0 && scriptContent) {
-                      const finalizeResult = await apiFinalizeScriptWorkspace(activeProject.id, {
-                        episode_count: null,
-                        model: null,
-                      });
-                      const finalized = finalizeResult?.items || finalizeResult?.episodes || finalizeResult?.data;
-                      if (Array.isArray(finalized) && finalized.length > 0) {
-                        freshEpisodes = finalized;
-                        episodesToExtract = finalized.filter(ep => ep.id);
-                        setScriptEpisodes(freshEpisodes);
-                        handleScriptFinalized?.();
-                      }
-                    }
-
-                    // 先检查后端是否已有主体数据（之前提取过但 localStorage 丢了的情况）
-                    const [existingChars] = await Promise.all([
-                      apiGetSubjects(activeProject.id, { type: 'character' }).catch(() => []),
-                    ]);
-                    const hasExistingSubjects = Array.isArray(existingChars) && existingChars.length > 0;
-
-                    if (!hasExistingSubjects && episodesToExtract.length > 0) {
-                      // 后端无主体，需要提取
-                      await Promise.allSettled(
-                        episodesToExtract.map(ep =>
-                          apiExtractSubjectsFromEpisode(activeProject.id, ep.id).catch(err => {
-                            console.error(`提取剧集 ${ep.id} 主体失败:`, err);
-                          })
-                        )
-                      );
-                    }
-
-                    // 2. 获取主体数据
-                    const [charsData, scenesData, propsData] = await Promise.all([
-                      apiGetSubjects(activeProject.id, { type: 'character' }).catch(() => []),
-                      apiGetSubjects(activeProject.id, { type: 'scene' }).catch(() => []),
-                      apiGetSubjects(activeProject.id, { type: 'prop' }).catch(() => []),
-                    ]);
-                    const normalizedChars = normalizeSubjects(charsData);
-                    const normalizedScenes = normalizeSubjects(scenesData);
-                    const normalizedProps = normalizeSubjects(propsData);
-
-                    // 如果没有任何主体数据（提取失败或服务不可用），不跳转
-                    if (normalizedChars.length === 0 && normalizedScenes.length === 0 && normalizedProps.length === 0) {
-                      showToast('提取主体失败，请稍后重试', 'error');
-                      return;
-                    }
-
-                    setSharedChars(normalizedChars);
-                    setSharedScenes(normalizedScenes);
-                    setSharedProps(normalizedProps);
-
-                    // 同步更新本地 scriptEpisodes（保持与后端一致）
-                    setScriptEpisodes(freshEpisodes);
-
-                    // 3. 导航到主体页面
-                    setSubjectInitialTab(tab ?? 'char');
-                    handleUnlockStep('subject');
-                    setScriptFinalizedSinceExtraction(false);
-                    localStorage.setItem(`miioo_finalized_since_extraction_${activeProject.id}`, 'false');
-                    setActiveStep('subject');
-                  } catch (err) {
-                    console.error('提取主体失败:', err);
-                    showToast('提取主体失败，请重试', 'error');
-                  } finally {
-                    setIsExtractingSubjects(false);
-                  }
+                onGoToSubject={(tab) => {
+                  setSubjectInitialTab(tab ?? 'char');
+                  handleUnlockStep('subject');
+                  setActiveStep('subject');
                 }}
-                isSubjectUnlocked={unlockedSteps.has('subject')}
-                isExtractingSubjects={isExtractingSubjects}
                 scriptFinalizedSinceExtraction={scriptFinalizedSinceExtraction}
                 onScriptFinalized={handleScriptFinalized}
                 episodeStatuses={episodeStatuses}
@@ -1448,53 +1483,13 @@ export default function Home({ onProjectCreated }) {
                 onScenesChange={setSharedScenes}
                 props={sharedProps}
                 onPropsChange={setSharedProps}
-                isGeneratingStoryboards={isGeneratingStoryboards}
                 isStoryboardGenerated={unlockedSteps.has('storyboard')}
-                onStartStoryboard={async () => {
-                  if (isGeneratingStoryboards) return;
-                  setIsGeneratingStoryboards(true);
-                  try {
-                    // 1. 确保剧集已定稿（与提取主体的逻辑一致）
-                    let freshEpisodes = await apiGetEpisodes(activeProject.id).catch(() => []);
-                    if (freshEpisodes.length === 0 && scriptContent) {
-                      const finalizeResult = await apiFinalizeScriptWorkspace(activeProject.id, {
-                        episode_count: null, model: null,
-                      });
-                      const finalized = finalizeResult?.items || finalizeResult?.episodes || finalizeResult?.data;
-                      if (Array.isArray(finalized) && finalized.length > 0) {
-                        freshEpisodes = finalized;
-                        setScriptEpisodes(freshEpisodes);
-                      }
-                    }
-                    // 2. 调用智能分镜生成接口
-                    await apiGenerateStoryboardsFromFinalScript(activeProject.id);
-                    // 3. 导航到分镜页
-                    handleUnlockStep('storyboard');
-                    setActiveStep('storyboard');
-                  } catch (err) {
-                    console.error('智能分镜生成失败:', err);
-                    const status = err?.status;
-                    const msg = err?.message || String(err);
-                    // 按后端常见错误分类提示
-                    if (status === 502) {
-                      showToast('服务器繁忙，请稍后重试', 'error');
-                    } else if (status === 504 || msg.includes('timeout') || msg.includes('Timeout') || msg.includes('abort')) {
-                      showToast('请求超时，请重试！', 'error');
-                    } else if (status === 500) {
-                      showToast('服务器内部错误，请稍后重试', 'error');
-                    } else if (status === 503) {
-                      showToast('服务暂时不可用，请稍后重试', 'error');
-                    } else if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('network')) {
-                      showToast('网络连接失败，请检查网络后重试', 'error');
-                    } else if (msg) {
-                      showToast(`分镜生成失败：${msg}`, 'error');
-                    } else {
-                      showToast('分镜生成失败，请重试', 'error');
-                    }
-                  } finally {
-                    setIsGeneratingStoryboards(false);
-                  }
+                onStartStoryboard={() => {
+                  handleUnlockStep('storyboard');
+                  setActiveStep('storyboard');
                 }}
+                onExtractSubjects={handleExtractSubjects}
+                extractError={extractError}
               />
             )}
             {activeKey === 'project' && activeProject && activeStep === 'storyboard' && (
@@ -1506,6 +1501,9 @@ export default function Home({ onProjectCreated }) {
                 props={sharedProps ?? []}
                 episodes={scriptEpisodes}
                 onUnlockStep={handleUnlockStep}
+                onUnlockStep={handleUnlockStep}
+                onGenerateStoryboards={handleGenerateStoryboards}
+                generateError={generateError}
                 onVideoGenerated={(episodeIndex) => {
                   setEpisodeStatuses((prev) => {
                     if (prev[episodeIndex] === 'generated' || prev[episodeIndex] === 'edited') return prev;
@@ -1529,6 +1527,14 @@ export default function Home({ onProjectCreated }) {
         </div>
       </div>
 
+      {/* 网站备案信息 */}
+      <div
+        className="absolute bottom-0 left-0 right-0 flex items-center justify-between text-text-hint z-10"
+        style={{ height: "44px", paddingLeft: "24px", paddingRight: "24px", fontSize: "12px" }}
+      >
+        <span>ⓒ2026 MiiooAI 版权所有</span>
+        <span>鲁ICP备2026030778号</span>
+      </div>
       <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} onSuccess={() => {
         setLoginOpen(false);
         setIsLoggedIn(true);
