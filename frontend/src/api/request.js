@@ -64,7 +64,17 @@ export async function refreshAccessToken() {
 
 // 带自动刷新的 fetch，供所有需要鉴权的 API 使用
 export async function authFetch(url, options = {}) {
-  const res = await fetch(url, withAuth(options));
+  let res;
+  try {
+    res = await fetch(url, withAuth(options));
+  } catch (networkErr) {
+    window.dispatchEvent(new CustomEvent('backend:unreachable'));
+    const err = new Error(networkErr.message || 'Network request failed');
+    err.isNetworkError = true;
+    err.cause = networkErr;
+    throw err;
+  }
+  window.dispatchEvent(new CustomEvent('backend:reachable'));
   if (res.status === 401) {
     const ok = await refreshAccessToken();
     if (ok) return fetch(url, withAuth(options));
@@ -82,7 +92,17 @@ export async function authFetchForm(url, options = {}) {
     ...(options.headers || {}),
     ...(token ? { Authorization: `Bearer ${token}` } : {}),
   };
-  const res = await fetch(url, { ...options, headers });
+  let res;
+  try {
+    res = await fetch(url, { ...options, headers });
+  } catch (networkErr) {
+    window.dispatchEvent(new CustomEvent('backend:unreachable'));
+    const err = new Error(networkErr.message || 'Network request failed');
+    err.isNetworkError = true;
+    err.cause = networkErr;
+    throw err;
+  }
+  window.dispatchEvent(new CustomEvent('backend:reachable'));
   if (res.status === 401) {
     const ok = await refreshAccessToken();
     if (ok) {
@@ -110,17 +130,20 @@ export async function authFetchStream(url, options = {}) {
     res = await fetch(url, withAuth(options));
   } catch (networkErr) {
     // 网络层错误（DNS 失败、连接被拒等）→ 包装为可识别的错误
+    window.dispatchEvent(new CustomEvent('backend:unreachable'));
     const err = new Error(networkErr.message || 'Network request failed');
     err.isNetworkError = true;
     err.cause = networkErr;
     throw err;
   }
+  window.dispatchEvent(new CustomEvent('backend:reachable'));
   if (res.status === 401) {
     const ok = await refreshAccessToken();
     if (ok) {
       try {
         return await fetch(url, withAuth(options));
       } catch (retryErr) {
+        window.dispatchEvent(new CustomEvent('backend:unreachable'));
         const err = new Error(retryErr.message || 'Network request failed after token refresh');
         err.isNetworkError = true;
         err.cause = retryErr;

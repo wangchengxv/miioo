@@ -752,7 +752,8 @@ export default function Home({ onProjectCreated }) {
   const [noModelNoticeOpen, setNoModelNoticeOpen] = useState(false);
   const [notificationCenterOpen, setNotificationCenterOpen] = useState(false);
   // mock 模式下也需要检查 token，退出登录后应该显示未登录状态
-  const [isLoggedIn, setIsLoggedIn] = useState(() => !!localStorage.getItem('token'));
+  const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [serverReachable, setServerReachable] = useState(null); // null=检测中, true=可达, false=降级
   const [apiConfigured, setApiConfigured] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
@@ -999,12 +1000,33 @@ export default function Home({ onProjectCreated }) {
     // 没有 token → 跳过所有鉴权请求，避免 401
     if (!getToken()) {
       setProjectsLoaded(true);
+      setServerReachable(null);
       return;
     }
 
-    // 主动刷新 token（best-effort），减少过期 token 的 401 日志
-    // 无论刷新成功与否，authFetch 自带 401 → 刷新 → 重试 → 登出 兜底逻辑
-    refreshAccessToken().finally(() => {
+    // 启动验证：先确认后端可达且 token 有效，再加载其余数据
+    // authFetch 内置 401 → 刷新 → 重试 → 登出 兜底逻辑
+    apiGetCurrentUser()
+      .then((user) => {
+        // 验证成功 → 后端可达，token 有效
+        setServerReachable(true);
+        setIsLoggedIn(true);
+        setCurrentUser(user);
+      })
+      .catch((err) => {
+        if (err.isNetworkError) {
+          // 后端不可达，降级处理：不清 token，不弹登录窗
+          setServerReachable(false);
+          showToast('后端服务连接异常，部分功能不可用', 'error');
+          setProjectsLoaded(true);
+          return; // 阻止后续 .then 执行
+        }
+        // 401 等其他错误 → 交给 auth:logout 事件处理
+      })
+      .then(() => {
+        // 仅在验证成功时加载鉴权数据
+        if (!getToken()) return;
+        refreshAccessToken().finally(() => {
       apiGetProjects().then((data) => {
         const normalized = data.map((p) => ({ ...p, cover: p.cover ?? p.cover_url }));
         // 按创建时间倒序排列，最新的在前
@@ -1034,13 +1056,13 @@ export default function Home({ onProjectCreated }) {
       }).catch(() => {}).finally(() => {
         setProjectsLoaded(true);
       });
-      apiGetCurrentUser().then(setCurrentUser).catch(() => {});
-      apiGetNotifications().then(setNotifications).catch(() => {});
-      apiListProviders().then((data) => {
-        const providers = Array.isArray(data) ? data : (data?.providers || []);
-        if (providers.length > 0) setApiConfigured(true);
-      }).catch(() => {});
-    });
+          apiGetNotifications().then(setNotifications).catch(() => {});
+          apiListProviders().then((data) => {
+            const providers = Array.isArray(data) ? data : (data?.providers || []);
+            if (providers.length > 0) setApiConfigured(true);
+          }).catch(() => {});
+        });
+      });
   }, []);
 
   useEffect(() => {
@@ -1049,8 +1071,25 @@ export default function Home({ onProjectCreated }) {
       setIsLoggedIn(false);
       setLoginOpen(true);
     };
+
+    const handleBackendUnreachable = () => {
+      if (!getToken()) return;
+      setServerReachable(false);
+      showToast('后端服务连接异常，部分功能不可用', 'error');
+    };
+
+    const handleBackendReachable = () => {
+      setServerReachable(true);
+    };
+
     window.addEventListener('auth:logout', handleForceLogout);
-    return () => window.removeEventListener('auth:logout', handleForceLogout);
+    window.addEventListener('backend:unreachable', handleBackendUnreachable);
+    window.addEventListener('backend:reachable', handleBackendReachable);
+    return () => {
+      window.removeEventListener('auth:logout', handleForceLogout);
+      window.removeEventListener('backend:unreachable', handleBackendUnreachable);
+      window.removeEventListener('backend:reachable', handleBackendReachable);
+    };
   }, []);
 
   const handleUnlockStep = (stepKey) => {
@@ -1408,6 +1447,13 @@ export default function Home({ onProjectCreated }) {
 
           {/* page content */}
           <div className="flex-1 min-h-0 overflow-hidden relative">
+            {/* 后端不可达降级横幅 */}
+            {serverReachable === false && (
+              <div className="flex items-center justify-center gap-2 px-16 py-2 text-sm" style={{ backgroundColor: 'rgba(255,77,79,0.12)', color: '#FF4D4F' }}>
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1L13 12H1L7 1Z" stroke="#FF4D4F" strokeLinejoin="round"/><path d="M7 5V8" stroke="#FF4D4F" strokeLinecap="round"/><circle cx="7" cy="10.5" r="0.5" fill="#FF4D4F"/></svg>
+                后端服务连接异常，部分功能不可用
+              </div>
+            )}
             {activeKey === 'home' && (
               <StartCreationButton onClick={() => {
                 if (!isLoggedIn) { setLoginOpen(true); return; }
@@ -1421,6 +1467,7 @@ export default function Home({ onProjectCreated }) {
             )}
             {activeKey === 'project' && !activeProject && !isLoadingProject && projectsLoaded && (
               <ProjectList
+                serverReachable={serverReachable}
                 projects={projects}
                 onNewProject={() => {
                   if (!isLoggedIn) { setLoginOpen(true); return; }
@@ -1500,6 +1547,7 @@ export default function Home({ onProjectCreated }) {
             )}
             {activeKey === 'project' && activeProject && activeStep === 'subject' && (
               <SubjectPage
+                serverReachable={serverReachable}
                 projectId={activeProject.id}
                 projectName={activeProject.name}
                 onBack={() => {
@@ -1530,6 +1578,7 @@ export default function Home({ onProjectCreated }) {
             )}
             {activeKey === 'project' && activeProject && activeStep === 'storyboard' && (
               <StoryboardPage
+                serverReachable={serverReachable}
                 projectId={activeProject.id}
                 projectName={activeProject.name}
                 chars={sharedChars ?? []}
@@ -1539,7 +1588,7 @@ export default function Home({ onProjectCreated }) {
                 onUnlockStep={handleUnlockStep}
                 onUnlockStep={handleUnlockStep}
                 onGenerateStoryboards={handleGenerateStoryboards}
-                homeIsGenerating={isGeneratingStoryboards}
+                isGenerating={isGeneratingStoryboards}
                 generateError={generateError}
                 onVideoGenerated={(episodeIndex) => {
                   setEpisodeStatuses((prev) => {
@@ -1550,10 +1599,11 @@ export default function Home({ onProjectCreated }) {
               />
             )}
             {activeKey === 'assets' && (
-              <AssetsPage projects={projects} />
+              <AssetsPage serverReachable={serverReachable} projects={projects} />
             )}
             {activeKey === 'create' && (
               <CreationPage
+                serverReachable={serverReachable}
                 isLoggedIn={isLoggedIn}
                 onLoginClick={() => setLoginOpen(true)}
                 apiConfigured={apiConfigured}

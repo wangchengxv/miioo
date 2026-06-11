@@ -2379,7 +2379,19 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', onClose, onCom
 
 // ── Main export ────────────────────────────────────────────────────────────
 
-export default function SubjectPage({ projectId, projectName = '两只老虎的奇遇', onBack, onUnlockStep, onStartStoryboard, onExtractSubjects, extractError = null, isStoryboardGenerated = false, initialTab = 'char', chars: externalChars, onCharsChange, scenes: externalScenes, onScenesChange, props: externalProps, onPropsChange }) {
+export default function SubjectPage({ serverReachable, projectId, projectName = '两只老虎的奇遇', onBack, onUnlockStep, onStartStoryboard, onExtractSubjects, extractError = null, isStoryboardGenerated = false, initialTab = 'char', chars: externalChars, onCharsChange, scenes: externalScenes, onScenesChange, props: externalProps, onPropsChange }) {
+
+  if (serverReachable === false) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3" style={{ flex: 1, paddingTop: "80px" }}>
+        <div className="flex items-center gap-2 px-16 py-2 rounded-lg text-sm" style={{ backgroundColor: "rgba(255,77,79,0.1)", color: "#FF4D4F" }}>
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1L13 12H1L7 1Z" stroke="#FF4D4F" strokeLinejoin="round"/><path d="M7 5V8" stroke="#FF4D4F" strokeLinecap="round"/><circle cx="7" cy="10.5" r="0.5" fill="#FF4D4F"/></svg>
+          后端服务连接异常，部分功能不可用
+        </div>
+      </div>
+    );
+  }
+
   const [activeTab, setActiveTab] = useState(initialTab);
   const [episodes, setEpisodes] = useState([]);
   const [activeEpisode, setActiveEpisode] = useState('');
@@ -2491,7 +2503,7 @@ export default function SubjectPage({ projectId, projectName = '两只老虎的�
     let failCount = 0;
 
     try {
-      await apiBatchGenerateStream(projectId, { ...params, subject_ids: subjectIds }, {
+      await apiBatchGenerateStream(projectId, { model: params.model, ratio: params.ratio, resolution: params.resolution, generation_mode: params.mode, subject_ids: subjectIds }, {
         signal: controller.signal,
         onSubjectImage: (subjectId, imageUrl) => {
           successCount++;
@@ -2562,23 +2574,44 @@ export default function SubjectPage({ projectId, projectName = '两只老虎的�
   const [internalChars, setInternalChars] = useState(INITIAL_CHARS);
   const chars = (externalChars !== undefined && externalChars !== null) ? externalChars : internalChars;
   function setChars(updater) {
-    const next = typeof updater === 'function' ? updater(chars) : updater;
-    setInternalChars(next);
-    onCharsChange?.(next);
+    if (typeof updater === 'function') {
+      setInternalChars(prev => {
+        const next = updater(prev);
+        onCharsChange?.(next);
+        return next;
+      });
+    } else {
+      setInternalChars(updater);
+      onCharsChange?.(updater);
+    }
   }
   const [internalScenes, setInternalScenes] = useState([]);
   const scenes = (externalScenes !== undefined && externalScenes !== null) ? externalScenes : internalScenes;
   function setScenes(updater) {
-    const next = typeof updater === 'function' ? updater(scenes) : updater;
-    setInternalScenes(next);
-    onScenesChange?.(next);
+    if (typeof updater === 'function') {
+      setInternalScenes(prev => {
+        const next = updater(prev);
+        onScenesChange?.(next);
+        return next;
+      });
+    } else {
+      setInternalScenes(updater);
+      onScenesChange?.(updater);
+    }
   }
   const [internalProps, setInternalProps] = useState([]);
   const props = (externalProps !== undefined && externalProps !== null) ? externalProps : internalProps;
   function setProps(updater) {
-    const next = typeof updater === 'function' ? updater(props) : updater;
-    setInternalProps(next);
-    onPropsChange?.(next);
+    if (typeof updater === 'function') {
+      setInternalProps(prev => {
+        const next = updater(prev);
+        onPropsChange?.(next);
+        return next;
+      });
+    } else {
+      setInternalProps(updater);
+      onPropsChange?.(updater);
+    }
   }
   const [charVoices, setCharVoices] = useState(() =>
     Object.fromEntries(INITIAL_CHARS.map((c) => [c.id, c.voice]))

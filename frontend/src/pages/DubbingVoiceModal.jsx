@@ -1,3 +1,4 @@
+import { apiGetOfficialVoices } from "../api/voices";
 import { useState, useRef, useEffect } from "react";
 import { createPortal } from "react-dom";
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
@@ -187,13 +188,23 @@ export default function DubbingVoiceModal({ open, onClose, onConfirm }) {
     if (!open || tab !== "miioo") return;
     if (voices.length > 0) return;
     setLoading(true);
-    fetch(import.meta.env.VITE_API_BASE_URL + "/api/voices?tab=all", {
-      headers: { Authorization: "Bearer " + (localStorage.getItem("access_token") || "") },
-    })
-      .then(r => r.json())
-      .then((data) => { const list = Array.isArray(data) ? data : data?.items ?? data?.voices ?? []; setVoices(list); })
-      .catch(() => setVoices([]))
-      .finally(() => setLoading(false));
+    const fallback = () => {
+      fetch(import.meta.env.VITE_API_BASE_URL + "/api/voices?tab=all", {
+        headers: { Authorization: "Bearer " + (localStorage.getItem("access_token") || "") },
+      })
+        .then(r => r.json())
+        .then((data) => { const list = Array.isArray(data) ? data : data?.items ?? data?.voices ?? []; setVoices(list); })
+        .catch(() => setVoices([]))
+        .finally(() => setLoading(false));
+    };
+    // 优先尝试官方音色接口
+    apiGetOfficialVoices()
+      .then((data) => {
+        const list = Array.isArray(data) ? data : data?.items ?? data?.voices ?? [];
+        if (list.length > 0) { setVoices(list); setLoading(false); }
+        else { fallback(); }
+      })
+      .catch(() => { fallback(); });
   }, [open, tab]);
 
   useEffect(() => {

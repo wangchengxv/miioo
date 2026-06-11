@@ -4,7 +4,7 @@ import BatchDownloadModal from '../components/BatchDownloadModal';
 import ShotViewerModal from '../components/ShotViewerModal';
 import Toggle from '../components/Toggle';
 import AssetPickerModal from '../components/AssetPickerModal';
-import { apiUploadFile, apiUploadImage, apiGenerateStoryboardImage, apiGenerateStoryboardVideo, apiCreateStoryboard, apiUpdateStoryboard, apiDeleteStoryboard, apiReorderStoryboards, apiGetStoryboards, apiBatchDownloadStoryboardImages, apiBatchDownloadStoryboardVideos } from '../api/storyboard';
+import { apiUploadFile, apiUploadImage, apiGenerateStoryboardImage, apiGenerateStoryboardVideo, apiCreateStoryboard, apiUpdateStoryboard, apiDeleteStoryboard, apiReorderStoryboards, apiGetStoryboards, apiBatchDownloadStoryboardImages, apiBatchDownloadStoryboardVideos, apiGetTask } from '../api/storyboard';
 import { apiListModels } from '../api/config';
 import DotsLoading from '../components/DotsLoading';
 import { apiGetEpisodes } from '../api/subject';
@@ -50,7 +50,7 @@ function normalizeStoryboard(be) {
           typeof cid === 'string' ? { id: cid, type: 'char' } : cid
         ),
         ...(be.reference_image_urls || []).map(url =>
-          ({ id: url, url, name: '参考图', type: 'image/jpeg' })
+          ((() => { const n = normalizeImageUrl(url); return { id: n, url: n, name: "参考图", type: "image/jpeg" }; })())
         ),
       ]
     ),
@@ -4979,7 +4979,19 @@ const INITIAL_SHOTS = [
 
 const EPISODES = ['第一集', '第二集'];
 
-export default function StoryboardPage({ projectId, projectName = '两只老虎的奇遇', chars = [], scenes = [], props = [], episodes = EPISODES, onUnlockStep, onVideoGenerated, onGenerateStoryboards, generateError = null, isGenerating: homeIsGenerating = false }) {
+export default function StoryboardPage({ serverReachable, projectId, projectName = '两只老虎的奇遇', chars = [], scenes = [], props = [], episodes = EPISODES, onUnlockStep, onVideoGenerated, onGenerateStoryboards, generateError = null, isGenerating: homeIsGenerating = false }) {
+
+  if (serverReachable === false) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3" style={{ flex: 1, paddingTop: "80px" }}>
+        <div className="flex items-center gap-2 px-16 py-2 rounded-lg text-sm" style={{ backgroundColor: "rgba(255,77,79,0.1)", color: "#FF4D4F" }}>
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1L13 12H1L7 1Z" stroke="#FF4D4F" strokeLinejoin="round"/><path d="M7 5V8" stroke="#FF4D4F" strokeLinecap="round"/><circle cx="7" cy="10.5" r="0.5" fill="#FF4D4F"/></svg>
+          后端服务连接异常，部分功能不可用
+        </div>
+      </div>
+    );
+  }
+
   const activeEpisodes = episodes.length > 0 ? episodes : EPISODES;
   const [shots, setShots] = useState([]);
   const [globalVoiceParams, setGlobalVoiceParams] = useState({});
@@ -4991,26 +5003,16 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
   // 用户是否手动操作过（添加/删除分镜），如果操作过就不再展示智能分镜失败的错误态
   const hasManuallyInteracted = useRef(false);
 
-  // 挂载时自动调用智能分镜（仅当分镜为空且无已有错误，用户点击确认弹窗后跳转到此页时触发）
-  useEffect(() => {
-    if (!onGenerateStoryboards) return;
-    if (shots.length > 0 || generateError) return;
-    setIsGenerating(true);
-    onGenerateStoryboards().finally(() => {
-      setIsGenerating(false);
-    });
-  }, [onGenerateStoryboards, shots.length, generateError]);
-
   const [loadingTextIndex, setLoadingTextIndex] = useState(0);
   const loadingTexts = ['正在智能分镜中', '请稍等', '等待时间大约5分钟', '请耐心等待'];
 
   useEffect(() => {
-    if (!isGenerating) return;
+    if (!isGenerating && !homeIsGenerating) return;
     const timer = setInterval(() => {
       setLoadingTextIndex(prev => (prev + 1) % loadingTexts.length);
     }, 3000);
     return () => clearInterval(timer);
-  }, [isGenerating]);
+  }, [isGenerating, homeIsGenerating]);
 
   const [generatingImages, setGeneratingImages] = useState(false);
   const [generatingVideos, setGeneratingVideos] = useState(false);
@@ -5071,6 +5073,18 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
     setTimeout(() => setToast(null), 2500);
   }
 
+  // 轮询任务直到完成或超时
+  async function pollTask(taskId) {
+    const MAX_POLLS = 100;
+    const INTERVAL = 3000;
+    for (let i = 0; i < MAX_POLLS; i++) {
+      await new Promise(r => setTimeout(r, INTERVAL));
+      const t = await apiGetTask(taskId);
+      if (t.status !== 'pending' && t.status !== 'running') return t;
+    }
+    throw new Error('任务超时，请重试');
+  }
+
   async function startBatchGenImages(params) {
     if (generatingImages) return;
     setGeneratingImages(true);
@@ -5081,16 +5095,26 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
     for (const shot of shots) {
       setGeneratingImageShotIds(prev => new Set([...prev, shot.id]));
       try {
-        const result = await apiGenerateStoryboardImage(projectId, shot.id, {
+        const taskResp = await apiGenerateStoryboardImage(projectId, shot.id, {
           model: params.model,
           resolution: params.resolution,
         });
-        const imageUrl = result.image_url || result.url;
-        setShots((prev) => prev.map((s) => s.id === shot.id
-          ? { ...s, storyboardImage: { id: imageUrl, url: imageUrl, name: 'generated.jpg', type: 'image/jpeg' } }
-          : s
-        ));
-        successCount++;
+        const task = await pollTask(taskResp.id);
+        if ((task.status === 'completed' || task.status === 'partial') && task.results?.length > 0) {
+          const imageUrl = task.results[0]?.image_url;
+          if (imageUrl) {
+            const normalizedUrl = normalizeImageUrl(imageUrl);
+            setShots((prev) => prev.map((s) => s.id === shot.id
+              ? { ...s, storyboardImage: { id: normalizedUrl, url: normalizedUrl, name: 'generated.jpg', type: 'image/jpeg' } }
+              : s
+            ));
+            successCount++;
+          } else {
+            failCount++;
+          }
+        } else {
+          failCount++;
+        }
       } catch (err) {
         console.error('[StoryboardPage] 生成分镜图失败:', err);
         failCount++;
@@ -5120,18 +5144,28 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
     for (const shot of shots) {
       setGeneratingVideoShotIds(prev => new Set([...prev, shot.id]));
       try {
-        const result = await apiGenerateStoryboardVideo(projectId, shot.id, {
+        const taskResp = await apiGenerateStoryboardVideo(projectId, shot.id, {
           model: params.model,
           resolution: params.resolution,
           duration: params.duration,
           sound_effect: params.sound,
         });
-        const videoUrl = result.video_url || result.url;
-        setShots((prev) => prev.map((s) => s.id === shot.id
-          ? { ...s, storyboardVideo: { id: `vid-${shot.id}`, url: videoUrl, name: 'generated.mp4', type: 'video/mp4' } }
-          : s
-        ));
-        successCount++;
+        const task = await pollTask(taskResp.id);
+        if ((task.status === 'completed' || task.status === 'partial') && task.results?.length > 0) {
+          const videoUrl = task.results[0]?.video_url;
+          if (videoUrl) {
+            const normalizedUrl = normalizeImageUrl(videoUrl);
+            setShots((prev) => prev.map((s) => s.id === shot.id
+              ? { ...s, storyboardVideo: { id: `vid-${shot.id}`, url: normalizedUrl, name: 'generated.mp4', type: 'video/mp4' } }
+              : s
+            ));
+            successCount++;
+          } else {
+            failCount++;
+          }
+        } else {
+          failCount++;
+        }
       } catch (err) {
         console.error('[StoryboardPage] 生成分镜视频失败:', err);
         failCount++;
@@ -5668,15 +5702,20 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
         onGenerate={async (params) => {
           const shot = imagePanel.shot;
           try {
-            const result = await apiGenerateStoryboardImage(projectId, shot.id, { model: params.model, resolution: params.resolution, prompt: params.prompt, reference_images: params.refImages });
-            const imageUrl = result.image_url || result.url;
-
-            setShots((prev) => prev.map((s) => s.id === shot.id && !s.storyboardImage
-              ? { ...s, storyboardImage: { id: imageUrl, url: imageUrl, name: 'generated.jpg', type: 'image/jpeg' } }
-              : s
-            ));
-
-            return { url: imageUrl };
+            const taskResp = await apiGenerateStoryboardImage(projectId, shot.id, { model: params.model, resolution: params.resolution, prompt: params.prompt, reference_images: params.refImages });
+            const task = await pollTask(taskResp.id);
+            if ((task.status === 'completed' || task.status === 'partial') && task.results?.length > 0) {
+              const imageUrl = task.results[0]?.image_url;
+              if (imageUrl) {
+                const normalizedUrl = normalizeImageUrl(imageUrl);
+                setShots((prev) => prev.map((s) => s.id === shot.id && !s.storyboardImage
+                  ? { ...s, storyboardImage: { id: normalizedUrl, url: normalizedUrl, name: 'generated.jpg', type: 'image/jpeg' } }
+                  : s
+                ));
+                return { url: normalizedUrl };
+              }
+            }
+            throw new Error('生成失败，请重试');
           } catch (err) {
             console.error('[StoryboardPage] 生成分镜图失败:', err);
             throw err;
@@ -5697,16 +5736,21 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
         onGenerate={async (params) => {
           const shot = videoPanel.shot;
           try {
-            const result = await apiGenerateStoryboardVideo(projectId, shot.id, { model: params.model, resolution: params.resolution, duration: params.duration, sound_effect: params.sound, reference_images: params.refImages });
-            const videoUrl = result.video_url || result.url;
-
-            setShots((prev) => prev.map((s) => s.id === shot.id && !s.storyboardVideo
-              ? { ...s, storyboardVideo: { id: `vid-${shot.id}`, url: videoUrl, name: 'generated.mp4', type: 'video/mp4' } }
-              : s
-            ));
-
-            onVideoGenerated?.(activeEpisodes.findIndex(ep => getEpisodeId(ep) === getEpisodeId(episode)));
-            return { url: videoUrl };
+            const taskResp = await apiGenerateStoryboardVideo(projectId, shot.id, { model: params.model, resolution: params.resolution, duration: params.duration, sound_effect: params.sound, reference_images: params.refImages });
+            const task = await pollTask(taskResp.id);
+            if ((task.status === 'completed' || task.status === 'partial') && task.results?.length > 0) {
+              const videoUrl = task.results[0]?.video_url;
+              if (videoUrl) {
+                const normalizedUrl = normalizeImageUrl(videoUrl);
+                setShots((prev) => prev.map((s) => s.id === shot.id && !s.storyboardVideo
+                  ? { ...s, storyboardVideo: { id: `vid-${shot.id}`, url: normalizedUrl, name: 'generated.mp4', type: 'video/mp4' } }
+                  : s
+                ));
+                onVideoGenerated?.(activeEpisodes.findIndex(ep => getEpisodeId(ep) === getEpisodeId(episode)));
+                return { url: normalizedUrl };
+              }
+            }
+            throw new Error('生成失败，请重试');
           } catch (err) {
             console.error('[StoryboardPage] 生成分镜视频失败:', err);
             throw err;

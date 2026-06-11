@@ -6,6 +6,7 @@ import { useCreationStore } from '../stores/creationStore';
 import { apiListModels } from '../api/config';
 import { adaptModels, getModelParams } from '../utils/modelAdapter';
 import AssetPickerModal from '../components/AssetPickerModal';
+import DubbingVoiceModal, { DubbingVoiceFileCard } from './DubbingVoiceModal';
 import CreationVideoDetailModal from '../components/CreationVideoDetailModal';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
@@ -287,7 +288,7 @@ const GEN_TYPE_OPTIONS = [
 // Model/params options are backend-driven; see apiGetCreationModels / apiGetCreationParams in src/api/creation.js
 
 // ─── Upload placeholder ───────────────────────────────────────────────────────
-function UploadPlaceholder({ onFileSelect, onAssetPick, disabled = false, allowedExts = ALLOWED_EXTS, acceptAttr = '.txt,.md,.pdf,.docx' }) {
+function UploadPlaceholder({ onFileSelect, onAssetPick, onDirectClick, disabled = false, allowedExts = ALLOWED_EXTS, acceptAttr = '.txt,.md,.pdf,.docx' }) {
   const [hovered, setHovered] = useState(false);
   const [menuOpen, setMenuOpen] = useState(false);
   const fileInputRef = useRef(null);
@@ -344,7 +345,7 @@ function UploadPlaceholder({ onFileSelect, onAssetPick, disabled = false, allowe
         type="button"
         onMouseEnter={() => !disabled && setHovered(true)}
         onMouseLeave={() => setHovered(false)}
-        onClick={() => { if (!disabled) setMenuOpen((v) => !v); }}
+        onClick={() => { if (!disabled) { if (onDirectClick) onDirectClick(); else setMenuOpen((v) => !v); } }}
         disabled={disabled}
         style={{
           display: 'flex',
@@ -471,7 +472,7 @@ function FrameUploader({ firstFile, lastFile, onFirstChange, onLastChange, onSwa
         <button
           type="button"
           disabled={disabled}
-          onClick={() => { if (!disabled) setMenuOpen((v) => !v); }}
+          onClick={() => { if (!disabled) { if (onDirectClick) onDirectClick(); else setMenuOpen((v) => !v); } }}
           onMouseEnter={() => !disabled && setHovered(true)}
           onMouseLeave={() => setHovered(false)}
           style={{
@@ -1115,7 +1116,7 @@ function ModelSelector({ value, onChange, options = [], disabled, onBeforeOpen }
           }}
         >
           <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: '#FFFFFFCC', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', flex: 1, textAlign: 'left' }}>
-            {value}
+              {options.find(o => o.value === value)?.label || value}
           </span>
           <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"
             style={{ flexShrink: 0, transition: 'transform 0.2s', transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }}>
@@ -2053,6 +2054,8 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
       setLastFrameFile(null);
       setDubbingSpeed(1.0);
       setDubbingEmotion('中性');
+      setSelectedVoiceId('');
+      setSelectedVoiceName('');
     }
   }, [refMode]);
 
@@ -2269,7 +2272,7 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
     setMentionOpen(false);
   };
 
-  const canSend = !disabled && (hasContent || files.length > 0 || firstFrameFile || lastFrameFile);
+  const canSend = !disabled && (hasContent || files.length > 0 || firstFrameFile || lastFrameFile || (genType === 'dubbing' && selectedVoiceId));
 
   const handleSend = async () => {
     if (!canSend) return;
@@ -2290,7 +2293,7 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
       model,
       ...(genType === 'image' ? { ratio, resolution, count } : {}),
       ...(genType === 'video' ? { refMode: actualRefMode, videoRatio, videoResolution, videoDuration, soundEnabled, firstFrameFile, lastFrameFile } : {}),
-      ...(genType === 'dubbing' ? { speed: dubbingSpeed, emotion: dubbingEmotion } : {}),
+      ...(genType === 'dubbing' ? { speed: dubbingSpeed, emotion: dubbingEmotion, voiceId: selectedVoiceId, voiceName: selectedVoiceName } : {}),
       files,
     });
     // 只有成功才清空输入框和附件
@@ -2302,6 +2305,8 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
       setLastFrameFile(null);
       setDubbingSpeed(1.0);
       setDubbingEmotion('中性');
+      setSelectedVoiceId('');
+      setSelectedVoiceName('');
     }
   };
 
@@ -2431,6 +2436,12 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
               onLastAssetPick={() => { setFrameAssetTarget('last'); setAssetPickerOpen(true); }}
               disabled={disabled}
             />
+          ) : genType === 'dubbing' ? (
+            selectedVoiceId ? (
+              <DubbingVoiceFileCard voiceName={selectedVoiceName} voiceId={selectedVoiceId} onRemove={() => { setSelectedVoiceId(''); setSelectedVoiceName(''); }} onOpenModal={() => setVoiceModalOpen(true)} />
+            ) : (
+              <UploadPlaceholder onDirectClick={() => setVoiceModalOpen(true)} disabled={disabled} allowedExts={uploadAllowedExts} acceptAttr={uploadAcceptAttr} />
+            )
           ) : (
             <UploadPlaceholder onFileSelect={handleFileSelect} onAssetPick={() => setAssetPickerOpen(true)} disabled={disabled} allowedExts={uploadAllowedExts} acceptAttr={uploadAcceptAttr} />
           )}
@@ -2635,6 +2646,15 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
       onClose={() => { setAssetPickerOpen(false); setFrameAssetTarget(null); }}
       onConfirm={handleAssetConfirm}
       accept={frameAssetTarget ? 'image' : assetPickerAccept}
+    />
+    <DubbingVoiceModal
+      open={voiceModalOpen}
+      onClose={() => setVoiceModalOpen(false)}
+      onConfirm={(voiceId, voiceName) => {
+        setSelectedVoiceId(voiceId);
+        setSelectedVoiceName(voiceName);
+        setVoiceModalOpen(false);
+      }}
     />
     </>
   );
@@ -3891,7 +3911,18 @@ function CreationLoginEmptyState({ onLoginClick }) {
   );
 }
 
-export default function CreationPage({ isLoggedIn, onLoginClick, apiConfigured = true, onShowNoModelNotice }) {
+export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick, apiConfigured = true, onShowNoModelNotice }) {
+  if (serverReachable === false) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3" style={{ flex: 1, paddingTop: '80px' }}>
+        <div className="flex items-center gap-2 px-16 py-2 rounded-lg text-sm" style={{ backgroundColor: 'rgba(255,77,79,0.1)', color: '#FF4D4F' }}>
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1L13 12H1L7 1Z" stroke="#FF4D4F" strokeLinejoin="round"/><path d="M7 5V8" stroke="#FF4D4F" strokeLinecap="round"/><circle cx="7" cy="10.5" r="0.5" fill="#FF4D4F"/></svg>
+          后端服务连接异常，部分功能不可用
+        </div>
+      </div>
+    );
+  }
+
   const [activeTab, setActiveTab] = useState('image');
   const [genType, setGenType] = useState('image');
   const [generating, setGenerating] = useState(false);
@@ -4012,7 +4043,7 @@ export default function CreationPage({ isLoggedIn, onLoginClick, apiConfigured =
     let cancelled = false;
     (async () => {
       try {
-        const models = await apiListModels({ category: genType });
+        const models = await apiListModels({ category: genType === 'dubbing' ? 'voice' : genType });
         const { modelOptions: opts, capabilitiesMap } = adaptModels(models, genType);
         if (cancelled) return;
         capabilitiesMapRef.current = capabilitiesMap;

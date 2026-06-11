@@ -200,3 +200,19 @@ export async function apiReorderShots(episodeId, orderedIds) {
 
 export const apiGenerateImage = apiGenerateStoryboardImage;
 export const apiGenerateVideo = apiGenerateStoryboardVideo;
+
+// ── 任务轮询 ──────────────────────────────────────────────────────────────────
+
+export async function apiGetTask(taskId) {
+  const res = await authFetch(`${BASE}/api/tasks/${taskId}`, {
+    headers: { 'Content-Type': 'application/json' },
+  });
+  if (!res.ok) {
+    let detail = '';
+    try { const body = await res.json(); detail = body?.detail || body?.message || ''; } catch {}
+    const err = new Error(detail || `获取任务状态失败（${res.status}）`);
+    err.status = res.status;
+    throw err;
+  }
+  return res.json();
+}

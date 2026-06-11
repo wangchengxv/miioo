@@ -13,3 +13,16 @@ export async function apiGetVoices({ tab, gender, age_group, emotion_type } = {}
   const res = await authFetch(url, { headers: { 'Content-Type': 'application/json' } });
   return res.json();
 }
+
+// 获取官方音色目录（优先使用，用户配了音频模型时可用）
+export async function apiGetOfficialVoices({ provider, language } = {}) {
+  const params = new URLSearchParams();
+  if (provider) params.append('provider', provider);
+  if (language) params.append('language', language);
+  const query = params.toString();
+  const url = query
+    ? `${BASE}/api/voices/official?${query}`
+    : `${BASE}/api/voices/official`;
+  const res = await authFetch(url, { headers: { 'Content-Type': 'application/json' } });
+  return res.json();
+}

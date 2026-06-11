@@ -33,7 +33,7 @@ export function adaptModels(backendModels, genType) {
    if (genType === 'video' && !cat.includes('video')) continue;
 
     if (genType === 'dubbing') {
-      if (!cat.includes('dubbing') && !cat.includes('audio') && !cat.includes('tts') && !cat.includes('speech')) continue;
+      if (!cat.includes('dubbing') && !cat.includes('audio') && !cat.includes('tts') && !cat.includes('speech') && !cat.includes('voice')) continue;
       options.push({ value: m.model_id, label: m.name });
       if (m.capabilities && typeof m.capabilities === 'object' && Object.keys(m.capabilities).length > 0) {
         caps[m.model_id] = m.capabilities;
