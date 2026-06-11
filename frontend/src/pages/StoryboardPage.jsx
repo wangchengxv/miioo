@@ -1872,6 +1872,10 @@ function GenerateImagePanel({ shot, projectId, chars = [], scenes = [], props = 
     return (caps.supported_resolutions?.length ? caps.supported_resolutions : caps.supported_sizes) || [];
   })();
 
+  const maxRefImages = currentModel?.capabilities?.max_reference_images;
+  const refCountText = maxRefImages != null ? `${refImages.length}/${maxRefImages}` : null;
+  const canAddRef = maxRefImages == null || refImages.length < maxRefImages;
+
   // 当模型切换时，重置分辨率
   const currentResolutions = (() => {
     const caps = currentModel?.capabilities || {};
@@ -1904,6 +1908,21 @@ function GenerateImagePanel({ shot, projectId, chars = [], scenes = [], props = 
       onShowToast?.('主体图上传失败', 'error');
       throw error;
     }
+  }
+
+  // 从资产库选择参考图
+  function handleRefImageAssetConfirm(selectedAssets) {
+    if (!selectedAssets || selectedAssets.length === 0) return;
+    const newItems = selectedAssets.map(a => ({
+      id: a.id,
+      url: normalizeImageUrl(a.thumbnailUrl || a.thumbnail_url || a.originalUrl || a.original_url || a.url || a.file_url),
+      name: a.name || a.filename || '',
+    }));
+    setRefImages(prev => {
+      const merged = [...prev, ...newItems];
+      return maxRefImages != null ? merged.slice(0, maxRefImages) : merged;
+    });
+    setRefImgPickerOpen(false);
   }
 
   async function handleRefFileChange(e) {
@@ -2008,8 +2027,11 @@ function GenerateImagePanel({ shot, projectId, chars = [], scenes = [], props = 
 
             {/* 参考图 — 多张 */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignSelf: 'stretch' }}>
-              <span style={{ fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.60)', fontFamily: FONT }}>参考图</span>
-              <input ref={refFileRef} type="file" accept="image/*" multiple style={{ display: 'none' }} onChange={handleRefFileChange} />
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <span style={{ fontSize: "14px", lineHeight: "18px", color: "rgba(255,255,255,0.60)", fontFamily: FONT }}>参考图</span>
+                {refCountText && <span style={{ fontSize: "14px", lineHeight: "18px", color: "rgba(255,255,255,0.40)", fontFamily: FONT }}>{refCountText}</span>}
+              </div>
+              {canAddRef && <input ref={refFileRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={handleRefFileChange} />}
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                 {refImages.map((img) => (
                   <div key={img.id} style={{ position: 'relative', width: '120px', height: '120px', borderRadius: '6px', overflow: 'hidden', flexShrink: 0, border: '1px solid rgba(255,255,255,0.12)' }}>
@@ -2022,7 +2044,7 @@ function GenerateImagePanel({ shot, projectId, chars = [], scenes = [], props = 
                     </div>
                   </div>
                 ))}
-                {/* 添加槽 */}
+                {canAddRef && (
                 <div
                   style={{
                     width: '120px', height: '120px', borderRadius: '6px', flexShrink: 0,
@@ -2036,9 +2058,10 @@ function GenerateImagePanel({ shot, projectId, chars = [], scenes = [], props = 
                   <RefSlotBtn onClick={() => refFileRef.current?.click()}>本地上传</RefSlotBtn>
                   <RefSlotBtn onClick={() => setRefImgPickerOpen(true)}>从资产库选择</RefSlotBtn>
                 </div>
+                )}
               </div>
             </div>
-            <AssetPickerModal accept="image" open={refImgPickerOpen} onClose={() => setRefImgPickerOpen(false)} projectId={projectId} onConfirm={() => {}} />
+            <AssetPickerModal accept="image" open={refImgPickerOpen} onClose={() => setRefImgPickerOpen(false)} projectId={projectId} onConfirm={handleRefImageAssetConfirm} />
 
             <PanelSelect label="分辨率" value={resolution} options={availableResolutions} onChange={setResolution} />
 

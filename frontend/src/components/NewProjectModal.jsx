@@ -1,5 +1,6 @@
 import { useRef, useState } from 'react';
 import { apiCreateProject, apiUploadProjectCover } from '../api/project.js';
+import { apiCreateUserStyle } from '../api/user-styles.js';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
@@ -335,11 +336,25 @@ export default function NewProjectModal({ open, onClose, onConfirm }) {
       if (coverFile) {
         cover_url = await apiUploadProjectCover(coverFile);
       }
+      // 自定义风格：先创建 user-style，再用 custom:{id} 引用
+      let visual_style = style;
+      if (style === 'custom' && customStyleDesc.trim()) {
+        const styleName = customStyleDesc.replace(/\n/g, ' ').slice(0, 30);
+        try {
+          const userStyle = await apiCreateUserStyle({
+            name: styleName,
+            prompt: customStyleDesc,
+          });
+          visual_style = `custom:${userStyle.id || userStyle.value}`;
+        } catch (err) {
+          console.error('创建自定义风格失败', err);
+        }
+      }
       const result = await apiCreateProject({
         name: name.trim(),
         description: desc,
         aspect_ratio: ratio,
-        visual_style: style === 'custom' ? customStyleDesc : style,
+        visual_style,
         project_type: 'video',
         cover_url,
       });

@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { PulsingBorder } from '@paper-design/shaders-react';
-import bgVideoPoster from '../assets/bg-video-poster.jpg';
+import bgVideoPoster from '../assets/bg-video-poster.png';
+import bgVideo01 from '../assets/bg-video-01.mp4';
+import bgVideo02 from '../assets/bg-video-02.mp4';
+import bgVideo03 from '../assets/bg-video-03.mp4';
 import { apiGetProjects, apiUpdateProject, apiDeleteProject, apiGetProject, apiGetProjectOverview } from '../api/project';
 import { getToken, refreshAccessToken } from '../api/request';
 import { clearTokens, apiLogout } from '../api/auth';
@@ -735,6 +738,8 @@ function normalizeSubjects(items) {
   return list;
 }
 
+const BG_VIDEOS = [bgVideo01, bgVideo02, bgVideo03];
+
 export default function Home({ onProjectCreated }) {
   const [activeKey, setActiveKey] = useState(() => {
     // 只有明确保存了非 home 的 activeKey 才恢复，否则默认 home
@@ -767,6 +772,7 @@ export default function Home({ onProjectCreated }) {
   const [generateError, setGenerateError] = useState(null);
   const [generateErrorProjectId, setGenerateErrorProjectId] = useState(null);
   const [isGeneratingStoryboards, setIsGeneratingStoryboards] = useState(false);
+  const generatingStoryboardsRef = useRef(false); // 同步锁，防止并发调用
   // 自上次提取主体后，剧本是否又重新定稿过（用于控制"开始提取主体"按钮行为）
   const [scriptFinalizedSinceExtraction, setScriptFinalizedSinceExtraction] = useState(false);
   const [scriptEpisodes, setScriptEpisodes] = useState([]);
@@ -781,12 +787,19 @@ export default function Home({ onProjectCreated }) {
   const [notifications, setNotifications] = useState([]);
   const [toast, setToast] = useState(null);
   const toastTimerRef = useRef(null);
+  const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
+  const bgVideoRef = useRef(null);
 
 
   const showToast = (msg, type = 'warning') => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
     setToast({ msg, type });
     toastTimerRef.current = setTimeout(() => setToast(null), 2500);
+  };
+
+  // 背景视频循环：播完当前视频后切换到下一个
+  const handleVideoEnded = () => {
+    setCurrentVideoIndex((prev) => (prev + 1) % BG_VIDEOS.length);
   };
 
   // 统一的退出登录处理函数
@@ -1119,6 +1132,8 @@ export default function Home({ onProjectCreated }) {
 
   // 智能分镜生成回调（由 StoryboardPage 在挂载时调用）
   const handleGenerateStoryboards = async () => {
+    if (generatingStoryboardsRef.current) return;
+    generatingStoryboardsRef.current = true;
     setIsGeneratingStoryboards(true);
     setGenerateError(null);
     setGenerateErrorProjectId(null);
@@ -1160,6 +1175,7 @@ export default function Home({ onProjectCreated }) {
       showToast(errorMsg, 'error');
     }
     setIsGeneratingStoryboards(false);
+    generatingStoryboardsRef.current = false;
   };
 
   // 定稿成功回调：标记"提取主体后已重新定稿"，允许用户再次提取（弹确认弹窗）
@@ -1279,9 +1295,15 @@ export default function Home({ onProjectCreated }) {
       {/* background — only visible on home page */}
       {activeKey === 'home' && (
         <>
-          <img
-            src={bgVideoPoster}
-            alt=""
+          <video
+            ref={bgVideoRef}
+            key={currentVideoIndex}
+            src={BG_VIDEOS[currentVideoIndex]}
+            poster={bgVideoPoster}
+            autoPlay
+            muted
+            playsInline
+            onEnded={handleVideoEnded}
             className="absolute inset-0 object-cover"
             style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center center' }}
           />
