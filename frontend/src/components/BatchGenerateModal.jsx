@@ -75,8 +75,8 @@ function SelectField({ label, value, options, onChange, loading = false }) {
 
         {open && (
           <div
-            className="absolute top-[calc(100%+4px)] left-0 z-10 w-full flex flex-col rounded-lg border border-solid border-[#FFFFFF14] bg-[#1D1E1E] p-[4px]"
-            style={{ boxShadow: '0px 4px 16px rgba(0,0,0,0.6)' }}
+           className="absolute top-[calc(100%+4px)] left-0 z-10 w-full flex flex-col rounded-lg border border-solid border-[#FFFFFF14] bg-[#1D1E1E] p-[4px]"
+            style={{ boxShadow: '0px 4px 16px rgba(0,0,0,0.6)', maxHeight: '240px', overflowY: 'auto' }}
           >
             {options.map((opt) => {
               const isSelected = opt.value === value;
@@ -158,15 +158,17 @@ export default function BatchGenerateModal({ open, onClose, onConfirm, generatin
         const list = Array.isArray(data) ? data : (data?.items || data?.models || []);
         const merged = list.map((m) => {
           const modelId = m.model_id || m.id;
-          const caps = m.capabilities || {};
-          const resolutions = caps.supported_resolutions || [];
-          const resolutionSizeMap = caps.resolution_size_map || {};
-          return {
-            value: modelId,
+        const caps = m.capabilities || {};
+         const resolutions = (caps.supported_resolutions?.length ? caps.supported_resolutions : caps.supported_sizes) || [];
+         const resolutionSizeMap = caps.resolution_size_map || {};
+          const ratios = caps.supported_aspect_ratios || [];
+         return {
+           value: modelId,
             label: m.name || modelId,
             resolutions,
             resolutionSizeMap,
-          };
+            ratios,
+         };
         });
         setModelList(merged.length > 0 ? merged : FALLBACK_MODELS);
       } catch {
@@ -184,13 +186,14 @@ export default function BatchGenerateModal({ open, onClose, onConfirm, generatin
   const [mode, setMode] = useState('main');
 
   // 根据当前选中的模型 + 分辨率，动态计算可用的比例列表
-  const ratioOptions = useMemo(() => {
-    const selected = modelList.find(m => m.value === model);
-    if (!selected) return [];
-    const resRatios = selected.resolutionSizeMap?.[resolution];
-    if (!resRatios) return [];
-    return Object.keys(resRatios).map((r) => ({ value: r, label: r }));
-  }, [model, resolution, modelList]);
+ const ratioOptions = useMemo(() => {
+   const selected = modelList.find(m => m.value === model);
+   if (!selected) return [];
+   const resRatios = selected.resolutionSizeMap?.[resolution];
+    if (resRatios) return Object.keys(resRatios).map((r) => ({ value: r, label: r }));
+    // resolutionSizeMap 中没有当前分辨率时，回退到模型全局支持的 aspect ratios
+    return (selected.ratios || []).map((r) => ({ value: r, label: r }));
+ }, [model, resolution, modelList]);
 
   // 根据当前选中的模型，动态计算可用的分辨率列表
   const resolutionOptions = useMemo(() => {
@@ -206,9 +209,12 @@ export default function BatchGenerateModal({ open, onClose, onConfirm, generatin
     const resList = selected?.resolutions || [];
     if (resList.length > 0) {
       setResolution(resList[0]);
-      const firstResRatios = selected?.resolutionSizeMap?.[resList[0]];
-      if (firstResRatios) {
-        setRatio(Object.keys(firstResRatios)[0] || '16:9');
+     const firstResRatios = selected?.resolutionSizeMap?.[resList[0]];
+     if (firstResRatios) {
+       setRatio(Object.keys(firstResRatios)[0] || '16:9');
+     }
+      else if (selected?.ratios?.length) {
+        setRatio(selected.ratios[0]);
       }
     }
   }, [modelList]);
@@ -217,11 +223,17 @@ export default function BatchGenerateModal({ open, onClose, onConfirm, generatin
   const handleResolutionChange = useCallback((newRes) => {
     setResolution(newRes);
     const selected = modelList.find(m => m.value === model);
-    const resRatios = selected?.resolutionSizeMap?.[newRes];
-    if (resRatios) {
-      const validRatios = Object.keys(resRatios);
-      if (!validRatios.includes(ratio)) {
-        setRatio(validRatios[0]);
+   const resRatios = selected?.resolutionSizeMap?.[newRes];
+   if (resRatios) {
+     const validRatios = Object.keys(resRatios);
+     if (!validRatios.includes(ratio)) {
+       setRatio(validRatios[0]);
+     }
+   }
+    else {
+      const allRatios = selected?.ratios || [];
+      if (!allRatios.includes(ratio)) {
+        setRatio(allRatios[0] || '16:9');
       }
     }
   }, [model, ratio, modelList]);

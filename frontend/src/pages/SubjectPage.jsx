@@ -1588,8 +1588,8 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', onClose, onCom
         const list = Array.isArray(data) ? data : (data?.items || data?.models || []);
         const merged = list.map((m) => {
           const modelId = m.model_id || m.id;
-          const caps = m.capabilities || {};
-          const resolutions = caps.supported_resolutions || [];
+         const caps = m.capabilities || {};
+          const resolutions = (caps.supported_resolutions?.length ? caps.supported_resolutions : caps.supported_sizes) || [];
           const resolutionSizeMap = caps.resolution_size_map || {};
           const ratios = caps.supported_aspect_ratios || [];
           return {

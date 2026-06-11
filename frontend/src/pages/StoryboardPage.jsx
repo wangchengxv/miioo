@@ -4956,7 +4956,7 @@ const INITIAL_SHOTS = [
 
 const EPISODES = ['第一集', '第二集'];
 
-export default function StoryboardPage({ projectId, projectName = '两只老虎的奇遇', chars = [], scenes = [], props = [], episodes = EPISODES, onUnlockStep, onVideoGenerated, onGenerateStoryboards, generateError = null }) {
+export default function StoryboardPage({ projectId, projectName = '两只老虎的奇遇', chars = [], scenes = [], props = [], episodes = EPISODES, onUnlockStep, onVideoGenerated, onGenerateStoryboards, generateError = null, isGenerating: homeIsGenerating = false }) {
   const activeEpisodes = episodes.length > 0 ? episodes : EPISODES;
   const [shots, setShots] = useState([]);
   const [globalVoiceParams, setGlobalVoiceParams] = useState({});
@@ -5328,8 +5328,8 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
   }
 
   // 判断是否显示 loading / 错误态
-  const showGeneratingLoading = isGenerating && shots.length === 0;
-  const showGeneratingError = !!generateError && shots.length === 0 && !hasManuallyInteracted.current;
+  const showGeneratingLoading = (isGenerating && shots.length === 0) || homeIsGenerating;
+  const showGeneratingError = !!generateError && (shots.length === 0 || homeIsGenerating) && !hasManuallyInteracted.current;
 
   if (showGeneratingLoading) {
     return (

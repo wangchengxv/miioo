@@ -1949,6 +1949,8 @@ export default function ScriptPage({ projectId, onGoToSubject, onScriptFinalized
           setScriptContent(prevContent);
           setPhase(prevContent ? 'view' : 'initial');
         }
+        setInputRestoreText(text);
+        setInputRestoreFiles(files);
         showToast('网络连接失败，请检查网络后重试');
         return;
       }
@@ -1962,15 +1964,19 @@ export default function ScriptPage({ projectId, onGoToSubject, onScriptFinalized
           if (receivedContent) {
             setScriptContent(receivedContent);
             setPhase('view');
-          } else {
-            setPhase('initial');
-            setHasStarted(false);
-          }
+        } else {
+          setInputRestoreText(text);
+          setInputRestoreFiles(files);
+          setPhase('initial');
+          setHasStarted(false);
+        }
         }
         return;
       }
 
       console.error('[ScriptPage] 生成剧本失败:', err);
+      setInputRestoreText(text);
+      setInputRestoreFiles(files);
       setPhase('initial');
       setHasStarted(false);
       showToast('剧本生成失败，请稍后重试');

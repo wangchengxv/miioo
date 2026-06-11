@@ -773,6 +773,7 @@ export default function Home({ onProjectCreated }) {
   const [extractErrorProjectId, setExtractErrorProjectId] = useState(null);
   const [generateError, setGenerateError] = useState(null);
   const [generateErrorProjectId, setGenerateErrorProjectId] = useState(null);
+  const [isGeneratingStoryboards, setIsGeneratingStoryboards] = useState(false);
   // 自上次提取主体后，剧本是否又重新定稿过（用于控制"开始提取主体"按钮行为）
   const [scriptFinalizedSinceExtraction, setScriptFinalizedSinceExtraction] = useState(false);
   const [scriptEpisodes, setScriptEpisodes] = useState([]);
@@ -1126,6 +1127,7 @@ export default function Home({ onProjectCreated }) {
 
   // 智能分镜生成回调（由 StoryboardPage 在挂载时调用）
   const handleGenerateStoryboards = async () => {
+    setIsGeneratingStoryboards(true);
     setGenerateError(null);
     setGenerateErrorProjectId(null);
     try {
@@ -1165,6 +1167,7 @@ export default function Home({ onProjectCreated }) {
       setGenerateErrorProjectId(activeProject?.id);
       showToast(errorMsg, 'error');
     }
+    setIsGeneratingStoryboards(false);
   };
 
   // 定稿成功回调：标记"提取主体后已重新定稿"，允许用户再次提取（弹确认弹窗）
@@ -1513,6 +1516,7 @@ export default function Home({ onProjectCreated }) {
                 isStoryboardGenerated={unlockedSteps.has('storyboard')}
                 onStartStoryboard={() => {
                   handleUnlockStep('storyboard');
+                  handleGenerateStoryboards();
                   setActiveStep('storyboard');
                 }}
                 onExtractSubjects={handleExtractSubjects}
@@ -1530,6 +1534,7 @@ export default function Home({ onProjectCreated }) {
                 onUnlockStep={handleUnlockStep}
                 onUnlockStep={handleUnlockStep}
                 onGenerateStoryboards={handleGenerateStoryboards}
+                homeIsGenerating={isGeneratingStoryboards}
                 generateError={generateError}
                 onVideoGenerated={(episodeIndex) => {
                   setEpisodeStatuses((prev) => {
