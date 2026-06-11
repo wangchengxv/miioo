@@ -23,3 +23,7 @@ dist-ssr
 *.sln
 *.sw?
 .miioo-git-dir/
+
+# video files
+*.mp4
+*.mov

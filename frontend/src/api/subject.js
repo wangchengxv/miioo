@@ -214,13 +214,13 @@ export async function apiBatchGenerateStream(projectId, params, { onSubjectImage
 
   // ── 非流式降级：后端返回普通 JSON ────────────────────────────────
   if (!contentType.includes('text/event-stream')) {
-    const data = await res.json();
-    const results = data?.results || data?.items || data?.data || [];
+   const data = await res.json();
+    const results = Array.isArray(data) ? data : (data?.results || data?.items || data?.data || []);
     if (Array.isArray(results)) {
       for (const item of results) {
         const sid = item.subject_id || item.id;
-        const imgUrl = item.image_url || item.imageUrl || item.url;
-        if (item.status === 'error' || item.error) {
+       const imgUrl = item.image_url || item.imageUrl || item.url;
+        if (item.status === 'error' || item.error || item.success === false) {
           onSubjectError?.(sid, item.error || item.message || '生成失败');
         } else if (imgUrl) {
           onSubjectImage?.(sid, imgUrl);
