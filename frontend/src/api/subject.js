@@ -229,7 +229,7 @@ export async function apiBatchGenerateStream(projectId, params, { onSubjectImage
     }
     // 如果有 data.results 但都是空 URL，说明整个请求同步失败了
     // 抛出第一个有 error 的结果
-    const firstError = results.find(r => r.error || r.status === 'error');
+    const firstError = results.find(r => r.error || r.status === 'error' || r.success === false);
     if (firstError && !results.some(r => r.image_url || r.imageUrl || r.url)) {
       const err = new Error(firstError.error || firstError.message || '批量生成失败');
       err.status = res.status;
@@ -274,7 +274,7 @@ export async function apiBatchGenerateStream(projectId, params, { onSubjectImage
           const errMsg = parsed.error || parsed.message;
           const imgUrl = parsed.image_url || parsed.imageUrl || parsed.url;
 
-          if (errMsg && !imgUrl) {
+          if (errMsg || parsed.success === false) {
             onSubjectError?.(sid, errMsg);
           } else if (imgUrl) {
             onSubjectImage?.(sid, imgUrl);

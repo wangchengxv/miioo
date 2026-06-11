@@ -969,18 +969,22 @@ function CharCard({ name, desc, imageUrl, voice, voiceName, voicePreviewUrl, onV
 
   const handleVoicePlay = (e) => {
     e.stopPropagation();
-    if (!voicePreviewUrl) return;
     if (voicePlaying) {
       voiceAudioRef.current?.pause();
       voiceAudioRef.current = null;
       setVoicePlaying(false);
-    } else {
+      return;
+    }
+    if (voicePreviewUrl) {
       const audio = new Audio(voicePreviewUrl);
       voiceAudioRef.current = audio;
       audio.play().catch(() => setVoicePlaying(false));
       audio.onended = () => { voiceAudioRef.current = null; setVoicePlaying(false); };
       audio.onerror = () => { voiceAudioRef.current = null; setVoicePlaying(false); };
       setVoicePlaying(true);
+    } else {
+      setVoicePlaying(true);
+      setTimeout(() => setVoicePlaying(false), 1500);
     }
   };
 
@@ -1048,7 +1052,7 @@ function CharCard({ name, desc, imageUrl, voice, voiceName, voicePreviewUrl, onV
           style={{ gap: '6px' }}
           onClick={(e) => e.stopPropagation()}
         >
-          <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '17px', color: '#FFFFFF66', flexShrink: 0 }}>
+          <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '17px', color: '#FFFFFFCC', flexShrink: 0 }}>
             选择音色：
           </span>
           <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
@@ -1057,7 +1061,7 @@ function CharCard({ name, desc, imageUrl, voice, voiceName, voicePreviewUrl, onV
               onClick={(e) => { e.stopPropagation(); onVoiceClick?.(); }}
               style={{
                 background: 'transparent', border: 'none', padding: 0, cursor: 'pointer',
-                fontFamily: FONT, fontSize: '12px', lineHeight: '17px', color: '#FFFFFF',
+                fontFamily: FONT, fontSize: '12px', lineHeight: '17px', color: (voiceName || voice) ? '#2DC3E1' : '#FFFFFF66',
               }}
             >
               {voiceName || voice || '未选择'}
@@ -1065,14 +1069,14 @@ function CharCard({ name, desc, imageUrl, voice, voiceName, voicePreviewUrl, onV
             {/* headphone preview icon */}
             <button
               type="button"
-              title={!voice ? '请先选择音色' : voicePlaying ? '停止试听' : '试听'}
-              disabled={!voice || !voicePreviewUrl}
+              title={!voice ? '请先选择音色' : '试听'}
+              disabled={!voice}
               onClick={handleVoicePlay}
-              style={{ background: 'transparent', border: 'none', padding: 0, cursor: voice && voicePreviewUrl ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', opacity: voice && voicePreviewUrl ? 1 : 0.3 }}
+              style={{ background: 'transparent', border: 'none', padding: 0, cursor: voice ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', opacity: voice ? 1 : 0.3 }}
             >
               {voicePlaying
                 ? <PlayingWaveIcon color="#2DC3E1" size={16} />
-                : <HeadphoneIcon color={voice && voicePreviewUrl ? '#2DC3E1' : '#FFFFFF26'} />
+                : <HeadphoneIcon color={voice ? '#2DC3E1' : '#FFFFFF26'} />
               }
             </button>
           </div>
@@ -2501,13 +2505,16 @@ export default function SubjectPage({ projectId, projectName = '两只老虎的�
             return next;
           });
         },
-        onComplete: () => {
-          if (successCount > 0) {
-            showBatchToast(successCount === subjectIds.length
-              ? '批量生成全部完成'
-              : `批量生成完成（成功 ${successCount}，失败 ${failCount}）`, 'success');
+       onComplete: () => {
+         if (successCount > 0) {
+           showBatchToast(successCount === subjectIds.length
+             ? '批量生成全部完成'
+             : `批量生成完成（成功 ${successCount}，失败 ${failCount}）`, 'success');
+         }
+          else if (failCount > 0) {
+            showBatchToast('批量生成失败，可能是调用服务商模型失败了，请换个模型再试下', 'error');
           }
-        },
+       },
       });
     } catch (err) {
       // 忽略用户主动取消的错误

@@ -2,12 +2,6 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { PulsingBorder } from '@paper-design/shaders-react';
 import bgVideoPoster from '../assets/bg-video-poster.jpg';
-import bgVideo1 from '../assets/bg-video-1.mp4';
-//import bgVideo2 from '../assets/bg-video-2.mp4';
-//import bgVideo3 from '../assets/bg-video-3.mp4';
-//import bgVideo4 from '../assets/bg-video-4.mp4';
-//import bgVideo5 from '../assets/bg-video-5.mp4';
-//import bgVideo6 from '../assets/bg-video-6.mp4';
 import { apiGetProjects, apiUpdateProject, apiDeleteProject, apiGetProject, apiGetProjectOverview } from '../api/project';
 import { getToken, refreshAccessToken } from '../api/request';
 import { clearTokens, apiLogout } from '../api/auth';
@@ -280,8 +274,7 @@ const BOTTOM_NAV_ITEMS = [
   },
 ];
 
-const BG_VIDEOS = [bgVideo1, /*bgVideo2, bgVideo3, bgVideo4, bgVideo5, bgVideo6*/];
-const BG_POSTER_URL = bgVideoPoster;
+
 
 const CMB_ICON_DEFAULT = (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: '0' }}>
@@ -788,8 +781,7 @@ export default function Home({ onProjectCreated }) {
   const [notifications, setNotifications] = useState([]);
   const [toast, setToast] = useState(null);
   const toastTimerRef = useRef(null);
-  const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
-  const videoRef = useRef(null);
+
 
   const showToast = (msg, type = 'warning') => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -1287,21 +1279,12 @@ export default function Home({ onProjectCreated }) {
       {/* background — only visible on home page */}
       {activeKey === 'home' && (
         <>
-          <video
-            ref={videoRef}
-            autoPlay
-            muted
-            playsInline
-            poster={BG_POSTER_URL}
+          <img
+            src={bgVideoPoster}
+            alt=""
             className="absolute inset-0 object-cover"
             style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center center' }}
-            onEnded={() => {
-              setCurrentVideoIndex((prev) => (prev + 1) % BG_VIDEOS.length);
-            }}
-            key={currentVideoIndex}
-          >
-            <source src={BG_VIDEOS[currentVideoIndex]} type="video/mp4" />
-          </video>
+          />
           <div
             className="absolute inset-0 pointer-events-none"
             style={{ backgroundImage: 'linear-gradient(in oklab 180deg, oklab(0% 0 0 / 0%) 81.58%, oklab(0% 0 0) 100%), linear-gradient(in oklab 90deg, oklab(0% 0 0 / 60%) 0%, oklab(0% 0 0 / 0%) 9.99%)' }}
@@ -1312,7 +1295,7 @@ export default function Home({ onProjectCreated }) {
         <div className="absolute inset-0 bg-neutral-400" />
       )}
 
-      <div className="flex flex-col items-start absolute inset-0" style={{ paddingBottom: "44px" }}>
+      <div className="flex flex-col items-start absolute inset-0" style={{ paddingBottom: activeKey === "home" ? "44px" : "0px" }}>
         {/* headbar */}
         {!activeProject ? (
         <div className="flex items-center px-24 py-12 justify-between gap-[37px] self-stretch">
@@ -1559,14 +1542,16 @@ export default function Home({ onProjectCreated }) {
         </div>
       </div>
 
-      {/* 网站备案信息 */}
-      <div
-        className="absolute bottom-0 left-0 right-0 flex items-center justify-between text-text-hint z-10"
-        style={{ height: "44px", paddingLeft: "24px", paddingRight: "24px", fontSize: "12px" }}
-      >
-        <span>ⓒ2026 MiiooAI 版权所有</span>
-        <span>鲁ICP备2026030778号</span>
-      </div>
+      {/* 网站备案信息 — 仅首页可见 */}
+      {activeKey === 'home' && (
+        <div
+          className="absolute bottom-0 left-0 right-0 flex items-center justify-between text-text-hint z-10"
+          style={{ height: "44px", paddingLeft: "24px", paddingRight: "24px", fontSize: "12px" }}
+        >
+          <span>ⓒ2026 MiiooAI 版权所有</span>
+          <span>鲁ICP备2026030778号</span>
+        </div>
+      )}
       <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} onSuccess={() => {
         setLoginOpen(false);
         setIsLoggedIn(true);
