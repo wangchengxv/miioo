@@ -25,6 +25,14 @@ export async function apiCreateProvider({ name, provider_type, base_url, api_key
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, provider_type, base_url, api_key }),
   });
+  if (!res.ok) {
+    let message = `请求失败 (${res.status})`;
+    try {
+      const err = await res.json();
+      if (err?.detail) message = typeof err.detail === 'string' ? err.detail : JSON.stringify(err.detail);
+    } catch {}
+    throw new Error(message);
+  }
   return res.json();
 }
 
@@ -34,6 +42,14 @@ export async function apiUpdateProvider(providerId, data) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
+  if (!res.ok) {
+    let message = `请求失败 (${res.status})`;
+    try {
+      const err = await res.json();
+      if (err?.detail) message = typeof err.detail === 'string' ? err.detail : JSON.stringify(err.detail);
+    } catch {}
+    throw new Error(message);
+  }
   return res.json();
 }
 

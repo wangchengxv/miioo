@@ -2001,8 +2001,8 @@ function GenerateImagePanel({ shot, projectId, chars = [], scenes = [], props = 
             </div>
 
             <PanelPromptInput value={prompt} onChange={setPrompt} chars={chars} scenes={scenes} props={props} mainRefs={shot?.mainRefs || []} />
-            <PanelSelect label="选择模型" value={modelsLoading ? '加载中...' : (tabModels.find(m => m.value === model)?.label || '请选择')} options={tabModels.map(m => m.label)} onChange={(label) => {
-              const selected = tabModels.find(m => m.label === label);
+            <PanelSelect label="选择模型" value={modelsLoading ? '加载中...' : (modelList.find(m => m.value === model)?.label || '请选择')} options={modelList.map(m => m.label)} onChange={(label) => {
+              const selected = modelList.find(m => m.label === label);
               if (selected) setModel(selected.value);
             }} />
 
@@ -2145,13 +2145,18 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
         });
 
         // 按 reference_modes 分类模型
-        const frameModes = ['first_frame', 'last_frame', 'start_end'];
+        const frameModes = ['first_frame', 'last_frame', 'start_end', 'multiframe'];
         const isFrameModel = (m) => {
           const refs = m.capabilities?.reference_modes || [];
           return refs.some(r => frameModes.includes(r));
         };
         const frameModels = merged.filter(isFrameModel);
-        const allModels = merged.filter(m => !isFrameModel(m));
+        const isAllRefModel = (m) => {
+          const refs = m.capabilities?.reference_modes || [];
+          if (refs.length === 0) return true;
+          return refs.some(r => !frameModes.includes(r));
+        };
+        const allModels = merged.filter(isAllRefModel);
 
         setModelList(merged);
         // 缓存分类列表供 Tab 切换使用
@@ -4959,20 +4964,20 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
   const [dragId, setDragId] = useState(null);
   const [overId, setOverId] = useState(null);
   const [isGenerating, setIsGenerating] = useState(false);
-  const [genAttempted, setGenAttempted] = useState(false);
 
-  // 挂载时自动调用智能分镜生成（仅当分镜为空、未尝试过、且无已有错误）
+  // 用户是否手动操作过（添加/删除分镜），如果操作过就不再展示智能分镜失败的错误态
+  const hasManuallyInteracted = useRef(false);
+
+  // 挂载时自动调用智能分镜（仅当分镜为空且无已有错误，用户点击确认弹窗后跳转到此页时触发）
   useEffect(() => {
     if (!onGenerateStoryboards) return;
-    if (shots.length > 0 || generateError || genAttempted) return;
-    setGenAttempted(true);
+    if (shots.length > 0 || generateError) return;
     setIsGenerating(true);
     onGenerateStoryboards().finally(() => {
       setIsGenerating(false);
     });
-  }, [onGenerateStoryboards, shots.length, generateError, genAttempted]);
+  }, [onGenerateStoryboards, shots.length, generateError]);
 
-  // 循环 loading 文案
   const [loadingTextIndex, setLoadingTextIndex] = useState(0);
   const loadingTexts = ['正在智能分镜中', '请稍等', '等待时间大约5分钟', '请耐心等待'];
 
@@ -5290,6 +5295,7 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
     apiCreateStoryboard(projectId, { ...toBackendStoryboard(newShot), episode_id: getEpisodeId(episode) })
       .then((created) => {
         const shotWithRealId = normalizeStoryboard(created);
+        hasManuallyInteracted.current = true;
         setShots((prev) => [...prev, shotWithRealId]);
       })
       .catch((err) => {
@@ -5323,7 +5329,7 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
 
   // 判断是否显示 loading / 错误态
   const showGeneratingLoading = isGenerating && shots.length === 0;
-  const showGeneratingError = !!generateError && shots.length === 0;
+  const showGeneratingError = !!generateError && shots.length === 0 && !hasManuallyInteracted.current;
 
   if (showGeneratingLoading) {
     return (
@@ -5366,34 +5372,23 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
             setIsGenerating(true);
             onGenerateStoryboards?.().finally(() => setIsGenerating(false));
           }}
+          className="[font-synthesis:none] flex items-center justify-center px-[16px] h-9 rounded-lg bg-btn-accent-bg-normal hover:bg-btn-accent-bg-hover active:bg-btn-accent-bg-active border border-btn-accent-border [outline:1px_solid_var(--color-stroke-outline)] shrink-0 cursor-pointer"
           style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            height: '36px', borderRadius: '8px', paddingInline: '16px',
-            backgroundColor: '#2DC3E1', border: '1px solid #FFFFFF33',
-            cursor: 'pointer', outline: '1px solid #00000080',
-            fontFamily: "'AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif",
-            fontSize: '14px', lineHeight: '18px', color: '#090909',
+            backgroundImage: 'linear-gradient(157.78deg, #7AE5B94D 2.88%, #7AE5B900 56.77%)',
           }}
         >
-          重新提取分镜
+          <span className="text-btn-accent-text text-[14px] font-medium leading-[18px]" style={{ fontFamily: "'AlibabaPuHuiTi_2_55_Regular','Alibaba PuHuiTi 2.0',system-ui,sans-serif" }}>
+            重新提取分镜
+          </span>
         </button>
         <button
           type="button"
           onClick={addNewShot}
-          style={{
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            height: '36px', borderRadius: '8px', paddingInline: '16px',
-            backgroundColor: '#161616',
-            border: '1px solid rgba(255, 255, 255, 0.08)',
-            cursor: 'pointer',
-            outline: '1px solid rgba(0, 0, 0, 0.50)',
-            boxShadow: 'rgba(0, 0, 0, 0.40) 3px 3px 8px',
-            fontFamily: "'AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif",
-            fontSize: '14px', fontWeight: 400, lineHeight: '18px',
-            color: 'rgba(255, 255, 255, 0.60)',
-          }}
+          className="[font-synthesis:none] flex items-center justify-center px-[16px] h-9 rounded-lg bg-btn-primary-bg-normal hover:bg-btn-primary-bg-hover active:bg-btn-primary-bg-active border border-btn-primary-border [outline:1px_solid_var(--color-stroke-outline)] [box-shadow:var(--color-shadow)_3px_3px_8px] shrink-0 cursor-pointer"
         >
-          手动添加分镜
+          <span className="text-btn-primary-text text-[14px] font-normal leading-[18px]" style={{ fontFamily: "'AlibabaPuHuiTi_2_55_Regular','Alibaba PuHuiTi 2.0',system-ui,sans-serif" }}>
+            手动添加分镜
+          </span>
         </button>
       </div>
     );

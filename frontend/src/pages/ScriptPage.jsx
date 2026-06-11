@@ -1733,7 +1733,7 @@ function ScriptPanel({
   );
 }
 
-export default function ScriptPage({ projectId, onGoToSubject, onScriptFinalized, onEpisodesChange, phase: phaseProp, onPhaseChange, hasStarted: hasStartedProp, onHasStartedChange, scriptContent: scriptContentProp, onScriptContentChange, draftContent: draftContentProp, onDraftContentChange }) {
+export default function ScriptPage({ projectId, onGoToSubject, onScriptFinalized, onEpisodesChange, phase: phaseProp, onPhaseChange, hasStarted: hasStartedProp, onHasStartedChange, scriptContent: scriptContentProp, onScriptContentChange, draftContent: draftContentProp, onDraftContentChange, isSubjectUnlocked = false }) {
   const [phaseLocal, setPhaseLocalRaw] = useState('initial');
   const [hasStartedLocal, setHasStartedLocalRaw] = useState(false);
   const [scriptContentLocal, setScriptContentLocalRaw] = useState('');
@@ -2051,10 +2051,29 @@ export default function ScriptPage({ projectId, onGoToSubject, onScriptFinalized
     setPhase('view');
   };
 
-  // 提取主体按钮点击：已提取过主体 → 弹窗二次确认（覆盖风险）；首次 → 直接提取
+  // 提取主体按钮点击：已提取过主体 → 弹窗二次确认（覆盖风险）；首次 → 直接跳转
+  const [extractConfirmOpen, setExtractConfirmOpen] = useState(false);
+
   const handleExtractRequest = () => {
+    if (isSubjectUnlocked) {
+      setExtractConfirmOpen(true);
+      return;
+    }
     onGoToSubject?.('char');
   };
+
+  // 提取主体二次确认弹窗
+  if (extractConfirmOpen) {
+    return (
+      <ConfirmExtractModal
+        onConfirm={() => {
+          setExtractConfirmOpen(false);
+          onGoToSubject?.('char');
+        }}
+        onCancel={() => setExtractConfirmOpen(false)}
+      />
+    );
+  }
 
   const handleSelectEpisode = useCallback(
     (index) => {

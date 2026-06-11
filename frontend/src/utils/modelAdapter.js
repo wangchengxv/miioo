@@ -30,7 +30,18 @@ export function adaptModels(backendModels, genType) {
     if (!m.is_enabled) continue;
     const cat = (m.category || '').toLowerCase();
     if (genType === 'image' && !cat.includes('image')) continue;
-    if (genType === 'video' && !cat.includes('video')) continue;
+   if (genType === 'video' && !cat.includes('video')) continue;
+
+    if (genType === 'dubbing') {
+      if (!cat.includes('dubbing') && !cat.includes('audio') && !cat.includes('tts') && !cat.includes('speech')) continue;
+      options.push({ value: m.model_id, label: m.name });
+      if (m.capabilities && typeof m.capabilities === 'object' && Object.keys(m.capabilities).length > 0) {
+        caps[m.model_id] = m.capabilities;
+      }
+      continue;
+    }
+
+  if (genType === 'dubbing') return { modelOptions: options, capabilitiesMap: caps };
 
     const refModes = m.capabilities?.reference_modes || [];
     const frameKeys = ['first_frame', 'last_frame', 'start_end', 'multiframe'];
@@ -61,12 +72,32 @@ export function getModelParams(genType, modelId, capabilitiesMap) {
   const backendCap = capabilitiesMap?.[modelId];
   if (backendCap) {
     return genType === 'image'
-      ? getImageModelParamsFromCap(backendCap)
-      : getVideoModelParamsFromCap(backendCap);
+     ? getImageModelParamsFromCap(backendCap)
+      : genType === 'dubbing'
+      ? getDubbingModelParamsFromCap(backendCap)
+     : getVideoModelParamsFromCap(backendCap);
   }
   return genType === 'image'
-    ? getImageModelParams(modelId)
-    : getVideoModelParams(modelId);
+   ? getImageModelParams(modelId)
+    : genType === 'dubbing'
+    ? getDubbingModelParamsFromCap(null)
+   : getVideoModelParams(modelId);
+}
+
+// ── Dubbing model params ──────────────────────────────────────────────────────
+const DEFAULT_DUBBING_EMOTIONS = ['中性', '愤怒', '开心', '悲伤', '恐惧', '冷漠', '惊讶', '温柔'];
+const DEFAULT_DUBBING_SPEEDS = [0.5, 0.75, 1.0, 1.25, 1.5, 1.75, 2.0];
+
+function getDubbingModelParamsFromCap(capabilities) {
+  const emotions = Array.isArray(capabilities?.supported_emotions) && capabilities.supported_emotions.length > 0
+    ? capabilities.supported_emotions
+    : DEFAULT_DUBBING_EMOTIONS;
+  const speeds = Array.isArray(capabilities?.supported_speeds) && capabilities.supported_speeds.length > 0
+    ? capabilities.supported_speeds
+    : DEFAULT_DUBBING_SPEEDS;
+  const defaultSpeed = capabilities?.defaults?.speed ?? 1.0;
+  const defaultEmotion = capabilities?.defaults?.emotion ?? (emotions[0] || '');
+  return { emotions, speeds, defaults: { speed: defaultSpeed, emotion: defaultEmotion } };
 }
 
 function getImageModelParamsFromCap(capabilities) {
@@ -258,6 +289,9 @@ function fallbackToLocal(genType) {
   if (genType === 'image') {
     const list = getImageModelList();
     return { modelOptions: list, capabilitiesMap: {} };
+  }
+  if (genType === 'dubbing') {
+    return { modelOptions: [], capabilitiesMap: {} };
   }
   const list = getVideoModelList();
   return { modelOptions: list, capabilitiesMap: {} };

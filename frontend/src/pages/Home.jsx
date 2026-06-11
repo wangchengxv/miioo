@@ -770,7 +770,9 @@ export default function Home({ onProjectCreated }) {
   const [sharedScenes, setSharedScenes] = useState(null);
   const [sharedProps, setSharedProps] = useState(null);
   const [extractError, setExtractError] = useState(null);
+  const [extractErrorProjectId, setExtractErrorProjectId] = useState(null);
   const [generateError, setGenerateError] = useState(null);
+  const [generateErrorProjectId, setGenerateErrorProjectId] = useState(null);
   // 自上次提取主体后，剧本是否又重新定稿过（用于控制"开始提取主体"按钮行为）
   const [scriptFinalizedSinceExtraction, setScriptFinalizedSinceExtraction] = useState(false);
   const [scriptEpisodes, setScriptEpisodes] = useState([]);
@@ -860,8 +862,28 @@ export default function Home({ onProjectCreated }) {
   const loadProjectDetails = async (projectId) => {
     setIsLoadingProject(true);
     try {
-      // 0. 先重置步骤为默认值，防止 activeProject 切换时 useEffect 把旧项目的 step 写入新项目缓存
+      // 0. 切换项目前先清空旧项目所有数据状态，避免闪现旧数据
+      setActiveProject(null);
       setActiveStep('script');
+      setScriptContent('');
+      setScriptEpisodes([]);
+      setScriptPhase('initial');
+      setScriptHasStarted(false);
+      setScriptFinalizedSinceExtraction(false);
+      setSharedChars([]);
+      setSharedScenes([]);
+      setSharedProps([]);
+      setEpisodeStatuses({});
+      setUnlockedSteps(new Set());
+      if (extractErrorProjectId !== projectId) {
+        setExtractError(null);
+        setExtractErrorProjectId(null);
+      }
+      if (generateErrorProjectId !== projectId) {
+        setGenerateError(null);
+        setGenerateErrorProjectId(null);
+      }
+      setSubjectInitialTab('char');
       // 1. 加载项目基本信息
       const projectData = await apiGetProject(projectId);
       setActiveProject(projectData);
@@ -1081,6 +1103,7 @@ export default function Home({ onProjectCreated }) {
 
       if (normalizedChars.length === 0 && normalizedScenes.length === 0 && normalizedProps.length === 0) {
         setExtractError('提取主体失败，请稍后重试');
+        setExtractErrorProjectId(activeProject?.id);
         showToast('提取主体失败，请稍后重试', 'error');
         return;
       }
@@ -1096,6 +1119,7 @@ export default function Home({ onProjectCreated }) {
     } catch (err) {
       console.error('提取主体失败:', err);
       setExtractError('提取主体失败，请重试');
+      setExtractErrorProjectId(activeProject?.id);
       showToast('提取主体失败，请重试', 'error');
     }
   };
@@ -1103,6 +1127,7 @@ export default function Home({ onProjectCreated }) {
   // 智能分镜生成回调（由 StoryboardPage 在挂载时调用）
   const handleGenerateStoryboards = async () => {
     setGenerateError(null);
+    setGenerateErrorProjectId(null);
     try {
       let freshEpisodes = await apiGetEpisodes(activeProject.id).catch(() => []);
       if (freshEpisodes.length === 0 && scriptContent) {
@@ -1137,6 +1162,7 @@ export default function Home({ onProjectCreated }) {
         errorMsg = '分镜生成失败，请重试';
       }
       setGenerateError(errorMsg);
+      setGenerateErrorProjectId(activeProject?.id);
       showToast(errorMsg, 'error');
     }
   };
@@ -1440,6 +1466,7 @@ export default function Home({ onProjectCreated }) {
                 activeStep={activeStep}
                 onStepChange={setActiveStep}
                 onUnlockStep={handleUnlockStep}
+                isSubjectUnlocked={unlockedSteps.has('subject')}
                 chars={sharedChars ?? []}
                 scenes={sharedScenes ?? []}
                 props={sharedProps ?? []}

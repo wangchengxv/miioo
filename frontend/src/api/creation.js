@@ -415,6 +415,7 @@ export async function apiGetVideoLastFrame(videoUrl) {
 // ── Legacy：apiGenerateCreation（兼容旧调用，内部拆分图片/视频分支）──────────
 
 export async function apiGenerateCreation(params) {
+  const isDubbing = params.genType === 'dubbing';
   const isVideo = params.genType === 'video';
 
   // ── 内部：轮询任务 ──────────────────────────────────────────────────────
@@ -478,6 +479,51 @@ export async function apiGenerateCreation(params) {
       lastFrameUrl = r.uploaded_url || r.uploadedUrl || undefined;
       lastFrameAssetId = r.asset_id || undefined;
     } catch {}
+  }
+
+  // ── 配音生成 ────────────────────────────────────────────────────────────
+  if (isDubbing) {
+    // 上传参考音频文件
+    let referenceAudioUrl;
+    const audioFiles = params.files ? (Array.isArray(params.files) ? params.files : [params.files]) : [];
+    for (const f of audioFiles) {
+      if (f && typeof f === 'object' && !(f instanceof File) && f.url) {
+        referenceAudioUrl = f.url;
+        break;
+      }
+      if (!(f instanceof File)) continue;
+      try {
+        const result = await apiUploadCreationImage({ file: f, category: 'reference', ...uploadContext });
+        const url = result.uploaded_url || result.uploadedUrl || '';
+        if (url) referenceAudioUrl = url;
+      } catch { /* 单个文件上传失败不阻塞整体 */ }
+    }
+    const dubbingBody = {
+      text: params.prompt || params.text,
+      model: params.model || undefined,
+      speed: params.speed ?? 1.0,
+      emotion: params.emotion || undefined,
+      voice_id: params.voice_id || undefined,
+      reference_audio_url: referenceAudioUrl || undefined,
+      session_id: uploadContext.session_id,
+      shot_id: uploadContext.shot_id,
+      project_id: uploadContext.project_id,
+    };
+    const genData = await apiGenerateCreationAudio(dubbingBody);
+    const taskId = genData.task_id || genData.id;
+    if (!taskId) throw new Error('No task_id returned');
+
+    const { audios } = await pollTask(
+      `/api/creation/audios/tasks/`,
+      (pollData) => {
+        const result = pollData.result;
+        if (!result) return { audios: [] };
+        return {
+          audios: [result.audio_url || result.audioUrl],
+        };
+      },
+    );
+    return { taskId, audios };
   }
 
   // ── 图片生成 ────────────────────────────────────────────────────────────

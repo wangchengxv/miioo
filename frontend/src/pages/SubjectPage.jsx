@@ -8,6 +8,7 @@ import { apiCreateSubject, apiUpdateSubject, apiDeleteSubject, apiGenerateSubjec
 import { apiGetProjects } from '../api/project';
 import { apiGetAssets } from '../api/assets';
 import { apiListModels } from '../api/config';
+import { apiGetVoices } from '../api/voices';
 import placeholderImg from '../assets/placeholder-img.webp';
 import scenePlaceholderImg from '../assets/Mountain landscape.avif';
 import propPlaceholderImg from '../assets/Tool box silhouette.avif';
@@ -436,12 +437,8 @@ function TabNav({ activeTab, counts, onChange }) {
 
 // ── Voice select modal ─────────────────────────────────────────────────────
 
-const VOICE_OPTIONS = ['霸气威武', '高冷御姐', '温柔甜美', '活泼少年', '沉稳大叔', '清新少女', '磁性男声', '俏皮萝莉'];
-
 const GENDER_OPTIONS = ['不限', '男', '女'];
 const AGE_OPTIONS = ['不限', '幼年', '青年', '中年', '老年'];
-// TODO: 情感选项后续对接后端接口获取
-const EMOTION_OPTIONS = ['不限', '开心', '悲伤', '愤怒', '恐惧', '惊讶', '中性'];
 
 const ChevronDownIcon = () => (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
@@ -489,7 +486,7 @@ function SelectField({ label, value, options = [], onChange }) {
   const hasOptions = options.length > 0;
 
   return (
-    <div ref={ref} style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1, position: 'relative' }}>
+    <div ref={ref} style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: '0 0 23.4%', position: 'relative' }}>
       <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF99' }}>{label}</span>
       <button
         type="button"
@@ -543,14 +540,40 @@ function SelectField({ label, value, options = [], onChange }) {
     </div>
   );
 }
-
-function VoiceCard({ label, active, onClick }) {
+function VoiceCard({ label, active, onClick, previewUrl }) {
   const [playing, setPlaying] = useState(false);
+  const audioRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+    };
+  }, []);
+
+  const handlePlay = (e) => {
+    e.stopPropagation();
+    if (!previewUrl) return;
+    if (playing) {
+      audioRef.current?.pause();
+      audioRef.current = null;
+      setPlaying(false);
+    } else {
+      const audio = new Audio(previewUrl);
+      audioRef.current = audio;
+      audio.play().catch(() => setPlaying(false));
+      audio.onended = () => { audioRef.current = null; setPlaying(false); };
+      audio.onerror = () => { audioRef.current = null; setPlaying(false); };
+      setPlaying(true);
+    }
+  };
   return (
     <div
       onClick={onClick}
       style={{
-        flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        flex: '0 0 23.4%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
         gap: '6px', borderRadius: '8px', padding: '8px', cursor: 'pointer',
         background: '#1D1E1E',
         border: `1px solid ${active ? '#2DC3E1' : '#FFFFFF14'}`,
@@ -559,12 +582,13 @@ function VoiceCard({ label, active, onClick }) {
     >
       <button
         type="button"
-        onClick={(e) => { e.stopPropagation(); setPlaying((v) => !v); }}
-        style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        onClick={handlePlay}
+        disabled={!previewUrl}
+        style={{ background: 'transparent', border: 'none', padding: 0, cursor: previewUrl ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: previewUrl ? 1 : 0.3 }}
       >
         {playing
           ? <PlayingWaveIcon color="#2DC3E1" size={16} />
-          : <HeadphoneIcon color="#2DC3E1" />
+          : <HeadphoneIcon color={previewUrl ? '#2DC3E1' : '#FFFFFF99'} />
         }
       </button>
       <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '17px', color: active ? '#2DC3E1' : '#FFFFFF99', textAlign: 'center' }}>
@@ -574,17 +598,41 @@ function VoiceCard({ label, active, onClick }) {
   );
 }
 
-function VoiceSelectModal({ open, onClose, onConfirm, currentVoice }) {
-  const [selected, setSelected] = useState(currentVoice || VOICE_OPTIONS[0]);
+function VoiceSelectModal({ open, onClose, onConfirm, currentVoice, onVoicesLoaded }) {
+  const [voices, setVoices] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [selected, setSelected] = useState(currentVoice || '');
   const [gender, setGender] = useState('不限');
   const [age, setAge] = useState('不限');
-  const [emotion, setEmotion] = useState('不限');
+
+  useEffect(() => {
+    if (!open) return;
+    setLoading(true);
+    apiGetVoices({ tab: 'all' })
+      .then((data) => {
+        const list = Array.isArray(data) ? data : data?.items ?? data?.voices ?? [];
+        setVoices(list);
+        onVoicesLoaded?.(list);
+      })
+      .catch(() => setVoices([]))
+      .finally(() => setLoading(false));
+  }, [open]);
+
+
+  const filteredVoices = useMemo(() => {
+    return voices.filter((v) => {
+      if (gender !== '不限' && v.gender !== gender) return false;
+      if (age !== '不限' && v.age_group !== age) return false;
+      if (v.language !== '中文') return false;
+      return true;
+    });
+  }, [voices, gender, age]);
 
   if (!open) return null;
 
   const rows = [];
-  for (let i = 0; i < VOICE_OPTIONS.length; i += 4) {
-    rows.push(VOICE_OPTIONS.slice(i, i + 4));
+  for (let i = 0; i < filteredVoices.length; i += 4) {
+    rows.push(filteredVoices.slice(i, i + 4));
   }
 
   const handleConfirm = () => {
@@ -632,15 +680,24 @@ function VoiceSelectModal({ open, onClose, onConfirm, currentVoice }) {
         <div style={{ display: 'flex', gap: '16px', padding: '8px 24px', background: '#161616', flexShrink: 0 }}>
           <SelectField label="性别" value={gender} options={GENDER_OPTIONS} onChange={setGender} />
           <SelectField label="年龄" value={age} options={AGE_OPTIONS} onChange={setAge} />
-          <SelectField label="情感" value={emotion} options={EMOTION_OPTIONS} onChange={setEmotion} />
         </div>
 
         {/* voice grid */}
         <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '8px 24px 16px', background: '#161616', flex: 1, overflowY: 'auto' }}>
-          {rows.map((row, ri) => (
+          {loading && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1 }}>
+              <DotsLoading size={6} color="#2DC3E1" gap={4} />
+            </div>
+          )}
+          {!loading && filteredVoices.length === 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1 }}>
+              <span style={{ fontFamily: FONT, fontSize: '14px', color: '#FFFFFF66' }}>暂无匹配音色</span>
+            </div>
+          )}
+          {!loading && rows.map((row, ri) => (
             <div key={ri} style={{ display: 'flex', gap: '14px' }}>
               {row.map((v) => (
-                <VoiceCard key={v} label={v} active={selected === v} onClick={() => setSelected(v)} />
+                <VoiceCard key={v.voice_id} label={`${v.name}-${v.style}`} active={selected === v.voice_id} onClick={() => setSelected(v.voice_id)} previewUrl={v.preview_url} />
               ))}
             </div>
           ))}
@@ -905,9 +962,27 @@ function MoreMenu({ onDownload, onDelete }) {
   );
 }
 
-function CharCard({ name, desc, imageUrl, voice, onVoiceClick, onClick, onDownloadImage, onDeleteSubject, placeholderImg: cardPlaceholder = placeholderImg, loading = false }) {
+function CharCard({ name, desc, imageUrl, voice, voiceName, voicePreviewUrl, onVoiceClick, onClick, onDownloadImage, onDeleteSubject, placeholderImg: cardPlaceholder = placeholderImg, loading = false }) {
   const [hovered, setHovered] = useState(false);
   const [voicePlaying, setVoicePlaying] = useState(false);
+  const voiceAudioRef = useRef(null);
+
+  const handleVoicePlay = (e) => {
+    e.stopPropagation();
+    if (!voicePreviewUrl) return;
+    if (voicePlaying) {
+      voiceAudioRef.current?.pause();
+      voiceAudioRef.current = null;
+      setVoicePlaying(false);
+    } else {
+      const audio = new Audio(voicePreviewUrl);
+      voiceAudioRef.current = audio;
+      audio.play().catch(() => setVoicePlaying(false));
+      audio.onended = () => { voiceAudioRef.current = null; setVoicePlaying(false); };
+      audio.onerror = () => { voiceAudioRef.current = null; setVoicePlaying(false); };
+      setVoicePlaying(true);
+    }
+  };
 
   return (
     <div
@@ -985,19 +1060,19 @@ function CharCard({ name, desc, imageUrl, voice, onVoiceClick, onClick, onDownlo
                 fontFamily: FONT, fontSize: '12px', lineHeight: '17px', color: '#FFFFFF',
               }}
             >
-              {voice || '未选择'}
+              {voiceName || voice || '未选择'}
             </button>
             {/* headphone preview icon */}
             <button
               type="button"
               title={!voice ? '请先选择音色' : voicePlaying ? '停止试听' : '试听'}
-              disabled={!voice}
-              onClick={(e) => { e.stopPropagation(); if (voice) setVoicePlaying((v) => !v); }}
-              style={{ background: 'transparent', border: 'none', padding: 0, cursor: voice ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center' }}
+              disabled={!voice || !voicePreviewUrl}
+              onClick={handleVoicePlay}
+              style={{ background: 'transparent', border: 'none', padding: 0, cursor: voice && voicePreviewUrl ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', opacity: voice && voicePreviewUrl ? 1 : 0.3 }}
             >
-              {voicePlaying && voice
+              {voicePlaying
                 ? <PlayingWaveIcon color="#2DC3E1" size={16} />
-                : <HeadphoneIcon color={voice ? '#2DC3E1' : '#FFFFFF26'} />
+                : <HeadphoneIcon color={voice && voicePreviewUrl ? '#2DC3E1' : '#FFFFFF26'} />
               }
             </button>
           </div>
@@ -1037,11 +1112,12 @@ function AddCard({ onClick }) {
 
 const INITIAL_CHARS = [
   { id: 1, name: '虎大', desc: '森林里最年长的老虎，性格沉稳，是两兄弟中的大哥，负责保护弟弟虎二。', imageUrl: null, voice: '霸气威武' },
-  { id: 2, name: '虎二', desc: '活泼好动的小老虎，总是惹麻烦，但心地善良，对哥哥虎大十分依赖。', imageUrl: null, voice: '霸气威武' },
-  { id: 3, name: '狐狸阿九', desc: '狡猾却重情义的狐狸，表面上爱耍小聪明，关键时刻总会挺身而出。', imageUrl: null, voice: '霸气威武' },
-  { id: 4, name: '老猫头鹰', desc: '森林里的智者，见过无数风雨，总在两只老虎迷路时给出关键指引。', imageUrl: null, voice: '霸气威武' },
-  { id: 5, name: '小松鼠', desc: '话多又热心的小松鼠，是森林里的消息灵通人士，喜欢收集各种坚果和秘密。', imageUrl: null, voice: '霸气威武' },
-  { id: 6, name: '大灰狼', desc: '看似凶猛的反派，实则只是想找人一起玩，孤独是他最大的秘密。', imageUrl: null, voice: '霸气威武' },
+  { id: 1, name: '虎大', desc: '森林里最年长的老虎，性格沉稳，是两兄弟中的大哥，负责保护弟弟虎二。', imageUrl: null, voice: null },
+  { id: 2, name: '虎二', desc: '活泼好动的小老虎，总是惹麻烦，但心地善良，对哥哥虎大十分依赖。', imageUrl: null, voice: null },
+  { id: 3, name: '狐狸阿九', desc: '狡猾却重情义的狐狸，表面上爱耍小聪明，关键时刻总会挺身而出。', imageUrl: null, voice: null },
+  { id: 4, name: '老猫头鹰', desc: '森林里的智者，见过无数风雨，总在两只老虎迷路时给出关键指引。', imageUrl: null, voice: null },
+  { id: 5, name: '小松鼠', desc: '话多又热心的小松鼠，是森林里的消息灵通人士，喜欢收集各种坚果和秘密。', imageUrl: null, voice: null },
+  { id: 6, name: '大灰狼', desc: '看似凶猛的反派，实则只是想找人一起玩，孤独是他最大的秘密。', imageUrl: null, voice: null },
 ];
 
 const MOCK_PROPS = [];
@@ -2283,7 +2359,7 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', onClose, onCom
 
 // ── Main export ────────────────────────────────────────────────────────────
 
-export default function SubjectPage({ projectId, projectName = '两只老虎的奇遇', onBack, onUnlockStep, onStartStoryboard, onExtractSubjects, extractError = null, initialTab = 'char', chars: externalChars, onCharsChange, scenes: externalScenes, onScenesChange, props: externalProps, onPropsChange }) {
+export default function SubjectPage({ projectId, projectName = '两只老虎的奇遇', onBack, onUnlockStep, onStartStoryboard, onExtractSubjects, extractError = null, isStoryboardGenerated = false, initialTab = 'char', chars: externalChars, onCharsChange, scenes: externalScenes, onScenesChange, props: externalProps, onPropsChange }) {
   const [activeTab, setActiveTab] = useState(initialTab);
   const [episodes, setEpisodes] = useState([]);
   const [activeEpisode, setActiveEpisode] = useState('');
@@ -2459,6 +2535,7 @@ export default function SubjectPage({ projectId, projectName = '两只老虎的�
   const [selectedScene, setSelectedScene] = useState(null);
   const [selectedProp, setSelectedProp] = useState(null);
   const [voiceModalChar, setVoiceModalChar] = useState(null);
+  const [voiceList, setVoiceList] = useState([]);
   const [internalChars, setInternalChars] = useState(INITIAL_CHARS);
   const chars = (externalChars !== undefined && externalChars !== null) ? externalChars : internalChars;
   function setChars(updater) {
@@ -2589,6 +2666,10 @@ export default function SubjectPage({ projectId, projectName = '两只老虎的�
 
   // 开始智能分镜：跳转到分镜页（由 Home 处理解锁和导航）
   const handleStartStoryboardRequest = () => {
+    if (isStoryboardGenerated) {
+      setConfirmStoryboardOpen(true);
+      return;
+    }
     onStartStoryboard?.();
   };
 
@@ -2703,6 +2784,8 @@ export default function SubjectPage({ projectId, projectName = '两只老虎的�
             desc={char.desc}
             imageUrl={char.imageUrl}
             voice={charVoices[char.id]}
+            voiceName={(() => { const v = voiceList.find(x => x.voice_id === charVoices[char.id]); return v ? `${v.name}-${v.style}` : undefined; })()}
+            voicePreviewUrl={voiceList.find((v) => v.voice_id === charVoices[char.id])?.preview_url}
             onVoiceClick={() => setVoiceModalChar(char)}
             onClick={() => setSelectedChar(char)}
             onDownloadImage={() => handleDownloadSubjectImage(char.id)}
@@ -2807,9 +2890,10 @@ export default function SubjectPage({ projectId, projectName = '两只老虎的�
           open
           currentVoice={charVoices[voiceModalChar.id]}
           onClose={() => setVoiceModalChar(null)}
-          onConfirm={(v) => {
-            setCharVoices((prev) => ({ ...prev, [voiceModalChar.id]: v }));
-            apiUpdateSubject(projectId, voiceModalChar.id, { voice_id: v });
+          onVoicesLoaded={setVoiceList}
+          onConfirm={(voiceId) => {
+            setCharVoices((prev) => ({ ...prev, [voiceModalChar.id]: voiceId }));
+            apiUpdateSubject(projectId, voiceModalChar.id, { voice_id: voiceId });
             setVoiceModalChar(null);
           }}
         />

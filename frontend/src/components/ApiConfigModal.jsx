@@ -1262,11 +1262,44 @@ export default function ApiConfigModal({ open, onClose, onConfigured }) {
     return () => window.removeEventListener('keydown', handleKeyDown);
   }, [open, onClose, state.childView]);
 
-  // 打开 onelink-config 子弹窗时从后端加载模型列表
+  // 打开 onelink-config 或 other-provider-config 子弹窗时从后端加载模型列表
   useEffect(() => {
-    if (state.childView !== 'onelink-config') return;
-    loadModelsFromBackend();
-  }, [state.childView, loadModelsFromBackend]);
+    if (state.childView === 'onelink-config') {
+      loadModelsFromBackend();
+    } else if (state.childView === 'other-provider-config') {
+      const providerId = state.activeOtherProviderId;
+      if (!providerId) return;
+      // 只有已配置的 provider（有 UUID）才拉模型
+      const provider = state.otherProviders.find(p => p.id === providerId);
+      if (!provider?.configured) return;
+      apiListModels().then((models) => {
+        if (!models || !models.length) return;
+        const providerModels = models.filter(m => m.provider_id === providerId);
+        if (providerModels.length === 0) return;
+        setState(current => {
+          const modelsByTab = createEmptyModelsByTab();
+          providerModels.forEach(model => {
+            const tab = getCategoryTab(model.category);
+            if (!tab) return;
+            modelsByTab[tab].push({
+              id: model.id,
+              name: model.name || model.model_id,
+              description: model.description || MODEL_DESCRIPTION,
+              enabled: model.is_enabled ?? false,
+              isDefault: model.is_default ?? false,
+              modelId: model.model_id,
+            });
+          });
+          return {
+            ...current,
+            editProviderModelsByTab: Object.fromEntries(
+              Object.entries(modelsByTab).map(([tab, list]) => [tab, sortModels(list)])
+            ),
+          };
+        });
+      }).catch(err => console.error('加载自定义服务商模型列表失败:', err));
+    }
+  }, [state.childView, state.activeOtherProviderId, loadModelsFromBackend]);
 
   // const activeCustomProvider = useMemo(
   //   () => state.customProviders.find((provider) => provider.id === state.activeCustomProviderId) ?? null,
@@ -1358,14 +1391,75 @@ export default function ApiConfigModal({ open, onClose, onConfigured }) {
     if (!providerId) return;
     try {
       if (!state.editProviderKeyIsFromServer && state.editProviderApiKeyActual.trim()) {
-        await apiUpdateProvider(providerId, { api_key: state.editProviderApiKeyActual.trim() });
-        setState(current => ({
-          ...current,
-          editProviderKeyIsFromServer: true,
-          otherProviders: current.otherProviders.map(p =>
-            p.id === providerId ? { ...p, apiKeyMasked: current.editProviderApiKey } : p
-          ),
-        }));
+        // 判断是否已配置（已配置的有 UUID，未配置的用 cardKey 作占位 ID）
+        const provider = state.otherProviders.find(p => p.id === providerId);
+        const isConfigured = provider?.configured;
+        try {
+          if (isConfigured) {
+            await apiUpdateProvider(providerId, { api_key: state.editProviderApiKeyActual.trim() });
+          } else {
+            // 未配置的服务商需要先创建，再测试
+            const { apiCreateProvider } = await import('../api/config');
+            const created = await apiCreateProvider({
+              name: provider?.name || providerId,
+              provider_type: providerId,
+              api_key: state.editProviderApiKeyActual.trim(),
+            });
+            // 更新 providerId 为后端返回的真实 UUID
+            setState(current => ({
+              ...current,
+              activeOtherProviderId: created.id,
+              editProviderKeyIsFromServer: true,
+              otherProviders: current.otherProviders.map(p =>
+                p.id === providerId ? { ...p, id: created.id, configured: true, apiKeyMasked: current.editProviderApiKey } : p
+              ),
+            }));
+            // 用新 UUID 测试连接
+            const result = await apiTestConnection(created.id);
+            if (result?.test_success === false) {
+              showToast('error', result?.test_message || '连接失败，请检查API是否正确');
+            } else {
+              showToast('success', '连接成功！');
+              setState(current => ({ ...current, editProviderApiTested: true }));
+              // 拉取该 provider 的模型列表
+              const models = await apiListModels().catch(() => []);
+              const providerModels = (models || []).filter(m => m.provider_id === created.id);
+              if (providerModels.length > 0) {
+                setState(current => {
+                  const modelsByTab = createEmptyModelsByTab();
+                  providerModels.forEach(model => {
+                    const tab = getCategoryTab(model.category);
+                    if (!tab) return;
+                    modelsByTab[tab].push({
+                      id: model.id,
+                      name: model.name || model.model_id,
+                      description: model.description || MODEL_DESCRIPTION,
+                      enabled: model.is_enabled ?? false,
+                      isDefault: model.is_default ?? false,
+                      modelId: model.model_id,
+                    });
+                  });
+                  return {
+                    ...current,
+                    editProviderModelsByTab: Object.fromEntries(
+                      Object.entries(modelsByTab).map(([tab, list]) => [tab, sortModels(list)])
+                    ),
+                  };
+                });
+              }
+            }
+            return;
+          }
+          setState(current => ({
+            ...current,
+            editProviderKeyIsFromServer: true,
+            otherProviders: current.otherProviders.map(p =>
+              p.id === providerId ? { ...p, apiKeyMasked: current.editProviderApiKey } : p
+            ),
+          }));
+        } catch (e) {
+          console.warn('保存 API Key 失败，继续测试连接:', e.message);
+        }
       }
       const result = await apiTestConnection(providerId);
       if (result?.test_success === false) {
@@ -1373,6 +1467,33 @@ export default function ApiConfigModal({ open, onClose, onConfigured }) {
       } else {
         showToast('success', '连接成功！');
         setState(current => ({ ...current, editProviderApiTested: true }));
+        // 拉取该 provider 的模型列表
+        apiListModels().then((models) => {
+          if (!models || !models.length) return;
+          const providerModels = models.filter(m => m.provider_id === providerId);
+          if (providerModels.length === 0) return;
+          setState(current => {
+            const modelsByTab = createEmptyModelsByTab();
+            providerModels.forEach(model => {
+              const tab = getCategoryTab(model.category);
+              if (!tab) return;
+              modelsByTab[tab].push({
+                id: model.id,
+                name: model.name || model.model_id,
+                description: model.description || MODEL_DESCRIPTION,
+                enabled: model.is_enabled ?? false,
+                isDefault: model.is_default ?? false,
+                modelId: model.model_id,
+              });
+            });
+            return {
+              ...current,
+              editProviderModelsByTab: Object.fromEntries(
+                Object.entries(modelsByTab).map(([tab, list]) => [tab, sortModels(list)])
+              ),
+            };
+          });
+        }).catch(err => console.error('加载模型列表失败:', err));
       }
     } catch (error) {
       console.error('测试连接失败:', error);

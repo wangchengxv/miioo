@@ -655,7 +655,7 @@ export default function GlobalSettings({
         <ScriptPage
           projectId={projectId}
           onGoToSubject={onGoToSubject}
-          isSubjectExtracted={isSubjectUnlocked}
+          isSubjectUnlocked={isSubjectUnlocked}
           scriptFinalizedSinceExtraction={scriptFinalizedSinceExtraction}
           onScriptFinalized={onScriptFinalized}
           onEpisodesChange={onEpisodesChange}
