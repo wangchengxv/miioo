@@ -2264,7 +2264,7 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', onClose, onCom
 
 // ── Main export ────────────────────────────────────────────────────────────
 
-export default function SubjectPage({ serverReachable, projectId, projectName = '两只老虎的奇遇', onBack, onUnlockStep, onStartStoryboard, onExtractSubjects, extractError = null, isStoryboardGenerated = false, initialTab = 'char', chars: externalChars, onCharsChange, scenes: externalScenes, onScenesChange, props: externalProps, onPropsChange, forceExtract }) {
+export default function SubjectPage({ serverReachable, projectId, projectName = '两只老虎的奇遇', onBack, onUnlockStep, onStartStoryboard, onExtractSubjects, extractError = null, isStoryboardGenerated = false, initialTab = 'char', chars: externalChars, onCharsChange, scenes: externalScenes, onScenesChange, props: externalProps, onPropsChange }) {
 
   if (serverReachable === false) {
     return (
@@ -2280,23 +2280,20 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
   const [activeTab, setActiveTab] = useState(initialTab);
   const [batchGenOpen, setBatchGenOpen] = useState(false);
   const [isExtracting, setIsExtracting] = useState(false);
-  const [extractAttempted, setExtractAttempted] = useState(false);
   const extractingRef = useRef(false);
 
-  // 挂载时自动调用提取主体（仅当数据为空且未尝试过）
+  // 仅从剧本页「开始提取主体」触发（Home.jsx 传入 onExtractSubjects 回调），
+  // 浏览器刷新 / tab 切换等场景不触发提取
   useEffect(() => {
     if (!onExtractSubjects) return;
-    const hasAnyData = (externalChars && externalChars.length > 0) || (externalScenes && externalScenes.length > 0) || (externalProps && externalProps.length > 0);
-    if ((hasAnyData || extractAttempted) && !forceExtract) return;
     if (extractingRef.current) return;
-    setExtractAttempted(true);
-    setIsExtracting(true);
     extractingRef.current = true;
+    setIsExtracting(true);
     onExtractSubjects().finally(() => {
       setIsExtracting(false);
       extractingRef.current = false;
     });
-  }, [onExtractSubjects, extractAttempted, forceExtract]);
+  }, [onExtractSubjects]);
 
   // 循环 loading 文案
   const [loadingTextIndex, setLoadingTextIndex] = useState(0);

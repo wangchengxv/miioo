@@ -1541,9 +1541,8 @@ export default function Home({ onProjectCreated }) {
                   handleGenerateStoryboards();
                   setActiveStep('storyboard');
                 }}
-                onExtractSubjects={handleExtractSubjects}
+                onExtractSubjects={forceExtract ? handleExtractSubjects : undefined}
                 extractError={extractError}
-                forceExtract={forceExtract}
               />
             )}
             {activeKey === 'project' && activeProject && activeStep === 'storyboard' && (

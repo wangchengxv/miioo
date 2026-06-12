@@ -53,13 +53,6 @@ export async function apiDuplicateSubject(projectId, subjectId, { target_episode
   return res.json();
 }
 
-export async function apiExtractSubjectsFromEpisode(projectId, episodeId) {
-  const res = await authFetch(
-    `${BASE}/api/projects/${projectId}/subjects/extract?episode_id=${encodeURIComponent(episodeId)}`,
-    { method: 'POST', headers: { 'Content-Type': 'application/json' } }
-  );
-  return res.json();
-}
 
 // ── 主体图片 ──────────────────────────────────────────────────────────────────
 
