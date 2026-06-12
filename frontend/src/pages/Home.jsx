@@ -1,10 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { PulsingBorder } from '@paper-design/shaders-react';
-import bgVideoPoster from '../assets/bg-video-poster.png';
-import bgVideo01 from '../assets/bg-video-01.mp4';
-import bgVideo02 from '../assets/bg-video-02.mp4';
-import bgVideo03 from '../assets/bg-video-03.mp4';
 import { apiGetProjects, apiUpdateProject, apiDeleteProject, apiGetProject, apiGetProjectOverview } from '../api/project';
 import { getToken, refreshAccessToken } from '../api/request';
 import { clearTokens, apiLogout } from '../api/auth';
@@ -13,6 +9,7 @@ import { apiGetCurrentUser, apiGetNotifications } from '../api/user';
 import { apiGetSubjects, apiGetEpisodes, apiGetScriptWorkspace, apiFinalizeScriptWorkspace, apiExtractSubjectsFromScript } from '../api/subject';
 import { apiGetStoryboards, apiGenerateStoryboardsFromFinalScript } from '../api/storyboard';
 import { normalizeImageUrl } from '../utils/imageUrl';
+import wechatQR from '../assets/wechat.jpg';
 import PrimaryNav from '../components/PrimaryNav';
 import LoginModal from '../components/LoginModal';
 import ApiConfigModal from '../components/ApiConfigModal';
@@ -115,7 +112,7 @@ function MenuPopupItem({ label, onClick }) {
   );
 }
 
-const COMMUNITY_QR_CODE_URL = 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KR8EAVS6CW9V257SBVP40T1A.png';
+const COMMUNITY_QR_CODE_URL = wechatQR;
 const BIZ_QR_CODE_URL = 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KT856M9JGFA1FF8DBG9699ZM.png';
 
 const CREATION_MANUAL_URL = '';
@@ -738,7 +735,8 @@ function normalizeSubjects(items) {
   return list;
 }
 
-const BG_VIDEOS = [bgVideo01, bgVideo02, bgVideo03];
+const BG_VIDEOS = ["/video/bg-video-01.mp4", "/video/bg-video-02.mp4", "/video/bg-video-03.mp4"];
+const BG_VIDEO_POSTER = "/video/bg-video-poster.png";
 
 export default function Home({ onProjectCreated }) {
   const [activeKey, setActiveKey] = useState(() => {
@@ -1307,7 +1305,7 @@ export default function Home({ onProjectCreated }) {
       {activeKey === 'home' && (
         <>
           <img
-            src={bgVideoPoster}
+            src={BG_VIDEO_POSTER}
             alt=""
             className="absolute inset-0 object-cover"
             style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center center' }}
@@ -1424,7 +1422,7 @@ export default function Home({ onProjectCreated }) {
           </div>
 
           {/* page content */}
-          <div className="flex-1 min-h-0 overflow-hidden relative">
+          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden relative">
             {/* 后端不可达降级横幅 */}
             {serverReachable === false && (
               <div className="flex items-center justify-center gap-2 px-16 py-2 text-sm" style={{ backgroundColor: 'rgba(255,77,79,0.12)', color: '#FF4D4F' }}>
@@ -1596,8 +1594,8 @@ export default function Home({ onProjectCreated }) {
       {/* 网站备案信息 — 仅首页可见 */}
       {activeKey === 'home' && createPortal(
         <div
-          className="fixed bottom-0 left-0 right-0 flex items-center justify-between text-text-hint z-10"
-          style={{ height: "32px", paddingLeft: "24px", paddingRight: "24px", fontSize: "12px" }}
+          className="fixed bottom-0 right-0 flex items-center gap-16 text-text-hint z-10"
+          style={{ height: "32px", paddingRight: "24px", fontSize: "12px" }}
         >
           <span>ⓒ2026 MiiooAI 版权所有</span>
           <span>鲁ICP备2026030778号</span>
