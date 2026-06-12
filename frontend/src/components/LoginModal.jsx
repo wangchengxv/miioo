@@ -152,13 +152,13 @@ function Tabs({ tab, onChange }) {
   );
 }
 
-function SendCodeButton({ phone }) {
+function SendCodeButton({ phone, disabled: externalDisabled }) {
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
   const [countdown, setCountdown] = useState(0);
   const timerRef = useRef(null);
 
-  const disabled = countdown > 0;
+  const disabled = countdown > 0 || externalDisabled;
 
   const backgroundColor = disabled ? '#161616' : pressed ? '#111111' : hovered ? '#1D1E1E' : '#161616';
   const borderColor = disabled ? '#FFFFFF0D' : pressed ? '#FFFFFF14' : hovered ? '#FFFFFF1F' : '#FFFFFF0D';
@@ -462,7 +462,7 @@ function PhoneLoginView({ onLogin, onChangeTab, onShowToast }) {
             onBlur={handleCodeBlur}
             error={codeError}
             errorText="验证码只能包含数字"
-            suffix={<SendCodeButton phone={phone} />}
+            suffix={<SendCodeButton phone={phone} disabled={!validatePhone(phone)} />}
             inputMode="numeric"
           />
         </div>
@@ -721,7 +721,7 @@ function BindPhoneView({ onBind, onBack, onShowToast, bindToken }) {
             onBlur={handleCodeBlur}
             error={codeError}
             errorText="验证码只能包含数字"
-            suffix={<SendCodeButton phone={phone} />}
+            suffix={<SendCodeButton phone={phone} disabled={!validatePhone(phone)} />}
             inputMode="numeric"
           />
         </div>

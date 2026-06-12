@@ -2426,6 +2426,9 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
           else if (failCount > 0) {
             showBatchToast('批量生成失败，可能是调用服务商模型失败了，请换个模型再试下', 'error');
           }
+          else {
+            showBatchToast('批量生成失败，未能接收到任何结果', 'error');
+          }
        },
       });
     } catch (err) {
@@ -2438,6 +2441,20 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
         ? '网络连接失败，请检查网络后重试'
         : (err?.message || '批量生成失败，请重试');
       showBatchToast(errMsg, 'error');
+
+      // 生图失败后重新从后端获取主体数据，恢复真实封面
+      try {
+        const [newChars, newScenes, newProps] = await Promise.all([
+          apiGetSubjects(projectId, { type: 'character' }),
+          apiGetSubjects(projectId, { type: 'scene' }),
+          apiGetSubjects(projectId, { type: 'prop' }),
+        ]);
+        setChars(normalizeSubjectList(newChars));
+        setScenes(normalizeSubjectList(newScenes));
+        setProps(normalizeSubjectList(newProps));
+      } catch (refetchErr) {
+        console.error('[SubjectPage] 失败后刷新主体数据也失败:', refetchErr);
+      }
 
       // 整体失败时，所有卡片的 loading 都会由于 finally 清除而消失，
       // 封面自然恢复为之前的图片（因为我们没有修改过 imageUrl）

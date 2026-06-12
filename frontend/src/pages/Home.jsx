@@ -791,6 +791,8 @@ export default function Home({ onProjectCreated }) {
   const toastTimerRef = useRef(null);
   const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
   const bgVideoRef = useRef(null);
+  const [videoReady, setVideoReady] = useState(false);
+
 
 
   const showToast = (msg, type = 'warning') => {
@@ -801,6 +803,8 @@ export default function Home({ onProjectCreated }) {
 
   // 背景视频循环：播完当前视频后切换到下一个
   const handleVideoEnded = () => {
+    setVideoReady(false);
+
     setCurrentVideoIndex((prev) => (prev + 1) % BG_VIDEOS.length);
   };
 
@@ -1302,17 +1306,23 @@ export default function Home({ onProjectCreated }) {
       {/* background — only visible on home page */}
       {activeKey === 'home' && (
         <>
+          <img
+            src={bgVideoPoster}
+            alt=""
+            className="absolute inset-0 object-cover"
+            style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center center' }}
+          />
           <video
             ref={bgVideoRef}
             key={currentVideoIndex}
             src={BG_VIDEOS[currentVideoIndex]}
-            poster={bgVideoPoster}
             autoPlay
             muted
             playsInline
+            onCanPlay={() => setVideoReady(true)}
             onEnded={handleVideoEnded}
             className="absolute inset-0 object-cover"
-            style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center center' }}
+            style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center center', opacity: videoReady ? 1 : 0, transition: 'opacity 500ms ease' }}
           />
           <div
             className="absolute inset-0 pointer-events-none"
@@ -1324,7 +1334,7 @@ export default function Home({ onProjectCreated }) {
         <div className="absolute inset-0 bg-neutral-400" />
       )}
 
-      <div className="flex flex-col items-start absolute inset-0" style={{ paddingBottom: activeKey === "home" ? "44px" : "0px" }}>
+      <div className="flex flex-col items-start absolute inset-0" style={{ paddingBottom: "0px" }}>
         {/* headbar */}
         {!activeProject ? (
         <div className="flex items-center px-24 py-12 justify-between gap-[37px] self-stretch">
@@ -1400,7 +1410,7 @@ export default function Home({ onProjectCreated }) {
               style={{
                 paddingLeft: '0px',
                 paddingRight: '0px',
-                alignSelf: 'stretch',
+                                alignSelf: 'stretch',
                 transition: 'padding-left 320ms cubic-bezier(0.4, 0, 0.2, 1), padding-right 320ms cubic-bezier(0.4, 0, 0.2, 1)',
               }}
             >
@@ -1584,14 +1594,15 @@ export default function Home({ onProjectCreated }) {
       </div>
 
       {/* 网站备案信息 — 仅首页可见 */}
-      {activeKey === 'home' && (
+      {activeKey === 'home' && createPortal(
         <div
-          className="absolute bottom-0 left-0 right-0 flex items-center justify-between text-text-hint z-10"
-          style={{ height: "44px", paddingLeft: "24px", paddingRight: "24px", fontSize: "12px" }}
+          className="fixed bottom-0 left-0 right-0 flex items-center justify-between text-text-hint z-10"
+          style={{ height: "32px", paddingLeft: "24px", paddingRight: "24px", fontSize: "12px" }}
         >
           <span>ⓒ2026 MiiooAI 版权所有</span>
           <span>鲁ICP备2026030778号</span>
-        </div>
+        </div>,
+        document.body
       )}
       <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} onSuccess={() => {
         setLoginOpen(false);

@@ -207,12 +207,70 @@ export async function apiBatchGenerateStream(projectId, params, { onSubjectImage
 
   // ── 非流式降级：后端返回普通 JSON ────────────────────────────────
   if (!contentType.includes('text/event-stream')) {
-   const data = await res.json();
+    const data = await res.json();
+
+    // ── 任务模式：后端返回 task_id → 轮询等待结果 ──────────────────
+    if (data && (data.task_id || (data.id && data.status && (data.status === 'pending' || data.status === 'running')))) {
+      const taskId = data.task_id || data.id;
+      const processedIds = new Set();
+      let pollCount = 0;
+      const MAX_POLLS = 200;
+
+      while (pollCount < MAX_POLLS) {
+        if (signal?.aborted) return;
+
+        await new Promise(r => setTimeout(r, 3000));
+        pollCount++;
+
+        try {
+          const taskRes = await authFetch(`${BASE}/api/tasks/${taskId}`, {
+            headers: { 'Content-Type': 'application/json' },
+            signal,
+          });
+          if (!taskRes.ok) continue;
+
+          const task = await taskRes.json();
+          const results = task.results || [];
+
+          if (Array.isArray(results)) {
+            for (const item of results) {
+              const sid = item.subject_id || item.id;
+              if (!sid || processedIds.has(sid)) continue;
+
+              const imgUrl = item.image_url || item.imageUrl || item.url;
+              const errMsg = item.error || item.message;
+
+              if (errMsg || item.success === false || item.status === 'error') {
+                processedIds.add(sid);
+                onSubjectError?.(sid, errMsg || '生成失败');
+              } else if (imgUrl) {
+                processedIds.add(sid);
+                onSubjectImage?.(sid, imgUrl);
+              }
+            }
+          }
+
+          const status = task.status || task.raw_status || '';
+          if (status === 'completed' || status === 'partial' || status === 'failed') {
+            onComplete?.();
+            return data;
+          }
+        } catch (pollErr) {
+          if (pollErr?.name === 'AbortError') return;
+          console.warn('[apiBatchGenerateStream] 轮询出错:', pollErr);
+        }
+      }
+
+      onComplete?.();
+      return data;
+    }
+
+    // ── 同步模式：直接返回结果数组 ──────────────────────────────────
     const results = Array.isArray(data) ? data : (data?.results || data?.items || data?.data || []);
     if (Array.isArray(results)) {
       for (const item of results) {
         const sid = item.subject_id || item.id;
-       const imgUrl = item.image_url || item.imageUrl || item.url;
+        const imgUrl = item.image_url || item.imageUrl || item.url;
         if (item.status === 'error' || item.error || item.success === false) {
           onSubjectError?.(sid, item.error || item.message || '生成失败');
         } else if (imgUrl) {
@@ -220,8 +278,6 @@ export async function apiBatchGenerateStream(projectId, params, { onSubjectImage
         }
       }
     }
-    // 如果有 data.results 但都是空 URL，说明整个请求同步失败了
-    // 抛出第一个有 error 的结果
     const firstError = results.find(r => r.error || r.status === 'error' || r.success === false);
     if (firstError && !results.some(r => r.image_url || r.imageUrl || r.url)) {
       const err = new Error(firstError.error || firstError.message || '批量生成失败');
@@ -250,7 +306,6 @@ export async function apiBatchGenerateStream(projectId, params, { onSubjectImage
         if (!line.startsWith('data: ')) continue;
         const payload = line.slice(6).trim();
 
-        // 流结束标记
         if (payload === '[DONE]') {
           onComplete?.();
           return;
@@ -259,10 +314,61 @@ export async function apiBatchGenerateStream(projectId, params, { onSubjectImage
         try {
           const parsed = JSON.parse(payload);
 
-          // 兼容多种事件格式：
-          //   { subject_id, image_url, status: 'success'|'error', error }
-          //   { type: 'subject_image', subject_id, image_url }
-          //   { type: 'subject_error', subject_id, error }
+          // SSE 中检测到任务模式 → 切换轮询
+          if (parsed.type === 'task' && (parsed.task_id || (parsed.id && parsed.status))) {
+            const taskId = parsed.task_id || parsed.id;
+            const processedIds = new Set();
+            let pollCount = 0;
+            const MAX_POLLS = 200;
+
+            while (pollCount < MAX_POLLS) {
+              if (signal?.aborted) { reader.releaseLock(); return; }
+              await new Promise(r => setTimeout(r, 3000));
+              pollCount++;
+
+              try {
+                const taskRes = await authFetch(`${BASE}/api/tasks/${taskId}`, {
+                  headers: { 'Content-Type': 'application/json' },
+                  signal,
+                });
+                if (!taskRes.ok) continue;
+
+                const task = await taskRes.json();
+                const results = task.results || [];
+
+                if (Array.isArray(results)) {
+                  for (const item of results) {
+                    const s = item.subject_id || item.id;
+                    if (!s || processedIds.has(s)) continue;
+                    const u = item.image_url || item.imageUrl || item.url;
+                    const e = item.error || item.message;
+                    if (e || item.success === false || item.status === 'error') {
+                      processedIds.add(s);
+                      onSubjectError?.(s, e || '生成失败');
+                    } else if (u) {
+                      processedIds.add(s);
+                      onSubjectImage?.(s, u);
+                    }
+                  }
+                }
+
+                const st = task.status || task.raw_status || '';
+                if (st === 'completed' || st === 'partial' || st === 'failed') {
+                  reader.releaseLock();
+                  onComplete?.();
+                  return;
+                }
+              } catch (pollErr) {
+                if (pollErr?.name === 'AbortError') { reader.releaseLock(); return; }
+                console.warn('[apiBatchGenerateStream] 轮询出错:', pollErr);
+              }
+            }
+
+            reader.releaseLock();
+            onComplete?.();
+            return;
+          }
+
           const sid = parsed.subject_id || parsed.id;
           const errMsg = parsed.error || parsed.message;
           const imgUrl = parsed.image_url || parsed.imageUrl || parsed.url;
@@ -277,7 +383,6 @@ export async function apiBatchGenerateStream(projectId, params, { onSubjectImage
         }
       }
     }
-    // 流自然结束（没有收到 [DONE] 也算完成）
     onComplete?.();
   } finally {
     reader.releaseLock();
