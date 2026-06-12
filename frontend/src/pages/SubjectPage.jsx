@@ -2618,7 +2618,7 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
 
   // 判断是否显示 loading / 错误态
   const allEmpty = (!externalChars || externalChars.length === 0) && (!externalScenes || externalScenes.length === 0) && (!externalProps || externalProps.length === 0);
-  const showLoading = isExtracting && allEmpty;
+  const showLoading = isExtracting;
   const showError = !!extractError && allEmpty;
 
   if (showLoading) {
