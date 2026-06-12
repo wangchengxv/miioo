@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import DotsLoading from '../components/DotsLoading';
 import BatchGenerateModal from '../components/BatchGenerateModal';
 import AssetPickerModal from '../components/AssetPickerModal';
-import { apiCreateSubject, apiUpdateSubject, apiDeleteSubject, apiGenerateSubjectImage, apiGetSubjects, apiBatchGenerateStream, apiGetEpisodes, apiGetSubjectDetail, apiGetSubjectImages, apiBindSubjectReferenceImages, apiDownloadSubjectImage, apiSetPrimarySubjectImage } from '../api/subject';
+import { apiCreateSubject, apiUpdateSubject, apiDeleteSubject, apiGenerateSubjectImage, apiGetSubjects, apiBatchGenerateStream, apiGetSubjectDetail, apiGetSubjectImages, apiBindSubjectReferenceImages, apiDownloadSubjectImage, apiSetPrimarySubjectImage } from '../api/subject';
 // 模型能力直接从后端 capabilities 获取
 import { apiGetProjects } from '../api/project';
 import { apiGetAssets } from '../api/assets';
@@ -189,121 +189,6 @@ function ConfirmStoryboardModal({ onConfirm, onCancel }) {
     document.body,
   );
 }
-
-// ── Episode selector (breadcrumb dropdown) ────────────────────────────────
-
-const ITEM_HEIGHT = 36; // px per option row (py-[8px] * 2 + 20px line-height)
-const MAX_VISIBLE = 10;
-
-function EpisodeSelector({ episodes, value, onChange }) {
-  const [open, setOpen] = useState(false);
-  const [hovered, setHovered] = useState(false);
-  const [hoveredIdx, setHoveredIdx] = useState(null);
-  const rootRef = useRef(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function onDown(e) {
-      if (rootRef.current && !rootRef.current.contains(e.target)) setOpen(false);
-    }
-    document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
-  }, [open]);
-
-  const dropdownMaxH = ITEM_HEIGHT * MAX_VISIBLE + 8; // 8px = 2 * p-[4px]
-
-  return (
-    <div ref={rootRef} style={{ position: 'relative', display: 'inline-flex', flexShrink: 0 }}>
-      {open ? (
-        /* ── Input trigger (open state) ── */
-        <div
-          className="flex items-center gap-[6px] h-[28px] pl-[10px] pr-[6px] rounded-[6px] cursor-pointer border border-solid bg-input-bg-normal border-input-border-focus [outline:1px_solid_var(--color-stroke-outline)]"
-          style={{ boxShadow: '0px 0px 10px var(--color-glow)', minWidth: '80px' }}
-          onClick={() => setOpen(false)}
-        >
-          <span
-            className="flex-1 text-input-text-content text-font-size-14 shrink-0"
-            style={{ fontFamily: FONT_MEDIUM, fontWeight: 500, lineHeight: '20px' }}
-          >
-            {value}
-          </span>
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
-            <path d="M10.5 5.833L7 9.333L3.5 5.833H10.5Z" fill="#FFFFFF99" stroke="#FFFFFF99" strokeWidth="1.167" strokeLinejoin="round" />
-          </svg>
-        </div>
-      ) : (
-        /* ── Breadcrumb label (closed state) ── */
-        <div
-          className="flex items-center rounded-[6px] cursor-pointer"
-          style={{
-            height: '28px',
-            padding: '0 6px',
-            backgroundColor: hovered ? '#FFFFFF0F' : 'transparent',
-            transition: 'background-color 0.12s',
-          }}
-          onMouseEnter={() => setHovered(true)}
-          onMouseLeave={() => setHovered(false)}
-          onClick={() => setOpen(true)}
-        >
-          <span style={{ fontFamily: FONT_MEDIUM, fontSize: '14px', lineHeight: '20px', color: '#FFFFFFD9', fontWeight: 500 }}>
-            {value}
-          </span>
-        </div>
-      )}
-
-      {/* ── Dropdown panel ── */}
-      {open && (
-        <div
-          className="flex flex-col rounded-medium bg-select-bg border border-select-border absolute z-50"
-          style={{
-            top: 'calc(100% + 4px)',
-            left: 0,
-            minWidth: '100%',
-            padding: '4px',
-            boxShadow: '0px 4px 16px var(--color-select-shadow)',
-            maxHeight: `${dropdownMaxH}px`,
-            overflowY: episodes.length > MAX_VISIBLE ? 'auto' : 'visible',
-          }}
-        >
-          {episodes.map((ep, i) => {
-            const isActive = ep === value;
-            const isHov = hoveredIdx === i;
-            return (
-              <div
-                key={ep}
-                className="flex items-center px-[12px] rounded-md shrink-0"
-                style={{
-                  height: `${ITEM_HEIGHT}px`,
-                  cursor: 'pointer',
-                  backgroundColor: isActive
-                    ? 'var(--color-select-item-bg-active)'
-                    : isHov
-                    ? 'var(--color-select-item-bg-hover)'
-                    : 'transparent',
-                  color: isActive || isHov
-                    ? 'var(--color-select-item-text-hover)'
-                    : 'var(--color-select-item-text-normal)',
-                }}
-                onMouseEnter={() => setHoveredIdx(i)}
-                onMouseLeave={() => setHoveredIdx(null)}
-                onClick={() => { onChange(ep); setOpen(false); }}
-              >
-                <span
-                  className="w-fit shrink-0 text-font-size-14 font-font-weight-regular"
-                  style={{ fontFamily: FONT }}
-                >
-                  {ep}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ── Toolbar ────────────────────────────────────────────────────────────────
 
 function Toolbar({ projectName, onBack, onAddChar, onBatchGen, onStartStoryboard, addLabel = '添加角色', tabLabel = '角色' }) {
   const [arrowHovered, setArrowHovered] = useState(false);
@@ -2379,7 +2264,7 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', onClose, onCom
 
 // ── Main export ────────────────────────────────────────────────────────────
 
-export default function SubjectPage({ serverReachable, projectId, projectName = '两只老虎的奇遇', onBack, onUnlockStep, onStartStoryboard, onExtractSubjects, extractError = null, isStoryboardGenerated = false, initialTab = 'char', chars: externalChars, onCharsChange, scenes: externalScenes, onScenesChange, props: externalProps, onPropsChange }) {
+export default function SubjectPage({ serverReachable, projectId, projectName = '两只老虎的奇遇', onBack, onUnlockStep, onStartStoryboard, onExtractSubjects, extractError = null, isStoryboardGenerated = false, initialTab = 'char', chars: externalChars, onCharsChange, scenes: externalScenes, onScenesChange, props: externalProps, onPropsChange, forceExtract }) {
 
   if (serverReachable === false) {
     return (
@@ -2393,23 +2278,25 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
   }
 
   const [activeTab, setActiveTab] = useState(initialTab);
-  const [episodes, setEpisodes] = useState([]);
-  const [activeEpisode, setActiveEpisode] = useState('');
   const [batchGenOpen, setBatchGenOpen] = useState(false);
   const [isExtracting, setIsExtracting] = useState(false);
   const [extractAttempted, setExtractAttempted] = useState(false);
+  const extractingRef = useRef(false);
 
   // 挂载时自动调用提取主体（仅当数据为空且未尝试过）
   useEffect(() => {
     if (!onExtractSubjects) return;
     const hasAnyData = (externalChars && externalChars.length > 0) || (externalScenes && externalScenes.length > 0) || (externalProps && externalProps.length > 0);
-    if (hasAnyData || extractAttempted) return;
+    if ((hasAnyData || extractAttempted) && !forceExtract) return;
+    if (extractingRef.current) return;
     setExtractAttempted(true);
     setIsExtracting(true);
+    extractingRef.current = true;
     onExtractSubjects().finally(() => {
       setIsExtracting(false);
+      extractingRef.current = false;
     });
-  }, [onExtractSubjects, externalChars, externalScenes, externalProps, extractAttempted]);
+  }, [onExtractSubjects, extractAttempted, forceExtract]);
 
   // 循环 loading 文案
   const [loadingTextIndex, setLoadingTextIndex] = useState(0);
@@ -2639,13 +2526,6 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
       setVoiceList(list);
     }).catch(() => {});
   }, []);
-
-  useEffect(() => {
-    apiGetEpisodes(projectId).then((list) => {
-      setEpisodes(list);
-      setActiveEpisode((prev) => prev || list[0] || '');
-    });
-  }, [projectId]);
 
   // 组件卸载时取消进行中的批量生成流
   useEffect(() => {

@@ -43,6 +43,16 @@ function parseScriptOutline(markdown) {
   return entries;
 }
 
+/**
+ * 将后端返回的"第X集"转换为 Markdown 二级标题 `## 第X集`，
+ * 以便 parseScriptOutline 正确识别并生成分集导航。
+ * 兼容：纯文本"第X集"、已有一级标题"# 第X集"、无空格"#第X集"。
+ */
+function formatEpisodeHeaders(content) {
+  if (!content) return '';
+  return content.replace(/^(?:#\s*)?第(\d+)集/gm, '## 第$1集');
+}
+
 function formatFileSize(bytes) {
   if (bytes < 1024) return bytes + ' B';
   if (bytes < 1024 * 1024) return Math.round(bytes / 1024) + ' KB';
@@ -815,7 +825,7 @@ function InputCard({ onSend, onStop, restoreText = '', restoreFiles = [], select
   const [text, setText] = useState(restoreText); // 挂载时使用 restoreText 作为初始值（超时回到空状态时预填充）
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
-  const [files, setFiles] = useState([]);
+  const [files, setFiles] = useState(restoreFiles);
   const [models, setModels] = useState([]);
   const prevDisabledRef = useRef(false);
 
@@ -1887,10 +1897,10 @@ export default function ScriptPage({ projectId, onGoToSubject, onScriptFinalized
           const uploadResult = await apiUploadScriptWorkspace(projectId, file);
           const uploadContent = uploadResult?.script?.content ?? uploadResult?.script?.parsed_content ?? uploadResult?.content;
           if (uploadContent) {
-            receivedContent = uploadContent;
+            receivedContent = formatEpisodeHeaders(uploadContent);
             // 仅在纯上传路径（无提示词）时直接展示内容
             if (!text) {
-              setScriptContent(uploadContent);
+              setScriptContent(formatEpisodeHeaders(uploadContent));
             }
           }
         }
@@ -1912,13 +1922,14 @@ export default function ScriptPage({ projectId, onGoToSubject, onScriptFinalized
           { message: chatMessage, model, episode_count: epCount },
           {
             onChunk: (accumulated) => {
-              receivedContent = accumulated;
+              const formatted = formatEpisodeHeaders(accumulated);
+              receivedContent = formatted;
               if (!hasStartedStreaming) {
                 hasStartedStreaming = true;
-                setScriptContent(accumulated);
+                setScriptContent(formatted);
                 setPhase('streaming');
               } else {
-                setScriptContent(accumulated);
+                setScriptContent(formatted);
               }
             },
             signal: abortController.signal,
@@ -1979,7 +1990,24 @@ export default function ScriptPage({ projectId, onGoToSubject, onScriptFinalized
       setInputRestoreFiles(files);
       setPhase('initial');
       setHasStarted(false);
-      showToast('剧本生成失败，请稍后重试');
+      (() => {
+        const rawMsg = err?.message || '';
+        let toastMsg;
+        const upstreamMatch = rawMsg.match(/上游模型服务返回\s*(\d+)/);
+        if (upstreamMatch) {
+          const code = upstreamMatch[1];
+          toastMsg = code === '404' ? '上游模型服务返回 404，请换个模型重试' : `上游模型服务返回 ${code}，请稍后重试`;
+        } else if (rawMsg.toLowerCase().includes('deprecated') || rawMsg.toLowerCase().includes('migrate')) {
+          toastMsg = '当前模型已废弃，请换个模型重试';
+        } else if (err?.status) {
+          toastMsg = `请求失败 (HTTP ${err.status})，请稍后重试`;
+        } else if (rawMsg.length > 0 && rawMsg.length < 60) {
+          toastMsg = rawMsg;
+        } else {
+          toastMsg = '剧本生成失败，请稍后重试';
+        }
+        showToast(toastMsg);
+      })();
     } finally {
       clearTimeout(timeoutId);
     }
@@ -2069,18 +2097,6 @@ export default function ScriptPage({ projectId, onGoToSubject, onScriptFinalized
   };
 
   // 提取主体二次确认弹窗
-  if (extractConfirmOpen) {
-    return (
-      <ConfirmExtractModal
-        onConfirm={() => {
-          setExtractConfirmOpen(false);
-          onGoToSubject?.('char');
-        }}
-        onCancel={() => setExtractConfirmOpen(false)}
-      />
-    );
-  }
-
   const handleSelectEpisode = useCallback(
     (index) => {
       setSelectedEpisode(index);
@@ -2101,6 +2117,18 @@ export default function ScriptPage({ projectId, onGoToSubject, onScriptFinalized
     },
     [outline, phase],
   );
+
+  if (extractConfirmOpen) {
+    return (
+      <ConfirmExtractModal
+        onConfirm={() => {
+          setExtractConfirmOpen(false);
+          onGoToSubject?.('char');
+        }}
+        onCancel={() => setExtractConfirmOpen(false)}
+      />
+    );
+  }
 
   return (
     <>

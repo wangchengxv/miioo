@@ -211,11 +211,11 @@ export default function DubbingVoiceModal({ open, onClose, onConfirm }) {
     if (!open || tab !== "custom") return;
     if (customVoices.length > 0) return;
     setCustomLoading(true);
-    fetch(import.meta.env.VITE_API_BASE_URL + "/api/voices/custom", {
+    fetch(import.meta.env.VITE_API_BASE_URL + "/api/voices?tab=all", {
       headers: { Authorization: "Bearer " + (localStorage.getItem("access_token") || "") },
     })
       .then(r => r.json())
-      .then((data) => { const list = Array.isArray(data) ? data : data?.items ?? data?.voices ?? []; setCustomVoices(list); })
+      .then((data) => { const list = Array.isArray(data) ? data : data?.items ?? data?.voices ?? []; setCustomVoices(list.filter(v => v.is_custom)); })
       .catch(() => setCustomVoices([]))
       .finally(() => setCustomLoading(false));
   }, [open, tab]);
@@ -260,25 +260,34 @@ export default function DubbingVoiceModal({ open, onClose, onConfirm }) {
       headers: { Authorization: "Bearer " + (localStorage.getItem("access_token") || "") },
       body: formData,
     })
-      .then(r => r.json())
-      .then((data) => { setCustomVoices((prev) => [data, ...prev]); })
-      .catch((err) => { console.error("Failed to create custom voice:", err); alert("创建音色失败，请重试"); });
+      .then(r => {
+        if (!r.ok) throw new Error("Upload failed: " + r.status);
+        return r.json();
+      })
+      .then((raw) => {
+        const voice = raw?.voice ?? raw?.data ?? raw;
+        setCustomVoices((prev) => [voice, ...prev]);
+        const vid = voice.id || voice.voice_id || voice.name;
+        if (vid) setSelectedVoice(vid);
+      })
+     .catch((err) => { console.error("Failed to create custom voice:", err); alert("创建音色失败，请重试"); });
     e.target.value = "";
   };
 
   const handleConfirm = () => {
+    let voiceId = selectedVoice;
     let voiceName = "";
     if (tab === "miioo") {
       const v = voices.find((x) => x.voice_id === selectedVoice);
-      if (v) voiceName = v.name + "-" + v.style;
+      if (v) { voiceName = v.name; voiceId = v.voice_id; }
     } else if (tab === "custom") {
-      const v = customVoices.find((x) => (x.id || x.voice_id) === selectedVoice);
-      if (v) voiceName = v.name || v.voice_name || v.id || "未命名音色";
+      const v = customVoices.find((x) => (x.id || x.voice_id || x.name) === selectedVoice);
+      if (v) { voiceName = v.name || v.voice_name || v.id || "未命名音色"; voiceId = v.id || v.voice_id || voiceId; }
     } else if (tab === "fav") {
       const a = favAudios.find((x) => (x.id || x.audio_id) === selectedVoice);
-      if (a) voiceName = a.name || a.audio_name || "未命名音频";
+      if (a) { voiceName = a.name || a.audio_name || "未命名音频"; voiceId = a.id || a.audio_id || voiceId; }
     }
-    onConfirm?.(selectedVoice, voiceName, tab);
+    onConfirm?.(voiceId, voiceName, tab);
     onClose();
   };
 
@@ -320,7 +329,7 @@ export default function DubbingVoiceModal({ open, onClose, onConfirm }) {
       : rows.map((row, ri) => (
         <div key={ri} style={{ display: "flex", gap: "14px" }}>
           {row.map((v) => (
-            <VoiceCard key={v.voice_id} label={v.name + "-" + v.style} active={selectedVoice === v.voice_id} onClick={(e) => { e.stopPropagation(); setSelectedVoice(selectedVoice === v.voice_id ? "" : v.voice_id); }} previewUrl={v.preview_url} />
+            <VoiceCard key={v.voice_id} label={v.name} active={selectedVoice === v.voice_id} onClick={(e) => { e.stopPropagation(); setSelectedVoice(selectedVoice === v.voice_id ? "" : v.voice_id); }} previewUrl={v.preview_url} />
           ))}
         </div>
       ))}
@@ -342,7 +351,7 @@ export default function DubbingVoiceModal({ open, onClose, onConfirm }) {
         <span style={{ fontFamily: FONT, fontSize: "12px", lineHeight: "16px", color: "#FFFFFF66" }}>上传大于5s的清晰人声音频，自动克隆声音。</span>
       </button>
       {customLoading ? <div style={{ display: "flex", alignItems: "center", justifyContent: "center", padding: 24 }}><DotsLoading size={6} color="#2DC3E1" gap={4} /></div>
-      : customVoices.length > 0 && <div style={{ display: "flex", flexDirection: "column", gap: "4px", marginTop: "4px" }}>{customVoices.map((v) => <CustomVoiceCard key={v.id || v.voice_id || v.name} voice={v} selected={selectedVoice === (v.id || v.voice_id)} onSelect={(e) => { e.stopPropagation(); const vid = v.id || v.voice_id; setSelectedVoice(selectedVoice === vid ? "" : vid); }} />)}</div>}
+      : customVoices.length > 0 && <div style={{ display: "flex", flexDirection: "column", gap: "4px", marginTop: "4px" }}>{customVoices.map((v) => <CustomVoiceCard key={v.id || v.voice_id || v.name} voice={v} selected={selectedVoice === (v.id || v.voice_id || v.name)} onSelect={(e) => { e.stopPropagation(); const vid = v.id || v.voice_id || v.name; setSelectedVoice(selectedVoice === vid ? "" : vid); }} />)}</div>}
     </div>
   );
 

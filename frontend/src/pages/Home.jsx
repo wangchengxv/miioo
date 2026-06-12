@@ -10,7 +10,7 @@ import { getToken, refreshAccessToken } from '../api/request';
 import { clearTokens, apiLogout } from '../api/auth';
 import { apiListProviders } from '../api/config';
 import { apiGetCurrentUser, apiGetNotifications } from '../api/user';
-import { apiGetSubjects, apiGetEpisodes, apiGetScriptWorkspace, apiExtractSubjectsFromEpisode, apiFinalizeScriptWorkspace } from '../api/subject';
+import { apiGetSubjects, apiGetEpisodes, apiGetScriptWorkspace, apiFinalizeScriptWorkspace, apiExtractSubjectsFromScript } from '../api/subject';
 import { apiGetStoryboards, apiGenerateStoryboardsFromFinalScript } from '../api/storyboard';
 import { normalizeImageUrl } from '../utils/imageUrl';
 import PrimaryNav from '../components/PrimaryNav';
@@ -785,6 +785,7 @@ export default function Home({ onProjectCreated }) {
   // Tracks which non-alwaysEnabled steps have ever had content — once unlocked, stays unlocked
   const [unlockedSteps, setUnlockedSteps] = useState(new Set());
   const [currentUser, setCurrentUser] = useState({});
+  const [forceExtract, setForceExtract] = useState(false);
   const [notifications, setNotifications] = useState([]);
   const [toast, setToast] = useState(null);
   const toastTimerRef = useRef(null);
@@ -1105,43 +1106,14 @@ export default function Home({ onProjectCreated }) {
   const handleExtractSubjects = async () => {
     setExtractError(null);
     try {
-      let freshEpisodes = await apiGetEpisodes(activeProject.id).catch(() => []);
-      let episodesToExtract = (freshEpisodes || []).filter(ep => ep.id);
+      // 调用主动提取接口（POST）而非仅查询已有主体
+      const result = await apiExtractSubjectsFromScript(activeProject.id);
+      const allSubjects = [...(result.created || []), ...(result.updated || [])];
 
-      if (episodesToExtract.length === 0 && scriptContent) {
-        const finalizeResult = await apiFinalizeScriptWorkspace(activeProject.id, {
-          episode_count: null,
-          model: null,
-        });
-        const finalized = finalizeResult?.items || finalizeResult?.episodes || finalizeResult?.data;
-        if (Array.isArray(finalized) && finalized.length > 0) {
-          freshEpisodes = finalized;
-          episodesToExtract = finalized.filter(ep => ep.id);
-          setScriptEpisodes(freshEpisodes);
-          handleScriptFinalized?.();
-        }
-      }
+      const charsData = allSubjects.filter(s => s.type === 'character');
+      const scenesData = allSubjects.filter(s => s.type === 'scene');
+      const propsData = allSubjects.filter(s => s.type === 'prop');
 
-      const [existingChars] = await Promise.all([
-        apiGetSubjects(activeProject.id, { type: 'character' }).catch(() => []),
-      ]);
-      const hasExistingSubjects = Array.isArray(existingChars) && existingChars.length > 0;
-
-      if (!hasExistingSubjects && episodesToExtract.length > 0) {
-        await Promise.allSettled(
-          episodesToExtract.map(ep =>
-            apiExtractSubjectsFromEpisode(activeProject.id, ep.id).catch(err => {
-              console.error(`提取剧集 ${ep.id} 主体失败:`, err);
-            })
-          )
-        );
-      }
-
-      const [charsData, scenesData, propsData] = await Promise.all([
-        apiGetSubjects(activeProject.id, { type: 'character' }).catch(() => []),
-        apiGetSubjects(activeProject.id, { type: 'scene' }).catch(() => []),
-        apiGetSubjects(activeProject.id, { type: 'prop' }).catch(() => []),
-      ]);
       const normalizedChars = normalizeSubjects(charsData);
       const normalizedScenes = normalizeSubjects(scenesData);
       const normalizedProps = normalizeSubjects(propsData);
@@ -1156,11 +1128,7 @@ export default function Home({ onProjectCreated }) {
       setSharedChars(normalizedChars);
       setSharedScenes(normalizedScenes);
       setSharedProps(normalizedProps);
-      setScriptEpisodes(freshEpisodes);
-      setScriptFinalizedSinceExtraction(false);
-      if (activeProject?.id) {
-        localStorage.setItem(`miioo_finalized_since_extraction_${activeProject.id}`, 'false');
-      }
+      setForceExtract(false);
     } catch (err) {
       console.error('提取主体失败:', err);
       setExtractError('提取主体失败，请重试');
@@ -1537,6 +1505,7 @@ export default function Home({ onProjectCreated }) {
                 onScriptDraftContentChange={setScriptDraftContent}
                 onGoToSubject={(tab) => {
                   setSubjectInitialTab(tab ?? 'char');
+                  setForceExtract(true);
                   handleUnlockStep('subject');
                   setActiveStep('subject');
                 }}
@@ -1574,6 +1543,7 @@ export default function Home({ onProjectCreated }) {
                 }}
                 onExtractSubjects={handleExtractSubjects}
                 extractError={extractError}
+                forceExtract={forceExtract}
               />
             )}
             {activeKey === 'project' && activeProject && activeStep === 'storyboard' && (

@@ -522,3 +522,14 @@ export async function apiFinalizeScriptWorkspace(projectId, { episode_count, mod
   );
   return res.json();
 }
+
+export async function apiExtractSubjectsFromScript(projectId) {
+  const res = await authFetch(
+    `${BASE}/api/projects/${projectId}/script-workspace/extract-subjects`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+    }
+  );
+  return res.json();
+}
