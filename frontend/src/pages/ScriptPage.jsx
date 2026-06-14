@@ -31,7 +31,7 @@ function parseScriptOutline(markdown) {
       });
     } else if (/^##\s/.test(line)) {
       entries.push({
-        title: line.replace(/^##\s+/, '').trim(),
+        title: line.replace(/^##\s+/, '').replace(/\*\*/g, '').replace(/\*/g, '').replace(/__/g, '').replace(/_/g, '').trim(),
         level: 2,
         offset,
       });

@@ -2055,7 +2055,7 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', onClose, onCom
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF99' }}>生成方式</span>
             <div style={{ display: 'flex', gap: '24px', alignItems: 'center' }}>
-              {[{ key: 'main', label: '主视图' }, { key: 'multi', label: '多视图' }].map(({ key, label }) => {
+              {[{ key: 'main', label: '单视图' }, { key: 'three_view', label: '多视图' }].map(({ key, label }) => {
                 const active = genMode === key;
                 return (
                   <RadioOption key={key} label={label} checked={active} onChange={() => setGenMode(key)} />
@@ -2481,44 +2481,71 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
   const [voiceList, setVoiceList] = useState([]);
   const [internalChars, setInternalChars] = useState(INITIAL_CHARS);
   const chars = (externalChars !== undefined && externalChars !== null) ? externalChars : internalChars;
+  const hasExternalChars = externalChars !== undefined && externalChars !== null;
   function setChars(updater) {
     if (typeof updater === 'function') {
-      setInternalChars(prev => {
-        const next = updater(prev);
-        onCharsChange?.(next);
-        return next;
-      });
+      if (hasExternalChars) {
+        onCharsChange?.(updater(externalChars));
+      } else {
+        setInternalChars(prev => {
+          const next = updater(prev);
+          onCharsChange?.(next);
+          return next;
+        });
+      }
     } else {
-      setInternalChars(updater);
-      onCharsChange?.(updater);
+      if (hasExternalChars) {
+        onCharsChange?.(updater);
+      } else {
+        setInternalChars(updater);
+        onCharsChange?.(updater);
+      }
     }
   }
   const [internalScenes, setInternalScenes] = useState([]);
   const scenes = (externalScenes !== undefined && externalScenes !== null) ? externalScenes : internalScenes;
+  const hasExternalScenes = externalScenes !== undefined && externalScenes !== null;
   function setScenes(updater) {
     if (typeof updater === 'function') {
-      setInternalScenes(prev => {
-        const next = updater(prev);
-        onScenesChange?.(next);
-        return next;
-      });
+      if (hasExternalScenes) {
+        onScenesChange?.(updater(externalScenes));
+      } else {
+        setInternalScenes(prev => {
+          const next = updater(prev);
+          onScenesChange?.(next);
+          return next;
+        });
+      }
     } else {
-      setInternalScenes(updater);
-      onScenesChange?.(updater);
+      if (hasExternalScenes) {
+        onScenesChange?.(updater);
+      } else {
+        setInternalScenes(updater);
+        onScenesChange?.(updater);
+      }
     }
   }
   const [internalProps, setInternalProps] = useState([]);
   const props = (externalProps !== undefined && externalProps !== null) ? externalProps : internalProps;
+  const hasExternalProps = externalProps !== undefined && externalProps !== null;
   function setProps(updater) {
     if (typeof updater === 'function') {
-      setInternalProps(prev => {
-        const next = updater(prev);
-        onPropsChange?.(next);
-        return next;
-      });
+      if (hasExternalProps) {
+        onPropsChange?.(updater(externalProps));
+      } else {
+        setInternalProps(prev => {
+          const next = updater(prev);
+          onPropsChange?.(next);
+          return next;
+        });
+      }
     } else {
-      setInternalProps(updater);
-      onPropsChange?.(updater);
+      if (hasExternalProps) {
+        onPropsChange?.(updater);
+      } else {
+        setInternalProps(updater);
+        onPropsChange?.(updater);
+      }
     }
   }
   const [charVoices, setCharVoices] = useState(() =>
