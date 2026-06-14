@@ -95,7 +95,6 @@ function truncateFileName(name) {
 const ROTATE_STYLE_ID = 'creation-chatbox-rotate-style';
 const THINKING_STYLE_ID = 'creation-thinking-style';
 const SHIMMER_STYLE_ID = 'creation-shimmer-style';
-const TOAST_STYLE_ID = 'creation-toast-style';
 
 function ensureRotateKeyframe() {
   if (document.getElementById(ROTATE_STYLE_ID)) return;
@@ -110,19 +109,6 @@ function ensureRotateKeyframe() {
     @keyframes creation-chatbox-spin {
       from { --creation-chatbox-angle: 161.1deg; }
       to { --creation-chatbox-angle: 521.1deg; }
-    }
-  `;
-  document.head.appendChild(style);
-}
-
-function ensureToastStyle() {
-  if (document.getElementById(TOAST_STYLE_ID)) return;
-  const style = document.createElement('style');
-  style.id = TOAST_STYLE_ID;
-  style.textContent = `
-    @keyframes toast-in {
-      from { opacity: 0; transform: translateY(-8px); }
-      to { opacity: 1; transform: translateY(0); }
     }
   `;
   document.head.appendChild(style);
@@ -166,37 +152,33 @@ function ensureShimmerStyle() {
 // ─── Toast Component ──────────────────────────────────────────────────────────
 function Toast({ toasts }) {
   return (
-    <div style={{ position: 'fixed', top: '25vh', left: '50%', transform: 'translateX(-50%)', zIndex: 9999, display: 'flex', flexDirection: 'column', gap: '8px' }}>
+    <div style={{ position: 'fixed', top: '25vh', left: '50%', transform: 'translateX(-50%)', zIndex: 9999, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', pointerEvents: 'none' }}>
       {toasts.map((toast) => (
         <div
           key={toast.id}
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-            padding: '12px 16px',
-            borderRadius: '8px',
-            backgroundColor: '#1D1E1E',
-            border: '1px solid #FFFFFF14',
-            boxShadow: '0px 4px 16px #00000066',
-            animation: 'toast-in 0.2s ease',
-          }}
+          className="flex items-center gap-[8px] px-[16px] py-[8px] rounded-medium bg-toast-bg backdrop-blur-[20px]"
+          style={{ whiteSpace: 'nowrap', animation: 'slideUpBounce 250ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards' }}
         >
-          {toast.type === 'success' ? (
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <circle cx="8" cy="8" r="7" stroke="#52BF92" strokeWidth="1.5" />
-              <path d="M5 8L7 10L11 6" stroke="#52BF92" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          ) : (
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-              <circle cx="8" cy="8" r="7" stroke="#D13A3B" strokeWidth="1.5" />
-              <path d="M8 4.5V8.5" stroke="#D13A3B" strokeWidth="1.5" strokeLinecap="round" />
-              <circle cx="8" cy="11" r="0.5" fill="#D13A3B" />
+          {toast.type === 'success' && (
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+              <path d="M8 14.667C9.841 14.667 11.508 13.921 12.714 12.714C13.921 11.508 14.667 9.841 14.667 8C14.667 6.159 13.921 4.492 12.714 3.286C11.508 2.08 9.841 1.333 8 1.333C6.159 1.333 4.492 2.08 3.286 3.286C2.08 4.492 1.333 6.159 1.333 8C1.333 9.841 2.08 11.508 3.286 12.714C4.492 13.921 6.159 14.667 8 14.667Z" fill="#52BF92" stroke="#52BF92" strokeWidth="1.333" strokeLinejoin="round" />
+              <path d="M5.333 8L7.333 10L11.333 6" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           )}
-          <span style={{ fontFamily: FONT, fontSize: '13px', lineHeight: '16px', color: toast.type === 'success' ? '#52BF92' : '#D13A3B' }}>
-            {toast.message}
-          </span>
+          {toast.type === 'warning' && (
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+              <path d="M8 14.667C9.841 14.667 11.508 13.921 12.714 12.714C13.921 11.508 14.667 9.841 14.667 8C14.667 6.159 13.921 4.492 12.714 3.286C11.508 2.08 9.841 1.333 8 1.333C6.159 1.333 4.492 2.08 3.286 3.286C2.08 4.492 1.333 6.159 1.333 8C1.333 9.841 2.08 11.508 3.286 12.714C4.492 13.921 6.159 14.667 8 14.667Z" fill="#EB8B14" stroke="#EB8B14" strokeWidth="1.333" strokeLinejoin="round" />
+              <path fillRule="evenodd" clipRule="evenodd" d="M8 12.333C8.46 12.333 8.833 11.96 8.833 11.5C8.833 11.04 8.46 10.667 8 10.667C7.54 10.667 7.167 11.04 7.167 11.5C7.167 11.96 7.54 12.333 8 12.333Z" fill="#FFFFFF" />
+              <path d="M8 4V9.333" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          )}
+          {toast.type === 'error' && (
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+              <path d="M8 14.667C9.841 14.667 11.508 13.921 12.714 12.714C13.921 11.508 14.667 9.841 14.667 8C14.667 6.159 13.921 4.492 12.714 3.286C11.508 2.08 9.841 1.333 8 1.333C6.159 1.333 4.492 2.08 3.286 3.286C2.08 4.492 1.333 6.159 1.333 8C1.333 9.841 2.08 11.508 3.286 12.714C4.492 13.921 6.159 14.667 8 14.667Z" fill="#F75F5F" stroke="#F75F5F" strokeWidth="1.333" strokeLinejoin="round" />
+              <path d="M5.333 5.333L10.667 10.667M10.667 5.333L5.333 10.667" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" />
+            </svg>
+          )}
+          <span className="text-text-primary text-font-size-16 font-font-weight-regular" style={{ fontFamily: FONT }}>{toast.message}</span>
         </div>
       ))}
     </div>
@@ -2062,7 +2044,6 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
   useEffect(() => {
     ensureRotateKeyframe();
     ensureThinkingStyle();
-    ensureToastStyle();
   }, []);
 
   // Apply prefill when version bumps (re-edit or use-as-ref or use-as-first-frame)
@@ -3086,9 +3067,13 @@ function ImageDetailModal({ card, onClose, onDelete, favorited, onToggleFavorite
         />
       )}
       {toastVisible && createPortal(
-        <div style={{ position: 'fixed', top: 24, left: '50%', zIndex: 1200, transform: 'translateX(-50%)', pointerEvents: 'none', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 8 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, borderRadius: 8, padding: '10px 16px', background: '#1D1E1E', boxShadow: '0px 4px 16px rgba(0,0,0,0.6), inset 0px 0px 0px 1px rgba(255,255,255,0.08)', fontFamily: FONT, fontSize: 14, lineHeight: '18px', color: '#52BF92', animation: 'toast-in 0.2s ease', whiteSpace: 'nowrap' }}>
-            您已复制提示词
+        <div style={{ position: 'fixed', top: '25vh', left: '50%', transform: 'translateX(-50%)', zIndex: 9999, pointerEvents: 'none' }}>
+          <div className="flex items-center gap-[8px] px-[16px] py-[8px] rounded-medium bg-toast-bg backdrop-blur-[20px]" style={{ whiteSpace: 'nowrap', animation: 'slideUpBounce 250ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards' }}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+              <path d="M8 14.667C9.841 14.667 11.508 13.921 12.714 12.714C13.921 11.508 14.667 9.841 14.667 8C14.667 6.159 13.921 4.492 12.714 3.286C11.508 2.08 9.841 1.333 8 1.333C6.159 1.333 4.492 2.08 3.286 3.286C2.08 4.492 1.333 6.159 1.333 8C1.333 9.841 2.08 11.508 3.286 12.714C4.492 13.921 6.159 14.667 8 14.667Z" fill="#52BF92" stroke="#52BF92" strokeWidth="1.333" strokeLinejoin="round" />
+              <path d="M5.333 8L7.333 10L11.333 6" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+            <span className="text-text-primary text-font-size-16 font-font-weight-regular" style={{ fontFamily: FONT }}>您已复制提示词</span>
           </div>
         </div>,
         document.body

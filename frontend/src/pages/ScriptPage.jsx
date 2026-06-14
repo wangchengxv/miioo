@@ -69,15 +69,6 @@ function truncateFileName(name) {
   return base.slice(0, maxBase) + '… ' + ext;
 }
 
-const TOAST_STYLE_ID = 'script-toast-style';
-function ensureToastStyle() {
-  if (document.getElementById(TOAST_STYLE_ID)) return;
-  const style = document.createElement('style');
-  style.id = TOAST_STYLE_ID;
-  style.textContent = `@keyframes script-toast-in { from { opacity: 0; transform: translateY(-8px); } to { opacity: 1; transform: translateY(0); } }`;
-  document.head.appendChild(style);
-}
-
 const SPINNER_STYLE_ID = 'script-spinner-style';
 function ensureSpinnerStyle() {
   if (document.getElementById(SPINNER_STYLE_ID)) return;
@@ -89,28 +80,35 @@ function ensureSpinnerStyle() {
 
 function Toast({ toasts }) {
   return (
-    <div style={{ position: 'fixed', top: '25vh', left: '50%', transform: 'translateX(-50%)', zIndex: 9999, display: 'flex', flexDirection: 'column', gap: '8px', pointerEvents: 'none' }}>
-      {toasts.map((t) => {
-        const isSuccess = t.type === 'success';
-        const color = isSuccess ? '#2DC3E1' : '#D13A3B';
-        return (
-          <div key={t.id} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '12px 16px', borderRadius: '8px', backgroundColor: '#1D1E1E', border: '1px solid #FFFFFF14', boxShadow: '0px 4px 16px #00000066', animation: 'script-toast-in 0.2s ease' }}>
-            {isSuccess ? (
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <circle cx="8" cy="8" r="7" stroke={color} strokeWidth="1.5" />
-                <path d="M5 8.5L7 10.5L11 6" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            ) : (
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                <circle cx="8" cy="8" r="7" stroke={color} strokeWidth="1.5" />
-                <path d="M8 4.5V8.5" stroke={color} strokeWidth="1.5" strokeLinecap="round" />
-                <circle cx="8" cy="11" r="0.5" fill={color} />
-              </svg>
-            )}
-            <span style={{ fontFamily: FONT, fontSize: '13px', lineHeight: '16px', color }}>{t.message}</span>
-          </div>
-        );
-      })}
+    <div style={{ position: 'fixed', top: '25vh', left: '50%', transform: 'translateX(-50%)', zIndex: 9999, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', pointerEvents: 'none' }}>
+      {toasts.map((t) => (
+        <div
+          key={t.id}
+          className="flex items-center gap-[8px] px-[16px] py-[8px] rounded-medium bg-toast-bg backdrop-blur-[20px]"
+          style={{ whiteSpace: 'nowrap', animation: 'slideUpBounce 250ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards' }}
+        >
+          {t.type === 'success' && (
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+              <path d="M8 14.667C9.841 14.667 11.508 13.921 12.714 12.714C13.921 11.508 14.667 9.841 14.667 8C14.667 6.159 13.921 4.492 12.714 3.286C11.508 2.08 9.841 1.333 8 1.333C6.159 1.333 4.492 2.08 3.286 3.286C2.08 4.492 1.333 6.159 1.333 8C1.333 9.841 2.08 11.508 3.286 12.714C4.492 13.921 6.159 14.667 8 14.667Z" fill="#52BF92" stroke="#52BF92" strokeWidth="1.333" strokeLinejoin="round" />
+              <path d="M5.333 8L7.333 10L11.333 6" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          )}
+          {t.type === 'warning' && (
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+              <path d="M8 14.667C9.841 14.667 11.508 13.921 12.714 12.714C13.921 11.508 14.667 9.841 14.667 8C14.667 6.159 13.921 4.492 12.714 3.286C11.508 2.08 9.841 1.333 8 1.333C6.159 1.333 4.492 2.08 3.286 3.286C2.08 4.492 1.333 6.159 1.333 8C1.333 9.841 2.08 11.508 3.286 12.714C4.492 13.921 6.159 14.667 8 14.667Z" fill="#EB8B14" stroke="#EB8B14" strokeWidth="1.333" strokeLinejoin="round" />
+              <path fillRule="evenodd" clipRule="evenodd" d="M8 12.333C8.46 12.333 8.833 11.96 8.833 11.5C8.833 11.04 8.46 10.667 8 10.667C7.54 10.667 7.167 11.04 7.167 11.5C7.167 11.96 7.54 12.333 8 12.333Z" fill="#FFFFFF" />
+              <path d="M8 4V9.333" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          )}
+          {t.type === 'error' && (
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+              <path d="M8 14.667C9.841 14.667 11.508 13.921 12.714 12.714C13.921 11.508 14.667 9.841 14.667 8C14.667 6.159 13.921 4.492 12.714 3.286C11.508 2.08 9.841 1.333 8 1.333C6.159 1.333 4.492 2.08 3.286 3.286C2.08 4.492 1.333 6.159 1.333 8C1.333 9.841 2.08 11.508 3.286 12.714C4.492 13.921 6.159 14.667 8 14.667Z" fill="#F75F5F" stroke="#F75F5F" strokeWidth="1.333" strokeLinejoin="round" />
+              <path d="M5.333 5.333L10.667 10.667M10.667 5.333L5.333 10.667" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" />
+            </svg>
+          )}
+          <span className="text-text-primary text-font-size-16 font-font-weight-regular" style={{ fontFamily: FONT }}>{t.message}</span>
+        </div>
+      ))}
     </div>
   );
 }
@@ -1778,7 +1776,6 @@ export default function ScriptPage({ projectId, onGoToSubject, onScriptFinalized
     ensureScrollbarStyle();
     ensureEditorStyle();
     ensureThinkingStyle();
-    ensureToastStyle();
     ensureSpinnerStyle();
   }, []);
 
