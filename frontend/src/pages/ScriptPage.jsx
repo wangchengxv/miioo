@@ -836,7 +836,7 @@ function InputCard({ onSend, onStop, restoreText = '', restoreFiles = [], select
     apiListModels({ category: 'chat' }).then((list) => {
       if (Array.isArray(list) && list.length > 0) {
         setModels(list);
-        if (!selectedModel) onModelChange?.(list[0].model_id);
+        if (!selectedModel) { const def = list.find(m => m.is_default === true) || list[0]; onModelChange?.(def.model_id); }
       }
     }).catch(() => {});
   }, []);

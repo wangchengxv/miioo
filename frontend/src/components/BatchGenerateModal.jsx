@@ -168,6 +168,7 @@ export default function BatchGenerateModal({ open, onClose, onConfirm, generatin
             resolutions,
             resolutionSizeMap,
             ratios,
+            is_default: m.is_default,
          };
         });
         setModelList(merged.length > 0 ? merged : FALLBACK_MODELS);
@@ -179,8 +180,8 @@ export default function BatchGenerateModal({ open, onClose, onConfirm, generatin
     })();
   }, [open]);
 
-  const firstModel = modelList[0]?.value || '';
-  const [model, setModel] = useState(firstModel);
+  const defaultModel = modelList.find(m => m.is_default) || modelList[0];
+  const [model, setModel] = useState(defaultModel?.value || '');
   const [ratio, setRatio] = useState(projectRatio || '16:9');
   const [resolution, setResolution] = useState('2K');
   const [mode, setMode] = useState('main');
@@ -251,7 +252,7 @@ export default function BatchGenerateModal({ open, onClose, onConfirm, generatin
   // 每次打开弹窗时，重置为第一个模型的默认值（比例优先用项目比例）
   useEffect(() => {
     if (!open) return;
-    const first = modelList[0];
+    const first = modelList.find(m => m.is_default) || modelList[0];
     if (!first) return;
     setModel(first.value);
     const resList = first.resolutions || [];

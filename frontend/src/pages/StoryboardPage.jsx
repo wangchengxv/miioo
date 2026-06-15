@@ -537,7 +537,7 @@ function BatchImageModal({ shotCount, onClose, onConfirm }) {
         });
         setModelList(merged);
         if (merged.length > 0) {
-          const first = merged[0];
+          const first = merged.find(m => m.is_default) || merged[0];
           setModel(first.value);
           if (first.resolutions.length > 0) {
             setResolution(first.resolutions[0]);
@@ -630,11 +630,11 @@ function BatchVideoModal({ shotCount, onClose, onConfirm }) {
               durationRange = localCaps.outputVideo.durationRange;
             }
           }
-          return { value: modelId, label: name || modelId, capabilities: caps, resolutions, durationRange };
+          return { value: modelId, label: name || modelId, capabilities: caps, resolutions, durationRange, is_default: m.is_default };
         });
         setModelList(merged);
         if (merged.length > 0) {
-          const first = merged[0];
+          const first = merged.find(m => m.is_default) || merged[0];
           setModel(first.value);
           if (first.resolutions.length > 0) {
             setResolution(first.resolutions[0]);
@@ -1837,11 +1837,11 @@ function GenerateImagePanel({ shot, projectId, chars = [], scenes = [], props = 
         const list = Array.isArray(data) ? data : (data?.items || data?.models || []);
         const merged = list.map((m) => {
           const modelId = m.model_id || m.id;
-          return { value: modelId, label: m.name || modelId, capabilities: m.capabilities || {} };
+          return { value: modelId, label: m.name || modelId, capabilities: m.capabilities || {}, is_default: m.is_default };
         });
         setModelList(merged);
         if (merged.length > 0) {
-          const first = merged[0];
+          const first = merged.find(m => m.is_default) || merged[0];
           setModel(first.value);
           const caps = first.capabilities;
           {
@@ -2178,7 +2178,7 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
         const list = Array.isArray(data) ? data : (data?.items || data?.models || []);
         const merged = list.map((m) => {
           const modelId = m.model_id || m.id;
-          return { value: modelId, label: m.name || modelId, capabilities: m.capabilities || {} };
+          return { value: modelId, label: m.name || modelId, capabilities: m.capabilities || {}, is_default: m.is_default };
         });
 
         // 按 reference_modes 分类模型
@@ -2202,7 +2202,7 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
 
         // 默认选中全能参考
         if (allModels.length > 0) {
-          const first = allModels[0];
+          const first = allModels.find(m => m.is_default) || allModels[0];
           setModel(first.value);
           const caps = first.capabilities;
           {

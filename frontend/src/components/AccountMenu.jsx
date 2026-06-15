@@ -193,13 +193,13 @@ export default function AccountMenu({
             <div className="flex flex-col items-start w-full pt-[8px] gap-[2px]">
               {/* Phone */}
               <div className="flex items-center justify-between w-full mt-[6px] gap-[4px]">
-                <span style={{ fontFamily: FONT_REGULAR, fontSize: '12px', lineHeight: '18px', color: '#FFFFFF4D', flexShrink: 0 }}>手机号</span>
+                <span style={{ fontFamily: FONT_REGULAR, fontSize: '12px', lineHeight: '18px', color: '#FFFFFF99', flexShrink: 0 }}>手机号</span>
                 <span className="truncate" style={{ fontFamily: FONT_REGULAR, fontSize: '12px', lineHeight: '18px', color: '#FFFFFFCC' }}>{phone}</span>
               </div>
               {/* WeChat */}
               <div className="flex items-center justify-between w-full mt-[2px] gap-[4px]">
-                <span style={{ fontFamily: FONT_REGULAR, fontSize: '12px', lineHeight: '18px', color: '#FFFFFF4D', flexShrink: 0 }}>微信</span>
-                <span className="truncate" style={{ fontFamily: FONT_REGULAR, fontSize: '12px', lineHeight: '18px', color: '#FFFFFFCC' }}>{wechat}</span>
+                <span style={{ fontFamily: FONT_REGULAR, fontSize: '12px', lineHeight: '18px', color: '#FFFFFF99', flexShrink: 0 }}>微信</span>
+                <span className="truncate" style={{ fontFamily: FONT_REGULAR, fontSize: '12px', lineHeight: '18px', color: '#FFFFFF66' }}>{wechat}</span>
               </div>
             </div>
           </div>

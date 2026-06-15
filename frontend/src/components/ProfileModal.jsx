@@ -76,6 +76,7 @@ function ProfileField({ label, value, onChange, placeholder, maxLength, onBlurSa
   const [editing, setEditing] = useState(false);
   const [focused, setFocused] = useState(false);
   const inputRef = useRef(null);
+  const [editHovered, setEditHovered] = useState(false);
 
   const handleEditClick = () => {
     setEditing(true);
@@ -126,11 +127,13 @@ function ProfileField({ label, value, onChange, placeholder, maxLength, onBlurSa
             <button
               type="button"
               onClick={handleEditClick}
+              onMouseEnter={() => setEditHovered(true)}
+              onMouseLeave={() => setEditHovered(false)}
               style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', flexShrink: 0 }}
             >
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
-                <path d="M2.333 14H14.333" stroke="#FFFFFF99" strokeLinecap="round" strokeLinejoin="round" />
-                <path d="M3.667 8.907V11.333H6.106L13 4.436L10.565 2L3.667 8.907Z" stroke="#FFFFFF99" strokeLinejoin="round" />
+                <path d="M2.333 14H14.333" stroke={editHovered ? '#FFFFFF' : '#FFFFFF99'} strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M3.667 8.907V11.333H6.106L13 4.436L10.565 2L3.667 8.907Z" stroke={editHovered ? '#FFFFFF' : '#FFFFFF99'} strokeLinejoin="round" />
               </svg>
             </button>
           </div>
@@ -229,7 +232,7 @@ function WechatUnboundRow({ onBind }) {
       onMouseUp={() => setPressed(false)}
       onClick={onBind}
     >
-      <span style={{ fontFamily: FONT_REGULAR, fontSize: '14px', lineHeight: '20px', color: '#FFFFFF99', width: '44px', flexShrink: 0 }}>
+      <span style={{ fontFamily: FONT_REGULAR, fontSize: '14px', lineHeight: '20px', color: '#FFFFFF99', width: '44px', flexShrink: 0, textAlign: 'left' }}>
         微信
       </span>
       <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>

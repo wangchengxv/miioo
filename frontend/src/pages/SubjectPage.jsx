@@ -1478,10 +1478,11 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', projectRatio, 
 
   useEffect(() => {
     (async () => {
+      let merged;
       try {
         const data = await apiListModels({ category: 'image' });
         const list = Array.isArray(data) ? data : (data?.items || data?.models || []);
-        const merged = list.map((m) => {
+        merged = list.map((m) => {
           const modelId = m.model_id || m.id;
          const caps = m.capabilities || {};
           const resolutions = (caps.supported_resolutions?.length ? caps.supported_resolutions : caps.supported_sizes) || [];
@@ -1493,6 +1494,7 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', projectRatio, 
             resolutions,
             resolutionSizeMap,
             ratios,
+            is_default: m.is_default,
             maxRefImages: caps.max_reference_images || 3,
           };
         });
@@ -1501,6 +1503,12 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', projectRatio, 
         setImageModels(getFallbackModels());
       } finally {
         setModelsLoading(false);
+      }
+
+      // 如果角色没有预设模型，加载完后自动选中默认模型
+      if (merged.length > 0 && !char?.model && !char?.default_image_model) {
+        const def = merged.find(m => m.is_default) || merged[0];
+        if (def) setSelectedModel(def.value);
       }
     })();
   }, [projectId]);
@@ -1546,6 +1554,9 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', projectRatio, 
   const toastTimerRef = useRef(null);
   const isMountedRef = useRef(true); // 跟踪组件是否已挂载，关闭弹窗后仍让请求跑完
   const [detailLoaded, setDetailLoaded] = useState(false);
+
+  const [primaryImageUrl, setPrimaryImageUrl] = useState(null);
+  const [primaryImageId, setPrimaryImageId] = useState(null);
 
   useEffect(() => {
     isMountedRef.current = true;

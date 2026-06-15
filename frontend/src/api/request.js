@@ -32,6 +32,12 @@ function withAuth(options = {}) {
 
 // 防止并发请求同时触发多次刷新
 let refreshPromise = null;
+function cloneFormData(fd) {
+  const c = new FormData();
+  for (const [k, v] of fd.entries()) c.append(k, v);
+  return c;
+}
+
 
 export async function refreshAccessToken() {
   if (refreshPromise) return refreshPromise;
@@ -64,6 +70,8 @@ export async function refreshAccessToken() {
 
 // 带自动刷新的 fetch，供所有需要鉴权的 API 使用
 export async function authFetch(url, options = {}) {
+  // 克隆 FormData，防止首次 fetch 消费后 401 重试时 body 为空
+  const formClone = options.body instanceof FormData ? cloneFormData(options.body) : null;
   let res;
   try {
     res = await fetch(url, withAuth(options));
@@ -77,7 +85,10 @@ export async function authFetch(url, options = {}) {
   window.dispatchEvent(new CustomEvent('backend:reachable'));
   if (res.status === 401) {
     const ok = await refreshAccessToken();
-    if (ok) return fetch(url, withAuth(options));
+    if (ok) {
+      const retryOpts = formClone ? { ...options, body: cloneFormData(formClone) } : options;
+      return fetch(url, withAuth(retryOpts));
+    }
     clearTokens();
     window.dispatchEvent(new CustomEvent('auth:logout'));
     throw new Error('Unauthorized');
@@ -87,6 +98,8 @@ export async function authFetch(url, options = {}) {
 
 // 不带 Content-Type 的 authFetch，用于 FormData 上传
 export async function authFetchForm(url, options = {}) {
+  // 克隆 FormData，防止首次 fetch 消费后 401 重试时 body 为空
+  const formClone = options.body instanceof FormData ? cloneFormData(options.body) : null;
   const token = getToken();
   const headers = {
     ...(options.headers || {}),
@@ -108,7 +121,7 @@ export async function authFetchForm(url, options = {}) {
     if (ok) {
       const newToken = getToken();
       return fetch(url, {
-        ...options,
+        ...(formClone ? { ...options, body: cloneFormData(formClone) } : options),
         headers: {
           ...(options.headers || {}),
           ...(newToken ? { Authorization: `Bearer ${newToken}` } : {}),
