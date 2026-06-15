@@ -256,18 +256,17 @@ function ConfirmDeleteModal({ onConfirm, onCancel }) {
       onClick={onCancel}
     >
       <div
-        className="[font-synthesis:none] flex w-[360px] flex-col gap-[24px] rounded-2xl bg-surface-modal p-[24px] antialiased"
+        className="[font-synthesis:none] flex w-[360px] flex-col rounded-2xl bg-surface-modal antialiased"
         style={{ boxShadow: '0px 8px 32px rgba(0,0,0,0.6)' }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-start justify-between gap-[8px]">
-          <div className="flex flex-col gap-[8px]">
-            <div className="text-base/5 font-medium text-text-primary" style={{ fontFamily: FONT_MEDIUM }}>
-              确定要删除吗？
-            </div>
-            <div className="text-sm/4.5 text-text-secondary" style={{ fontFamily: FONT }}>
-              此操作不可撤销，请谨慎操作！
-            </div>
+        {/* Header: title + close button */}
+        <div
+          className="flex items-center justify-between"
+          style={{ padding: '20px 24px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}
+        >
+          <div className="text-base/5 font-medium text-text-primary" style={{ fontFamily: FONT_MEDIUM }}>
+            确定要删除吗？
           </div>
           <button
             type="button"
@@ -278,7 +277,14 @@ function ConfirmDeleteModal({ onConfirm, onCancel }) {
             <CloseIcon />
           </button>
         </div>
-        <div className="flex items-center justify-end gap-[12px]">
+        {/* Body: content */}
+        <div style={{ padding: '24px' }}>
+          <div className="text-sm/4.5 text-text-secondary" style={{ fontFamily: FONT }}>
+            此操作不可撤销，请谨慎操作！
+          </div>
+        </div>
+        {/* Footer: action buttons */}
+        <div className="flex items-center justify-end gap-[12px]" style={{ padding: '0 24px 24px' }}>
           <SecondaryButton className="h-9" onClick={onCancel}>
             取消
           </SecondaryButton>
