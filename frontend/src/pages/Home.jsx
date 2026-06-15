@@ -785,8 +785,16 @@ export default function Home({ onProjectCreated }) {
   const [currentUser, setCurrentUser] = useState({});
   const [forceExtract, setForceExtract] = useState(false);
   const [notifications, setNotifications] = useState([]);
+
+  // 同步跟踪当前项目 ID
+  useEffect(() => {
+    currentProjectIdRef.current = activeProject?.id || null;
+  }, [activeProject?.id]);
   const [toast, setToast] = useState(null);
   const toastTimerRef = useRef(null);
+  // 跨项目异步操作的 pending 结果暂存
+  const pendingExtractionsRef = useRef({}); // { projectId: { chars, scenes, props } }
+  const currentProjectIdRef = useRef(null);  // 同步跟踪当前项目
   const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
   const bgVideoRef = useRef(null);
   const [videoReady, setVideoReady] = useState(false);
@@ -1106,10 +1114,12 @@ export default function Home({ onProjectCreated }) {
 
   // 提取主体回调（由 SubjectPage 在挂载时调用）
   const handleExtractSubjects = async () => {
+    const projectId = activeProject.id;
+    const projectName = activeProject.name || projectId;
     setExtractError(null);
     try {
       // 调用主动提取接口（POST）而非仅查询已有主体
-      const result = await apiExtractSubjectsFromScript(activeProject.id);
+      const result = await apiExtractSubjectsFromScript(projectId);
       const allSubjects = [...(result.created || []), ...(result.updated || [])];
 
       const charsData = allSubjects.filter(s => s.type === 'character');
@@ -1121,9 +1131,22 @@ export default function Home({ onProjectCreated }) {
       const normalizedProps = normalizeSubjects(propsData);
 
       if (normalizedChars.length === 0 && normalizedScenes.length === 0 && normalizedProps.length === 0) {
-        setExtractError('提取主体失败，请稍后重试');
-        setExtractErrorProjectId(activeProject?.id);
-        showToast('提取主体失败，请稍后重试', 'error');
+        if (currentProjectIdRef.current === projectId) {
+          setExtractError('提取主体失败，请稍后重试');
+          setExtractErrorProjectId(projectId);
+          showToast('提取主体失败，请稍后重试', 'error');
+        }
+        return;
+      }
+
+      // 项目已切换：暂存结果 + toast 通知
+      if (currentProjectIdRef.current !== projectId) {
+        pendingExtractionsRef.current[projectId] = {
+          chars: normalizedChars,
+          scenes: normalizedScenes,
+          props: normalizedProps,
+        };
+        showToast(`「${projectName}」主体抽取完成`, 'success');
         return;
       }
 
@@ -1133,11 +1156,26 @@ export default function Home({ onProjectCreated }) {
       setForceExtract(false);
     } catch (err) {
       console.error('提取主体失败:', err);
-      setExtractError('提取主体失败，请重试');
-      setExtractErrorProjectId(activeProject?.id);
-      showToast('提取主体失败，请重试', 'error');
+      if (currentProjectIdRef.current === projectId) {
+        setExtractError('提取主体失败，请重试');
+        setExtractErrorProjectId(projectId);
+        showToast('提取主体失败，请重试', 'error');
+      }
     }
   };
+
+  // 切回项目时，检查是否有暂存的提取结果等待应用
+  useEffect(() => {
+    const pid = activeProject?.id;
+    if (!pid) return;
+    const pending = pendingExtractionsRef.current[pid];
+    if (!pending) return;
+    setSharedChars(pending.chars);
+    setSharedScenes(pending.scenes);
+    setSharedProps(pending.props);
+    setForceExtract(false);
+    delete pendingExtractionsRef.current[pid];
+  }, [activeProject?.id]);
 
   // 智能分镜生成回调（由 StoryboardPage 在挂载时调用）
   const handleGenerateStoryboards = async () => {

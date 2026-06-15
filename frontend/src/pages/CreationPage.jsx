@@ -3439,7 +3439,7 @@ function ImageResultCard({ status, imageUrl, prompt, model, ratio, resolution, r
   );
 }
 
-function CreationResultState({ generations, onGenerate, genType, onGenTypeChange, model, onModelChange, modelOptions, creationParams, onDeleteCard, batchMode = false, selected, onToggleSelect, onSwitchToFrameMode, onVideoCardClick, favorites, toggleFavorite, showToast, onBeforeModelOpen }) {
+function CreationResultState({ generations, onGenerate, genType, onGenTypeChange, model, onModelChange, modelOptions, creationParams, onDeleteCard, batchMode = false, selected, onToggleSelect, onSwitchToFrameMode, onVideoCardClick, favorites, toggleFavorite, showToast, onBeforeModelOpen, isGenerating = false }) {
   const scrollRef = useRef(null);
   const [prefillVersion, setPrefillVersion] = useState(0);
   const [prefillData, setPrefillData] = useState(null);
@@ -3500,6 +3500,28 @@ function CreationResultState({ generations, onGenerate, genType, onGenTypeChange
             alignContent: 'flex-start',
           }}
         >
+          {isGenerating && allCards.length === 0 && (
+            <div style={{
+              width: '320px', height: '180px', borderRadius: '8px',
+              background: 'rgba(255,255,255,0.04)',
+              border: '1px solid rgba(255,255,255,0.06)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              flexShrink: 0,
+            }}>
+              <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px' }}>
+                <div style={{
+                  width: '32px', height: '32px', borderRadius: '50%',
+                  border: '2.5px solid rgba(255,255,255,0.10)',
+                  borderTopColor: '#2DC3E1',
+                  animation: 'spin 1s linear infinite',
+                }} />
+                <span style={{ fontFamily: FONT, fontSize: '13px', lineHeight: '18px', color: 'rgba(255,255,255,0.30)' }}>
+                  正在创作…
+                </span>
+              </div>
+            </div>
+          )}
+
           {allCards.map((card) => {
             const { key, ...cardProps } = card;
             if (isVideo) {

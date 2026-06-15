@@ -102,6 +102,23 @@ function toBackendStoryboard(shot) {
   };
 }
 
+/**
+ * 为从 character_ids 构造的 mainRefs 补上 url（normalizeStoryboard 里只有 id+type）
+ */
+function enrichMainRefs(shot, chars) {
+  if (!shot?.mainRefs) return shot;
+  shot.mainRefs = shot.mainRefs.map(ref => {
+    if (ref.type === 'char' && !ref.url) {
+      const ch = (chars || []).find(c => c.id === ref.id);
+      if (ch?.imageUrl) {
+        return { ...ref, url: normalizeImageUrl(ch.imageUrl), name: ch.name };
+      }
+    }
+    return ref;
+  });
+  return shot;
+}
+
 // ─────────────────────────────────────────────────────────────────────────────
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
@@ -4334,6 +4351,19 @@ function MediaViewModal({ url, onClose }) {
   const [closeHov, setCloseHov] = useState(false);
   const [doneHov, setDoneHov] = useState(false);
   const [donePressed, setDonePressed] = useState(false);
+  const [downloadHov, setDownloadHov] = useState(false);
+  const [downloadPressed, setDownloadPressed] = useState(false);
+
+  function downloadImage(imageUrl) {
+    const a = document.createElement('a');
+    a.href = imageUrl;
+    a.download = imageUrl.split('/').pop() || 'image.jpg';
+    a.target = '_blank';
+    a.rel = 'noopener noreferrer';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+  }
   return createPortal(
     <div
       style={{ position: 'fixed', inset: 0, zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
@@ -4362,7 +4392,7 @@ function MediaViewModal({ url, onClose }) {
           <img src={url} alt="" style={{ width: '100%', flex: 1, borderRadius: '8px', objectFit: 'contain', minHeight: 0 }} />
         </div>
         {/* footer */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', background: '#161616', borderRadius: '0 0 16px 16px', padding: '16px 24px', flexShrink: 0 }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', background: '#161616', borderRadius: '0 0 16px 16px', padding: '16px 24px', flexShrink: 0, gap: '12px' }}>
           <div
             style={{ display: 'flex', flexDirection: 'column', height: '36px', flexShrink: 0, borderRadius: '8px', padding: '1px', backgroundImage: doneHov ? 'linear-gradient(in oklab 148.76deg, oklab(94.7% -0.078 -0.022 / 45%) 3.64%, oklab(75.5% -0.102 -0.072 / 0%) 42.81%), linear-gradient(in oklab 180deg, #FFFFFF1E, #FFFFFF1E)' : 'linear-gradient(in oklab 148.76deg, oklab(94.7% -0.078 -0.022 / 30%) 3.64%, oklab(75.5% -0.102 -0.072 / 0%) 42.81%), linear-gradient(in oklab 180deg, #FFFFFF14, #FFFFFF14)', boxShadow: '#00000066 3px 3px 8px', outline: '1px solid #00000080', cursor: 'pointer', transition: 'background-image 0.15s' }}
             onClick={onClose}
@@ -4373,6 +4403,23 @@ function MediaViewModal({ url, onClose }) {
           >
             <div style={{ display: 'flex', alignItems: 'center', flex: 1, alignSelf: 'stretch', borderRadius: '7px', gap: '4px', paddingInline: '15px', backgroundColor: donePressed ? '#222222' : doneHov ? '#1C1C1C' : '#161616', transition: 'background-color 0.1s' }}>
               <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF' }}>完成</span>
+            </div>
+          </div>
+          <div
+            style={{ display: 'flex', flexDirection: 'column', height: '36px', flexShrink: 0, borderRadius: '8px', padding: '1px', backgroundImage: downloadHov ? 'linear-gradient(in oklab 148.76deg, oklab(94.7% -0.078 -0.022 / 45%) 3.64%, oklab(75.5% -0.102 -0.072 / 0%) 42.81%), linear-gradient(in oklab 180deg, #FFFFFF1E, #FFFFFF1E)' : 'linear-gradient(in oklab 148.76deg, oklab(94.7% -0.078 -0.022 / 30%) 3.64%, oklab(75.5% -0.102 -0.072 / 0%) 42.81%), linear-gradient(in oklab 180deg, #FFFFFF14, #FFFFFF14)', boxShadow: '#00000066 3px 3px 8px', outline: '1px solid #00000080', cursor: 'pointer', transition: 'background-image 0.15s' }}
+            onClick={() => downloadImage(url)}
+            onMouseEnter={() => setDownloadHov(true)}
+            onMouseLeave={() => { setDownloadHov(false); setDownloadPressed(false); }}
+            onMouseDown={() => setDownloadPressed(true)}
+            onMouseUp={() => setDownloadPressed(false)}
+          >
+            <div style={{ display: 'flex', alignItems: 'center', flex: 1, alignSelf: 'stretch', borderRadius: '7px', gap: '4px', paddingInline: '15px', backgroundColor: downloadPressed ? '#222222' : downloadHov ? '#1C1C1C' : '#161616', transition: 'background-color 0.1s' }}>
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+                <path d="M8 2.667V10" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M5.333 7.333L8 10L10.667 7.333" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M2.667 12H13.333" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF' }}>下载</span>
             </div>
           </div>
         </div>
@@ -5068,7 +5115,7 @@ export default function StoryboardPage({ serverReachable, projectId, projectName
     apiGetStoryboards(projectId, params)
       .then((data) => {
         if (data !== null && data !== undefined) {
-          setShots((Array.isArray(data) ? data : []).map(normalizeStoryboard));
+          setShots((Array.isArray(data) ? data : []).map(be => enrichMainRefs(normalizeStoryboard(be), chars)));
         }
       })
       .catch((err) => {
@@ -5316,7 +5363,7 @@ export default function StoryboardPage({ serverReachable, projectId, projectName
 
     apiCreateStoryboard(projectId, { ...toBackendStoryboard(newShot), episode_id: getEpisodeId(episode) })
       .then((created) => {
-        const shotWithRealId = normalizeStoryboard(created);
+        const shotWithRealId = enrichMainRefs(normalizeStoryboard(created), chars);
         setShots((prev) => {
           const next = [...prev.slice(0, idx + 1), shotWithRealId, ...prev.slice(idx + 1)];
           const reordered = next.map((s, i) => ({ ...s, number: i + 1 }));
@@ -5338,7 +5385,7 @@ export default function StoryboardPage({ serverReachable, projectId, projectName
     apiCreateStoryboard(projectId, { ...toBackendStoryboard(copy), episode_id: getEpisodeId(episode) })
       .then((created) => {
         // 合并原始富数据 + 后端生成的 ID
-        const shotWithRealId = { ...copy, ...normalizeStoryboard(created) };
+        const shotWithRealId = { ...copy, ...enrichMainRefs(normalizeStoryboard(created), chars) };
         setShots((prev) => {
           const next = [...prev.slice(0, idx + 1), shotWithRealId, ...prev.slice(idx + 1)];
           const reordered = next.map((s, i) => ({ ...s, number: i + 1 }));
@@ -5377,7 +5424,7 @@ export default function StoryboardPage({ serverReachable, projectId, projectName
 
     apiCreateStoryboard(projectId, { ...toBackendStoryboard(newShot), episode_id: getEpisodeId(episode) })
       .then((created) => {
-        const shotWithRealId = normalizeStoryboard(created);
+        const shotWithRealId = enrichMainRefs(normalizeStoryboard(created), chars);
         hasManuallyInteracted.current = true;
         setShots((prev) => [...prev, shotWithRealId]);
       })
@@ -5728,7 +5775,7 @@ export default function StoryboardPage({ serverReachable, projectId, projectName
         onGenerate={async (params) => {
           const shot = imagePanel.shot;
           try {
-            const taskResp = await apiGenerateStoryboardImage(projectId, shot.id, { model: params.model, resolution: params.resolution, prompt: params.prompt, reference_images: params.refImages });
+            const taskResp = await apiGenerateStoryboardImage(projectId, shot.id, { model: params.model, resolution: params.resolution, prompt: params.prompt, reference_images: (params.refImages || []).map(r => typeof r === 'string' ? r : r.url) });
             const task = await pollTask(taskResp.id);
             if ((task.status === 'completed' || task.status === 'partial') && task.results?.length > 0) {
               const imageUrl = task.results[0]?.image_url;

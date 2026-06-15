@@ -90,7 +90,11 @@ export async function apiGenerateStoryboardImage(projectId, storyboardId, params
   );
   if (!res.ok) {
     let detail = '';
-    try { const body = await res.json(); detail = body?.detail || body?.message || ''; } catch {}
+    try {
+      const body = await res.json();
+      detail = body?.detail || body?.message || '';
+      if (typeof detail === 'object') detail = JSON.stringify(detail);
+    } catch {}
     const err = new Error(detail || `生成失败（${res.status}）`);
     err.status = res.status;
     throw err;
@@ -109,7 +113,11 @@ export async function apiGenerateStoryboardVideo(projectId, storyboardId, params
   );
   if (!res.ok) {
     let detail = '';
-    try { const body = await res.json(); detail = body?.detail || body?.message || ''; } catch {}
+    try {
+      const body = await res.json();
+      detail = body?.detail || body?.message || '';
+      if (typeof detail === 'object') detail = JSON.stringify(detail);
+    } catch {}
     const err = new Error(detail || `生成失败（${res.status}）`);
     err.status = res.status;
     throw err;
@@ -209,7 +217,11 @@ export async function apiGetTask(taskId) {
   });
   if (!res.ok) {
     let detail = '';
-    try { const body = await res.json(); detail = body?.detail || body?.message || ''; } catch {}
+    try {
+      const body = await res.json();
+      detail = body?.detail || body?.message || '';
+      if (typeof detail === 'object') detail = JSON.stringify(detail);
+    } catch {}
     const err = new Error(detail || `获取任务状态失败（${res.status}）`);
     err.status = res.status;
     throw err;

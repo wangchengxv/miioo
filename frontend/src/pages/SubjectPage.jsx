@@ -1876,7 +1876,7 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', projectRatio, 
                 onBlur={() => setPromptFocused(false)}
                 style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', resize: 'none', fontFamily: FONT, fontSize: '14px', lineHeight: '150%', color: '#FFFFFF' }}
               />
-              <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '18px', color: promptText.length > 300 ? '#F75F5F' : '#FFFFFF66', textAlign: 'right' }}>{promptText.length}/300</span>
+              <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '18px', color: promptText.length > 1000 ? '#F75F5F' : '#FFFFFF66', textAlign: 'right' }}>{promptText.length}/1000</span>
             </div>
           </div>
 
