@@ -44,35 +44,48 @@ function formatCreationDate(isoString) {
 }
 
 function ConfirmDeleteModal({ onConfirm, onCancel }) {
-  const [confirmHov, setConfirmHov] = useState(false);
-  const [cancelHov, setCancelHov] = useState(false);
   return createPortal(
     <div
-      style={{ position: 'fixed', inset: 0, zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' }}
+      style={{ position: 'fixed', inset: 0, zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
       onClick={onCancel}
     >
       <div
-        style={{ width: '320px', borderRadius: '12px', border: '1px solid #FFFFFF14', backgroundColor: '#161616', padding: '24px 24px 20px', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '#00000099 0px 8px 32px' }}
+        style={{ width: '360px', borderRadius: '16px', backgroundColor: '#161616', display: 'flex', flexDirection: 'column', boxShadow: '#00000099 0px 8px 32px' }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={{ fontFamily: FONT_MEDIUM, fontSize: '16px', lineHeight: '20px', color: '#FFFFFF' }}>确认删除</div>
-        <div style={{ fontFamily: FONT, fontSize: '13px', lineHeight: '20px', color: '#FFFFFF99' }}>
-          删除后无法恢复，确定要删除这张图片吗？
-        </div>
-        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', paddingTop: '4px' }}>
+        {/* Header: title + close button */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 24px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+          <span style={{ fontFamily: FONT_MEDIUM, fontWeight: 500, fontSize: '16px', lineHeight: '20px', color: '#FFFFFF' }}>确认删除</span>
           <button
             type="button"
             onClick={onCancel}
-            onMouseEnter={() => setCancelHov(true)}
-            onMouseLeave={() => setCancelHov(false)}
-            style={{ height: '32px', padding: '0 16px', borderRadius: '8px', border: '1px solid #FFFFFF14', backgroundColor: cancelHov ? '#FFFFFF14' : '#FFFFFF0A', color: '#FFFFFFCC', fontFamily: FONT, fontSize: '13px', cursor: 'pointer', transition: 'background-color 0.15s' }}
+            style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', cursor: 'pointer', borderRadius: '8px', padding: 0, flexShrink: 0 }}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+              <path d="M2.667 2.667L13.333 13.333" stroke="rgba(255,255,255,0.6)" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M2.667 13.333L13.333 2.667" stroke="rgba(255,255,255,0.6)" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
+        </div>
+        {/* Body: content */}
+        <div style={{ padding: '24px' }}>
+          <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.6)' }}>
+            删除后无法恢复，确定要删除这张图片吗？
+          </span>
+        </div>
+        {/* Footer: action buttons */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px', padding: '0 24px 24px' }}>
+          <button
+            type="button"
+            onClick={onCancel}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '36px', flexShrink: 0, borderRadius: '8px', paddingLeft: '16px', paddingRight: '16px', boxShadow: '#00000066 3px 3px 8px', backgroundColor: '#161616', border: '1px solid #FFFFFF14', outline: '1px solid #00000080', cursor: 'pointer', fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.6)' }}
           >取消</button>
           <button
             type="button"
             onClick={onConfirm}
-            onMouseEnter={() => setConfirmHov(true)}
-            onMouseLeave={() => setConfirmHov(false)}
-            style={{ height: '32px', padding: '0 16px', borderRadius: '8px', border: 'none', backgroundColor: confirmHov ? '#E53E3E' : '#C53030', color: '#FFFFFF', fontFamily: FONT, fontSize: '13px', cursor: 'pointer', transition: 'background-color 0.15s' }}
+            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '36px', flexShrink: 0, borderRadius: '8px', paddingLeft: '16px', paddingRight: '16px', backgroundColor: '#D13B3B', border: '1px solid rgba(255,255,255,0.2)', cursor: 'pointer', fontFamily: FONT_MEDIUM, fontWeight: 500, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF', transition: 'background-color 120ms' }}
+            onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = '#F75F5F'; }}
+            onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = '#D13B3B'; }}
           >删除</button>
         </div>
       </div>
