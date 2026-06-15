@@ -560,8 +560,11 @@ function BatchImageModal({ shotCount, onClose, onConfirm }) {
     const selected = modelList.find(m => m.label === label);
     if (!selected) return;
     setModel(selected.value);
-    setResolution(selected.resolutions.length > 0 ? selected.resolutions[0] : '');
-  }, [modelList]);
+    const resList = selected.resolutions;
+    if (resList.length > 0) {
+      setResolution(resList.includes(resolution) ? resolution : resList[0]);
+    }
+  }, [modelList, resolution]);
 
   return (
     <ModalOverlay onClose={onClose}>
@@ -664,11 +667,20 @@ function BatchVideoModal({ shotCount, onClose, onConfirm }) {
     const selected = modelList.find(m => m.label === label);
     if (!selected) return;
     setModel(selected.value);
-    setResolution(selected.resolutions.length > 0 ? selected.resolutions[0] : '');
-    if (selected.durationRange) {
-      setDuration(`${selected.durationRange[0]}s`);
+    const resList = selected.resolutions;
+    if (resList.length > 0) {
+      setResolution(resList.includes(resolution) ? resolution : resList[0]);
     }
-  }, [modelList]);
+    if (selected.durationRange) {
+      const durSec = parseInt(duration);
+      const [minDur, maxDur] = selected.durationRange;
+      if (!isNaN(durSec) && durSec >= minDur && durSec <= maxDur) {
+        setDuration(duration);
+      } else {
+        setDuration(`${minDur}s`);
+      }
+    }
+  }, [modelList, resolution, duration]);
 
   return (
     <ModalOverlay onClose={onClose}>
@@ -1883,7 +1895,9 @@ function GenerateImagePanel({ shot, projectId, chars = [], scenes = [], props = 
   })();
   useEffect(() => {
     if (currentResolutions.length > 0) {
-      setResolution(currentResolutions[0]);
+      if (!currentResolutions.includes(resolution)) {
+        setResolution(currentResolutions[0]);
+      }
     }
   }, [model, currentResolutions]);
 
@@ -2272,10 +2286,22 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
   // 当前模型的前端本地能力表
   const localVideoCaps = useMemo(() => getVideoModelCapabilities(model), [model]);
 
-  // 模型切换时重置分辨率为第一个可用值
+  // 模型切换时保留当前分辨率/时长（若新模型支持）
   useEffect(() => {
     if (availableResolutions.length > 0) {
-      setResolution(availableResolutions[0]);
+      if (!availableResolutions.includes(resolution)) {
+        setResolution(availableResolutions[0]);
+      }
+    }
+    // 时长：若当前时长在新模型时长范围内则保留，否则回退第一个
+    if (duration && duration !== '自动匹配') {
+      const range = currentVideoModel?.capabilities?.supported_duration_range;
+      if (range && range.length === 2) {
+        const durSec = parseInt(duration);
+        if (!isNaN(durSec) && (durSec < range[0] || durSec > range[1])) {
+          setDuration(`${range[0]}s`);
+        }
+      }
     }
   }, [model, availableResolutions]);
 

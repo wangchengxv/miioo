@@ -1471,7 +1471,7 @@ function RefImageField({ maxImages = 3, projectId, subjectId, refImageIds = [], 
 // key: subjectId, value: { placeholderId, status: 'pending'|'done', imageUrl?, rawUrl? }
 const pendingGenerations = new Map();
 
-function EditSubjectPanel({ projectId, char, tabLabel = '角色', onClose, onCommit, onCoverChange }) {
+function EditSubjectPanel({ projectId, char, tabLabel = '角色', projectRatio, onClose, onCommit, onCoverChange }) {
   // ── 从后端拉取模型列表，直接使用后端 capabilities ──────────────
   const [imageModels, setImageModels] = useState([]);
   const [modelsLoading, setModelsLoading] = useState(true);
@@ -1528,7 +1528,7 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', onClose, onCom
   const modelTriggerRef = useRef(null);
   const [ratioHovered, setRatioHovered] = useState(false);
   const [ratioOpen, setRatioOpen] = useState(false);
-  const [selectedRatio, setSelectedRatio] = useState(char?.ratio || '16:9');
+  const [selectedRatio, setSelectedRatio] = useState(char?.ratio || projectRatio || '16:9');
   const ratioTriggerRef = useRef(null);
   const [resolutionHovered, setResolutionHovered] = useState(false);
   const [resolutionOpen, setResolutionOpen] = useState(false);
@@ -1663,7 +1663,7 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', onClose, onCom
   const availableResolutions = currentModel.resolutions || [];
   const maxRefImages = currentModel.maxRefImages || 3;
 
-  // 当模型切换时（非首次加载），使用模型能力重置参数
+  // 当模型切换时（非首次加载），保留当前比例/分辨率（若新模型支持）
   const prevModelRef = useRef(selectedModel);
   useEffect(() => {
     // 跳过首次渲染（初始化）
@@ -1671,17 +1671,26 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', onClose, onCom
       prevModelRef.current = selectedModel;
       return;
     }
-    // 只有用户主动切换模型时才重置
+    // 只有用户主动切换模型时才处理
     if (prevModelRef.current === selectedModel) return;
     prevModelRef.current = selectedModel;
 
     const newModel = imageModels.find(m => m.value === selectedModel);
     const resList = newModel?.resolutions || [];
     if (resList.length > 0) {
-      setSelectedResolution(resList[0]);
-      const resRatios = newModel?.resolutionSizeMap?.[resList[0]];
+      // 若新模型支持当前分辨率则保留，否则回退到第一个
+      const currentResSupported = resList.includes(selectedResolution);
+      const newRes = currentResSupported ? selectedResolution : resList[0];
+      setSelectedResolution(newRes);
+      // 若新模型在该分辨率下支持当前比例则保留
+      const resRatios = newModel?.resolutionSizeMap?.[newRes];
       if (resRatios) {
-        setSelectedRatio(Object.keys(resRatios)[0] || '16:9');
+        const ratioKeys = Object.keys(resRatios);
+        if (currentResSupported && ratioKeys.includes(selectedRatio)) {
+          setSelectedRatio(selectedRatio);
+        } else {
+          setSelectedRatio(ratioKeys[0] || '16:9');
+        }
       }
     } else {
       setSelectedResolution('');
@@ -2271,7 +2280,7 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', onClose, onCom
 
 // ── Main export ────────────────────────────────────────────────────────────
 
-export default function SubjectPage({ serverReachable, projectId, projectName = '两只老虎的奇遇', onBack, onUnlockStep, onStartStoryboard, onExtractSubjects, extractError = null, isStoryboardGenerated = false, initialTab = 'char', chars: externalChars, onCharsChange, scenes: externalScenes, onScenesChange, props: externalProps, onPropsChange }) {
+export default function SubjectPage({ serverReachable, projectId, projectName = '两只老虎的奇遇', onBack, onUnlockStep, onStartStoryboard, onExtractSubjects, extractError = null, isStoryboardGenerated = false, initialTab = 'char', projectRatio, chars: externalChars, onCharsChange, scenes: externalScenes, onScenesChange, props: externalProps, onPropsChange }) {
 
   if (serverReachable === false) {
     return (
@@ -2485,7 +2494,7 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
   function setChars(updater) {
     if (typeof updater === 'function') {
       if (hasExternalChars) {
-        onCharsChange?.(updater(externalChars));
+        onCharsChange?.(updater);
       } else {
         setInternalChars(prev => {
           const next = updater(prev);
@@ -2508,7 +2517,7 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
   function setScenes(updater) {
     if (typeof updater === 'function') {
       if (hasExternalScenes) {
-        onScenesChange?.(updater(externalScenes));
+        onScenesChange?.(updater);
       } else {
         setInternalScenes(prev => {
           const next = updater(prev);
@@ -2531,7 +2540,7 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
   function setProps(updater) {
     if (typeof updater === 'function') {
       if (hasExternalProps) {
-        onPropsChange?.(updater(externalProps));
+        onPropsChange?.(updater);
       } else {
         setInternalProps(prev => {
           const next = updater(prev);
@@ -2820,6 +2829,7 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
         <EditSubjectPanel
           key={selectedChar.id}
           projectId={projectId}
+          projectRatio={projectRatio}
           char={selectedChar}
           tabLabel="角色"
           onClose={() => setSelectedChar(null)}
@@ -2840,6 +2850,7 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
         <EditSubjectPanel
           key={selectedScene.id}
           projectId={projectId}
+          projectRatio={projectRatio}
           char={selectedScene}
           tabLabel="场景"
           onClose={() => setSelectedScene(null)}
@@ -2859,6 +2870,7 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
         <EditSubjectPanel
           key={selectedProp.id}
           projectId={projectId}
+          projectRatio={projectRatio}
           char={selectedProp}
           tabLabel="道具"
           onClose={() => setSelectedProp(null)}
@@ -2891,6 +2903,7 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
       )}
 
       <BatchGenerateModal
+        projectRatio={projectRatio}
         open={batchGenOpen}
         onClose={() => { if (!batchGenerating) setBatchGenOpen(false); }}
         onConfirm={handleBatchGenerate}

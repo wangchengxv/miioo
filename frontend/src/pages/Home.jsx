@@ -1524,6 +1524,7 @@ export default function Home({ onProjectCreated }) {
             )}
             {activeKey === 'project' && activeProject && activeStep === 'subject' && (
               <SubjectPage
+                projectRatio={activeProject.aspect_ratio || activeProject.ratio}
                 serverReachable={serverReachable}
                 projectId={activeProject.id}
                 projectName={activeProject.name}

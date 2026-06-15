@@ -16,7 +16,7 @@ const FALLBACK_MODELS = [
 
 const GENERATION_MODES = [
   { label: '主视图', value: 'main' },
-  { label: '多视图', value: 'multi' },
+  { label: '多视图', value: 'three_view' },
 ];
 
 function CloseIcon() {
@@ -145,7 +145,7 @@ function RadioGroup({ label, value, options, onChange }) {
   );
 }
 
-export default function BatchGenerateModal({ open, onClose, onConfirm, generating = false }) {
+export default function BatchGenerateModal({ open, onClose, onConfirm, generating = false, projectRatio }) {
   // ── 从后端拉取模型列表，与本地能力表合并 ──────────────────────
   const [modelList, setModelList] = useState(FALLBACK_MODELS);
   const [modelsLoading, setModelsLoading] = useState(true);
@@ -181,7 +181,7 @@ export default function BatchGenerateModal({ open, onClose, onConfirm, generatin
 
   const firstModel = modelList[0]?.value || '';
   const [model, setModel] = useState(firstModel);
-  const [ratio, setRatio] = useState('16:9');
+  const [ratio, setRatio] = useState(projectRatio || '16:9');
   const [resolution, setResolution] = useState('2K');
   const [mode, setMode] = useState('main');
 
@@ -202,22 +202,32 @@ export default function BatchGenerateModal({ open, onClose, onConfirm, generatin
     return selected.resolutions.map((r) => ({ label: r, value: r }));
   }, [model, modelList]);
 
-  // 切换模型时：按能力表默认值重置比例和分辨率
+  // 切换模型时：保留当前比例/分辨率（若新模型支持），否则回退第一个
   const handleModelChange = useCallback((newModel) => {
     setModel(newModel);
     const selected = modelList.find(m => m.value === newModel);
     const resList = selected?.resolutions || [];
     if (resList.length > 0) {
-      setResolution(resList[0]);
-     const firstResRatios = selected?.resolutionSizeMap?.[resList[0]];
-     if (firstResRatios) {
-       setRatio(Object.keys(firstResRatios)[0] || '16:9');
-     }
-      else if (selected?.ratios?.length) {
-        setRatio(selected.ratios[0]);
+      const currentResSupported = resList.includes(resolution);
+      const newRes = currentResSupported ? resolution : resList[0];
+      setResolution(newRes);
+      const resRatios = selected?.resolutionSizeMap?.[newRes];
+      if (resRatios) {
+        const ratioKeys = Object.keys(resRatios);
+        if (currentResSupported && ratioKeys.includes(ratio)) {
+          setRatio(ratio);
+        } else {
+          setRatio(ratioKeys[0] || '16:9');
+        }
+      } else if (selected?.ratios?.length) {
+        if (selected.ratios.includes(ratio)) {
+          setRatio(ratio);
+        } else {
+          setRatio(selected.ratios[0]);
+        }
       }
     }
-  }, [modelList]);
+  }, [modelList, ratio, resolution]);
 
   // 切换分辨率时：检查当前比例在新分辨率下是否可用，不可用则切到第一个
   const handleResolutionChange = useCallback((newRes) => {
@@ -238,7 +248,7 @@ export default function BatchGenerateModal({ open, onClose, onConfirm, generatin
     }
   }, [model, ratio, modelList]);
 
-  // 每次打开弹窗时，重置为第一个模型的默认值
+  // 每次打开弹窗时，重置为第一个模型的默认值（比例优先用项目比例）
   useEffect(() => {
     if (!open) return;
     const first = modelList[0];
@@ -247,9 +257,14 @@ export default function BatchGenerateModal({ open, onClose, onConfirm, generatin
     const resList = first.resolutions || [];
     if (resList.length > 0) {
       setResolution(resList[0]);
-      const firstResRatios = first.resolutionSizeMap?.[resList[0]];
-      if (firstResRatios) {
-        setRatio(Object.keys(firstResRatios)[0] || '16:9');
+      const resRatios = first.resolutionSizeMap?.[resList[0]];
+      if (resRatios) {
+        const ratioKeys = Object.keys(resRatios);
+        if (projectRatio && ratioKeys.includes(projectRatio)) {
+          setRatio(projectRatio);
+        } else {
+          setRatio(ratioKeys[0] || '16:9');
+        }
       }
     }
     setMode('main');
