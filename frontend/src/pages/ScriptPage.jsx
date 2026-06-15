@@ -1536,56 +1536,46 @@ function ConfirmExtractModal({ onConfirm, onCancel }) {
           width: '360px',
           background: '#161616',
           borderRadius: '16px',
-          padding: '24px',
           display: 'flex',
           flexDirection: 'column',
-          gap: '24px',
           boxShadow: '#00000099 0px 8px 32px',
         }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <span style={{ fontFamily: FONT_MEDIUM, fontWeight: 500, fontSize: '16px', lineHeight: '20px', color: '#FFFFFF' }}>
-              确定要提取主体吗？
-            </span>
-            <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.6)' }}>
-              本次提取主体会覆盖之前的主体内容，一旦提取不可撤销，请谨慎操作！
-            </span>
-          </div>
+        {/* Header: title + close button */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 24px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+          <span style={{ fontFamily: FONT_MEDIUM, fontWeight: 500, fontSize: '16px', lineHeight: '20px', color: '#FFFFFF' }}>
+            确定要提取主体吗？
+          </span>
           <button
             type="button"
             onClick={onCancel}
             style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', cursor: 'pointer', borderRadius: '8px', padding: 0, flexShrink: 0 }}
           >
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
-              <path d="M2.667 2.667L13.333 13.333" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
-              <path d="M2.667 13.333L13.333 2.667" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M2.667 2.667L13.333 13.333" stroke="rgba(255,255,255,0.6)" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M2.667 13.333L13.333 2.667" stroke="rgba(255,255,255,0.6)" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </button>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px' }}>
+        {/* Body: content */}
+        <div style={{ padding: '24px' }}>
+          <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.6)' }}>
+            本次提取主体会覆盖之前的主体内容，一旦提取不可撤销，请谨慎操作！
+          </span>
+        </div>
+        {/* Footer: action buttons */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px', padding: '0 24px 24px' }}>
           <button
             type="button"
             onClick={onCancel}
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              height: '36px',
-              flexShrink: 0,
-              borderRadius: '8px',
-              paddingLeft: '16px',
-              paddingRight: '16px',
-              boxShadow: '#00000066 3px 3px 8px',
-              backgroundColor: '#161616',
-              border: '1px solid #FFFFFF14',
-              outline: '1px solid #00000080',
-              cursor: 'pointer',
-              fontFamily: FONT,
-              fontSize: '14px',
-              lineHeight: '18px',
-              color: 'rgba(255,255,255,0.6)',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              height: '36px', flexShrink: 0, borderRadius: '8px',
+              paddingLeft: '16px', paddingRight: '16px',
+              boxShadow: '#00000066 3px 3px 8px', backgroundColor: '#161616',
+              border: '1px solid #FFFFFF14', outline: '1px solid #00000080',
+              cursor: 'pointer', fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.6)',
             }}
           >
             取消
@@ -1594,22 +1584,12 @@ function ConfirmExtractModal({ onConfirm, onCancel }) {
             type="button"
             onClick={onConfirm}
             style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              height: '36px',
-              flexShrink: 0,
-              borderRadius: '8px',
-              paddingLeft: '16px',
-              paddingRight: '16px',
-              backgroundColor: '#E87B35',
-              border: '1px solid rgba(255,255,255,0.2)',
-              cursor: 'pointer',
-              fontFamily: FONT_MEDIUM,
-              fontWeight: 500,
-              fontSize: '14px',
-              lineHeight: '18px',
-              color: '#FFFFFF',
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              height: '36px', flexShrink: 0, borderRadius: '8px',
+              paddingLeft: '16px', paddingRight: '16px',
+              backgroundColor: '#E87B35', border: '1px solid rgba(255,255,255,0.2)',
+              cursor: 'pointer', fontFamily: FONT_MEDIUM, fontWeight: 500,
+              fontSize: '14px', lineHeight: '18px', color: '#FFFFFF',
             }}
           >
             确认提取主体
