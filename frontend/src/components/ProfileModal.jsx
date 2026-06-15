@@ -294,21 +294,24 @@ function DeleteConfirmDialog({ onConfirm, onCancel }) {
       onClick={onCancel}
     >
       <div
-        style={{ width: '360px', background: '#161616', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '24px', boxShadow: '#00000099 0px 8px 32px' }}
+        style={{ width: '360px', background: '#161616', borderRadius: '16px', display: 'flex', flexDirection: 'column', boxShadow: '#00000099 0px 8px 32px' }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <span style={{ fontFamily: FONT_MEDIUM, fontWeight: 500, fontSize: '16px', lineHeight: '20px', color: '#FFFFFF' }}>确认注销账号？</span>
-            <span style={{ fontFamily: FONT_REGULAR, fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.6)' }}>
-              注销后账号及所有数据将被永久删除，无法恢复。
-            </span>
-          </div>
+        {/* Header: title + close button */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 24px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+          <span style={{ fontFamily: FONT_MEDIUM, fontWeight: 500, fontSize: '16px', lineHeight: '20px', color: '#FFFFFF' }}>确认注销账号？</span>
           <button type="button" onClick={onCancel} style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', cursor: 'pointer', borderRadius: '8px', padding: 0, flexShrink: 0 }}>
             <CloseIcon />
           </button>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px' }}>
+        {/* Body: content */}
+        <div style={{ padding: '24px' }}>
+          <span style={{ fontFamily: FONT_REGULAR, fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.6)' }}>
+            注销后账号及所有数据将被永久删除，无法恢复。
+          </span>
+        </div>
+        {/* Footer: action buttons */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px', padding: '0 24px 24px' }}>
           <button
             type="button"
             onClick={onCancel}
@@ -337,21 +340,24 @@ function WechatUnbindConfirmDialog({ onConfirm, onCancel }) {
       onClick={onCancel}
     >
       <div
-        style={{ width: '360px', background: '#161616', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '24px', boxShadow: '#00000099 0px 8px 32px' }}
+        style={{ width: '360px', background: '#161616', borderRadius: '16px', display: 'flex', flexDirection: 'column', boxShadow: '#00000099 0px 8px 32px' }}
         onClick={(e) => e.stopPropagation()}
       >
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <span style={{ fontFamily: FONT_MEDIUM, fontWeight: 500, fontSize: '16px', lineHeight: '20px', color: '#FFFFFF' }}>确认解绑微信？</span>
-            <span style={{ fontFamily: FONT_REGULAR, fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.6)' }}>
-              解绑后，微信将无法用于登录本账号。
-            </span>
-          </div>
+        {/* Header: title + close button */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 24px', borderBottom: '1px solid rgba(255,255,255,0.08)' }}>
+          <span style={{ fontFamily: FONT_MEDIUM, fontWeight: 500, fontSize: '16px', lineHeight: '20px', color: '#FFFFFF' }}>确认解绑微信？</span>
           <button type="button" onClick={onCancel} style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', cursor: 'pointer', borderRadius: '8px', padding: 0, flexShrink: 0 }}>
             <CloseIcon />
           </button>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px' }}>
+        {/* Body: content */}
+        <div style={{ padding: '24px' }}>
+          <span style={{ fontFamily: FONT_REGULAR, fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.6)' }}>
+            解绑后，微信将无法用于登录本账号。
+          </span>
+        </div>
+        {/* Footer: action buttons */}
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px', padding: '0 24px 24px' }}>
           <button
             type="button"
             onClick={onCancel}
