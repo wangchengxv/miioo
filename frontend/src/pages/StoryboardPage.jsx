@@ -96,10 +96,12 @@ function toBackendStoryboard(shot) {
       ? shot.narration.segments.map(s => s.role ? `${s.role}：${s.lines}` : s.lines).join('\n')
       : undefined,
     character_ids: (shot.mainRefs || []).map(ref => ref?.id).filter(Boolean),
-    reference_image_urls: (shot.mainRefs || [])
-      .filter(ref => ref?.url && !ref.uploading)
-      .map(ref => ref.url)
-      .filter(Boolean),
+   reference_image_urls: (shot.mainRefs || [])
+     .filter(ref => ref?.url && !ref.uploading)
+     .map(ref => ref.url)
+     .filter(Boolean),
+    image_url: shot.storyboardImage?.url || undefined,
+    video_url: shot.storyboardVideo?.url || undefined,
   };
 }
 
@@ -640,13 +642,14 @@ function BatchVideoModal({ shotCount, onClose, onConfirm }) {
           const name = m.name || '';
           const caps = m.capabilities || {};
           const resolutions = (caps.supported_resolutions?.length ? caps.supported_resolutions : caps.supported_sizes) || [];
-          // 时长：优先用后端 capabilities 中的时长范围，其次用本地能力表兜底
-          let durationRange = caps.supported_duration_range || null;
+          // 时长：优先 supported_durations 数组，其次 supported_duration_range，最后本地兜底
+          let durationRange = null;
+          const durArr = caps.supported_durations || [];
+          if (durArr.length > 0) durationRange = durArr.map(d => String(d).endsWith('s') ? String(d) : String(d) + 's');
+          if (!durationRange) durationRange = caps.supported_duration_range || null;
           if (!durationRange) {
             const localCaps = getVideoModelCapabilities(modelId);
-            if (localCaps?.outputVideo?.durationRange) {
-              durationRange = localCaps.outputVideo.durationRange;
-            }
+            if (localCaps?.outputVideo?.durationRange) durationRange = localCaps.outputVideo.durationRange;
           }
           return { value: modelId, label: name || modelId, capabilities: caps, resolutions, durationRange, is_default: m.is_default };
         });
@@ -658,7 +661,7 @@ function BatchVideoModal({ shotCount, onClose, onConfirm }) {
             setResolution(first.resolutions[0]);
           }
           if (first.durationRange) {
-            setDuration(`${first.durationRange[0]}s`);
+            setDuration(Array.isArray(first.durationRange) ? first.durationRange[0] : `${first.durationRange[0]}s`);
           }
         }
       } catch {
@@ -677,6 +680,7 @@ function BatchVideoModal({ shotCount, onClose, onConfirm }) {
   const durationOptions = useMemo(() => {
     const selected = modelList.find(m => m.value === model);
     if (!selected?.durationRange) return [];
+    if (Array.isArray(selected.durationRange)) return selected.durationRange;
     const [min, max] = selected.durationRange;
     return Array.from({ length: max - min + 1 }, (_, i) => `${min + i}s`);
   }, [model, modelList]);
@@ -690,12 +694,16 @@ function BatchVideoModal({ shotCount, onClose, onConfirm }) {
       setResolution(resList.includes(resolution) ? resolution : resList[0]);
     }
     if (selected.durationRange) {
-      const durSec = parseInt(duration);
-      const [minDur, maxDur] = selected.durationRange;
-      if (!isNaN(durSec) && durSec >= minDur && durSec <= maxDur) {
-        setDuration(duration);
+      if (Array.isArray(selected.durationRange)) {
+        if (!selected.durationRange.includes(duration)) setDuration(selected.durationRange[0]);
       } else {
-        setDuration(`${minDur}s`);
+        const durSec = parseInt(duration);
+        const [minDur, maxDur] = selected.durationRange;
+        if (!isNaN(durSec) && durSec >= minDur && durSec <= maxDur) {
+          setDuration(duration);
+        } else {
+          setDuration(`${minDur}s`);
+        }
       }
     }
   }, [modelList, resolution, duration]);
@@ -1129,14 +1137,19 @@ function FrameUploadSlot({ label, media, onUpload, onRemove, shortcutLabel, shor
 
 // ─── 面板上传区（虚线框）────────────────────────────────────────────────────────
 
-function PanelUploadSlot({ label, onUpload, media, onRemove, accept = 'image/*', projectId }) {
+function PanelUploadSlot({ label, onUpload, media, onRemove, accept = 'image/*', projectId, countLabel, mediaList, canAddMore = true, onRemoveItem }) {
   const fileRef = useRef(null);
   const [hov, setHov] = useState(false);
+  const [addHov, setAddHov] = useState(false);
   const [btn1Hov, setBtn1Hov] = useState(false);
   const [btn1Pressed, setBtn1Pressed] = useState(false);
   const [btn2Hov, setBtn2Hov] = useState(false);
   const [btn2Pressed, setBtn2Pressed] = useState(false);
   const [assetPickerOpen, setAssetPickerOpen] = useState(false);
+
+  // 多图模式：mediaList 数组传入时启用
+  const isMultiMode = Array.isArray(mediaList);
+
   function handleFile(e) {
     const file = e.target.files[0];
     if (!file) return;
@@ -1145,78 +1158,164 @@ function PanelUploadSlot({ label, onUpload, media, onRemove, accept = 'image/*',
     onUpload?.({ id: url, url, name: file.name, type: file.type });
     e.target.value = '';
   }
+
+  // 多图模式的单个缩略图尺寸（与单图模式保持一致）
+  const THUMB = 120;
+
   return (
     <>
       <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', alignSelf: 'stretch' }}>
-        {label && <span style={{ fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.60)', fontFamily: FONT }}>{label}</span>}
-        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
-          <input ref={fileRef} type="file" accept={accept} style={{ display: 'none' }} onChange={handleFile} />
-          {media ? (
-            <div style={{ position: 'relative', width: '120px', height: '120px', borderRadius: '6px', overflow: 'hidden', flexShrink: 0, border: '1px solid rgba(255,255,255,0.12)' }}>
-              {media.type?.startsWith('video') ? (
-                <video src={media.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted playsInline />
-              ) : media.type?.startsWith('audio') ? (
-                <div style={{ width: '100%', height: '100%', backgroundColor: '#1D1E1E', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
-                  <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M9 18V5l12-2v13" stroke="rgba(255,255,255,0.50)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><circle cx="6" cy="18" r="3" stroke="rgba(255,255,255,0.50)" strokeWidth="1.5"/><circle cx="18" cy="16" r="3" stroke="rgba(255,255,255,0.50)" strokeWidth="1.5"/></svg>
-                  <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.40)', fontFamily: FONT, maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingInline: '4px' }}>{media.name}</span>
+        {/* Label 行：label 左，countLabel 右 */}
+        {(label || countLabel) && (
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+            {label && <span style={{ fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.60)', fontFamily: FONT }}>{label}</span>}
+            {countLabel && <span style={{ fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.35)', fontFamily: FONT, flexShrink: 0 }}>{countLabel}</span>}
+          </div>
+        )}
+
+        {isMultiMode ? (
+          /* ── 多图模式 ─────────────────────────────────── */
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+            <input ref={fileRef} type="file" accept={accept} style={{ display: 'none' }} onChange={handleFile} />
+            {/* 已上传的缩略图列表 */}
+            {mediaList.map((item, idx) => (
+              <div key={item.id || idx} style={{ position: 'relative', width: `${THUMB}px`, height: `${THUMB}px`, borderRadius: '6px', overflow: 'hidden', flexShrink: 0, border: '1px solid rgba(255,255,255,0.12)' }}>
+                {item.type?.startsWith('video') ? (
+                  <video src={item.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted playsInline />
+                ) : item.type?.startsWith('audio') ? (
+                  <div style={{ width: '100%', height: '100%', backgroundColor: '#1D1E1E', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M9 18V5l12-2v13" stroke="rgba(255,255,255,0.50)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><circle cx="6" cy="18" r="3" stroke="rgba(255,255,255,0.50)" strokeWidth="1.5"/><circle cx="18" cy="16" r="3" stroke="rgba(255,255,255,0.50)" strokeWidth="1.5"/></svg>
+                  </div>
+                ) : (
+                  <img src={item.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                )}
+                <div
+                  onClick={() => onRemoveItem ? onRemoveItem(idx) : onRemove?.()}
+                  style={{ position: 'absolute', top: '4px', right: '4px', width: '18px', height: '18px', borderRadius: '4px', backgroundColor: 'rgba(0,0,0,0.70)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                >
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 2L8 8M8 2L2 8" stroke="#FFFFFF" strokeWidth="1.2" strokeLinecap="round"/></svg>
                 </div>
-              ) : (
-                <img src={media.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-              )}
-              <div
-                onClick={onRemove}
-                style={{ position: 'absolute', top: '4px', right: '4px', width: '18px', height: '18px', borderRadius: '4px', backgroundColor: 'rgba(0,0,0,0.70)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
-              >
-                <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 2L8 8M8 2L2 8" stroke="#FFFFFF" strokeWidth="1.2" strokeLinecap="round"/></svg>
               </div>
-            </div>
-          ) : (
-            <div
-              onMouseEnter={() => setHov(true)}
-              onMouseLeave={() => setHov(false)}
-              style={{
-                width: '120px', height: '120px', borderRadius: '6px', flexShrink: 0,
-                border: `1px dashed ${hov ? 'rgba(255,255,255,0.28)' : 'rgba(255,255,255,0.08)'}`,
-                backgroundColor: '#1D1E1E',
-                display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                transition: 'border-color 0.12s',
-              }}
-            >
+            ))}
+            {/* 添加按钮（上限未达到时显示） */}
+            {canAddMore && (
               <div
-                onClick={() => fileRef.current?.click()}
-                onMouseEnter={() => setBtn1Hov(true)}
-                onMouseLeave={() => { setBtn1Hov(false); setBtn1Pressed(false); }}
-                onMouseDown={() => setBtn1Pressed(true)}
-                onMouseUp={() => setBtn1Pressed(false)}
+                onMouseEnter={() => setAddHov(true)}
+                onMouseLeave={() => setAddHov(false)}
                 style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', height: '24px', paddingInline: '6px', borderRadius: '6px',
-                  backgroundColor: btn1Pressed ? '#1a1a1a' : btn1Hov ? '#222323' : '#161616',
-                  border: '1px solid rgba(255,255,255,0.08)', outline: '1px solid #00000080',
-                  cursor: 'pointer', fontSize: '12px', color: btn1Hov ? 'rgba(255,255,255,0.70)' : 'rgba(255,255,255,0.40)',
-                  fontFamily: FONT, whiteSpace: 'nowrap', transition: 'background-color 0.10s, color 0.10s',
+                  width: `${THUMB}px`, height: `${THUMB}px`, borderRadius: '6px', flexShrink: 0,
+                  border: `1px dashed ${addHov ? 'rgba(255,255,255,0.28)' : 'rgba(255,255,255,0.08)'}`,
+                  backgroundColor: '#1D1E1E',
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                  transition: 'border-color 0.12s', cursor: 'pointer',
                 }}
               >
-                本地上传
+                <div
+                  onClick={() => fileRef.current?.click()}
+                  onMouseEnter={() => setBtn1Hov(true)}
+                  onMouseLeave={() => { setBtn1Hov(false); setBtn1Pressed(false); }}
+                  onMouseDown={() => setBtn1Pressed(true)}
+                  onMouseUp={() => setBtn1Pressed(false)}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', height: '24px', paddingInline: '6px', borderRadius: '6px',
+                    backgroundColor: btn1Pressed ? '#1a1a1a' : btn1Hov ? '#222323' : '#161616',
+                    border: '1px solid rgba(255,255,255,0.08)', outline: '1px solid #00000080',
+                    cursor: 'pointer', fontSize: '12px', color: btn1Hov ? 'rgba(255,255,255,0.70)' : 'rgba(255,255,255,0.40)',
+                    fontFamily: FONT, whiteSpace: 'nowrap', transition: 'background-color 0.10s, color 0.10s',
+                  }}
+                >
+                  本地上传
+                </div>
+                <div
+                  onClick={() => setAssetPickerOpen(true)}
+                  onMouseEnter={() => setBtn2Hov(true)}
+                  onMouseLeave={() => { setBtn2Hov(false); setBtn2Pressed(false); }}
+                  onMouseDown={() => setBtn2Pressed(true)}
+                  onMouseUp={() => setBtn2Pressed(false)}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', height: '24px', paddingInline: '6px', borderRadius: '6px',
+                    backgroundColor: btn2Pressed ? '#1a1a1a' : btn2Hov ? '#222323' : '#161616',
+                    border: '1px solid rgba(255,255,255,0.08)', outline: '1px solid #00000080',
+                    cursor: 'pointer', fontSize: '12px', color: btn2Hov ? 'rgba(255,255,255,0.70)' : 'rgba(255,255,255,0.40)',
+                    fontFamily: FONT, whiteSpace: 'nowrap', transition: 'background-color 0.10s, color 0.10s',
+                  }}
+                >
+                  从资产库选择
+                </div>
               </div>
+            )}
+          </div>
+        ) : (
+          /* ── 单图/单视频/单音频模式（原有逻辑）─────────── */
+          <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+            <input ref={fileRef} type="file" accept={accept} style={{ display: 'none' }} onChange={handleFile} />
+            {media ? (
+              <div style={{ position: 'relative', width: '120px', height: '120px', borderRadius: '6px', overflow: 'hidden', flexShrink: 0, border: '1px solid rgba(255,255,255,0.12)' }}>
+                {media.type?.startsWith('video') ? (
+                  <video src={media.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted playsInline />
+                ) : media.type?.startsWith('audio') ? (
+                  <div style={{ width: '100%', height: '100%', backgroundColor: '#1D1E1E', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M9 18V5l12-2v13" stroke="rgba(255,255,255,0.50)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><circle cx="6" cy="18" r="3" stroke="rgba(255,255,255,0.50)" strokeWidth="1.5"/><circle cx="18" cy="16" r="3" stroke="rgba(255,255,255,0.50)" strokeWidth="1.5"/></svg>
+                    <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.40)', fontFamily: FONT, maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingInline: '4px' }}>{media.name}</span>
+                  </div>
+                ) : (
+                  <img src={media.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                )}
+                <div
+                  onClick={onRemove}
+                  style={{ position: 'absolute', top: '4px', right: '4px', width: '18px', height: '18px', borderRadius: '4px', backgroundColor: 'rgba(0,0,0,0.70)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+                >
+                  <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 2L8 8M8 2L2 8" stroke="#FFFFFF" strokeWidth="1.2" strokeLinecap="round"/></svg>
+                </div>
+              </div>
+            ) : (
               <div
-                onClick={() => setAssetPickerOpen(true)}
-                onMouseEnter={() => setBtn2Hov(true)}
-                onMouseLeave={() => { setBtn2Hov(false); setBtn2Pressed(false); }}
-                onMouseDown={() => setBtn2Pressed(true)}
-                onMouseUp={() => setBtn2Pressed(false)}
+                onMouseEnter={() => setHov(true)}
+                onMouseLeave={() => setHov(false)}
                 style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', height: '24px', paddingInline: '6px', borderRadius: '6px',
-                  backgroundColor: btn2Pressed ? '#1a1a1a' : btn2Hov ? '#222323' : '#161616',
-                  border: '1px solid rgba(255,255,255,0.08)', outline: '1px solid #00000080',
-                  cursor: 'pointer', fontSize: '12px', color: btn2Hov ? 'rgba(255,255,255,0.70)' : 'rgba(255,255,255,0.40)',
-                  fontFamily: FONT, whiteSpace: 'nowrap', transition: 'background-color 0.10s, color 0.10s',
+                  width: '120px', height: '120px', borderRadius: '6px', flexShrink: 0,
+                  border: `1px dashed ${hov ? 'rgba(255,255,255,0.28)' : 'rgba(255,255,255,0.08)'}`,
+                  backgroundColor: '#1D1E1E',
+                  display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '8px',
+                  transition: 'border-color 0.12s',
                 }}
               >
-                从资产库选择
+                <div
+                  onClick={() => fileRef.current?.click()}
+                  onMouseEnter={() => setBtn1Hov(true)}
+                  onMouseLeave={() => { setBtn1Hov(false); setBtn1Pressed(false); }}
+                  onMouseDown={() => setBtn1Pressed(true)}
+                  onMouseUp={() => setBtn1Pressed(false)}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', height: '24px', paddingInline: '6px', borderRadius: '6px',
+                    backgroundColor: btn1Pressed ? '#1a1a1a' : btn1Hov ? '#222323' : '#161616',
+                    border: '1px solid rgba(255,255,255,0.08)', outline: '1px solid #00000080',
+                    cursor: 'pointer', fontSize: '12px', color: btn1Hov ? 'rgba(255,255,255,0.70)' : 'rgba(255,255,255,0.40)',
+                    fontFamily: FONT, whiteSpace: 'nowrap', transition: 'background-color 0.10s, color 0.10s',
+                  }}
+                >
+                  本地上传
+                </div>
+                <div
+                  onClick={() => setAssetPickerOpen(true)}
+                  onMouseEnter={() => setBtn2Hov(true)}
+                  onMouseLeave={() => { setBtn2Hov(false); setBtn2Pressed(false); }}
+                  onMouseDown={() => setBtn2Pressed(true)}
+                  onMouseUp={() => setBtn2Pressed(false)}
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center', height: '24px', paddingInline: '6px', borderRadius: '6px',
+                    backgroundColor: btn2Pressed ? '#1a1a1a' : btn2Hov ? '#222323' : '#161616',
+                    border: '1px solid rgba(255,255,255,0.08)', outline: '1px solid #00000080',
+                    cursor: 'pointer', fontSize: '12px', color: btn2Hov ? 'rgba(255,255,255,0.70)' : 'rgba(255,255,255,0.40)',
+                    fontFamily: FONT, whiteSpace: 'nowrap', transition: 'background-color 0.10s, color 0.10s',
+                  }}
+                >
+                  从资产库选择
+                </div>
               </div>
-            </div>
-          )}
-        </div>
+            )}
+          </div>
+        )}
       </div>
       <AssetPickerModal accept={accept.startsWith('video') ? 'video' : accept.startsWith('image') ? 'image' : accept.startsWith('audio') ? 'audio' : 'all'} open={assetPickerOpen} onClose={() => setAssetPickerOpen(false)} projectId={projectId} onConfirm={() => {}} />
     </>
@@ -2280,21 +2379,20 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
   // 关闭面板时组件卸载、本地态丢弃，下次打开按 shot 当前字段重新生成初始内容。
   // 点击「生成分镜视频」时才把 prompt 随 onGenerate 传回后端。
   const [prompt, setPrompt] = useState(() => buildPromptFromShot(shot, chars, scenes, props));
-  const [refSubject, setRefSubject] = useState(() => {
-    // 优先使用主体列的主体图——为项目主体补全 url/name
-    if (shot?.mainRefs?.length > 0) {
-      const first = shot.mainRefs[0];
-      if (first?.url) return first;
-      if (first?.type && first?.id) {
-        const subjects = first.type === 'char' ? chars : first.type === 'scene' ? scenes : props;
-        const found = subjects?.find(s => s.id === first.id);
-        if (found?.imageUrl) return { ...first, url: normalizeImageUrl(found.imageUrl), name: found.name };
+  const [refSubjects, setRefSubjects] = useState(() => {
+    // 从 shot.mainRefs 初始化主体列表，补全 url/name
+    if (!shot?.mainRefs?.length) return [];
+    return shot.mainRefs.map(ref => {
+      if (ref?.url) return ref;
+      if (ref?.type && ref?.id) {
+        const subjects = ref.type === 'char' ? chars : ref.type === 'scene' ? scenes : props;
+        const found = subjects?.find(s => s.id === ref.id);
+        if (found?.imageUrl) return { ...ref, url: normalizeImageUrl(found.imageUrl), name: found.name };
       }
-      return first;
-    }
-    return null;
+      return ref;
+    }).filter(ref => ref?.url);
   });
-  const [refImage, setRefImage] = useState(null);
+  const [refImages, setRefImages] = useState([]);
   const [refVideo, setRefVideo] = useState(null);
   const [refAudio, setRefAudio] = useState(null);
   const [refFirstFrame, setRefFirstFrame] = useState(null);
@@ -2358,6 +2456,18 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
 
   // 当前模型的前端本地能力表
   const localVideoCaps = useMemo(() => getVideoModelCapabilities(model), [model]);
+  // ── 模型能力：参考素材数量上限 ──────────────────────────────────────────────
+  const videoCaps = useMemo(() => currentVideoModel?.capabilities || {}, [currentVideoModel]);
+  const maxRefImages = videoCaps.max_reference_images ?? null;
+  const maxRefVideos = videoCaps.max_reference_videos ?? null;
+  const maxRefAudios = videoCaps.max_reference_audios ?? null;
+  const showRefVideo = maxRefVideos === null || maxRefVideos > 0;
+  const showRefAudio = maxRefAudios === null || maxRefAudios > 0;
+  const imageCount = refSubjects.length + refImages.length;
+  const canAddImage = maxRefImages === null || imageCount < maxRefImages;
+  const imageCountLabel = maxRefImages != null ? `${imageCount}/${maxRefImages}` : null;
+  const videoCountLabel = maxRefVideos != null ? `${refVideo ? 1 : 0}/${maxRefVideos}` : null;
+  const audioCountLabel = maxRefAudios != null ? `${refAudio ? 1 : 0}/${maxRefAudios}` : null;
 
   // 模型切换时保留当前分辨率/时长（若新模型支持）
   useEffect(() => {
@@ -2403,7 +2513,7 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
       // 收集参考媒体（仅用户手动上传的参考图，不自动附带主体参考图避免误触模型限制）
       const maxRefImages = currentVideoModel?.capabilities?.max_reference_images ?? null;
       const referenceImages = (maxRefImages === null || maxRefImages > 0)
-        ? [refImage?.url].filter(Boolean).slice(0, maxRefImages ?? 99)
+        ? [...refSubjects, ...refImages].map(r => r.url).filter(Boolean).slice(0, maxRefImages ?? 99)
         : [];
       const result = await onGenerate?.({
         model,
@@ -2530,7 +2640,7 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
             {/* 全能参考字段 */}
             {tab === 'all' && (
               <>
-                <PanelUploadSlot projectId={projectId} label="参考主体" accept="image/*" media={refSubject} onUpload={async (media) => {
+                <PanelUploadSlot projectId={projectId} label="参考主体" countLabel={imageCountLabel} accept="image/*" mediaList={refSubjects} canAddMore={canAddImage} onUpload={async (media) => {
                   if (media.id?.startsWith('blob:')) {
                     // 本地文件，需要上传
                     try {
@@ -2538,30 +2648,31 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
                       const blob = await response.blob();
                       const file = new File([blob], media.name, { type: media.type });
                       const uploaded = await handleRefMediaUpload(file, 'image');
-                      setRefSubject(uploaded);
+                      setRefSubjects(prev => [...prev, uploaded]);
                     } catch (error) {
                       // 错误已在 handleRefMediaUpload 中处理
                     }
                   } else {
-                    setRefSubject(media);
+                    setRefSubjects(prev => [...prev, media]);
                   }
-                }} onRemove={() => setRefSubject(null)} />
-                <PanelUploadSlot projectId={projectId} label="参考图" accept="image/*" media={refImage} onUpload={async (media) => {
+                }} onRemove={() => setRefSubjects([])} onRemoveItem={(idx) => setRefSubjects(prev => prev.filter((_, i) => i !== idx))} />
+                <PanelUploadSlot projectId={projectId} label="参考图" countLabel={imageCountLabel} accept="image/*" mediaList={refImages} canAddMore={canAddImage} onUpload={async (media) => {
                   if (media.id?.startsWith('blob:')) {
                     try {
                       const response = await fetch(media.url);
                       const blob = await response.blob();
                       const file = new File([blob], media.name, { type: media.type });
                       const uploaded = await handleRefMediaUpload(file, 'image');
-                      setRefImage(uploaded);
+                      setRefImages(prev => [...prev, uploaded]);
                     } catch (error) {
                       // 错误已处理
                     }
                   } else {
-                    setRefImage(media);
+                    setRefImages(prev => [...prev, media]);
                   }
-                }} onRemove={() => setRefImage(null)} />
-                <PanelUploadSlot projectId={projectId} label="参考视频" accept="video/*" media={refVideo} onUpload={async (media) => {
+                }} onRemove={() => setRefImages([])} onRemoveItem={(idx) => setRefImages(prev => prev.filter((_, i) => i !== idx))} />
+                {showRefVideo && (
+                <PanelUploadSlot projectId={projectId} label="参考视频" countLabel={videoCountLabel} accept="video/*" media={refVideo} onUpload={async (media) => {
                   if (media.id?.startsWith('blob:')) {
                     try {
                       const response = await fetch(media.url);
@@ -2576,7 +2687,9 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
                     setRefVideo(media);
                   }
                 }} onRemove={() => setRefVideo(null)} />
-                <PanelUploadSlot projectId={projectId} label="参考音频" accept="audio/*" media={refAudio} onUpload={async (media) => {
+                )}
+                {showRefAudio && (
+                <PanelUploadSlot projectId={projectId} label="参考音频" countLabel={audioCountLabel} accept="audio/*" media={refAudio} onUpload={async (media) => {
                   if (media.id?.startsWith('blob:')) {
                     try {
                       const response = await fetch(media.url);
@@ -2591,6 +2704,7 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
                     setRefAudio(media);
                   }
                 }} onRemove={() => setRefAudio(null)} />
+                )}
               </>
             )}
 
@@ -4531,7 +4645,7 @@ function MediaCol({ media, onUpload, accept, isVideo, label, onAIGenerate, shotM
     if (!file) return;
     if (!isVideo && file.size > 5 * 1024 * 1024) { alert('抱歉，平台暂不支持上传5M以上的图片资源！'); e.target.value = ''; return; }
     const url = URL.createObjectURL(file);
-    onUpload({ id: url, url, name: file.name, type: file.type });
+    onUpload({ id: url, url, name: file.name, type: file.type, file });
     e.target.value = '';
   }
   function handleMouseEnter() {
@@ -5053,7 +5167,17 @@ function ShotRow({ shot, onChange, onAdd, onCopy, onDelete, chars, isDragging, o
         <MediaColWrapper
           label="分镜图"
           media={shot.storyboardImage}
-          onUpload={(m) => onChange({ ...shot, storyboardImage: m })}
+          onUpload={(m) => {
+            onChange({ ...shot, storyboardImage: m });
+            if (m.file) {
+              apiUploadStoryboardImage(projectId, shot.id, m.file)
+                .then(result => {
+                  const url = normalizeImageUrl(result.url || result.image_url || result.imageUrl);
+                  if (url) onChange({ ...shot, storyboardImage: { id: url, url, name: m.name, type: m.type } });
+                })
+                .catch(err => console.error('[StoryboardPage] 图片上传失败:', err));
+            }
+          }}
           accept=".jpg,.jpeg,.png,.webp,.gif,.bmp,.svg"
           isVideo={false}
           onAIGenerate={onGenerateImage}
@@ -5062,7 +5186,17 @@ function ShotRow({ shot, onChange, onAdd, onCopy, onDelete, chars, isDragging, o
         <MediaColWrapper
           label="分镜视频"
           media={shot.storyboardVideo}
-          onUpload={(m) => onChange({ ...shot, storyboardVideo: m })}
+          onUpload={(m) => {
+            onChange({ ...shot, storyboardVideo: m });
+            if (m.file) {
+              apiUploadStoryboardVideo(projectId, shot.id, m.file)
+                .then(result => {
+                  const url = normalizeImageUrl(result.video_url || result.videoUrl || result.url);
+                  if (url) onChange({ ...shot, storyboardVideo: { id: url, url, name: m.name, type: m.type } });
+                })
+                .catch(err => console.error('[StoryboardPage] 视频上传失败:', err));
+            }
+          }}
           accept=".mp4,.webm,.mov,.avi,.mkv"
           isVideo={true}
           isLast={true}
@@ -5196,11 +5330,13 @@ export default function StoryboardPage({ serverReachable, projectId, projectName
   useEffect(() => {
     if (!projectId) return;
 
-    // TODO: 需要将 episode 名称映射为 episode_id
-    // 只有 episode 是后端真实数据（对象含 id 字段）时才传 episode_id
-    const episodeId = typeof episode === 'string' ? '' : getEpisodeId(episode);
-    const params = episodeId ? { episode_id: episodeId } : {};
-    apiGetStoryboards(projectId, params)
+    // 只有 episode 是后端真实数据（对象含 id 字段）时才请求
+    // 避免先用字符串 fallback 发一次无 episode_id 的总分镜请求
+    if (typeof episode === 'string') return;
+
+    const episodeId = getEpisodeId(episode);
+    if (!episodeId) return;
+    apiGetStoryboards(projectId, { episode_id: episodeId })
       .then((data) => {
         if (data !== null && data !== undefined) {
           setShots((Array.isArray(data) ? data : []).map(be => enrichMainRefs(normalizeStoryboard(be), chars)));
@@ -5904,35 +6040,39 @@ export default function StoryboardPage({ serverReachable, projectId, projectName
         }}
         onClose={() => setImagePanel(null)}
         onShowToast={showToast}
-        onSettleImage={(imageUrl) => {
-          const n = normalizeImageUrl(imageUrl);
-          setShots((prev) => prev.map((s) => s.id === imagePanel.shot.id
-            ? { ...s, storyboardImage: { id: n, url: n, name: '分镜图', type: 'image/jpeg' } }
-            : s
-          ));
-        }}
-        onGenerate={async (params) => {
-          const shot = imagePanel.shot;
-          try {
-            const taskResp = await apiGenerateStoryboardImage(projectId, shot.id, { model: params.model, resolution: params.resolution, prompt: params.prompt, reference_images: (params.refImages || []).map(r => typeof r === 'string' ? r : r.url) });
-            const task = await pollTask(taskResp.id);
-            if ((task.status === 'completed' || task.status === 'partial') && task.results?.length > 0) {
-              const imageUrl = task.results[0]?.image_url;
-              if (imageUrl) {
-                const normalizedUrl = normalizeImageUrl(imageUrl);
-                setShots((prev) => prev.map((s) => s.id === shot.id && !s.storyboardImage
-                  ? { ...s, storyboardImage: { id: normalizedUrl, url: normalizedUrl, name: 'generated.jpg', type: 'image/jpeg' } }
-                  : s
-                ));
-                return { url: normalizedUrl };
-              }
-            }
-            throw new Error('生成失败，请重试');
-          } catch (err) {
-            console.error('[StoryboardPage] 生成分镜图失败:', err);
-            throw err;
-          }
-        }}
+       onSettleImage={(imageUrl) => {
+         const n = normalizeImageUrl(imageUrl);
+         setShots((prev) => {
+           const updated = prev.map((s) => s.id === imagePanel.shot.id
+             ? { ...s, storyboardImage: { id: n, url: n, name: '分镜图', type: 'image/jpeg' } }
+             : s
+           );
+           apiUpdateStoryboard(projectId, imagePanel.shot.id, toBackendStoryboard(updated.find(s => s.id === imagePanel.shot.id))).catch(console.error);
+           return updated;
+         });
+       }}
+       onGenerate={async (params) => {
+         const shot = imagePanel.shot;
+         try {
+           const taskResp = await apiGenerateStoryboardImage(projectId, shot.id, { model: params.model, resolution: params.resolution, prompt: params.prompt, reference_images: (params.refImages || []).map(r => typeof r === 'string' ? r : r.url) });
+           const task = await pollTask(taskResp.id);
+           if ((task.status === 'completed' || task.status === 'partial') && task.results?.length > 0) {
+             const imageUrl = task.results[0]?.image_url;
+             if (imageUrl) {
+               const normalizedUrl = normalizeImageUrl(imageUrl);
+               setShots((prev) => prev.map((s) => s.id === shot.id && !s.storyboardImage
+                 ? { ...s, storyboardImage: { id: normalizedUrl, url: normalizedUrl, name: 'generated.jpg', type: 'image/jpeg' } }
+                 : s
+               ));
+               return { url: normalizedUrl };
+             }
+           }
+           throw new Error('生成失败，请重试');
+         } catch (err) {
+           console.error('[StoryboardPage] 生成分镜图失败:', err);
+           throw err;
+         }
+       }}
       />
     )}
     {videoPanel && (
@@ -5947,10 +6087,14 @@ export default function StoryboardPage({ serverReachable, projectId, projectName
         onShowToast={showToast}
         onSettleVideo={(videoUrl) => {
           const n = normalizeImageUrl(videoUrl);
-          setShots((prev) => prev.map((s) => s.id === videoPanel.shot.id
-            ? { ...s, storyboardVideo: { id: n, url: n, name: 'generated.mp4', type: 'video/mp4' } }
-            : s
-          ));
+          setShots((prev) => {
+            const updated = prev.map((s) => s.id === videoPanel.shot.id
+              ? { ...s, storyboardVideo: { id: n, url: n, name: 'generated.mp4', type: 'video/mp4' } }
+              : s
+            );
+            apiUpdateStoryboard(projectId, videoPanel.shot.id, toBackendStoryboard(updated.find(s => s.id === videoPanel.shot.id))).catch(console.error);
+            return updated;
+          });
         }}
         onGenerate={async (params) => {
           const shot = videoPanel.shot;
