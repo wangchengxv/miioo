@@ -2463,7 +2463,9 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
   const maxRefAudios = videoCaps.max_reference_audios ?? null;
   const showRefVideo = maxRefVideos === null || maxRefVideos > 0;
   const showRefAudio = maxRefAudios === null || maxRefAudios > 0;
-  const imageCount = refSubjects.length + refImages.length;
+  const showRefImages = maxRefImages === null || maxRefImages > 0;
+  const showRefSubjects = showRefImages && videoCaps.supports_reference_subjects === true;
+  const imageCount = (showRefSubjects ? refSubjects.length : 0) + refImages.length;
   const canAddImage = maxRefImages === null || imageCount < maxRefImages;
   const imageCountLabel = maxRefImages != null ? `${imageCount}/${maxRefImages}` : null;
   const videoCountLabel = maxRefVideos != null ? `${refVideo ? 1 : 0}/${maxRefVideos}` : null;
@@ -2640,7 +2642,7 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
             {/* 全能参考字段 */}
             {tab === 'all' && (
               <>
-                <PanelUploadSlot projectId={projectId} label="参考主体" countLabel={imageCountLabel} accept="image/*" mediaList={refSubjects} canAddMore={canAddImage} onUpload={async (media) => {
+                {showRefSubjects && <PanelUploadSlot projectId={projectId} label="参考主体" countLabel={imageCountLabel} accept="image/*" mediaList={refSubjects} canAddMore={canAddImage} onUpload={async (media) => {
                   if (media.id?.startsWith('blob:')) {
                     // 本地文件，需要上传
                     try {
@@ -2655,8 +2657,8 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
                   } else {
                     setRefSubjects(prev => [...prev, media]);
                   }
-                }} onRemove={() => setRefSubjects([])} onRemoveItem={(idx) => setRefSubjects(prev => prev.filter((_, i) => i !== idx))} />
-                <PanelUploadSlot projectId={projectId} label="参考图" countLabel={imageCountLabel} accept="image/*" mediaList={refImages} canAddMore={canAddImage} onUpload={async (media) => {
+                }} onRemove={() => setRefSubjects([])} onRemoveItem={(idx) => setRefSubjects(prev => prev.filter((_, i) => i !== idx))} />}
+                {showRefImages && <PanelUploadSlot projectId={projectId} label="参考图" countLabel={imageCountLabel} accept="image/*" mediaList={refImages} canAddMore={canAddImage} onUpload={async (media) => {
                   if (media.id?.startsWith('blob:')) {
                     try {
                       const response = await fetch(media.url);
@@ -2670,7 +2672,7 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
                   } else {
                     setRefImages(prev => [...prev, media]);
                   }
-                }} onRemove={() => setRefImages([])} onRemoveItem={(idx) => setRefImages(prev => prev.filter((_, i) => i !== idx))} />
+                }} onRemove={() => setRefImages([])} onRemoveItem={(idx) => setRefImages(prev => prev.filter((_, i) => i !== idx))} />}
                 {showRefVideo && (
                 <PanelUploadSlot projectId={projectId} label="参考视频" countLabel={videoCountLabel} accept="video/*" media={refVideo} onUpload={async (media) => {
                   if (media.id?.startsWith('blob:')) {
@@ -4947,6 +4949,7 @@ function DescriptionCol({ shot, onChange }) {
   return (
     <div style={{
       flex: 1,
+      minWidth: '300px',
       display: 'flex',
       flexDirection: 'column',
       gap: '8px',
