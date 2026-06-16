@@ -5136,6 +5136,7 @@ function ShotRow({ shot, onChange, onAdd, onCopy, onDelete, chars, isDragging, o
           display: 'flex',
           minHeight: '140px',
           height: '140px',
+          minWidth: '1060px',
           borderRadius: '12px',
           backgroundColor: '#1D1E1E',
           border: `1px solid ${hovered ? 'rgba(255,255,255,0.20)' : 'rgba(255,255,255,0.08)'}`,
@@ -5918,7 +5919,7 @@ export default function StoryboardPage({ serverReachable, projectId, projectName
 
       {/* 分镜列表 */}
       <div
-        style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}
+        style={{ flex: 1, overflowY: 'auto', overflowX: 'auto', display: 'flex', flexDirection: 'column', gap: '8px' }}
         onDragEnd={() => { setDragId(null); setOverId(null); }}
       >
         {/* top sentinel — drop zone for placing before the first card */}
@@ -5970,6 +5971,7 @@ export default function StoryboardPage({ serverReachable, projectId, projectName
             alignItems: 'center',
             justifyContent: 'center',
             height: '40px',
+            minWidth: '1060px',
             borderRadius: '12px',
             border: '1px dashed rgba(255,255,255,0.12)',
             cursor: 'pointer',
