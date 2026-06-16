@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { createPortal } from 'react-dom';
+import ConfirmDialog from './ConfirmDialog';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
@@ -43,43 +44,7 @@ function formatCreationDate(isoString) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
 }
 
-function ConfirmDeleteModal({ onConfirm, onCancel }) {
-  const [confirmHov, setConfirmHov] = useState(false);
-  const [cancelHov, setCancelHov] = useState(false);
-  return createPortal(
-    <div
-      style={{ position: 'fixed', inset: 0, zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' }}
-      onClick={onCancel}
-    >
-      <div
-        style={{ width: '320px', borderRadius: '12px', border: '1px solid #FFFFFF14', backgroundColor: '#161616', padding: '24px 24px 20px', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '#00000099 0px 8px 32px' }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div style={{ fontFamily: FONT_MEDIUM, fontSize: '16px', lineHeight: '20px', color: '#FFFFFF' }}>确认删除</div>
-        <div style={{ fontFamily: FONT, fontSize: '13px', lineHeight: '20px', color: '#FFFFFF99' }}>
-          删除后无法恢复，确定要删除这张图片吗？
-        </div>
-        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', paddingTop: '4px' }}>
-          <button
-            type="button"
-            onClick={onCancel}
-            onMouseEnter={() => setCancelHov(true)}
-            onMouseLeave={() => setCancelHov(false)}
-            style={{ height: '32px', padding: '0 16px', borderRadius: '8px', border: '1px solid #FFFFFF14', backgroundColor: cancelHov ? '#FFFFFF14' : '#FFFFFF0A', color: '#FFFFFFCC', fontFamily: FONT, fontSize: '13px', cursor: 'pointer', transition: 'background-color 0.15s' }}
-          >取消</button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            onMouseEnter={() => setConfirmHov(true)}
-            onMouseLeave={() => setConfirmHov(false)}
-            style={{ height: '32px', padding: '0 16px', borderRadius: '8px', border: 'none', backgroundColor: confirmHov ? '#E53E3E' : '#C53030', color: '#FFFFFF', fontFamily: FONT, fontSize: '13px', cursor: 'pointer', transition: 'background-color 0.15s' }}
-          >删除</button>
-        </div>
-      </div>
-    </div>,
-    document.body
-  );
-}
+// ConfirmDeleteModal 已迁移至 ConfirmDialog 共享组件
 
 function ModalActionBtn({ icon, label, onClick }) {
   const [hovered, setHovered] = useState(false);
@@ -291,9 +256,13 @@ export default function ImageDetailModal({ card, onClose, onDelete, favorited, o
         document.body
       )}
       {confirmDelete && (
-        <ConfirmDeleteModal
+        <ConfirmDialog
+          title="确认删除"
+          description="删除后无法恢复，确定要删除这张图片吗？"
+          confirmText="删除"
           onConfirm={() => { setConfirmDelete(false); onDelete?.(); }}
           onCancel={() => setConfirmDelete(false)}
+          zIndex={1100}
         />
       )}
     </>

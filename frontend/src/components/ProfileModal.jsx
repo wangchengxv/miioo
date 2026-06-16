@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import ConfirmDialog from './ConfirmDialog';
 import { apiUpdateProfile, apiUploadAvatar, apiDeleteAccount, apiGetWechatQrCode, apiPollWechatBind, apiUnbindWechat, apiSendPhoneCode, apiVerifyPhoneCode, apiRebindPhone } from '../api/user';
 
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
@@ -287,91 +288,9 @@ function DangerRow({ label, value, onClick }) {
   );
 }
 
-function DeleteConfirmDialog({ onConfirm, onCancel }) {
-  return (
-    <div
-      style={{ position: 'fixed', inset: 0, zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
-      onClick={onCancel}
-    >
-      <div
-        style={{ width: '360px', background: '#161616', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '24px', boxShadow: '#00000099 0px 8px 32px' }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <span style={{ fontFamily: FONT_MEDIUM, fontWeight: 500, fontSize: '16px', lineHeight: '20px', color: '#FFFFFF' }}>确认注销账号？</span>
-            <span style={{ fontFamily: FONT_REGULAR, fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.6)' }}>
-              注销后账号及所有数据将被永久删除，无法恢复。
-            </span>
-          </div>
-          <button type="button" onClick={onCancel} style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', cursor: 'pointer', borderRadius: '8px', padding: 0, flexShrink: 0 }}>
-            <CloseIcon />
-          </button>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px' }}>
-          <button
-            type="button"
-            onClick={onCancel}
-            className="[font-synthesis:none] flex items-center justify-center h-9 px-[16px] rounded-medium shrink-0 bg-btn-primary-bg-normal hover:bg-btn-primary-bg-hover active:bg-btn-primary-bg-active border border-btn-primary-border [outline:1px_solid_var(--color-stroke-outline)] outline-offset-0 [box-shadow:var(--color-shadow)_3px_3px_8px] cursor-pointer antialiased"
-            style={{ fontFamily: FONT_REGULAR, fontSize: '14px', lineHeight: '18px' }}
-          >
-            <span className="text-text-secondary text-font-size-14 shrink-0" style={{ fontFamily: FONT_REGULAR }}>取消</span>
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            className="[font-synthesis:none] flex items-center justify-center h-9 px-[16px] rounded-medium shrink-0 bg-btn-danger-bg-normal hover:bg-btn-danger-bg-hover active:bg-btn-danger-bg-active border border-btn-danger-border [outline:1px_solid_var(--color-stroke-outline)] outline-offset-0 cursor-pointer antialiased"
-          >
-            <span className="text-btn-danger-text text-font-size-14 font-font-weight-medium shrink-0" style={{ fontFamily: FONT_MEDIUM }}>继续注销</span>
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+// DeleteConfirmDialog 已迁移至 ConfirmDialog 共享组件
 
-function WechatUnbindConfirmDialog({ onConfirm, onCancel }) {
-  return (
-    <div
-      style={{ position: 'fixed', inset: 0, zIndex: 70, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
-      onClick={onCancel}
-    >
-      <div
-        style={{ width: '360px', background: '#161616', borderRadius: '16px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '24px', boxShadow: '#00000099 0px 8px 32px' }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <span style={{ fontFamily: FONT_MEDIUM, fontWeight: 500, fontSize: '16px', lineHeight: '20px', color: '#FFFFFF' }}>确认解绑微信？</span>
-            <span style={{ fontFamily: FONT_REGULAR, fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.6)' }}>
-              解绑后，微信将无法用于登录本账号。
-            </span>
-          </div>
-          <button type="button" onClick={onCancel} style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', cursor: 'pointer', borderRadius: '8px', padding: 0, flexShrink: 0 }}>
-            <CloseIcon />
-          </button>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px' }}>
-          <button
-            type="button"
-            onClick={onCancel}
-            className="[font-synthesis:none] flex items-center justify-center h-9 px-[16px] rounded-medium shrink-0 bg-btn-primary-bg-normal hover:bg-btn-primary-bg-hover active:bg-btn-primary-bg-active border border-btn-primary-border [outline:1px_solid_var(--color-stroke-outline)] outline-offset-0 [box-shadow:var(--color-shadow)_3px_3px_8px] cursor-pointer antialiased"
-            style={{ fontFamily: FONT_REGULAR, fontSize: '14px', lineHeight: '18px' }}
-          >
-            <span className="text-text-secondary text-font-size-14 shrink-0" style={{ fontFamily: FONT_REGULAR }}>取消</span>
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            className="[font-synthesis:none] flex items-center justify-center h-9 px-[16px] rounded-medium shrink-0 bg-btn-danger-bg-normal hover:bg-btn-danger-bg-hover active:bg-btn-danger-bg-active border border-btn-danger-border [outline:1px_solid_var(--color-stroke-outline)] outline-offset-0 cursor-pointer antialiased"
-          >
-            <span className="text-btn-danger-text text-font-size-14 font-font-weight-medium shrink-0" style={{ fontFamily: FONT_MEDIUM }}>确认解绑</span>
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+// WechatUnbindConfirmDialog 已迁移至 ConfirmDialog 共享组件
 
 const GRADIENT_BTN = 'linear-gradient(148.76deg, #ABFFFF4D 3.64%, #2DC3E100 42.81%), linear-gradient(#FFFFFF14)';
 
@@ -926,9 +845,13 @@ export default function ProfileModal({
         )}
       </div>
       {deleteStep === 'confirm' && (
-        <DeleteConfirmDialog
+        <ConfirmDialog
+          title="确认注销账号？"
+          description="注销后账号及所有数据将被永久删除，无法恢复。"
+          confirmText="继续注销"
           onConfirm={() => setDeleteStep('verify')}
           onCancel={() => setDeleteStep(null)}
+          zIndex={70}
         />
       )}
       {deleteStep === 'verify' && (
@@ -956,9 +879,13 @@ export default function ProfileModal({
         />
       )}
       {wechatUnbindConfirm && (
-        <WechatUnbindConfirmDialog
+        <ConfirmDialog
+          title="确认解绑微信？"
+          description="解绑后，微信将无法用于登录本账号。"
+          confirmText="确认解绑"
           onConfirm={handleUnbindWechat}
           onCancel={() => setWechatUnbindConfirm(false)}
+          zIndex={70}
         />
       )}
       {toast && createPortal(

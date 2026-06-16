@@ -6,6 +6,7 @@ import { generationsToDays } from '../utils/creativeDaysAdapter';
 import { apiGetProjects, apiGetProjectOverview, apiDeleteProject, apiUpdateProject, apiDownloadProjectAssets } from '../api/project';
 import ImageDetailModal from '../components/ImageDetailModal';
 import CreationVideoDetailModal from '../components/CreationVideoDetailModal';
+import ConfirmDialog from '../components/ConfirmDialog';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
@@ -132,110 +133,7 @@ function PlainBtn({ children, onClick, danger }) {
   );
 }
 
-function DeleteConfirmModal({ onCancel, onConfirm }) {
-  return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 100,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: 'rgba(0,0,0,0.5)',
-        backdropFilter: 'blur(12px)',
-        WebkitBackdropFilter: 'blur(12px)',
-      }}
-      onClick={onCancel}
-    >
-      <div
-        style={{
-          width: '360px',
-          background: '#161616',
-          borderRadius: '16px',
-          padding: '24px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '24px',
-          boxShadow: '#00000099 0px 8px 32px',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <span style={{ fontFamily: FONT_MEDIUM, fontWeight: 500, fontSize: '16px', lineHeight: '20px', color: '#FFFFFF' }}>
-              确定要删除吗？
-            </span>
-            <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.6)' }}>
-              删除后，该资产将被清除且不可恢复。
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={onCancel}
-            style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', cursor: 'pointer', borderRadius: '8px', padding: 0, flexShrink: 0 }}
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
-              <path d="M2.667 2.667L13.333 13.333" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
-              <path d="M2.667 13.333L13.333 2.667" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px' }}>
-          <button
-            type="button"
-            onClick={onCancel}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              height: '36px',
-              flexShrink: 0,
-              borderRadius: '8px',
-              paddingLeft: '16px',
-              paddingRight: '16px',
-              boxShadow: '#00000066 3px 3px 8px',
-              backgroundColor: '#161616',
-              border: '1px solid #FFFFFF14',
-              outline: '1px solid #00000080',
-              cursor: 'pointer',
-              fontFamily: FONT,
-              fontSize: '14px',
-              lineHeight: '18px',
-              color: 'rgba(255,255,255,0.6)',
-            }}
-          >
-            取消
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              height: '36px',
-              flexShrink: 0,
-              borderRadius: '8px',
-              paddingLeft: '16px',
-              paddingRight: '16px',
-              backgroundColor: '#D13B3B',
-              border: '1px solid rgba(255,255,255,0.2)',
-              cursor: 'pointer',
-              fontFamily: FONT_MEDIUM,
-              fontWeight: 500,
-              fontSize: '14px',
-              lineHeight: '18px',
-              color: '#FFFFFF',
-            }}
-          >
-            删除
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+// DeleteConfirmModal 已迁移至 ConfirmDialog 共享组件
 
 function MoreMenu({ onDownload, onDelete }) {
   const [open, setOpen] = useState(false);
@@ -333,9 +231,13 @@ function MoreMenu({ onDownload, onDelete }) {
       )}
 
       {showConfirm && (
-        <DeleteConfirmModal
+        <ConfirmDialog
+          title="确定要删除吗？"
+          description="删除后，该资产将被清除且不可恢复。"
+          confirmText="删除"
           onCancel={() => setShowConfirm(false)}
           onConfirm={() => { setShowConfirm(false); onDelete?.(); }}
+          zIndex={100}
         />
       )}
     </div>

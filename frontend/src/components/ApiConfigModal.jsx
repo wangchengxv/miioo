@@ -1,5 +1,6 @@
 import { forwardRef, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import Toggle from './Toggle';
+import ConfirmDialog from './ConfirmDialog';
 import { apiOneClickSetup, apiCreateModel, apiListModels, apiUpdateModel, apiGetBanner, apiListProviders, apiTestConnection, apiUpdateProvider, apiGetCardVisibility } from '../api/config';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
@@ -249,52 +250,7 @@ function Toast({ toasts }) {
   );
 }
 
-function ConfirmDeleteModal({ onConfirm, onCancel }) {
-  return (
-    <div
-      className="fixed inset-0 z-[150] flex items-center justify-center bg-surface-overlay/60 backdrop-blur-[4px]"
-      onClick={onCancel}
-    >
-      <div
-        className="[font-synthesis:none] flex w-[360px] flex-col gap-[24px] rounded-2xl bg-surface-modal p-[24px] antialiased"
-        style={{ boxShadow: '0px 8px 32px rgba(0,0,0,0.6)' }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div className="flex items-start justify-between gap-[8px]">
-          <div className="flex flex-col gap-[8px]">
-            <div className="text-base/5 font-medium text-text-primary" style={{ fontFamily: FONT_MEDIUM }}>
-              确定要删除吗？
-            </div>
-            <div className="text-sm/4.5 text-text-secondary" style={{ fontFamily: FONT }}>
-              此操作不可撤销，请谨慎操作！
-            </div>
-          </div>
-          <button
-            type="button"
-            onClick={onCancel}
-            className="flex shrink-0 items-center justify-center size-[28px] rounded-lg text-text-secondary transition-colors hover:text-text-primary hover:bg-white-8 active:bg-white-12"
-            aria-label="关闭"
-          >
-            <CloseIcon />
-          </button>
-        </div>
-        <div className="flex items-center justify-end gap-[12px]">
-          <SecondaryButton className="h-9" onClick={onCancel}>
-            取消
-          </SecondaryButton>
-          <button
-            type="button"
-            onClick={onConfirm}
-            className="flex h-9 shrink-0 items-center justify-center rounded-lg border border-solid border-[#FFFFFF33] bg-[#D13B3B] px-[16px] text-sm/4.5 font-medium text-white transition-colors hover:bg-[#E84545] active:bg-[#9B2929]"
-            style={{ fontFamily: FONT_MEDIUM }}
-          >
-            删除
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+// ConfirmDeleteModal 已迁移至 ConfirmDialog 共享组件
 
 function CardIconButton({ icon, onClick, disabled = false }) {
   return (
@@ -1926,9 +1882,13 @@ export default function ApiConfigModal({ open, onClose, onConfigured }) {
     <>
       <Toast toasts={toasts} />
       {confirmDelete && (
-        <ConfirmDeleteModal
+        <ConfirmDialog
+          title="确定要删除吗？"
+          description="此操作不可撤销，请谨慎操作！"
+          confirmText="删除"
           onConfirm={handleConfirmDelete}
           onCancel={() => setConfirmDelete(null)}
+          zIndex={150}
         />
       )}
       <div className="fixed inset-0 z-[60] flex items-center justify-center bg-surface-overlay p-[24px] backdrop-blur-[20px]" onClick={closeMain}>

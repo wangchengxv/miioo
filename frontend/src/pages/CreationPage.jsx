@@ -8,6 +8,7 @@ import { adaptModels, getModelParams } from '../utils/modelAdapter';
 import AssetPickerModal from '../components/AssetPickerModal';
 import DubbingVoiceModal, { DubbingVoiceFileCard } from './DubbingVoiceModal';
 import CreationVideoDetailModal from '../components/CreationVideoDetailModal';
+import ConfirmDialog from '../components/ConfirmDialog';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
@@ -2258,6 +2259,16 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
   const handleSend = async () => {
     if (!canSend) return;
     const currentText = editorRef.current?.innerText?.trim() ?? '';
+    // 立即清空输入框和附件
+    if (editorRef.current) editorRef.current.innerHTML = '';
+    setHasContent(false);
+    setFiles([]);
+    setFirstFrameFile(null);
+    setLastFrameFile(null);
+    setDubbingSpeed(1.0);
+    setDubbingEmotion('中性');
+    setSelectedVoiceId('');
+    setSelectedVoiceName('');
     // 视频模式：把「全能参考」/「首尾帧」映射为当前模型支持的实际 reference_mode
     let actualRefMode = refMode;
     if (genType === 'video') {
@@ -2276,19 +2287,14 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
       ...(genType === 'video' ? { refMode: actualRefMode, videoRatio, videoResolution, videoDuration, soundEnabled, firstFrameFile, lastFrameFile } : {}),
       ...(genType === 'dubbing' ? { speed: dubbingSpeed, emotion: dubbingEmotion, voiceId: selectedVoiceId, voiceName: selectedVoiceName } : {}),
       files,
+      onFail: (fallbackPrompt) => {
+        // 失败时回退文本到输入框
+        if (editorRef.current && fallbackPrompt) {
+          editorRef.current.innerText = fallbackPrompt;
+          setHasContent(true);
+        }
+      },
     });
-    // 只有成功才清空输入框和附件
-    if (result && result.success) {
-      if (editorRef.current) editorRef.current.innerHTML = '';
-      setHasContent(false);
-      setFiles([]);
-      setFirstFrameFile(null);
-      setLastFrameFile(null);
-      setDubbingSpeed(1.0);
-      setDubbingEmotion('中性');
-      setSelectedVoiceId('');
-      setSelectedVoiceName('');
-    }
   };
 
   const handleKeyDown = (e) => {
@@ -2751,43 +2757,7 @@ const EMPTY_ICON_MAP = {
 };
 
 // ─── Confirm delete modal ────────────────────────────────────────────────────
-function ConfirmDeleteModal({ onConfirm, onCancel }) {
-  const [confirmHov, setConfirmHov] = useState(false);
-  const [cancelHov, setCancelHov] = useState(false);
-  return createPortal(
-    <div
-      style={{ position: 'fixed', inset: 0, zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(8px)', WebkitBackdropFilter: 'blur(8px)' }}
-      onClick={onCancel}
-    >
-      <div
-        style={{ width: '320px', borderRadius: '12px', border: '1px solid #FFFFFF14', backgroundColor: '#161616', padding: '24px 24px 20px', display: 'flex', flexDirection: 'column', gap: '12px', boxShadow: '#00000099 0px 8px 32px' }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div style={{ fontFamily: FONT_MEDIUM, fontSize: '16px', lineHeight: '20px', color: '#FFFFFF' }}>确认删除</div>
-        <div style={{ fontFamily: FONT, fontSize: '13px', lineHeight: '20px', color: '#FFFFFF99' }}>
-          删除后无法恢复，确定要删除这张图片吗？
-        </div>
-        <div style={{ display: 'flex', gap: '8px', justifyContent: 'flex-end', paddingTop: '4px' }}>
-          <button
-            type="button"
-            onClick={onCancel}
-            onMouseEnter={() => setCancelHov(true)}
-            onMouseLeave={() => setCancelHov(false)}
-            style={{ height: '32px', padding: '0 16px', borderRadius: '8px', border: '1px solid #FFFFFF14', backgroundColor: cancelHov ? '#FFFFFF14' : '#FFFFFF0A', color: '#FFFFFFCC', fontFamily: FONT, fontSize: '13px', cursor: 'pointer', transition: 'background-color 0.15s' }}
-          >取消</button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            onMouseEnter={() => setConfirmHov(true)}
-            onMouseLeave={() => setConfirmHov(false)}
-            style={{ height: '32px', padding: '0 16px', borderRadius: '8px', border: 'none', backgroundColor: confirmHov ? '#E53E3E' : '#C53030', color: '#FFFFFF', fontFamily: FONT, fontSize: '13px', cursor: 'pointer', transition: 'background-color 0.15s' }}
-          >删除</button>
-        </div>
-      </div>
-    </div>,
-    document.body
-  );
-}
+// ConfirmDeleteModal 已迁移至 ConfirmDialog 共享组件
 
 // ─── Card action button with tooltip ─────────────────────────────────────────
 function CardActionBtn({ icon, tooltip, onClick }) {
@@ -3061,9 +3031,13 @@ function ImageDetailModal({ card, onClose, onDelete, favorited, onToggleFavorite
         document.body
       )}
       {confirmDelete && (
-        <ConfirmDeleteModal
+        <ConfirmDialog
+          title="确认删除"
+          description="删除后无法恢复，确定要删除这张图片吗？"
+          confirmText="删除"
           onConfirm={() => { setConfirmDelete(false); onDelete?.(); }}
           onCancel={() => setConfirmDelete(false)}
+          zIndex={1100}
         />
       )}
       {toastVisible && createPortal(
@@ -3258,12 +3232,15 @@ function VideoResultCard({ status, videoUrl, prompt, model, ratio, resolution, d
         )}
       </div>
 
-      {confirmDelete && createPortal(
-        <ConfirmDeleteModal
+      {confirmDelete && (
+        <ConfirmDialog
+          title="确认删除"
+          description="删除后无法恢复，确定要删除这张图片吗？"
+          confirmText="删除"
           onConfirm={() => { setConfirmDelete(false); onDelete?.(); }}
           onCancel={() => setConfirmDelete(false)}
-        />,
-        document.body
+          zIndex={1100}
+        />
       )}
     </>
   );
@@ -3410,12 +3387,15 @@ function ImageResultCard({ status, imageUrl, prompt, model, ratio, resolution, r
         )}
       </div>
 
-      {confirmDelete && createPortal(
-        <ConfirmDeleteModal
+      {confirmDelete && (
+        <ConfirmDialog
+          title="确认删除"
+          description="删除后无法恢复，确定要删除这张图片吗？"
+          confirmText="删除"
           onConfirm={() => { setConfirmDelete(false); onDelete?.(); }}
           onCancel={() => setConfirmDelete(false)}
-        />,
-        document.body
+          zIndex={1100}
+        />
       )}
 
       {detailOpen && (
@@ -3433,6 +3413,185 @@ function ImageResultCard({ status, imageUrl, prompt, model, ratio, resolution, r
           onDelete={onDelete}
           favorited={favorited}
           onToggleFavorite={() => setFavorited(v => !v)}
+        />
+      )}
+    </>
+  );
+}
+
+function AudioResultCard({ status, audioUrl, prompt, model, createdAt, onDelete, batchMode = false, isSelected = false, onToggleSelect }) {
+  const [hovered, setHovered] = useState(false);
+  const [playing, setPlaying] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
+  const audioRef = useRef(null);
+
+  const isDone = status === 'done' && audioUrl;
+
+  useEffect(() => {
+    if (!audioRef.current) return;
+    if (playing && isDone) {
+      audioRef.current.play().catch(() => {});
+    } else {
+      audioRef.current.pause();
+      audioRef.current.currentTime = 0;
+    }
+  }, [playing, isDone]);
+
+  async function downloadAudio(url) {
+    if (!url) return;
+    try {
+      const res = await fetch(url);
+      const blob = await res.blob();
+      const objUrl = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = objUrl;
+      a.download = 'creation.mp3';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(objUrl);
+    } catch {
+      window.open(url, '_blank');
+    }
+  }
+
+  return (
+    <>
+      <div
+        style={{
+          width: '320px',
+          height: '180px',
+          flexShrink: 0,
+          borderRadius: '8px',
+          overflow: 'hidden',
+          backgroundColor: '#1A1A1A',
+          position: 'relative',
+          cursor: isDone ? 'pointer' : 'default',
+          outline: isSelected ? '2px solid #2DC3E1' : 'none',
+          outlineOffset: '-2px',
+        }}
+        onMouseEnter={() => setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        onClick={() => {
+          if (batchMode && isDone) { onToggleSelect?.(); return; }
+        }}
+      >
+        {status === 'loading' ? (
+          <div className="creation-shimmer" style={{ width: '100%', height: '100%' }} />
+        ) : isDone ? (
+          <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '12px', padding: '16px' }}>
+            {/* Play button */}
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); setPlaying((p) => !p); }}
+              style={{
+                width: '48px',
+                height: '48px',
+                borderRadius: '50%',
+                border: 'none',
+                backgroundColor: '#2DC3E1',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                cursor: 'pointer',
+                transition: 'transform 0.15s',
+                transform: hovered ? 'scale(1.1)' : 'scale(1)',
+              }}
+            >
+              {playing ? (
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                  <rect x="6" y="4" width="3" height="12" rx="1" fill="#FFFFFF" />
+                  <rect x="11" y="4" width="3" height="12" rx="1" fill="#FFFFFF" />
+                </svg>
+              ) : (
+                <svg width="20" height="20" viewBox="0 0 20 20" fill="none">
+                  <path d="M7 4L16 10L7 16V4Z" fill="#FFFFFF" />
+                </svg>
+              )}
+            </button>
+            {/* Waveform visualization */}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '2px', height: '24px' }}>
+              {[...Array(20)].map((_, i) => (
+                <div
+                  key={i}
+                  style={{
+                    width: '3px',
+                    borderRadius: '2px',
+                    backgroundColor: '#2DC3E1',
+                    opacity: playing ? 0.8 : 0.4,
+                    height: `${Math.random() * 16 + 8}px`,
+                    transition: 'height 0.2s',
+                  }}
+                />
+              ))}
+            </div>
+            <audio ref={audioRef} src={audioUrl} preload="metadata" style={{ display: 'none' }} />
+          </div>
+        ) : (
+          <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <span style={{ color: '#FFFFFF33', fontSize: '12px', fontFamily: FONT }}>生成失败</span>
+          </div>
+        )}
+
+        {/* Batch mode: checkbox overlay */}
+        {batchMode && isDone && (
+          <div style={{
+            position: 'absolute', top: '8px', right: '8px',
+            width: '18px', height: '18px', borderRadius: '4px', zIndex: 1,
+            border: isSelected ? '1px solid #2DC3E1' : '1px solid rgba(255,255,255,0.5)',
+            backgroundColor: isSelected ? '#2DC3E1' : 'rgba(0,0,0,0.5)',
+            display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0,
+          }}>
+            {isSelected && (
+              <svg width="10" height="8" viewBox="0 0 10 8" fill="none">
+                <path d="M1 4L3.5 6.5L9 1" stroke="#000" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            )}
+          </div>
+        )}
+
+        {/* Hover overlays */}
+        {hovered && isDone && !batchMode && (
+          <div
+            style={{ position: 'absolute', bottom: '8px', right: '8px', display: 'flex', gap: '4px' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <CardActionBtn
+              tooltip="下载"
+              onClick={() => downloadAudio(audioUrl)}
+              icon={
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path d="M8.003 11.3V2" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M4 7.333L8 11.333L12 7.333" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M4 14H12" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              }
+            />
+            <CardActionBtn
+              tooltip="删除"
+              onClick={() => setConfirmDelete(true)}
+              icon={
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                  <path d="M3 3.333V14.667H13V3.333H3Z" stroke="#FFFFFF" strokeLinejoin="round" />
+                  <path d="M6.667 6.667V11" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M9.333 6.667V11" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M1.333 3.333H14.667" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M5.333 3.333L6.43 1.333H9.592L10.667 3.333H5.333Z" stroke="#FFFFFF" strokeLinejoin="round" />
+                </svg>
+              }
+            />
+          </div>
+        )}
+      </div>
+
+      {confirmDelete && (
+        <ConfirmDialog
+          title="确认删除"
+          description="删除后无法恢复，确定要删除这张图片吗？"
+          confirmText="删除"
+          onConfirm={() => { setConfirmDelete(false); onDelete?.(); }}
+          onCancel={() => setConfirmDelete(false)}
+          zIndex={1100}
         />
       )}
     </>
@@ -3467,7 +3626,7 @@ function CreationResultState({ generations, onGenerate, genType, onGenTypeChange
     }
   }, [generations.length]);
 
-  const isVideo = genType === 'video';
+  const isAudio = genType === 'dubbing';
 
   return (
     <div
@@ -3479,7 +3638,7 @@ function CreationResultState({ generations, onGenerate, genType, onGenTypeChange
         overflow: 'hidden',
       }}
     >
-      {/* Image/Video grid: absolutely fills the container, scrolls internally */}
+      {/* Grid: absolutely fills the container, scrolls internally */}
       <div
         ref={scrollRef}
         style={{
@@ -3495,14 +3654,15 @@ function CreationResultState({ generations, onGenerate, genType, onGenTypeChange
         <div
           style={{
             display: 'flex',
-            flexWrap: 'wrap',
+            flexDirection: isAudio ? 'column' : 'row',
+            flexWrap: isAudio ? 'nowrap' : 'wrap',
             gap: '16px',
             alignContent: 'flex-start',
           }}
         >
           {isGenerating && allCards.length === 0 && (
             <div style={{
-              width: '320px', height: '180px', borderRadius: '8px',
+              width: isAudio ? '100%' : '320px', height: isAudio ? '72px' : '180px', borderRadius: '8px',
               background: 'rgba(255,255,255,0.04)',
               border: '1px solid rgba(255,255,255,0.06)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -3524,7 +3684,19 @@ function CreationResultState({ generations, onGenerate, genType, onGenTypeChange
 
           {allCards.map((card) => {
             const { key, ...cardProps } = card;
-            if (isVideo) {
+            if (card.type === 'audio' || isAudio) {
+              return (
+                <AudioResultCard
+                  key={key}
+                  {...cardProps}
+                  batchMode={batchMode}
+                  isSelected={batchMode && selected?.has(key)}
+                  onToggleSelect={() => onToggleSelect?.(key)}
+                  onDelete={() => onDeleteCard?.(card.genId, card.cardIndex)}
+                />
+              );
+            }
+            if (card.type === 'video') {
               return (
                 <VideoResultCard
                   key={key}
@@ -4043,6 +4215,7 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
   const capabilitiesMapRef = useRef({});
 
   const [batchMode, setBatchMode] = useState(false);
+  const [batchDeleteConfirm, setBatchDeleteConfirm] = useState(false);
   const [selected, setSelected] = useState(new Set());
 
   // Load model list from backend (fallback to local config) when genType changes
@@ -4212,14 +4385,42 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
     const genId = `gen-${Date.now()}`;
     const currentTab = activeTab;
     const isVideoGen = params.genType === 'video';
+    const isDubbingGen = params.genType === 'dubbing';
+
+    // 立即添加 loading 占位卡片
+    const placeholderCardId = `placeholder-${Date.now()}`;
+    addGeneration(currentTab, {
+      id: genId,
+      shot_id: shotId || undefined,
+      ratio: params.ratio || (isVideoGen ? params.videoRatio : '') || '16:9',
+      resolution: params.resolution || (isVideoGen ? params.videoResolution : '') || '',
+      duration: isVideoGen ? params.videoDuration : undefined,
+      model: params.model || '',
+      prompt: params.prompt || '',
+      refImages: [],
+      createdAt: new Date().toISOString(),
+      cards: [{
+        id: null,
+        type: isVideoGen ? 'video' : isDubbingGen ? 'audio' : 'image',
+        status: 'loading',
+        imageUrl: null,
+        videoUrl: null,
+        audioUrl: null,
+        placeholderId: placeholderCardId,
+      }],
+    });
 
     try {
       const result = await apiGenerateCreation(params);
-      const mediaUrls = isVideoGen ? (result.videos ?? []) : (result.images ?? []);
+      const mediaUrls = isVideoGen ? (result.videos ?? []) : isDubbingGen ? (result.audios ?? []) : (result.images ?? []);
 
-      // 如果生成失败，显示 Toast 提示，不添加占位卡片
+      // 如果生成失败，删除占位卡片并回退文本
       if (!mediaUrls || mediaUrls.length === 0) {
         showToast('error', '生成失败，请稍后重试');
+        // 删除刚添加的占位卡片
+        storeDeleteCard(currentTab, genId, 0);
+        // 通知 InputCard 回退文本
+        params.onFail?.(params.prompt);
         setGenerating(false);
         return { success: false };
       }
@@ -4234,7 +4435,10 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
         genType: params.genType || 'image',
       };
 
-      // 添加成功生成的卡片
+      // 更新占位卡片为实际结果（替换而不是新增）
+      // 先删除占位卡片
+      storeDeleteCard(currentTab, genId, 0);
+      // 再添加实际结果卡片
       addGeneration(currentTab, {
         id: genId,
         shot_id: shotId || undefined,
@@ -4253,10 +4457,11 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
         createdAt: genMeta.createdAt,
         cards: mediaUrls.map((url) => ({
           id: null,  // 后端 ID，待轮询返回后回写
-          type: isVideoGen ? 'video' : 'image',
+          type: isVideoGen ? 'video' : isDubbingGen ? 'audio' : 'image',
           status: 'done',
-          imageUrl: isVideoGen ? null : url,
+          imageUrl: isDubbingGen ? null : (isVideoGen ? null : url),
           videoUrl: isVideoGen ? url : null,
+          audioUrl: isDubbingGen ? url : null,
         })),
       });
 
@@ -4266,7 +4471,7 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
           const updateData = {};
           if (isVideoGen && mediaUrls.length > 0) {
             updateData.video_url = mediaUrls[0];
-          } else if (mediaUrls.length > 0) {
+          } else if (!isDubbingGen && mediaUrls.length > 0) {
             updateData.image_url = mediaUrls[0];
           }
           if (Object.keys(updateData).length > 0) {
@@ -4277,6 +4482,10 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
       return { success: true };
     } catch (error) {
       showToast('error', '生成失败，请稍后重试');
+      // 删除占位卡片
+      storeDeleteCard(currentTab, genId, 0);
+      // 通知 InputCard 回退文本
+      params.onFail?.(params.prompt);
       return { success: false };
     } finally {
       setGenerating(false);
@@ -4320,6 +4529,16 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
      */
     <>
       <Toast toasts={toasts} />
+      {batchDeleteConfirm && (
+        <ConfirmDialog
+          title="确认删除"
+          description="删除后无法恢复，确定要删除这张图片吗？"
+          confirmText="删除"
+          onConfirm={() => { setBatchDeleteConfirm(false); deleteSelected(); }}
+          onCancel={() => setBatchDeleteConfirm(false)}
+          zIndex={1100}
+        />
+      )}
       <div
         style={{
           display: 'flex',
@@ -4376,7 +4595,7 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
                     </svg>
                     <span style={{ fontFamily: FONT, fontSize: '14px', color: '#FFFFFF', whiteSpace: 'nowrap' }}>下载</span>
                   </CreationGhostBtn>
-                  <CreationPlainBtn onClick={deleteSelected}>
+                  <CreationPlainBtn onClick={() => setBatchDeleteConfirm(true)}>
                     <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
                       <path d="M3 3.333V14.667H13V3.333H3Z" stroke="#F75F5F" strokeLinejoin="round" />
                       <path d="M6.667 6.667V11" stroke="#F75F5F" strokeLinecap="round" strokeLinejoin="round" />
@@ -4391,6 +4610,7 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
                   </CreationPlainBtn>
                 </div>
               </div>
+
             ) : (
               <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flex: 1, justifyContent: 'flex-end', paddingRight: '32px', paddingTop: '6px', paddingBottom: '6px' }}>
                 <BatchButton onClick={() => setBatchMode(true)} />
@@ -4487,6 +4707,16 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
       document.body
     )}
     <Toast toasts={toasts} />
+      {batchDeleteConfirm && (
+        <ConfirmDialog
+          title="确认删除"
+          description="删除后无法恢复，确定要删除这张图片吗？"
+          confirmText="删除"
+          onConfirm={() => { setBatchDeleteConfirm(false); deleteSelected(); }}
+          onCancel={() => setBatchDeleteConfirm(false)}
+          zIndex={1100}
+        />
+      )}
     </>
   );
 }

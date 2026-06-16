@@ -10,6 +10,7 @@ import DotsLoading from '../components/DotsLoading';
 import { apiGetEpisodes } from '../api/subject';
 import { getImageModelParams, getVideoModelParams, getVideoModelCapabilities } from '../config';
 import { normalizeImageUrl } from '../utils/imageUrl';
+import ConfirmDialog from '../components/ConfirmDialog';
 
 // ─── 后端/前端数据模型双向映射 ───────────────────────────────────────────────
 
@@ -1800,6 +1801,14 @@ function buildPromptFromShot(shot, chars = [], scenes = [], props = []) {
   if (shot?.description) descParts.push(shot.description);
   if (shot?.mainRefs?.length > 0) {
     shot.mainRefs.forEach((ref) => {
+      if (!ref) return;
+      if (ref.type === 'char' || ref.type === 'scene' || ref.type === 'prop') {
+        const subjects = ref.type === 'char' ? chars : ref.type === 'scene' ? scenes : props;
+        const found = subjects.find((s) => s.id === ref.id || s.name === ref.name);
+        const mentionName = ref.name || found?.name;
+        if (mentionName) descParts.push(`@${mentionName}`);
+        return;
+      }
       if (ref?.url) descParts.push(`[参考图:${ref.url}]`);
     });
   }
@@ -1865,6 +1874,10 @@ function GenerateImagePanel({ shot, projectId, chars = [], scenes = [], props = 
             const resList = (caps?.supported_resolutions?.length ? caps.supported_resolutions : caps?.supported_sizes) || [];
             if (resList.length > 0) setResolution(resList[0]);
           }
+          {
+            const durList = caps?.supported_durations;
+            if (durList?.length > 0) setDuration(`${durList[0]}s`);
+          }
         }
       } catch {
         setModelList([]);
@@ -1879,9 +1892,19 @@ function GenerateImagePanel({ shot, projectId, chars = [], scenes = [], props = 
   const [prompt, setPrompt] = useState(() => buildPromptFromShot(shot, chars, scenes, props));
   const [refImages, setRefImages] = useState(() => {
     const images = [];
-    // 添加主体参考图
+    // 添加主体参考图——为项目主体补全 url/name（否则标签丢失 type 会变紫色）
     if (shot?.mainRefs?.length > 0) {
       shot.mainRefs.forEach(ref => {
+        if (ref?.url) { images.push(ref); return; }
+        // 从 chars/scenes/props 中查找补齐 url 和 name
+        if (ref.type && ref.id) {
+          const subjects = ref.type === 'char' ? chars : ref.type === 'scene' ? scenes : props;
+          const found = subjects?.find(s => s.id === ref.id);
+          if (found?.imageUrl) {
+            images.push({ ...ref, url: normalizeImageUrl(found.imageUrl), name: found.name });
+            return;
+          }
+        }
         if (ref?.url) images.push(ref);
       });
     }
@@ -2226,6 +2249,10 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
             const resList = (caps?.supported_resolutions?.length ? caps.supported_resolutions : caps?.supported_sizes) || [];
             if (resList.length > 0) setResolution(resList[0]);
           }
+          {
+            const durList = caps?.supported_durations;
+            if (durList?.length > 0) setDuration(`${durList[0]}s`);
+          }
         }
       } catch {
         setModelList([]);
@@ -2234,16 +2261,23 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
       }
     })();
   }, []);
-  const [duration, setDuration] = useState('自动匹配');
+  const [duration, setDuration] = useState(null);
   const [sound, setSound] = useState(true);
   // 提示词：仅暂存在当前弹窗的本地 state，编辑不回写分镜列表字段。
   // 关闭面板时组件卸载、本地态丢弃，下次打开按 shot 当前字段重新生成初始内容。
   // 点击「生成分镜视频」时才把 prompt 随 onGenerate 传回后端。
   const [prompt, setPrompt] = useState(() => buildPromptFromShot(shot, chars, scenes, props));
   const [refSubject, setRefSubject] = useState(() => {
-    // 优先使用主体列的主体图
-    if (shot?.mainRefs?.length > 0 && shot.mainRefs[0]?.url) {
-      return shot.mainRefs[0];
+    // 优先使用主体列的主体图——为项目主体补全 url/name
+    if (shot?.mainRefs?.length > 0) {
+      const first = shot.mainRefs[0];
+      if (first?.url) return first;
+      if (first?.type && first?.id) {
+        const subjects = first.type === 'char' ? chars : first.type === 'scene' ? scenes : props;
+        const found = subjects?.find(s => s.id === first.id);
+        if (found?.imageUrl) return { ...first, url: normalizeImageUrl(found.imageUrl), name: found.name };
+      }
+      return first;
     }
     return null;
   });
@@ -2276,11 +2310,14 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
         targetModel = newList[0].value;
         setModel(targetModel);
       }
-      // 重置分辨率
+      // 重置分辨率和时长
       const target = newList.find(m => m.value === targetModel);
       {
-        const resList = (target?.capabilities?.supported_resolutions?.length ? target.capabilities.supported_resolutions : target?.capabilities?.supported_sizes) || [];
+        const caps = target?.capabilities;
+        const resList = (caps?.supported_resolutions?.length ? caps.supported_resolutions : caps?.supported_sizes) || [];
         if (resList.length > 0) setResolution(resList[0]);
+        const durList = caps?.supported_durations;
+        if (durList?.length > 0) setDuration(`${durList[0]}s`);
       }
     }
   }
@@ -2290,9 +2327,15 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
     return (caps.supported_resolutions?.length ? caps.supported_resolutions : caps.supported_sizes) || [];
   })();
 
-  // 时长：后端 capabilities 中的时长范围
+  // 时长：优先读 supported_durations（字符串数组），兼容旧的 supported_duration_range
   const availableDurations = useMemo(() => {
-    const range = currentVideoModel?.capabilities?.supported_duration_range;
+    const caps = currentVideoModel?.capabilities;
+    // 新格式：supported_durations = ["4","5",...,"15"]
+    if (caps?.supported_durations?.length > 0) {
+      return caps.supported_durations.map(d => `${d}s`);
+    }
+    // 旧格式兜底：supported_duration_range = [4, 15]
+    const range = caps?.supported_duration_range;
     if (range && range.length === 2) {
       const [min, max] = range;
       return Array.from({ length: max - min + 1 }, (_, i) => `${min + i}s`);
@@ -2310,15 +2353,9 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
         setResolution(availableResolutions[0]);
       }
     }
-    // 时长：若当前时长在新模型时长范围内则保留，否则回退第一个
-    if (duration && duration !== '自动匹配') {
-      const range = currentVideoModel?.capabilities?.supported_duration_range;
-      if (range && range.length === 2) {
-        const durSec = parseInt(duration);
-        if (!isNaN(durSec) && (durSec < range[0] || durSec > range[1])) {
-          setDuration(`${range[0]}s`);
-        }
-      }
+    // 时长：若当前时长在新模型时长列表中则保留，否则回退第一个
+    if (duration && availableDurations.length > 0 && !availableDurations.includes(duration)) {
+      setDuration(availableDurations[0]);
     }
   }, [model, availableResolutions]);
 
@@ -2350,7 +2387,23 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
     const placeholder = `pending-${Date.now()}`;
     setGeneratedVideos((prev) => [{ url: null, settled: false, id: placeholder }, ...prev]);
     try {
-      const result = await onGenerate?.({ model, resolution, duration, sound, prompt });
+      // 收集参考媒体（仅用户手动上传的参考图，不自动附带主体参考图避免误触模型限制）
+      const maxRefImages = currentVideoModel?.capabilities?.max_reference_images ?? null;
+      const referenceImages = (maxRefImages === null || maxRefImages > 0)
+        ? [refImage?.url].filter(Boolean).slice(0, maxRefImages ?? 99)
+        : [];
+      const result = await onGenerate?.({
+        model,
+        resolution,
+        duration,
+        sound,
+        prompt,
+        reference_images: referenceImages.length > 0 ? referenceImages : undefined,
+        first_frame_url: refFirstFrame?.url,
+        last_frame_url: refLastFrame?.url,
+        reference_video_url: refVideo?.url,
+        reference_audio_url: refAudio?.url,
+      });
       setGeneratedVideos((prev) =>
         prev.map((item) => item.id === placeholder ? { ...item, url: result?.url ?? null } : item)
       );
@@ -2554,7 +2607,7 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
               </>
             )}
 
-            <PanelSelect label="时长" value={duration} options={['自动匹配', ...availableDurations]} onChange={setDuration} />
+            <PanelSelect label="时长" value={duration} options={availableDurations.length > 0 ? availableDurations : ['5s']} onChange={setDuration} />
             <PanelSelect label="分辨率" value={resolution} options={availableResolutions} onChange={setResolution} />
 
             {/* 音效 toggle */}
@@ -2846,58 +2899,7 @@ const IconVideoPlaceholder = () => (
 );
 
 // ─── 删除确认弹窗 ─────────────────────────────────────────────────────────────
-
-function DeleteConfirmModal({ shotNumber, onConfirm, onCancel }) {
-  return createPortal(
-    <div
-      style={{ position: 'fixed', inset: 0, zIndex: 9998, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
-      onClick={onCancel}
-    >
-      <div
-        style={{ width: '360px', borderRadius: '16px', backgroundColor: '#161616', boxShadow: '#00000099 0px 8px 32px', padding: '24px', display: 'flex', flexDirection: 'column', gap: '24px' }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <span style={{ fontSize: '16px', fontWeight: 500, color: '#FFFFFF', fontFamily: FONT_MEDIUM, lineHeight: '20px' }}>
-              确定要删除吗？
-            </span>
-            <span style={{ fontSize: '14px', color: 'rgba(255,255,255,0.6)', fontFamily: FONT, lineHeight: '18px' }}>
-              此操作不可撤销，镜头 {String(shotNumber).padStart(2, '0')} 将被永久删除。
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={onCancel}
-            style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', cursor: 'pointer', borderRadius: '8px', padding: 0, flexShrink: 0 }}
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
-              <path d="M2.667 2.667L13.333 13.333" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
-              <path d="M2.667 13.333L13.333 2.667" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px' }}>
-          <button
-            type="button"
-            onClick={onCancel}
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '36px', flexShrink: 0, borderRadius: '8px', paddingLeft: '16px', paddingRight: '16px', boxShadow: '#00000066 3px 3px 8px', backgroundColor: '#161616', border: '1px solid #FFFFFF14', outline: '1px solid #00000080', cursor: 'pointer', fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.6)' }}
-          >
-            取消
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '36px', flexShrink: 0, borderRadius: '8px', paddingLeft: '16px', paddingRight: '16px', backgroundColor: '#D13B3B', border: '1px solid rgba(255,255,255,0.2)', cursor: 'pointer', fontFamily: FONT_MEDIUM, fontWeight: 500, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF' }}
-          >
-            删除
-          </button>
-        </div>
-      </div>
-    </div>,
-    document.body
-  );
-}
+// DeleteConfirmModal 已迁移至 ConfirmDialog 共享组件（接受 description 参数渲染镜头编号）
 
 // ─── 参数下拉选择器 ───────────────────────────────────────────────────────────
 
@@ -3128,10 +3130,18 @@ function CharMentionDropdown({ chars, query, onSelect, onClose, triggerRef }) {
 
 const SUBJECT_TYPE_LABEL = { char: '角色', scene: '场景', prop: '道具', ref: '主体' };
 const SUBJECT_TYPE_COLOR = { char: '#E2E24B', scene: '#4BE2C3', prop: '#4B9EE2', ref: '#E8A1FF' };
+const SUBJECT_MENTION_TABS = [
+  { key: 'all', label: '全部' },
+  { key: 'char', label: '角色' },
+  { key: 'scene', label: '场景' },
+  { key: 'prop', label: '道具' },
+  { key: 'ref', label: '其他' },
+];
 
 function SubjectMentionDropdown({ chars, scenes, props, mainRefs = [], query, onSelect, onClose, triggerRef }) {
   const ref = useRef(null);
   const [pos, setPos] = useState({ top: 0, left: 0, width: 0, visibility: 'hidden' });
+  const [selectedTab, setSelectedTab] = useState('all');
 
   // 主体参考图转换为下拉项，排在最前面
   const refItems = mainRefs
@@ -3161,7 +3171,7 @@ function SubjectMentionDropdown({ chars, scenes, props, mainRefs = [], query, on
     const menuH = ref.current.offsetHeight;
     const spaceAbove = rect.top;
     const spaceBelow = window.innerHeight - rect.bottom;
-    const top = spaceAbove >= menuH + 4 ? rect.top - menuH - 4 : rect.bottom + 4;
+    const top = rect.bottom + 4;
     setPos((prev) => {
       const next = { top, left: rect.left, width: rect.width, visibility: 'visible' };
       if (prev.top === next.top && prev.left === next.left && prev.visibility === 'visible') return prev;
@@ -3177,7 +3187,15 @@ function SubjectMentionDropdown({ chars, scenes, props, mainRefs = [], query, on
     return () => document.removeEventListener('mousedown', handleClick);
   }, [onClose]);
 
-  if (allItems.length === 0) return null;
+  const filteredItems = selectedTab === 'all'
+    ? allItems
+    : allItems.filter(item => item._type === selectedTab);
+
+  // 如果没有"其他"类型（ref）的主体，则不显示"其他"Tab
+  const hasRefItems = allItems.some(item => item._type === 'ref');
+  const visibleTabs = hasRefItems ? SUBJECT_MENTION_TABS : SUBJECT_MENTION_TABS.filter(tab => tab.key !== 'ref');
+
+  if (filteredItems.length === 0) return null;
 
   return createPortal(
     <div
@@ -3194,11 +3212,33 @@ function SubjectMentionDropdown({ chars, scenes, props, mainRefs = [], query, on
         borderRadius: '8px',
         padding: '4px',
         boxShadow: '0px 4px 16px rgba(0,0,0,0.40)',
-        maxHeight: '200px',
-        overflowY: 'auto',
+        maxHeight: '240px',
+        display: 'flex',
+        flexDirection: 'column',
       }}
     >
-      {allItems.map((item) => (
+      <div style={{ display: 'flex', gap: '2px', padding: '2px 4px 6px', flexShrink: 0 }}>
+        {visibleTabs.map(tab => (
+          <div
+            key={tab.key}
+            onMouseDown={(e) => e.preventDefault()}
+            onClick={() => setSelectedTab(tab.key)}
+            style={{
+              padding: '3px 8px', borderRadius: '4px', fontSize: '12px', lineHeight: '16px',
+              cursor: 'pointer', fontFamily: '"Alibaba PuHuiTi 2.0", system-ui, sans-serif',
+              color: selectedTab === tab.key ? '#FFFFFF' : 'rgba(255,255,255,0.50)',
+              backgroundColor: selectedTab === tab.key ? 'rgba(255,255,255,0.08)' : 'transparent',
+              transition: 'background-color 0.1s, color 0.1s',
+            }}
+            onMouseEnter={(e) => { if (selectedTab !== tab.key) e.currentTarget.style.color = 'rgba(255,255,255,0.80)'; }}
+            onMouseLeave={(e) => { if (selectedTab !== tab.key) e.currentTarget.style.color = 'rgba(255,255,255,0.50)'; }}
+          >
+            {tab.label}
+          </div>
+        ))}
+      </div>
+      <div style={{ flex: 1, overflowY: 'auto', maxHeight: '180px' }}>
+      {filteredItems.map((item) => (
         <div
           key={`${item._type}-${item.id}`}
           onMouseDown={(e) => {
@@ -3240,6 +3280,7 @@ function SubjectMentionDropdown({ chars, scenes, props, mainRefs = [], query, on
           {item._type === 'ref' ? item.displayName : item.name}
         </div>
       ))}
+      </div>
     </div>,
     document.body
   );
@@ -4995,10 +5036,13 @@ function ShotRow({ shot, onChange, onAdd, onCopy, onDelete, chars, isDragging, o
         />
       </div>
       {confirmDelete && (
-        <DeleteConfirmModal
-          shotNumber={shot.number}
+        <ConfirmDialog
+          title="确定要删除吗？"
+          description={`此操作不可撤销，镜头 ${String(shot.number).padStart(2, '0')} 将被永久删除。`}
+          confirmText="删除"
           onConfirm={() => { setConfirmDelete(false); onDelete?.(); }}
           onCancel={() => setConfirmDelete(false)}
+          zIndex={9998}
         />
       )}
       {/* insertion line below */}
@@ -5147,15 +5191,50 @@ export default function StoryboardPage({ serverReachable, projectId, projectName
   }
 
   // 轮询任务直到完成或超时
-  async function pollTask(taskId) {
-    const MAX_POLLS = 100;
+  // isSuccessPayload: 可选谓词，若返回 true 则即使 status 为 running 也停止轮询
+  async function pollTask(taskId, isSuccessPayload) {
+    const MAX_POLLS = 150;
     const INTERVAL = 3000;
     for (let i = 0; i < MAX_POLLS; i++) {
       await new Promise(r => setTimeout(r, INTERVAL));
       const t = await apiGetTask(taskId);
+      // 终态
       if (t.status !== 'pending' && t.status !== 'running') return t;
+      // 后端修复后 running 态也可携带 results：有可播放视频就提前返回
+      if (typeof isSuccessPayload === 'function' && isSuccessPayload(t)) return t;
     }
     throw new Error('任务超时，请重试');
+  }
+
+  // 从轮询响应中归一化提取视频 URL（兼容 result/ results/ video_url/ videoUrl）
+  function extractVideoUrlFromTask(t) {
+    // 1. task.result（单数，创建模块风格）
+    if (t.result && typeof t.result === 'object') {
+      const url = t.result.video_url || t.result.videoUrl;
+      if (url) return url;
+    }
+    // 2. task.results（数组）
+    if (Array.isArray(t.results)) {
+      for (const r of t.results) {
+        if (!r) continue;
+        const url = r.video_url || r.videoUrl;
+        if (url) return url;
+      }
+    }
+    // 3. task.videos
+    if (Array.isArray(t.videos)) {
+      for (const v of t.videos) {
+        if (!v) continue;
+        const url = v.url || v.video_url || v.videoUrl;
+        if (url) return url;
+      }
+    }
+    return null;
+  }
+
+  // 视频任务终态判定：有可播放视频即视为成功
+  function hasVideoTaskResult(t) {
+    return extractVideoUrlFromTask(t) !== null;
   }
 
   async function startBatchGenImages(params) {
@@ -5171,6 +5250,8 @@ export default function StoryboardPage({ serverReachable, projectId, projectName
         const taskResp = await apiGenerateStoryboardImage(projectId, shot.id, {
           model: params.model,
           resolution: params.resolution,
+          prompt: params.prompt,
+          reference_images: (params.refImages || []).map(r => typeof r === 'string' ? r : r.url).filter(Boolean),
         });
         const task = await pollTask(taskResp.id);
         if ((task.status === 'completed' || task.status === 'partial') && task.results?.length > 0) {
@@ -5217,15 +5298,22 @@ export default function StoryboardPage({ serverReachable, projectId, projectName
     for (const shot of shots) {
       setGeneratingVideoShotIds(prev => new Set([...prev, shot.id]));
       try {
+        const durationValue = (() => {
+          if (!params.duration) return undefined;
+          const parsed = parseFloat(params.duration);
+          return isNaN(parsed) ? undefined : parsed;
+        })();
         const taskResp = await apiGenerateStoryboardVideo(projectId, shot.id, {
           model: params.model,
           resolution: params.resolution,
-          duration: params.duration,
+          duration: durationValue,
           sound_effect: params.sound,
+          prompt: params.prompt,
+          reference_images: (params.refImages || []).map(r => typeof r === 'string' ? r : r.url).filter(Boolean),
         });
-        const task = await pollTask(taskResp.id);
-        if ((task.status === 'completed' || task.status === 'partial') && task.results?.length > 0) {
-          const videoUrl = task.results[0]?.video_url;
+        const task = await pollTask(taskResp.id, hasVideoTaskResult);
+        const videoUrl = extractVideoUrlFromTask(task);
+        if (videoUrl) {
           if (videoUrl) {
             const normalizedUrl = normalizeImageUrl(videoUrl);
             setShots((prev) => prev.map((s) => s.id === shot.id
@@ -5809,19 +5897,48 @@ export default function StoryboardPage({ serverReachable, projectId, projectName
         onGenerate={async (params) => {
           const shot = videoPanel.shot;
           try {
-            const taskResp = await apiGenerateStoryboardVideo(projectId, shot.id, { model: params.model, resolution: params.resolution, duration: params.duration, sound_effect: params.sound, reference_images: params.refImages });
-            const task = await pollTask(taskResp.id);
-            if ((task.status === 'completed' || task.status === 'partial') && task.results?.length > 0) {
-              const videoUrl = task.results[0]?.video_url;
-              if (videoUrl) {
-                const normalizedUrl = normalizeImageUrl(videoUrl);
-                setShots((prev) => prev.map((s) => s.id === shot.id && !s.storyboardVideo
-                  ? { ...s, storyboardVideo: { id: `vid-${shot.id}`, url: normalizedUrl, name: 'generated.mp4', type: 'video/mp4' } }
-                  : s
-                ));
-                onVideoGenerated?.(activeEpisodes.findIndex(ep => getEpisodeId(ep) === getEpisodeId(episode)));
-                return { url: normalizedUrl };
-              }
+            // 解析时长：将"Ns"格式转为数字
+            const durationValue = (() => {
+              if (!params.duration) return undefined;
+              const parsed = parseFloat(params.duration);
+              return isNaN(parsed) ? undefined : parsed;
+            })();
+            const taskResp = await apiGenerateStoryboardVideo(projectId, shot.id, {
+                model: params.model,
+                resolution: params.resolution,
+                duration: durationValue,
+                sound_effect: params.sound,
+                prompt: params.prompt,
+                reference_images: params.reference_images || (params.refImages || []).map(r => typeof r === 'string' ? r : r.url).filter(Boolean),
+                first_frame_url: params.first_frame_url,
+                last_frame_url: params.last_frame_url,
+                reference_video_url: params.reference_video_url,
+                reference_audio_url: params.reference_audio_url,
+              });
+            const task = await pollTask(taskResp.id, hasVideoTaskResult);
+            const videoUrl = extractVideoUrlFromTask(task);
+            if (videoUrl) {
+              const normalizedUrl = normalizeImageUrl(videoUrl);
+              // 将参考素材信息一并存入 shot，供查看弹窗展示
+              const refInfo = {
+                referenceImages: params.reference_images?.length > 0 ? params.reference_images : undefined,
+                firstFrameUrl: params.first_frame_url || undefined,
+                lastFrameUrl: params.last_frame_url || undefined,
+                referenceVideoUrl: params.reference_video_url || undefined,
+                referenceAudioUrl: params.reference_audio_url || undefined,
+              };
+              setShots((prev) => prev.map((s) => s.id === shot.id && !s.storyboardVideo
+                ? { ...s, storyboardVideo: { id: `vid-${shot.id}`, url: normalizedUrl, name: 'generated.mp4', type: 'video/mp4' }, ...refInfo }
+                : s
+              ));
+              onVideoGenerated?.(activeEpisodes.findIndex(ep => getEpisodeId(ep) === getEpisodeId(episode)));
+              return { url: normalizedUrl };
+            }
+            // 终态但没有视频 — 发送 toast 提示失败
+            const failStatuses = ['failed', 'cancelled', 'canceled', 'expired', 'error'];
+            if (failStatuses.includes(task.status) || (!task.result && !task.results?.length)) {
+              const errMsg = task.error_msg || task.errorMsg || (task.status ? `任务状态: ${task.status}` : '');
+              throw Object.assign(new Error(errMsg || '视频生成失败'), { status: task.status });
             }
             throw new Error('生成失败，请重试');
           } catch (err) {
