@@ -104,6 +104,8 @@ function normalizeAsset(item) {
     id: item.id,
     name: item.name,
     url: normalizeImageUrl(item.thumbnail_url || item.file_url) || null,
+    fileUrl: normalizeImageUrl(item.file_url) || null,
+    videoUrl: item.asset_type === 'video' ? (item.file_url || null) : null,
     starred: item.is_starred ?? false,
     description: item.description ?? '',
     prompt: item.prompt ?? '',
@@ -134,7 +136,43 @@ export async function apiGetProjectAssets(projectId) {
 }
 
 export async function apiGetShotDetail(shotId) {
-  return apiGetAssetDetail(shotId);
+  const data = await apiGetAssetDetail(shotId);
+  const meta = (data && data.metadata_json) || {};
+
+  // 提取生成结果图片列表（metadata_json.outputs / variants / variations）
+  const rawOutputs = meta.outputs || meta.variants || meta.variations;
+  let images = [];
+  if (Array.isArray(rawOutputs) && rawOutputs.length > 0) {
+    images = rawOutputs.map((out, idx) => ({
+      id: out.id || out.asset_id || `img_${idx}`,
+      src: normalizeImageUrl(out.url || out.file_url || out.image_url || ''),
+      finalized: !!(out.is_finalized != null ? out.is_finalized : (out.finalized ?? false)),
+      prompt: out.prompt || '',
+      model: out.model || '',
+      resolution: out.resolution || out.size || '',
+      generatedAt: out.created_at || '',
+    }));
+  } else {
+    // 无量产结果时用主文件作为唯一图片
+    images = [{
+      id: `${data?.id || shotId}_0`,
+      src: normalizeImageUrl(data?.file_url || data?.thumbnail_url || ''),
+      finalized: true,
+      prompt: data?.prompt || '',
+      model: data?.model || '',
+      resolution: data?.size || '',
+      generatedAt: data?.created_at || '',
+    }];
+  }
+
+  return {
+    shotNumber: meta.shot_number ?? meta.shotNumber ?? data?.name ?? '',
+    prompt: data?.prompt || '',
+    model: data?.model || '',
+    resolution: meta.resolution || data?.size || '',
+    generatedAt: data?.created_at || '',
+    images,
+  };
 }
 
 export async function apiGetShotVideoDetail(shotId) {

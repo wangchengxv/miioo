@@ -872,7 +872,7 @@ function ShotDetailModal({ onClose, onDownload, shotNumber, prompt, model, resol
               {/* Prompt */}
               <div style={{ display: 'flex', flexDirection: 'column', paddingTop: '16px', paddingBottom: '16px', paddingLeft: '20px', paddingRight: '20px', gap: '10px' }}>
                 <span style={{ fontFamily: FONT, fontSize: '11px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>提示词</span>
-                <p style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '20px', letterSpacing: '0.01em', color: '#FFFFFFCC', margin: 0 }}>{prompt ?? MOCK_SHOT_DETAIL.prompt}</p>
+                <p style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '20px', letterSpacing: '0.01em', color: '#FFFFFFCC', margin: 0 }}>{(currentImg?.prompt || prompt) ?? MOCK_SHOT_DETAIL.prompt}</p>
               </div>
 
               <div style={{ height: '1px', backgroundColor: '#FFFFFF0A', marginLeft: '20px', marginRight: '20px' }} />
@@ -881,8 +881,8 @@ function ShotDetailModal({ onClose, onDownload, shotNumber, prompt, model, resol
               <div style={{ display: 'flex', flexDirection: 'column', paddingTop: '16px', paddingBottom: '16px', paddingLeft: '20px', paddingRight: '20px', gap: '12px' }}>
                 <span style={{ fontFamily: FONT, fontSize: '11px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>生成参数</span>
                 {[
-                  { label: '模型', value: model ?? MOCK_SHOT_DETAIL.model },
-                  { label: '分辨率', value: resolution ?? MOCK_SHOT_DETAIL.resolution },
+                  { label: '模型', value: (currentImg?.model || model) ?? MOCK_SHOT_DETAIL.model },
+                  { label: '分辨率', value: (currentImg?.resolution || resolution) ?? MOCK_SHOT_DETAIL.resolution },
                 ].map(({ label, value }) => (
                   <div key={label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFF99' }}>{label}</span>
@@ -896,7 +896,7 @@ function ShotDetailModal({ onClose, onDownload, shotNumber, prompt, model, resol
               {/* AI generated time */}
               <div style={{ display: 'flex', flexDirection: 'column', paddingTop: '16px', paddingBottom: '16px', paddingLeft: '20px', paddingRight: '20px', gap: '4px' }}>
                 <span style={{ fontFamily: FONT, fontSize: '11px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>AI 生成时间</span>
-                <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFF66' }}>{generatedAt ?? MOCK_SHOT_DETAIL.generatedAt}</span>
+                <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFF66' }}>{(currentImg?.generatedAt || generatedAt) ?? MOCK_SHOT_DETAIL.generatedAt}</span>
               </div>
             </div>
 
@@ -1334,6 +1334,18 @@ function AssetCard({ name, bgColor = '#252525', url = null, starred = false, sel
   const [starAnim, setStarAnim] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const [detailData, setDetailData] = useState(null);
+  const videoRef = useRef(null);
+
+  useEffect(() => {
+    const vid = videoRef.current;
+    if (!vid) return;
+    if (hov) {
+      vid.currentTime = 0;
+      vid.play().catch(() => {});
+    } else {
+      vid.pause();
+    }
+  }, [hov]);
 
   function handleOpen() {
     if (batchMode) { onSelect?.(); return; }
@@ -1379,7 +1391,9 @@ function AssetCard({ name, bgColor = '#252525', url = null, starred = false, sel
       onClick={() => { if (batchMode) onSelect?.(); else handleOpen(); }}
     >
       <div style={{ width: '100%', height: '100%', backgroundColor: (url || asset.videoUrl) ? 'transparent' : bgColor, position: 'relative' }}>
-        {asset.type === 'video' && asset.videoUrl ? (
+        {asset.videoUrl ? (
+          <video ref={videoRef} src={asset.videoUrl} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} muted playsInline loop preload="metadata" />
+        ) : asset.type === 'video' && asset.videoUrl ? (
           <video src={asset.videoUrl} poster={url} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} muted playsInline preload="metadata" />
         ) : url ? (
           <img src={url} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
@@ -1617,7 +1631,7 @@ function ProjectAssetCard({ name, desc, url, selected, batchMode, onDownload, on
       {detailOpen && (
         <ImageDetailModal
           card={{
-            imageUrl: asset.url || url,
+            imageUrl: asset.fileUrl || asset.url || url,
             prompt: asset.prompt,
             model: asset.model,
             ratio: asset.ratio,
@@ -2190,7 +2204,7 @@ function ProjectAssetsPanel() {
 
   async function downloadAsset(assetId, assetName) {
     try {
-      const blob = await apiDownloadAsset(assetId);
+      const blob = await apiDownloadAsset(assetId, { prefer_origin: true });
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;

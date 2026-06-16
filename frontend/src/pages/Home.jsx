@@ -2,7 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { PulsingBorder } from '@paper-design/shaders-react';
 import { apiGetProjects, apiUpdateProject, apiDeleteProject, apiGetProject, apiGetProjectOverview } from '../api/project';
-import { getToken, refreshAccessToken } from '../api/request';
+import { getToken, getRefreshToken, refreshAccessToken } from '../api/request';
 import { clearTokens, apiLogout } from '../api/auth';
 import { apiListProviders } from '../api/config';
 import { apiGetCurrentUser, apiGetNotifications } from '../api/user';
@@ -122,7 +122,7 @@ function QRCodePopup({ anchorLeft }) {
     <div className="qr-popup" style={{ left: anchorLeft ?? 40, bottom: 24, translate: '0 -50%' }} role="dialog" aria-label="官方社群二维码">
       <div className="qr-popup-code" style={{ backgroundImage: `url(${COMMUNITY_QR_CODE_URL})` }} />
       <div className="qr-popup-caption font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif]">
-        扫码加入官方社群
+        扫码加入用户交流群
       </div>
     </div>
   );
@@ -210,7 +210,7 @@ function MoreOptionsMenu({ close, setWatermarkSettingsOpen }) {
               lineHeight: '16px',
             }}
           >
-            扫码添加工作人员
+            扫码添加客服
           </div>
         </div>
       )}
@@ -1015,29 +1015,37 @@ export default function Home({ onProjectCreated }) {
       return;
     }
 
-    // 启动验证：先确认后端可达且 token 有效，再加载其余数据
-    // authFetch 内置 401 → 刷新 → 重试 → 登出 兜底逻辑
-    apiGetCurrentUser()
-      .then((user) => {
-        // 验证成功 → 后端可达，token 有效
+    // 启动验证：先尝试刷新 token（避免过期 token 直接发 401），再确认 token 有效
+    const doAuth = async () => {
+      // 先静默刷新一次 token（有 refresh_token 才尝试）
+      if (getRefreshToken()) {
+        await refreshAccessToken();
+      }
+
+      // token 刷新后仍然无效 → 跳过 API 请求，避免无意义的 401
+      if (!getToken()) {
+        setProjectsLoaded(true);
+        setServerReachable(null);
+        return;
+      }
+
+      try {
+        const user = await apiGetCurrentUser();
         setServerReachable(true);
         setIsLoggedIn(true);
         setCurrentUser(user);
-      })
-      .catch((err) => {
+      } catch (err) {
         if (err.isNetworkError) {
-          // 后端不可达，降级处理：不清 token，不弹登录窗
           setServerReachable(false);
           showToast('后端服务连接异常，部分功能不可用', 'error');
-          setProjectsLoaded(true);
-          return; // 阻止后续 .then 执行
         }
-        // 401 等其他错误 → 交给 auth:logout 事件处理
-      })
-      .then(() => {
-        // 仅在验证成功时加载鉴权数据
-        if (!getToken()) return;
-        refreshAccessToken().finally(() => {
+        // 401 / 其他鉴权错误 → authFetch 已清 token + 触发 logout 事件
+        setProjectsLoaded(true);
+        return; // 阻止后续加载
+      }
+      // 仅在验证成功时加载鉴权数据（此时 token 必然有效）
+      if (!getToken()) return;
+      refreshAccessToken().finally(() => {
       apiGetProjects().then((data) => {
         const normalized = data.map((p) => ({ ...p, cover: p.cover ?? p.cover_url }));
         // 按创建时间倒序排列，最新的在前
@@ -1073,7 +1081,8 @@ export default function Home({ onProjectCreated }) {
             if (providers.length > 0) setApiConfigured(true);
           }).catch(() => {});
         });
-      });
+      };
+      doAuth(); // 启动鉴权流程
   }, []);
 
   useEffect(() => {
@@ -1428,7 +1437,7 @@ export default function Home({ onProjectCreated }) {
         {/* body: nav + content */}
         <div className="flex flex-1 min-h-0 overflow-hidden self-stretch w-auto">
           {/* primary navigation */}
-          <div className="flex flex-col items-start gap-0 px-[16px] self-stretch w-auto">
+          <div className="flex flex-col items-start gap-0 px-[16px] self-stretch w-auto" style={{ position: 'relative', zIndex: 10 }}>
             <div
               className="flex flex-col items-start justify-center py-24 flex-1"
               style={{

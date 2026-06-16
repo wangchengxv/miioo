@@ -404,14 +404,14 @@ export default function ShotViewerModal({ shot, onClose, onFinalizeChange }) {
             </div>
 
             {/* 参考素材 */}
-            {((shot?.referenceImages ?? shot?.storyboardVideo?.referenceImages)?.length > 0 || (shot?.firstFrameUrl ?? shot?.storyboardVideo?.firstFrameUrl) || (shot?.lastFrameUrl ?? shot?.storyboardVideo?.lastFrameUrl) || (shot?.referenceVideoUrl ?? shot?.storyboardVideo?.referenceVideoUrl) || (shot?.referenceAudioUrl ?? shot?.storyboardVideo?.referenceAudioUrl) || shot?.storyboardVideo?.referenceImages?.length > 0 || shot?.storyboardVideo?.firstFrameUrl || shot?.storyboardVideo?.lastFrameUrl || shot?.storyboardVideo?.referenceVideoUrl || shot?.storyboardVideo?.referenceAudioUrl) && (
+            {(shot?.referenceImages?.length > 0 || shot?.firstFrameUrl || shot?.lastFrameUrl || shot?.referenceVideoUrl || shot?.referenceAudioUrl) && (
               <>
                 <div style={{ height: '1px', backgroundColor: 'rgba(255,255,255,0.06)', margin: '0 20px' }} />
                 <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px 20px' }}>
                   <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: 'rgba(255,255,255,0.6)', letterSpacing: '0.01em' }}>
                     参考素材
                   </span>
-                  {(shot?.referenceImages ?? shot?.storyboardVideo?.referenceImages)?.length > 0 && shot.referenceImages.map((url, i) => (
+                  {shot?.referenceImages?.length > 0 && shot.referenceImages.map((url, i) => (
                     <div key={`refimg-${i}`} style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                       <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: 'rgba(255,255,255,0.6)', letterSpacing: '0.01em' }}>
                         参考图{i > 0 ? ` ${i + 1}` : ''}
@@ -419,25 +419,25 @@ export default function ShotViewerModal({ shot, onClose, onFinalizeChange }) {
                       <img src={url} alt="" style={{ width: '100%', maxHeight: '120px', objectFit: 'cover', borderRadius: '4px' }} />
                     </div>
                   ))}
-                  {(shot?.firstFrameUrl ?? shot?.storyboardVideo?.firstFrameUrl) && (
+                  {shot?.firstFrameUrl && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                       <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: 'rgba(255,255,255,0.6)', letterSpacing: '0.01em' }}>首帧</span>
                       <img src={shot.firstFrameUrl} alt="" style={{ width: '100%', maxHeight: '120px', objectFit: 'cover', borderRadius: '4px' }} />
                     </div>
                   )}
-                  {(shot?.lastFrameUrl ?? shot?.storyboardVideo?.lastFrameUrl) && (
+                  {shot?.lastFrameUrl && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                       <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: 'rgba(255,255,255,0.6)', letterSpacing: '0.01em' }}>尾帧</span>
                       <img src={shot.lastFrameUrl} alt="" style={{ width: '100%', maxHeight: '120px', objectFit: 'cover', borderRadius: '4px' }} />
                     </div>
                   )}
-                  {(shot?.referenceVideoUrl ?? shot?.storyboardVideo?.referenceVideoUrl) && (
+                  {shot?.referenceVideoUrl && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                       <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: 'rgba(255,255,255,0.6)', letterSpacing: '0.01em' }}>参考视频</span>
                       <video src={shot.referenceVideoUrl} controls style={{ width: '100%', borderRadius: '4px' }} />
                     </div>
                   )}
-                  {(shot?.referenceAudioUrl ?? shot?.storyboardVideo?.referenceAudioUrl) && (
+                  {shot?.referenceAudioUrl && (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
                       <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: 'rgba(255,255,255,0.6)', letterSpacing: '0.01em' }}>参考音频</span>
                       <audio src={shot.referenceAudioUrl} controls style={{ width: '100%' }} />

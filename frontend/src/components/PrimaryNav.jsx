@@ -29,7 +29,7 @@ function Tooltip({ label }) {
         backgroundColor: '#111111',
         whiteSpace: 'nowrap',
         fontFamily: "'AlibabaPuHuiTi_2_55_Regular', 'Alibaba PuHuiTi 2.0', system-ui, sans-serif",
-        fontSize: '12px',
+        fontSize: '14px',
         fontWeight: 400,
         lineHeight: '16px',
         color: '#FFFFFF',
@@ -184,13 +184,13 @@ export default function PrimaryNav({ items, activeKey = null, onChange, variant 
                       ? "font-['AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] font-medium"
                       : "font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif]"
                   }`}
-                  style={isVertical ? { fontSize: '12px', lineHeight: '16px' } : undefined}
+                  style={isVertical ? { fontSize: '14px', lineHeight: '16px' } : undefined}
                 >
                   {item.label}
                 </span>
               )}
-              {showTooltip && <Tooltip label={item.tooltip} />}
             </button>
+            {showTooltip && <Tooltip label={item.tooltip} />}
             {showPopup && popupContent}
             {isCompact && item.bubble && !showPopup && item.bubble}
           </div>

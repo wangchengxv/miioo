@@ -4,7 +4,7 @@ import BatchDownloadModal from '../components/BatchDownloadModal';
 import ShotViewerModal from '../components/ShotViewerModal';
 import Toggle from '../components/Toggle';
 import AssetPickerModal from '../components/AssetPickerModal';
-import { apiUploadFile, apiUploadImage, apiGenerateStoryboardImage, apiGenerateStoryboardVideo, apiCreateStoryboard, apiUpdateStoryboard, apiDeleteStoryboard, apiReorderStoryboards, apiGetStoryboards, apiBatchDownloadStoryboardImages, apiBatchDownloadStoryboardVideos, apiGetTask } from '../api/storyboard';
+import { apiUploadFile, apiUploadImage, apiUploadStoryboardVideo, apiGenerateStoryboardImage, apiGenerateStoryboardVideo, apiCreateStoryboard, apiUpdateStoryboard, apiDeleteStoryboard, apiReorderStoryboards, apiGetStoryboards, apiBatchDownloadStoryboardImages, apiBatchDownloadStoryboardVideos, apiGetTask } from '../api/storyboard';
 import { apiListModels } from '../api/config';
 import DotsLoading from '../components/DotsLoading';
 import { apiGetEpisodes } from '../api/subject';
@@ -830,10 +830,11 @@ function ImgUploadBtn({ label, onClick }) {
 }
 
 // 上传占位卡
-function ImgUploadCard({ onUpload, projectId }) {
+function ImgUploadCard({ onUpload, projectId, onAssetSelect }) {
   const [hovered, setHovered] = useState(false);
   const [assetPickerOpen, setAssetPickerOpen] = useState(false);
   const fileInputRef = useRef(null);
+  const videoRef = useRef(null);
   return (
     <>
       <div
@@ -857,7 +858,7 @@ function ImgUploadCard({ onUpload, projectId }) {
         <ImgUploadBtn label="本地上传" onClick={() => fileInputRef.current?.click()} />
         <ImgUploadBtn label="从资产库选择" onClick={() => setAssetPickerOpen(true)} />
       </div>
-      <AssetPickerModal accept="image" open={assetPickerOpen} onClose={() => setAssetPickerOpen(false)} projectId={projectId} onConfirm={() => {}} />
+      <AssetPickerModal accept="image" open={assetPickerOpen} onClose={() => setAssetPickerOpen(false)} projectId={projectId} onConfirm={(assets) => { if (onAssetSelect) onAssetSelect(assets); setAssetPickerOpen(false); }} />
     </>
   );
 }
@@ -1850,7 +1851,7 @@ function RefSlotBtn({ onClick, children }) {
   );
 }
 
-function GenerateImagePanel({ shot, projectId, chars = [], scenes = [], props = [], onClose, onGenerate, onShowToast, generatedImages = [], onSetGeneratedImages }) {
+function GenerateImagePanel({ shot, projectId, chars = [], scenes = [], props = [], onClose, onGenerate, onShowToast, generatedImages = [], onSetGeneratedImages, onSettleImage }) {
   const [modelList, setModelList] = useState([]);
   const [modelsLoading, setModelsLoading] = useState(true);
   const [model, setModel] = useState('');
@@ -2125,9 +2126,20 @@ function GenerateImagePanel({ shot, projectId, chars = [], scenes = [], props = 
           <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', paddingLeft: '12px', paddingRight: '24px', paddingTop: '8px', paddingBottom: '8px', background: '#161616', height: '100%', boxSizing: 'border-box' }}>
             <ImgUploadCard
               projectId={projectId}
-              onUpload={(file) => {
-                const url = URL.createObjectURL(file);
-                onSetGeneratedImages((prev) => [{ url, settled: false, id: url }, ...prev]);
+              onUpload={async (file) => {
+                try {
+                  const result = await apiUploadFile(file);
+                  onSetGeneratedImages((prev) => [{ url: result.url, settled: false, id: result.url || result.id }, ...prev]);
+                  onSettleImage?.(result.url);
+                } catch {
+                  onShowToast?.('上传失败，请重试', 'error');
+                }
+              }}
+              onAssetSelect={(assets) => {
+                assets.forEach(a => {
+                  const url = normalizeImageUrl(a.thumbnailUrl || a.thumbnail_url || a.originalUrl || a.original_url || a.url || a.file_url);
+                  if (url) { onSetGeneratedImages((prev) => [{ url, settled: false, id: a.id || url }, ...prev]); onSettleImage?.(url); }
+                });
               }}
             />
             {generatedImages.map((img, i) => (
@@ -2142,6 +2154,7 @@ function GenerateImagePanel({ shot, projectId, chars = [], scenes = [], props = 
                       idx === i ? { ...item, settled: newSettled } : { ...item, settled: newSettled ? false : item.settled }
                     )
                   );
+                  if (newSettled && img.url) onSettleImage?.(img.url);
                 }}
               />
             ))}
@@ -2201,7 +2214,7 @@ function GenerateImagePanel({ shot, projectId, chars = [], scenes = [], props = 
   );
 }
 
-function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scenes = [], props = [], onClose, onGenerate, onShowToast }) {
+function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scenes = [], props = [], onClose, onGenerate, onShowToast, onSettleVideo }) {
   // 生成方式 Tab：'all' 全能参考 | 'frame' 首尾帧
   const [tab, setTab] = useState('all');
   const [modelList, setModelList] = useState([]);
@@ -2622,22 +2635,34 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
           <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', paddingLeft: '12px', paddingRight: '24px', paddingTop: '8px', paddingBottom: '8px', background: '#161616', height: '100%', boxSizing: 'border-box' }}>
             <VideoUploadCard
               projectId={projectId}
-              onUpload={(file) => {
-                const url = URL.createObjectURL(file);
-                setGeneratedVideos((prev) => [{ url, settled: false, id: url }, ...prev]);
+              onUpload={async (file) => {
+                try {
+                  const result = await apiUploadStoryboardVideo(projectId, shot.id, file);
+                  const videoUrl = result.video_url || result.videoUrl;
+                  if (videoUrl) { const nu = normalizeImageUrl(videoUrl); setGeneratedVideos((prev) => [{ url: nu, settled: true, id: result.id || nu }, ...prev]); onSettleVideo?.(nu); }
+                } catch {
+                  onShowToast?.('视频上传失败，请重试', 'error');
+                }
+              }}
+              onAssetSelect={(assets) => {
+                const newItems = assets.map(a => {
+                  const url = normalizeImageUrl(a.thumbnailUrl || a.thumbnail_url || a.originalUrl || a.original_url || a.file_url || a.url);
+                  return url ? { url, settled: true, id: a.id || a.asset_id || url } : null;
+                }).filter(Boolean);
+                setGeneratedVideos(prev => [...newItems, ...prev]);
+                if (newItems.length > 0) onSettleVideo?.(newItems[0].url);
               }}
             />
             {generatedVideos.map((vid, i) => (
               <VideoItem
-                key={vid.id ?? vid.url + i}
+                key={vid.id || vid.url || i}
                 videoUrl={vid.url}
                 settled={vid.settled}
                 onSettledChange={(newSettled) => {
                   setGeneratedVideos((prev) =>
-                    prev.map((item, idx) =>
-                      idx === i ? { ...item, settled: newSettled } : { ...item, settled: newSettled ? false : item.settled }
-                    )
+                    prev.map((item, idx) => idx === i ? { ...item, settled: newSettled } : { ...item, settled: newSettled ? false : item.settled })
                   );
+                  if (newSettled && vid.url) onSettleVideo?.(vid.url);
                 }}
                 onView={(url) => setViewerShot({
                   videoUrl: url,
@@ -2709,10 +2734,11 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
 }
 
 // 视频上传占位卡
-function VideoUploadCard({ onUpload, projectId }) {
+function VideoUploadCard({ onUpload, projectId, onAssetSelect }) {
   const [hovered, setHovered] = useState(false);
   const [assetPickerOpen, setAssetPickerOpen] = useState(false);
   const fileInputRef = useRef(null);
+  const videoRef = useRef(null);
   return (
     <>
       <div
@@ -2736,7 +2762,7 @@ function VideoUploadCard({ onUpload, projectId }) {
         <ImgUploadBtn label="本地上传" onClick={() => fileInputRef.current?.click()} />
         <ImgUploadBtn label="从资产库选择" onClick={() => setAssetPickerOpen(true)} />
       </div>
-      <AssetPickerModal accept="video" open={assetPickerOpen} onClose={() => setAssetPickerOpen(false)} projectId={projectId} onConfirm={() => {}} />
+      <AssetPickerModal accept="video" open={assetPickerOpen} onClose={() => setAssetPickerOpen(false)} projectId={projectId} onConfirm={(assets) => { if (onAssetSelect) onAssetSelect(assets); setAssetPickerOpen(false); }} />
     </>
   );
 }
@@ -4065,6 +4091,7 @@ function MainRefCol({ shot, onChange, chars, projectId }) {
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const addBtnRef = useRef(null);
   const fileInputRef = useRef(null);
+  const videoRef = useRef(null);
 
   function handleDelete(idx) {
     onChange({ ...shot, mainRefs: shot.mainRefs.filter((_, i) => i !== idx) });
@@ -4497,6 +4524,7 @@ function MediaCol({ media, onUpload, accept, isVideo, label, onAIGenerate, shotM
   const [viewUrl, setViewUrl] = useState(null);
   const [viewerShot, setViewerShot] = useState(null);
   const fileInputRef = useRef(null);
+  const videoRef = useRef(null);
 
   function handleFileSelect(e) {
     const file = e.target.files[0];
@@ -4505,6 +4533,21 @@ function MediaCol({ media, onUpload, accept, isVideo, label, onAIGenerate, shotM
     const url = URL.createObjectURL(file);
     onUpload({ id: url, url, name: file.name, type: file.type });
     e.target.value = '';
+  }
+  function handleMouseEnter() {
+    setHovered(true);
+    if (isVideo && !isEmpty && !generating && videoRef.current) {
+      videoRef.current.currentTime = 0;
+      videoRef.current.play().catch(() => {});
+    }
+  }
+
+  function handleMouseLeave() {
+    setHovered(false);
+    if (isVideo && !isEmpty && !generating && videoRef.current) {
+      videoRef.current.pause();
+      videoRef.current.currentTime = 0;
+    }
   }
 
   const isEmpty = !media;
@@ -4520,8 +4563,8 @@ function MediaCol({ media, onUpload, accept, isVideo, label, onAIGenerate, shotM
       />
 
       <div
-        onMouseEnter={() => setHovered(true)}
-        onMouseLeave={() => setHovered(false)}
+        onMouseEnter={handleMouseEnter}
+        onMouseLeave={handleMouseLeave}
         onClick={() => { if (!isEmpty) onAIGenerate?.(); }}
         style={{
           flex: 1,
@@ -4555,6 +4598,7 @@ function MediaCol({ media, onUpload, accept, isVideo, label, onAIGenerate, shotM
           isVideo ? (
             <video
               src={media.url}
+              ref={videoRef}
               style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }}
               muted
               playsInline
@@ -5860,6 +5904,13 @@ export default function StoryboardPage({ serverReachable, projectId, projectName
         }}
         onClose={() => setImagePanel(null)}
         onShowToast={showToast}
+        onSettleImage={(imageUrl) => {
+          const n = normalizeImageUrl(imageUrl);
+          setShots((prev) => prev.map((s) => s.id === imagePanel.shot.id
+            ? { ...s, storyboardImage: { id: n, url: n, name: '分镜图', type: 'image/jpeg' } }
+            : s
+          ));
+        }}
         onGenerate={async (params) => {
           const shot = imagePanel.shot;
           try {
@@ -5894,6 +5945,13 @@ export default function StoryboardPage({ serverReachable, projectId, projectName
         props={props}
         onClose={() => setVideoPanel(null)}
         onShowToast={showToast}
+        onSettleVideo={(videoUrl) => {
+          const n = normalizeImageUrl(videoUrl);
+          setShots((prev) => prev.map((s) => s.id === videoPanel.shot.id
+            ? { ...s, storyboardVideo: { id: n, url: n, name: 'generated.mp4', type: 'video/mp4' } }
+            : s
+          ));
+        }}
         onGenerate={async (params) => {
           const shot = videoPanel.shot;
           try {

@@ -74,7 +74,14 @@ function AssetCard({ asset, isSelected, isHovered, onMouseEnter, onMouseLeave, o
         background: asset.url ? 'transparent' : (asset.bgColor || '#252525'),
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
-        {asset.url ? (
+        {asset.asset_type === 'video' && asset.url ? (
+          <video
+            src={asset.url}
+            style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: isHovered && !isSelected ? 0.85 : 1, transition: 'opacity 100ms' }}
+            muted
+            playsInline
+          />
+        ) : asset.url ? (
           <img src={asset.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: isHovered && !isSelected ? 0.85 : 1, transition: 'opacity 100ms' }} />
         ) : asset.type === 'audio' ? (
           <svg width="32" height="32" viewBox="0 0 32 32" fill="none">

@@ -836,13 +836,13 @@ function CharCard({ name, desc, imageUrl, voice, voiceName, voicePreviewUrl, onV
         {/* voice row — characters only */}
         {onVoiceClick !== undefined && <div
           className="flex items-center justify-between"
-          style={{ gap: '6px' }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '17px', color: '#FFFFFFCC', flexShrink: 0 }}>
-            选择音色：
-          </span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+       style={{ gap: '6px' }}
+        onClick={(e) => { e.stopPropagation(); onVoiceClick?.(); }}
+      >
+        <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '17px', color: '#FFFFFFCC', flexShrink: 0 }}>
+          选择音色：
+        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); onVoiceClick?.(); }}
@@ -863,11 +863,11 @@ function CharCard({ name, desc, imageUrl, voice, voiceName, voicePreviewUrl, onV
               style={{ background: 'transparent', border: 'none', padding: 0, cursor: voice ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', opacity: voice ? 1 : 0.3 }}
             >
               {voicePlaying
-                ? <PlayingWaveIcon color="#2DC3E1" size={16} />
-                : <HeadphoneIcon color={voice ? '#2DC3E1' : '#FFFFFF26'} />
-              }
-            </button>
-          </div>
+              ? <PlayingWaveIcon color="#2DC3E1" size={16} />
+              : <HeadphoneIcon color={voice ? '#2DC3E1' : '#FFFFFF66'} />
+            }
+          </button>
+        </div>
         </div>}
       </div>
     </div>
