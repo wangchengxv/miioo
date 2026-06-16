@@ -4890,48 +4890,73 @@ function CardActionBtn({ btn, index, onAdd, onCopy, onDeleteRequest, onDragHandl
   );
 }
 
-function NumberCol({ number, isHovered, onAdd, onCopy, onDeleteRequest, onDragHandlePress }) {
+function NumberCol({ number, isHovered, onAdd, onCopy, onDeleteRequest, onDragHandlePress, isSelectMode = false, isSelected = false, onToggleSelect }) {
   return (
     <div
+      onClick={isSelectMode ? onToggleSelect : undefined}
       style={{
         width: '40px',
         flexShrink: 0,
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
-        justifyContent: isHovered ? 'flex-start' : 'center',
-        paddingTop: isHovered ? '12px' : 0,
-        paddingBottom: isHovered ? '12px' : 0,
+        justifyContent: isSelectMode ? 'flex-start' : isHovered ? 'flex-start' : 'center',
+        paddingTop: isSelectMode ? '12px' : (!isSelectMode && isHovered) ? '12px' : 0,
+        paddingBottom: (!isSelectMode && isHovered) ? '12px' : 0,
         gap: '6px',
         borderRight: '1px solid rgba(255,255,255,0.08)',
-        backgroundColor: isHovered ? '#111111' : 'transparent',
+        backgroundColor: isSelectMode ? (isSelected ? 'rgba(45,195,225,0.08)' : 'transparent') : isHovered ? '#111111' : 'transparent',
         borderTopLeftRadius: '12px',
         borderBottomLeftRadius: '12px',
         transition: 'background-color 150ms',
         overflow: 'hidden',
+        cursor: isSelectMode ? 'pointer' : 'default',
+        position: 'relative',
       }}
     >
-      {!isHovered && (
-        <span style={{
-          fontSize: '14px',
-          fontWeight: 700,
-          color: '#FFFFFF',
-          fontFamily: '"Alibaba PuHuiTi 2.0", system-ui, sans-serif',
-        }}>
-          {String(number).padStart(2, '0')}
-        </span>
+      {isSelectMode ? (
+        <>
+          {/* Checkbox — 顶部，距上边缘 12px（由 paddingTop 控制） */}
+          <div className={
+            "relative rounded-sm shrink-0 border border-solid w-[16px] h-[16px] [outline:1px_solid_var(--color-stroke-outline)] outline-offset-0 " +
+            (isSelected ? "bg-checkbox-bg-active border-checkbox-border-active" : "bg-checkbox-bg-normal border-checkbox-border-normal")
+          }>
+            {isSelected && (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"
+                style={{ position: 'absolute', left: '50%', top: '50%', translate: '-50% -50%' }}>
+                <path d="M3.333 8L6.667 11.333L13.333 4.667" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            )}
+          </div>
+          <span style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', fontSize: '14px', fontWeight: 700, color: '#FFFFFF', fontFamily: '"Alibaba PuHuiTi 2.0", system-ui, sans-serif', lineHeight: 1 }}>
+            {String(number).padStart(2, '0')}
+          </span>
+        </>
+      ) : (
+        <>
+          {!isHovered && (
+            <span style={{
+              fontSize: '14px',
+              fontWeight: 700,
+              color: '#FFFFFF',
+              fontFamily: '"Alibaba PuHuiTi 2.0", system-ui, sans-serif',
+            }}>
+              {String(number).padStart(2, '0')}
+            </span>
+          )}
+          {isHovered && NUMBER_BTNS.map((btn, i) => (
+            <CardActionBtn
+              key={btn.key}
+              btn={btn}
+              index={i}
+              onAdd={onAdd}
+              onCopy={onCopy}
+              onDeleteRequest={onDeleteRequest}
+              onDragHandlePress={onDragHandlePress}
+            />
+          ))}
+        </>
       )}
-      {isHovered && NUMBER_BTNS.map((btn, i) => (
-        <CardActionBtn
-          key={btn.key}
-          btn={btn}
-          index={i}
-          onAdd={onAdd}
-          onCopy={onCopy}
-          onDeleteRequest={onDeleteRequest}
-          onDragHandlePress={onDragHandlePress}
-        />
-      ))}
     </div>
   );
 }
@@ -5104,7 +5129,7 @@ function MediaColWrapper({ label, media, onUpload, accept, isVideo, isLast = fal
 
 // ─── 分镜行 ───────────────────────────────────────────────────────────────────
 
-function ShotRow({ shot, onChange, onAdd, onCopy, onDelete, chars, isDragging, onDragStart, onDragOver, onDrop, insertBefore, insertAfter, onGenerateImage, onGenerateVideo, globalVoiceParams, onSaveGlobalVoice, projectId, generatingImage, generatingVideo }) {
+function ShotRow({ shot, onChange, onAdd, onCopy, onDelete, chars, isDragging, onDragStart, onDragOver, onDrop, insertBefore, insertAfter, onGenerateImage, onGenerateVideo, globalVoiceParams, onSaveGlobalVoice, projectId, generatingImage, generatingVideo, isSelectMode = false, isSelected = false, onToggleSelect }) {
   const [hovered, setHovered] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   // 仅当拖拽动作由「拖拽手柄」按钮发起时才允许排序，鼠标在卡片其他区域拖拽无效。
@@ -5122,9 +5147,9 @@ function ShotRow({ shot, onChange, onAdd, onCopy, onDelete, chars, isDragging, o
         <div style={{ height: '2px', borderRadius: '1px', backgroundColor: '#2DC3E1', flexShrink: 0, marginBlock: '-4px', zIndex: 10 }} />
       )}
       <div
-        draggable
+        draggable={!isSelectMode}
         onDragStart={(e) => {
-          if (!dragFromHandle.current) { e.preventDefault(); return; }
+          if (isSelectMode || !dragFromHandle.current) { e.preventDefault(); return; }
           onDragStart?.();
         }}
         onDragEnd={() => { dragFromHandle.current = false; }}
@@ -5139,7 +5164,7 @@ function ShotRow({ shot, onChange, onAdd, onCopy, onDelete, chars, isDragging, o
           minWidth: '1060px',
           borderRadius: '12px',
           backgroundColor: '#1D1E1E',
-          border: `1px solid ${hovered ? 'rgba(255,255,255,0.20)' : 'rgba(255,255,255,0.08)'}`,
+          border: `1px solid ${isSelected ? 'rgba(45,195,225,0.60)' : hovered ? 'rgba(255,255,255,0.20)' : 'rgba(255,255,255,0.08)'}`,
           boxShadow: hovered ? 'rgba(0,0,0,0.50) 0px 0px 30px' : 'none',
           flexShrink: 0,
           transition: 'border-color 150ms, box-shadow 150ms, opacity 150ms',
@@ -5154,6 +5179,9 @@ function ShotRow({ shot, onChange, onAdd, onCopy, onDelete, chars, isDragging, o
           onCopy={onCopy}
           onDeleteRequest={() => setConfirmDelete(true)}
           onDragHandlePress={armDragHandle}
+          isSelectMode={isSelectMode}
+          isSelected={isSelected}
+          onToggleSelect={onToggleSelect}
         />
         <DescriptionCol shot={shot} onChange={onChange} />
         <TextEditCol
@@ -5952,6 +5980,9 @@ export default function StoryboardPage({ serverReachable, projectId, projectName
             onSaveGlobalVoice={(role, params) => setGlobalVoiceParams((prev) => ({ ...prev, [role]: params }))}
             generatingImage={generatingImageShotIds.has(shot.id)}
             generatingVideo={generatingVideoShotIds.has(shot.id)}
+            isSelectMode={downloadMode}
+            isSelected={selectedShotIds.has(shot.id)}
+            onToggleSelect={() => toggleShotSelection(shot.id)}
           />
         ))}
         {/* bottom sentinel — drop zone for placing after the last card */}
