@@ -1,5 +1,7 @@
 import { useState, useRef, useEffect } from 'react';
 import defaultCover from '../assets/project-default-cover.png';
+import { formatRelativeTime } from '../utils/formatTime';
+import { normalizeImageUrl } from '../utils/imageUrl';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
@@ -551,7 +553,7 @@ function ProjectCard({ project, onRename, onDelete, onOpen }) {
         }}
       >
         <img
-          src={project.cover || defaultCover}
+          src={normalizeImageUrl(project.cover) || defaultCover}
           alt=""
           style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
         />
@@ -595,7 +597,7 @@ function ProjectCard({ project, onRename, onDelete, onOpen }) {
             {project.name}
           </span>
           <span style={{ fontFamily: FONT, fontSize: '12px', color: '#FFFFFF66' }}>
-            {project.date || '刚刚'}
+            {formatRelativeTime(project.created_at || project.updated_at || project.date)}
           </span>
         </div>
         {(hovered || menuOpen) && (
@@ -632,7 +634,18 @@ function ProjectCard({ project, onRename, onDelete, onOpen }) {
 
 // ── Main Component ─────────────────────────────────────────────────────────
 
-export default function ProjectList({ projects = [], onNewProject, onRenameProject, onDeleteProject, onOpenProject }) {
+export default function ProjectList({ serverReachable, projects = [], onNewProject, onRenameProject, onDeleteProject, onOpenProject }) {
+  if (serverReachable === false) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3" style={{ flex: 1, paddingTop: '80px' }}>
+        <div className="flex items-center gap-2 px-16 py-2 rounded-lg text-sm" style={{ backgroundColor: 'rgba(255,77,79,0.1)', color: '#FF4D4F' }}>
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1L13 12H1L7 1Z" stroke="#FF4D4F" strokeLinejoin="round"/><path d="M7 5V8" stroke="#FF4D4F" strokeLinecap="round"/><circle cx="7" cy="10.5" r="0.5" fill="#FF4D4F"/></svg>
+          后端服务连接异常，部分功能不可用
+        </div>
+      </div>
+    );
+  }
+
   const [searchValue, setSearchValue] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchHovered, setSearchHovered] = useState(false);

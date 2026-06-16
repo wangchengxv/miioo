@@ -22,3 +22,8 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+.miioo-git-dir/
+
+# video files
+*.mp4
+*.mov

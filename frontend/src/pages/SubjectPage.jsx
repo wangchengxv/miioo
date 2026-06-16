@@ -1,10 +1,34 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
+import { createPortal } from 'react-dom';
+import DotsLoading from '../components/DotsLoading';
 import BatchGenerateModal from '../components/BatchGenerateModal';
 import AssetPickerModal from '../components/AssetPickerModal';
-import { apiCreateSubject, apiUpdateSubject, apiDeleteSubject, apiGenerateSubjectImage, apiBatchGenerate, apiGetEpisodes, apiGetModels } from '../api/subject';
+import { apiCreateSubject, apiUpdateSubject, apiDeleteSubject, apiGenerateSubjectImage, apiGetSubjects, apiBatchGenerateStream, apiGetSubjectDetail, apiGetSubjectImages, apiBindSubjectReferenceImages, apiDownloadSubjectImage, apiSetPrimarySubjectImage } from '../api/subject';
+// 模型能力直接从后端 capabilities 获取
+import { apiGetProjects } from '../api/project';
+import { apiGetAssets } from '../api/assets';
+import { apiListModels } from '../api/config';
+import { apiGetVoices } from '../api/voices';
+import placeholderImg from '../assets/placeholder-img.webp';
+import scenePlaceholderImg from '../assets/Mountain landscape.avif';
+import propPlaceholderImg from '../assets/Tool box silhouette.avif';
+import { normalizeImageUrl } from '../utils/imageUrl';
+import ConfirmDialog from '../components/ConfirmDialog';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
+
+// ── 工具：触发浏览器下载 Blob ──────────────────────────────────────────
+function triggerBlobDownload(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  URL.revokeObjectURL(url);
+}
 
 // ── Ghost button (添加角色 / 批量生成角色) ─────────────────────────────────
 
@@ -45,148 +69,127 @@ function GhostButton({ icon, label, fontSize = 14, onClick }) {
 
 // ── Primary button (开始智能分镜) ──────────────────────────────────────────
 
-function PrimaryButton({ icon, label, onClick }) {
+function PrimaryButton({ icon, label, onClick, disabled = false, loading = false }) {
+  const dimmed = disabled || loading;
   const [pressed, setPressed] = useState(false);
+  const [hovered, setHovered] = useState(false);
+  const interactive = !dimmed;
+
+  const getOpacity = () => {
+    if (dimmed) return 0.45;
+    if (pressed) return 0.75;
+    if (hovered) return 0.88;
+    return 1;
+  };
+
   return (
     <div
-      className="flex items-center shrink-0 rounded-[8px] gap-[4px] px-[16px] cursor-pointer border border-solid border-[#FFFFFF33] bg-origin-border [outline:1px_solid_#00000080]"
+      className="flex items-center shrink-0 rounded-[8px] gap-[4px] px-[16px] border border-solid border-[#FFFFFF33] bg-origin-border [outline:1px_solid_#00000080]"
       style={{
         height: '36px',
-        backgroundColor: pressed ? '#1E9BB5' : '#2DC3E1',
+        backgroundColor: '#2DC3E1',
         backgroundImage: 'linear-gradient(in oklab 107.51deg, oklab(84.6% -0.114 0.031 / 30%) 8.14%, oklab(84.6% -0.114 0.031 / 0%) 54.48%)',
-        transition: 'background-color 0.1s',
+        opacity: getOpacity(),
+        transform: dimmed ? 'none' : pressed ? 'scale(0.97)' : 'scale(1)',
+        cursor: interactive ? 'pointer' : 'not-allowed',
+        transition: 'opacity 0.15s, transform 0.1s',
       }}
-      onMouseEnter={(e) => { if (!pressed) e.currentTarget.style.backgroundColor = '#52D4ED'; }}
-      onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = pressed ? '#1E9BB5' : '#2DC3E1'; setPressed(false); }}
-      onMouseDown={(e) => { setPressed(true); e.currentTarget.style.backgroundColor = '#1E9BB5'; }}
-      onMouseUp={(e) => { setPressed(false); e.currentTarget.style.backgroundColor = '#52D4ED'; }}
-      onClick={onClick}
+      onMouseEnter={() => { if (interactive) setHovered(true); }}
+      onMouseLeave={() => { if (interactive) { setHovered(false); setPressed(false); } }}
+      onMouseDown={() => { if (interactive) setPressed(true); }}
+      onMouseUp={() => { if (interactive) setPressed(false); }}
+      onClick={interactive ? onClick : undefined}
     >
-      {icon}
+      {loading ? <DotsLoading size={3} color="#090909" gap={3} /> : icon}
       <span
         className="inline-block w-max shrink-0 font-medium"
         style={{ fontFamily: FONT_MEDIUM, fontSize: '14px', lineHeight: '18px', color: '#090909' }}
       >
-        {label}
+        {loading ? '生成中…' : label}
       </span>
     </div>
   );
 }
 
-// ── Episode selector (breadcrumb dropdown) ────────────────────────────────
+// ── Confirm storyboard modal (二次确认弹窗) ────────────────────────────────
 
-const ITEM_HEIGHT = 36; // px per option row (py-[8px] * 2 + 20px line-height)
-const MAX_VISIBLE = 10;
-
-function EpisodeSelector({ episodes, value, onChange }) {
-  const [open, setOpen] = useState(false);
-  const [hovered, setHovered] = useState(false);
-  const [hoveredIdx, setHoveredIdx] = useState(null);
-  const rootRef = useRef(null);
-
-  useEffect(() => {
-    if (!open) return;
-    function onDown(e) {
-      if (rootRef.current && !rootRef.current.contains(e.target)) setOpen(false);
-    }
-    document.addEventListener('mousedown', onDown);
-    return () => document.removeEventListener('mousedown', onDown);
-  }, [open]);
-
-  const dropdownMaxH = ITEM_HEIGHT * MAX_VISIBLE + 8; // 8px = 2 * p-[4px]
-
-  return (
-    <div ref={rootRef} style={{ position: 'relative', display: 'inline-flex', flexShrink: 0 }}>
-      {open ? (
-        /* ── Input trigger (open state) ── */
-        <div
-          className="flex items-center gap-[6px] h-[28px] pl-[10px] pr-[6px] rounded-[6px] cursor-pointer border border-solid bg-input-bg-normal border-input-border-focus [outline:1px_solid_var(--color-stroke-outline)]"
-          style={{ boxShadow: '0px 0px 10px var(--color-glow)', minWidth: '80px' }}
-          onClick={() => setOpen(false)}
-        >
-          <span
-            className="flex-1 text-input-text-content text-font-size-14 shrink-0"
-            style={{ fontFamily: FONT_MEDIUM, fontWeight: 500, lineHeight: '20px' }}
+function ConfirmStoryboardModal({ onConfirm, onCancel }) {
+  return createPortal(
+    <div
+      style={{
+        position: 'fixed', inset: 0, zIndex: 60, display: 'flex',
+        alignItems: 'center', justifyContent: 'center',
+        backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(12px)',
+        WebkitBackdropFilter: 'blur(12px)',
+      }}
+      onClick={onCancel}
+    >
+      <div
+        style={{
+          width: '360px', background: '#161616', borderRadius: '16px',
+          padding: '24px', display: 'flex', flexDirection: 'column', gap: '24px',
+          boxShadow: '#00000099 0px 8px 32px',
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+            <span style={{ fontFamily: FONT_MEDIUM, fontWeight: 500, fontSize: '16px', lineHeight: '20px', color: '#FFFFFF' }}>
+              确定要重新生成分镜吗？
+            </span>
+            <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.6)' }}>
+              本次智能分镜会覆盖之前的分镜内容，一旦生成不可撤销，请谨慎操作！
+            </span>
+          </div>
+          <button
+            type="button"
+            onClick={onCancel}
+            style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', cursor: 'pointer', borderRadius: '8px', padding: 0, flexShrink: 0 }}
           >
-            {value}
-          </span>
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
-            <path d="M10.5 5.833L7 9.333L3.5 5.833H10.5Z" fill="#FFFFFF99" stroke="#FFFFFF99" strokeWidth="1.167" strokeLinejoin="round" />
-          </svg>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+              <path d="M2.667 2.667L13.333 13.333" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+              <path d="M2.667 13.333L13.333 2.667" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </button>
         </div>
-      ) : (
-        /* ── Breadcrumb label (closed state) ── */
-        <div
-          className="flex items-center rounded-[6px] cursor-pointer"
-          style={{
-            height: '28px',
-            padding: '0 6px',
-            backgroundColor: hovered ? '#FFFFFF0F' : 'transparent',
-            transition: 'background-color 0.12s',
-          }}
-          onMouseEnter={() => setHovered(true)}
-          onMouseLeave={() => setHovered(false)}
-          onClick={() => setOpen(true)}
-        >
-          <span style={{ fontFamily: FONT_MEDIUM, fontSize: '14px', lineHeight: '20px', color: '#FFFFFFD9', fontWeight: 500 }}>
-            {value}
-          </span>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px' }}>
+          <button
+            type="button"
+            onClick={onCancel}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              height: '36px', flexShrink: 0, borderRadius: '8px',
+              paddingLeft: '16px', paddingRight: '16px',
+              boxShadow: '#00000066 3px 3px 8px',
+              backgroundColor: '#161616', border: '1px solid #FFFFFF14',
+              outline: '1px solid #00000080', cursor: 'pointer',
+              fontFamily: FONT, fontSize: '14px', lineHeight: '18px',
+              color: 'rgba(255,255,255,0.6)',
+            }}
+          >
+            取消
+          </button>
+          <button
+            type="button"
+            onClick={onConfirm}
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center',
+              height: '36px', flexShrink: 0, borderRadius: '8px',
+              paddingLeft: '16px', paddingRight: '16px',
+              backgroundColor: '#E87B35', border: '1px solid rgba(255,255,255,0.2)',
+              cursor: 'pointer',
+              fontFamily: FONT_MEDIUM, fontSize: '14px', lineHeight: '18px',
+              color: '#FFFFFF', fontWeight: 500,
+            }}
+          >
+            确认重新生成
+          </button>
         </div>
-      )}
-
-      {/* ── Dropdown panel ── */}
-      {open && (
-        <div
-          className="flex flex-col rounded-medium bg-select-bg border border-select-border absolute z-50"
-          style={{
-            top: 'calc(100% + 4px)',
-            left: 0,
-            minWidth: '100%',
-            padding: '4px',
-            boxShadow: '0px 4px 16px var(--color-select-shadow)',
-            maxHeight: `${dropdownMaxH}px`,
-            overflowY: episodes.length > MAX_VISIBLE ? 'auto' : 'visible',
-          }}
-        >
-          {episodes.map((ep, i) => {
-            const isActive = ep === value;
-            const isHov = hoveredIdx === i;
-            return (
-              <div
-                key={ep}
-                className="flex items-center px-[12px] rounded-md shrink-0"
-                style={{
-                  height: `${ITEM_HEIGHT}px`,
-                  cursor: 'pointer',
-                  backgroundColor: isActive
-                    ? 'var(--color-select-item-bg-active)'
-                    : isHov
-                    ? 'var(--color-select-item-bg-hover)'
-                    : 'transparent',
-                  color: isActive || isHov
-                    ? 'var(--color-select-item-text-hover)'
-                    : 'var(--color-select-item-text-normal)',
-                }}
-                onMouseEnter={() => setHoveredIdx(i)}
-                onMouseLeave={() => setHoveredIdx(null)}
-                onClick={() => { onChange(ep); setOpen(false); }}
-              >
-                <span
-                  className="w-fit shrink-0 text-font-size-14 font-font-weight-regular"
-                  style={{ fontFamily: FONT }}
-                >
-                  {ep}
-                </span>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
+      </div>
+    </div>,
+    document.body,
   );
 }
-
-// ── Toolbar ────────────────────────────────────────────────────────────────
 
 function Toolbar({ projectName, onBack, onAddChar, onBatchGen, onStartStoryboard, addLabel = '添加角色', tabLabel = '角色' }) {
   const [arrowHovered, setArrowHovered] = useState(false);
@@ -234,6 +237,8 @@ function Toolbar({ projectName, onBack, onAddChar, onBatchGen, onStartStoryboard
         <PrimaryButton
           label="开始智能分镜"
           onClick={onStartStoryboard}
+          disabled={false}
+          loading={false}
           icon={
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
               <path d="M5.333 2H2.667C2.298 2 2 2.298 2 2.667V5.333" stroke="#090909" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
@@ -308,9 +313,6 @@ function TabNav({ activeTab, counts, onChange }) {
                   </span>
                 </div>
               </div>
-              {isActive && (
-                <div className="self-stretch shrink-0" style={{ height: '2px', backgroundColor: '#DDDDDD' }} />
-              )}
             </div>
           );
         })}
@@ -321,7 +323,8 @@ function TabNav({ activeTab, counts, onChange }) {
 
 // ── Voice select modal ─────────────────────────────────────────────────────
 
-const VOICE_OPTIONS = ['霸气威武', '高冷御姐', '温柔甜美', '活泼少年', '沉稳大叔', '清新少女', '磁性男声', '俏皮萝莉'];
+const GENDER_OPTIONS = ['不限', '男', '女'];
+const AGE_OPTIONS = ['不限', '幼年', '青年', '中年', '老年'];
 
 const ChevronDownIcon = () => (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
@@ -355,31 +358,108 @@ const PlayingWaveIcon = ({ color = '#2DC3E1', size = 16 }) => (
   </div>
 );
 
-function SelectField({ label, value }) {
+function SelectField({ label, value, options = [], onChange }) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const hasOptions = options.length > 0;
+
   return (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: 1 }}>
+    <div ref={ref} style={{ display: 'flex', flexDirection: 'column', gap: '8px', flex: '0 0 23.4%', position: 'relative' }}>
       <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF99' }}>{label}</span>
-      <div
+      <button
+        type="button"
+        onClick={() => hasOptions && setOpen((v) => !v)}
         style={{
           display: 'flex', alignItems: 'center', height: '36px', width: '100%',
           borderRadius: '8px', padding: '0 12px', gap: '8px',
-          background: '#1D1E1E', border: '1px solid #FFFFFF14', outline: '1px solid #00000080',
+          background: open ? '#252525' : '#1D1E1E',
+          border: `1px solid ${open ? '#FFFFFF33' : '#FFFFFF14'}`,
+          outline: `1px solid ${open ? '#2DC3E180' : '#00000080'}`,
+          cursor: hasOptions ? 'pointer' : 'default',
+          transition: 'background 0.2s, border-color 0.2s',
         }}
       >
-        <span style={{ flex: 1, fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF' }}>{value}</span>
+        <span style={{ flex: 1, fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF', textAlign: 'left' }}>{value}</span>
         <ChevronDownIcon />
-      </div>
+      </button>
+      {open && hasOptions && (
+        <div
+          style={{
+            position: 'absolute', top: 'calc(100% + 4px)', left: 0, zIndex: 60,
+            width: '100%', borderRadius: '8px', padding: '4px',
+            background: '#1D1E1E', border: '1px solid #FFFFFF14',
+            outline: '1px solid #00000080',
+            boxShadow: '0px 4px 16px rgba(0,0,0,0.6)',
+          }}
+        >
+          {options.map((opt) => {
+            const isSelected = opt === value;
+            return (
+              <button
+                key={opt}
+                type="button"
+                onClick={() => { onChange?.(opt); setOpen(false); }}
+                style={{
+                  display: 'flex', width: '100%', alignItems: 'center',
+                  borderRadius: '6px', padding: '8px 12px',
+                  textAlign: 'left', border: 'none',
+                  background: isSelected ? '#FFFFFF14' : 'transparent',
+                  color: isSelected ? '#FFFFFF' : '#FFFFFFCC',
+                  fontFamily: FONT, fontSize: '14px', lineHeight: '18px',
+                  cursor: 'pointer',
+                }}
+              >
+                {opt}
+              </button>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }
-
-function VoiceCard({ label, active, onClick }) {
+function VoiceCard({ label, active, onClick, previewUrl }) {
   const [playing, setPlaying] = useState(false);
+  const audioRef = useRef(null);
+
+  useEffect(() => {
+    return () => {
+      if (audioRef.current) {
+        audioRef.current.pause();
+        audioRef.current = null;
+      }
+    };
+  }, []);
+
+  const handlePlay = (e) => {
+    e.stopPropagation();
+    if (!previewUrl) return;
+    if (playing) {
+      audioRef.current?.pause();
+      audioRef.current = null;
+      setPlaying(false);
+    } else {
+      const audio = new Audio(previewUrl);
+      audioRef.current = audio;
+      audio.play().catch(() => setPlaying(false));
+      audio.onended = () => { audioRef.current = null; setPlaying(false); };
+      audio.onerror = () => { audioRef.current = null; setPlaying(false); };
+      setPlaying(true);
+    }
+  };
   return (
     <div
       onClick={onClick}
       style={{
-        flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
+        flex: '0 0 23.4%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center',
         gap: '6px', borderRadius: '8px', padding: '8px', cursor: 'pointer',
         background: '#1D1E1E',
         border: `1px solid ${active ? '#2DC3E1' : '#FFFFFF14'}`,
@@ -388,12 +468,13 @@ function VoiceCard({ label, active, onClick }) {
     >
       <button
         type="button"
-        onClick={(e) => { e.stopPropagation(); setPlaying((v) => !v); }}
-        style={{ background: 'transparent', border: 'none', padding: 0, cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center' }}
+        onClick={handlePlay}
+        disabled={!previewUrl}
+        style={{ background: 'transparent', border: 'none', padding: 0, cursor: previewUrl ? 'pointer' : 'default', display: 'flex', alignItems: 'center', justifyContent: 'center', opacity: previewUrl ? 1 : 0.3 }}
       >
         {playing
           ? <PlayingWaveIcon color="#2DC3E1" size={16} />
-          : <HeadphoneIcon color="#2DC3E1" />
+          : <HeadphoneIcon color={previewUrl ? '#2DC3E1' : '#FFFFFF99'} />
         }
       </button>
       <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '17px', color: active ? '#2DC3E1' : '#FFFFFF99', textAlign: 'center' }}>
@@ -403,15 +484,47 @@ function VoiceCard({ label, active, onClick }) {
   );
 }
 
-function VoiceSelectModal({ open, onClose, onConfirm, currentVoice }) {
-  const [selected, setSelected] = useState(currentVoice || VOICE_OPTIONS[0]);
+function VoiceSelectModal({ open, onClose, onConfirm, currentVoice, onVoicesLoaded }) {
+  const [voices, setVoices] = useState([]);
+  const [loading, setLoading] = useState(false);
+  const [selected, setSelected] = useState(currentVoice || '');
+  const [gender, setGender] = useState('不限');
+  const [age, setAge] = useState('不限');
+
+  useEffect(() => {
+    if (!open) return;
+    setLoading(true);
+    apiGetVoices({ tab: 'all' })
+      .then((data) => {
+        const list = Array.isArray(data) ? data : data?.items ?? data?.voices ?? [];
+        setVoices(list);
+        onVoicesLoaded?.(list);
+      })
+      .catch(() => setVoices([]))
+      .finally(() => setLoading(false));
+  }, [open]);
+
+
+  const filteredVoices = useMemo(() => {
+    return voices.filter((v) => {
+      if (gender !== '不限' && v.gender !== gender) return false;
+      if (age !== '不限' && v.age_group !== age) return false;
+      if (v.language !== '中文') return false;
+      return true;
+    });
+  }, [voices, gender, age]);
 
   if (!open) return null;
 
   const rows = [];
-  for (let i = 0; i < VOICE_OPTIONS.length; i += 4) {
-    rows.push(VOICE_OPTIONS.slice(i, i + 4));
+  for (let i = 0; i < filteredVoices.length; i += 4) {
+    rows.push(filteredVoices.slice(i, i + 4));
   }
+
+  const handleConfirm = () => {
+    onConfirm?.(selected);
+    onClose();
+  };
 
   return (
     <div
@@ -425,7 +538,7 @@ function VoiceSelectModal({ open, onClose, onConfirm, currentVoice }) {
     >
       <div
         style={{
-          width: '400px', background: '#161616',
+          width: '800px', height: '600px', background: '#161616',
           border: '1px solid rgba(255,255,255,0.08)',
           borderRadius: '16px', overflow: 'hidden',
           display: 'flex', flexDirection: 'column',
@@ -433,7 +546,7 @@ function VoiceSelectModal({ open, onClose, onConfirm, currentVoice }) {
         onClick={(e) => e.stopPropagation()}
       >
         {/* header */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 24px', background: '#161616' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 24px', background: '#161616', flexShrink: 0 }}>
           <span style={{ fontFamily: FONT_MEDIUM, fontWeight: 500, fontSize: '16px', lineHeight: '20px', color: '#FFFFFF', flex: 1 }}>
             选择音色
           </span>
@@ -449,29 +562,35 @@ function VoiceSelectModal({ open, onClose, onConfirm, currentVoice }) {
           </button>
         </div>
 
-        {/* filters */}
-        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '8px 24px', background: '#161616' }}>
-          <div style={{ display: 'flex', gap: '16px' }}>
-            <SelectField label="性别" value="不限" />
-            <SelectField label="年龄" value="不限" />
-          </div>
-          <div style={{ display: 'flex', gap: '16px' }}>
-            <SelectField label="情感" value="不限" />
-            <SelectField label="语种" value="中文" />
-          </div>
+        {/* filters — 性别/年龄/情感 一行 */}
+        <div style={{ display: 'flex', gap: '16px', padding: '8px 24px', background: '#161616', flexShrink: 0 }}>
+          <SelectField label="性别" value={gender} options={GENDER_OPTIONS} onChange={setGender} />
+          <SelectField label="年龄" value={age} options={AGE_OPTIONS} onChange={setAge} />
+        </div>
 
-          {/* voice grid */}
-          {rows.map((row, ri) => (
+        {/* voice grid */}
+        <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', padding: '8px 24px 16px', background: '#161616', flex: 1, overflowY: 'auto' }}>
+          {loading && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1 }}>
+              <DotsLoading size={6} color="#2DC3E1" gap={4} />
+            </div>
+          )}
+          {!loading && filteredVoices.length === 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', flex: 1 }}>
+              <span style={{ fontFamily: FONT, fontSize: '14px', color: '#FFFFFF66' }}>暂无匹配音色</span>
+            </div>
+          )}
+          {!loading && rows.map((row, ri) => (
             <div key={ri} style={{ display: 'flex', gap: '14px' }}>
               {row.map((v) => (
-                <VoiceCard key={v} label={v} active={selected === v} onClick={() => setSelected(v)} />
+                <VoiceCard key={v.voice_id} label={`${v.name}-${v.style}`} active={selected === v.voice_id} onClick={() => setSelected(v.voice_id)} previewUrl={v.preview_url} />
               ))}
             </div>
           ))}
         </div>
 
         {/* footer */}
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '16px', padding: '16px 24px', background: '#161616' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '16px', padding: '16px 24px', background: '#161616', flexShrink: 0 }}>
           <button
             type="button"
             onClick={onClose}
@@ -491,7 +610,7 @@ function VoiceSelectModal({ open, onClose, onConfirm, currentVoice }) {
               boxShadow: '#00000066 3px 3px 8px', outline: '1px solid #00000080',
               cursor: 'pointer', display: 'flex',
             }}
-            onClick={() => { onConfirm?.(selected); onClose(); }}
+            onClick={handleConfirm}
           >
             <div style={{ display: 'flex', alignItems: 'center', flex: 1, borderRadius: '7px', padding: '0 15px', background: '#161616' }}>
               <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF', whiteSpace: 'nowrap' }}>确认</span>
@@ -505,110 +624,7 @@ function VoiceSelectModal({ open, onClose, onConfirm, currentVoice }) {
 
 // ── Delete confirm modal ───────────────────────────────────────────────────
 
-function DeleteConfirmModal({ onCancel, onConfirm }) {
-  return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 100,
-        display: 'flex',
-        alignItems: 'center',
-        justifyContent: 'center',
-        backgroundColor: 'rgba(0,0,0,0.5)',
-        backdropFilter: 'blur(12px)',
-        WebkitBackdropFilter: 'blur(12px)',
-      }}
-      onClick={onCancel}
-    >
-      <div
-        style={{
-          width: '360px',
-          background: '#161616',
-          borderRadius: '16px',
-          padding: '24px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: '24px',
-          boxShadow: '#00000099 0px 8px 32px',
-        }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <span style={{ fontFamily: FONT_MEDIUM, fontWeight: 500, fontSize: '16px', lineHeight: '20px', color: '#FFFFFF' }}>
-              确定要删除吗？
-            </span>
-            <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.6)' }}>
-              删除后，该主体相关数据将被清除且不可恢复。
-            </span>
-          </div>
-          <button
-            type="button"
-            onClick={onCancel}
-            style={{ width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'transparent', border: 'none', cursor: 'pointer', borderRadius: '8px', padding: 0, flexShrink: 0 }}
-          >
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
-              <path d="M2.667 2.667L13.333 13.333" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
-              <path d="M2.667 13.333L13.333 2.667" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '12px' }}>
-          <button
-            type="button"
-            onClick={onCancel}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              height: '36px',
-              flexShrink: 0,
-              borderRadius: '8px',
-              paddingLeft: '16px',
-              paddingRight: '16px',
-              boxShadow: '#00000066 3px 3px 8px',
-              backgroundColor: '#161616',
-              border: '1px solid #FFFFFF14',
-              outline: '1px solid #00000080',
-              cursor: 'pointer',
-              fontFamily: FONT,
-              fontSize: '14px',
-              lineHeight: '18px',
-              color: 'rgba(255,255,255,0.6)',
-            }}
-          >
-            取消
-          </button>
-          <button
-            type="button"
-            onClick={onConfirm}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              height: '36px',
-              flexShrink: 0,
-              borderRadius: '8px',
-              paddingLeft: '16px',
-              paddingRight: '16px',
-              backgroundColor: '#D13B3B',
-              border: '1px solid rgba(255,255,255,0.2)',
-              cursor: 'pointer',
-              fontFamily: FONT_MEDIUM,
-              fontWeight: 500,
-              fontSize: '14px',
-              lineHeight: '18px',
-              color: '#FFFFFF',
-            }}
-          >
-            删除
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
+// DeleteConfirmModal 已迁移至 ConfirmDialog 共享组件
 
 // ── Character card ─────────────────────────────────────────────────────────
 
@@ -720,18 +736,44 @@ function MoreMenu({ onDownload, onDelete }) {
       </div>
 
       {showConfirm && (
-        <DeleteConfirmModal
+        <ConfirmDialog
+          title="确定要删除吗？"
+          description="删除后，该主体相关数据将被清除且不可恢复。"
+          confirmText="删除"
           onCancel={() => setShowConfirm(false)}
           onConfirm={() => { setShowConfirm(false); onDelete?.(); }}
+          zIndex={100}
         />
       )}
     </>
   );
 }
 
-function CharCard({ name, desc, imageUrl, voice, onVoiceClick, onClick }) {
+function CharCard({ name, desc, imageUrl, voice, voiceName, voicePreviewUrl, onVoiceClick, onClick, onDownloadImage, onDeleteSubject, placeholderImg: cardPlaceholder = placeholderImg, loading = false }) {
   const [hovered, setHovered] = useState(false);
   const [voicePlaying, setVoicePlaying] = useState(false);
+  const voiceAudioRef = useRef(null);
+
+  const handleVoicePlay = (e) => {
+    e.stopPropagation();
+    if (voicePlaying) {
+      voiceAudioRef.current?.pause();
+      voiceAudioRef.current = null;
+      setVoicePlaying(false);
+      return;
+    }
+    if (voicePreviewUrl) {
+      const audio = new Audio(voicePreviewUrl);
+      voiceAudioRef.current = audio;
+      audio.play().catch(() => setVoicePlaying(false));
+      audio.onended = () => { voiceAudioRef.current = null; setVoicePlaying(false); };
+      audio.onerror = () => { voiceAudioRef.current = null; setVoicePlaying(false); };
+      setVoicePlaying(true);
+    } else {
+      setVoicePlaying(true);
+      setTimeout(() => setVoicePlaying(false), 1500);
+    }
+  };
 
   return (
     <div
@@ -739,33 +781,38 @@ function CharCard({ name, desc, imageUrl, voice, onVoiceClick, onClick }) {
       style={{ height: '246px', outline: hovered ? '1px solid #FFFFFF26' : '1px solid transparent', transition: 'outline-color 0.15s' }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      onClick={onClick}
+      onClick={loading ? undefined : onClick}
     >
       {/* image area */}
       <div
         className="flex items-center justify-center flex-1 self-stretch relative"
         style={{
           minHeight: '148px',
-          backgroundImage: imageUrl
-            ? `url(${imageUrl})`
-            : 'linear-gradient(in oklab 145deg, oklab(27.6% -0.014 -0.012) 0%, oklab(23.8% -0.010 -0.019) 100%)',
+          backgroundImage: `url(${imageUrl || cardPlaceholder})`,
           backgroundSize: 'cover',
           backgroundPosition: '50%',
         }}
       >
-        {!imageUrl && (
-          <svg width="40" height="40" viewBox="0 0 40 40" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
-            <circle cx="20" cy="20" r="20" fill="#FFFFFF0A" />
-            <path d="M20 12C16.69 12 14 14.69 14 18C14 20.48 15.43 22.63 17.5 23.65V26C17.5 26.55 17.95 27 18.5 27H21.5C22.05 27 22.5 26.55 22.5 26V23.65C24.57 22.63 26 20.48 26 18C26 14.69 23.31 12 20 12Z" fill="#FFFFFF26" />
-          </svg>
+        {/* 批量生成加载遮罩 */}
+        {loading && (
+          <div
+            className="absolute inset-0 z-10"
+            style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ position: 'absolute', top: '33%', left: '50%', transform: 'translate(-50%, -50%)' }}>
+              <DotsLoading size={6} color="#2DC3E1" gap={4} />
+            </div>
+          </div>
         )}
-        {/* top-right actions */}
+
+        {/* top-right actions — 加载中隐藏 */}
         <div
           className="absolute flex gap-[4px]"
-          style={{ top: '8px', right: '8px', opacity: hovered ? 1 : 0, transition: 'opacity 0.15s' }}
+          style={{ top: '8px', right: '8px', opacity: hovered && !loading ? 1 : 0, transition: 'opacity 0.15s' }}
           onClick={(e) => e.stopPropagation()}
         >
-          <MoreMenu onDownload={() => {}} onDelete={() => {}} />
+          <MoreMenu onDownload={() => onDownloadImage?.()} onDelete={() => onDeleteSubject?.()} />
         </div>
       </div>
 
@@ -789,37 +836,38 @@ function CharCard({ name, desc, imageUrl, voice, onVoiceClick, onClick }) {
         {/* voice row — characters only */}
         {onVoiceClick !== undefined && <div
           className="flex items-center justify-between"
-          style={{ gap: '6px' }}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '17px', color: '#FFFFFF66', flexShrink: 0 }}>
-            选择音色：
-          </span>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+       style={{ gap: '6px' }}
+        onClick={(e) => { e.stopPropagation(); onVoiceClick?.(); }}
+      >
+        <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '17px', color: '#FFFFFFCC', flexShrink: 0 }}>
+          选择音色：
+        </span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); onVoiceClick?.(); }}
               style={{
                 background: 'transparent', border: 'none', padding: 0, cursor: 'pointer',
-                fontFamily: FONT, fontSize: '12px', lineHeight: '17px', color: '#FFFFFF',
+                fontFamily: FONT, fontSize: '12px', lineHeight: '17px', color: (voiceName || voice) ? '#2DC3E1' : '#FFFFFF66',
+                maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
               }}
             >
-              {voice || '未选择'}
+              {voiceName || voice || '未选择'}
             </button>
             {/* headphone preview icon */}
             <button
               type="button"
-              title={!voice ? '请先选择音色' : voicePlaying ? '停止试听' : '试听'}
+              title={!voice ? '请先选择音色' : '试听'}
               disabled={!voice}
-              onClick={(e) => { e.stopPropagation(); if (voice) setVoicePlaying((v) => !v); }}
-              style={{ background: 'transparent', border: 'none', padding: 0, cursor: voice ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center' }}
+              onClick={handleVoicePlay}
+              style={{ background: 'transparent', border: 'none', padding: 0, cursor: voice ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', opacity: voice ? 1 : 0.3 }}
             >
-              {voicePlaying && voice
-                ? <PlayingWaveIcon color="#2DC3E1" size={16} />
-                : <HeadphoneIcon color={voice ? '#2DC3E1' : '#FFFFFF26'} />
-              }
-            </button>
-          </div>
+              {voicePlaying
+              ? <PlayingWaveIcon color="#2DC3E1" size={16} />
+              : <HeadphoneIcon color={voice ? '#2DC3E1' : '#FFFFFF66'} />
+            }
+          </button>
+        </div>
         </div>}
       </div>
     </div>
@@ -856,11 +904,12 @@ function AddCard({ onClick }) {
 
 const INITIAL_CHARS = [
   { id: 1, name: '虎大', desc: '森林里最年长的老虎，性格沉稳，是两兄弟中的大哥，负责保护弟弟虎二。', imageUrl: null, voice: '霸气威武' },
-  { id: 2, name: '虎二', desc: '活泼好动的小老虎，总是惹麻烦，但心地善良，对哥哥虎大十分依赖。', imageUrl: null, voice: '霸气威武' },
-  { id: 3, name: '狐狸阿九', desc: '狡猾却重情义的狐狸，表面上爱耍小聪明，关键时刻总会挺身而出。', imageUrl: null, voice: '霸气威武' },
-  { id: 4, name: '老猫头鹰', desc: '森林里的智者，见过无数风雨，总在两只老虎迷路时给出关键指引。', imageUrl: null, voice: '霸气威武' },
-  { id: 5, name: '小松鼠', desc: '话多又热心的小松鼠，是森林里的消息灵通人士，喜欢收集各种坚果和秘密。', imageUrl: null, voice: '霸气威武' },
-  { id: 6, name: '大灰狼', desc: '看似凶猛的反派，实则只是想找人一起玩，孤独是他最大的秘密。', imageUrl: null, voice: '霸气威武' },
+  { id: 1, name: '虎大', desc: '森林里最年长的老虎，性格沉稳，是两兄弟中的大哥，负责保护弟弟虎二。', imageUrl: null, voice: null },
+  { id: 2, name: '虎二', desc: '活泼好动的小老虎，总是惹麻烦，但心地善良，对哥哥虎大十分依赖。', imageUrl: null, voice: null },
+  { id: 3, name: '狐狸阿九', desc: '狡猾却重情义的狐狸，表面上爱耍小聪明，关键时刻总会挺身而出。', imageUrl: null, voice: null },
+  { id: 4, name: '老猫头鹰', desc: '森林里的智者，见过无数风雨，总在两只老虎迷路时给出关键指引。', imageUrl: null, voice: null },
+  { id: 5, name: '小松鼠', desc: '话多又热心的小松鼠，是森林里的消息灵通人士，喜欢收集各种坚果和秘密。', imageUrl: null, voice: null },
+  { id: 6, name: '大灰狼', desc: '看似凶猛的反派，实则只是想找人一起玩，孤独是他最大的秘密。', imageUrl: null, voice: null },
 ];
 
 const MOCK_PROPS = [];
@@ -937,7 +986,7 @@ function UploadBtn({ label, onClick }) {
 
 // Upload card — only item shown by default; hover state on card
 
-function ImageItemUpload({ onUpload }) {
+function ImageItemUpload({ onUpload, projectId }) {
   const [hovered, setHovered] = useState(false);
   const [assetPickerOpen, setAssetPickerOpen] = useState(false);
   const fileInputRef = useRef(null);
@@ -948,6 +997,7 @@ function ImageItemUpload({ onUpload }) {
         open={assetPickerOpen}
         onClose={() => setAssetPickerOpen(false)}
         onConfirm={(ids) => { if (ids.length > 0) onUpload?.(ids[0]); }}
+        projectId={projectId}
       />
       <div
         onMouseEnter={() => setHovered(true)}
@@ -965,7 +1015,7 @@ function ImageItemUpload({ onUpload }) {
           type="file"
           accept="image/*"
           style={{ display: 'none' }}
-          onChange={(e) => { if (e.target.files?.[0]) onUpload?.(e.target.files[0]); e.target.value = ''; }}
+          onChange={(e) => { const file = e.target.files?.[0]; if (file) { if (file.size > 5 * 1024 * 1024) { alert('抱歉，平台暂不支持上传5M以上的图片资源！'); e.target.value = ''; return; } onUpload?.(file); } e.target.value = ''; }}
         />
         <UploadBtn label="本地上传" onClick={() => fileInputRef.current?.click()} />
         <UploadBtn label="从资产库选择" onClick={() => setAssetPickerOpen(true)} />
@@ -975,10 +1025,26 @@ function ImageItemUpload({ onUpload }) {
 }
 
 // Modal for viewing an uploaded image full-size
-function ImageViewModal({ open, imageUrl, onClose }) {
+function ImageViewModal({ open, imageUrl, imageId, projectId, subjectId, onClose }) {
   const [closeHovered, setCloseHovered] = useState(false);
   const [doneHovered, setDoneHovered] = useState(false);
   const [donePressed, setDonePressed] = useState(false);
+  const [downloadHovered, setDownloadHovered] = useState(false);
+  const [downloadPressed, setDownloadPressed] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+
+  async function handleDownload() {
+    if (downloading || !projectId || !subjectId || !imageId) return;
+    setDownloading(true);
+    try {
+      const blob = await apiDownloadSubjectImage(projectId, subjectId, imageId);
+      triggerBlobDownload(blob, `subject-image-${imageId}.jpg`);
+    } catch (err) {
+      console.error('[ImageViewModal] 下载失败:', err);
+    } finally {
+      setDownloading(false);
+    }
+  }
   if (!open) return null;
   return (
     <div
@@ -1025,6 +1091,30 @@ function ImageViewModal({ open, imageUrl, onClose }) {
               <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF' }}>完成</span>
             </div>
           </div>
+
+          {/* 下载按钮 */}
+          <div
+            className="flex flex-col shrink-0 rounded-[8px] cursor-pointer"
+            style={{ height: '36px', padding: '1px', backgroundImage: downloadHovered ? 'linear-gradient(in oklab 148.76deg, oklab(94.7% -0.078 -0.022 / 45%) 3.64%, oklab(75.5% -0.102 -0.072 / 0%) 42.81%), linear-gradient(in oklab 180deg, #FFFFFF1E, #FFFFFF1E)' : 'linear-gradient(in oklab 148.76deg, oklab(94.7% -0.078 -0.022 / 30%) 3.64%, oklab(75.5% -0.102 -0.072 / 0%) 42.81%), linear-gradient(in oklab 180deg, #FFFFFF14, #FFFFFF14)', boxShadow: '#00000066 3px 3px 8px', outline: '1px solid #00000080', transition: 'background-image 0.15s' }}
+            onClick={(e) => { e.stopPropagation(); handleDownload(); }}
+            onMouseEnter={() => setDownloadHovered(true)}
+            onMouseLeave={() => { setDownloadHovered(false); setDownloadPressed(false); }}
+            onMouseDown={() => setDownloadPressed(true)}
+            onMouseUp={() => setDownloadPressed(false)}
+          >
+            <div className="flex items-center flex-1 self-stretch rounded-[7px] gap-[4px] px-[15px]" style={{ backgroundColor: downloadPressed ? '#222222' : downloadHovered ? '#1C1C1C' : '#161616', transition: 'background-color 0.1s' }}>
+              {downloading ? (
+                <DotsLoading size={3} color="#FFFFFF" gap={2} />
+              ) : (
+                <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+                  <path d="M8 2.667V10" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M5.333 7.333L8 10L10.667 7.333" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+                  <path d="M2.667 12H13.333" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+              )}
+              <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF' }}>下载</span>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -1032,7 +1122,7 @@ function ImageViewModal({ open, imageUrl, onClose }) {
 }
 
 // Uploaded image card — interactive: hover highlights border, click toggles settled
-function ImageItem({ settled, imageUrl, onView, onSettledChange }) {
+function ImageItem({ settled, imageUrl, imageId, onView, onSettledChange, onDownload }) {
   const [hovered, setHovered] = useState(false);
 
   const borderColor = settled ? '#2DC3E1' : hovered ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.08)';
@@ -1053,7 +1143,7 @@ function ImageItem({ settled, imageUrl, onView, onSettledChange }) {
       <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
         {imageUrl
           ? <img src={imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-          : <div style={{ width: '93px', height: '144px', background: '#FFFFFF14', borderRadius: '4px' }} />
+          : <DotsLoading size={4} color="#2DC3E1" gap={3} />
         }
       </div>
 
@@ -1074,7 +1164,7 @@ function ImageItem({ settled, imageUrl, onView, onSettledChange }) {
               <path d="M10.667 2H13.333C13.701 2 14 2.298 14 2.667V5.333" stroke="#FFFFFFCC" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </IconBtn>
-          <IconBtn onClick={(e) => e.stopPropagation()}>
+          <IconBtn onClick={(e) => { e.stopPropagation(); onDownload?.(); }}>
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
               <path d="M8 2.667V10" stroke="#FFFFFFCC" strokeLinecap="round" strokeLinejoin="round" />
               <path d="M5.333 7.333L8 10L10.667 7.333" stroke="#FFFFFFCC" strokeLinecap="round" strokeLinejoin="round" />
@@ -1114,12 +1204,7 @@ function RadioOption({ label, checked, onChange }) {
 }
 
 // Per-model upload limits
-const MODEL_MAX_IMAGES = {
-  'Doubao-Seed-2.0-Pro': 3,
-  'Doubao-Seed-1.6': 2,
-  'FLUX.1-dev': 1,
-  'Stable Diffusion XL': 1,
-};
+
 
 function RefImageItem({ url, onRemove }) {
   const [hovered, setHovered] = useState(false);
@@ -1176,20 +1261,69 @@ function RefImageUploadCard({ onLocalUpload, onAssetPick }) {
   );
 }
 
-function RefImageField({ maxImages = 3 }) {
+function RefImageField({ maxImages = 3, projectId, subjectId, refImageIds = [], onRefImagesChange }) {
   const fileInputRef = useRef(null);
   const [refImages, setRefImages] = useState([]);
   const [assetPickerOpen, setAssetPickerOpen] = useState(false);
+  const [loadingRefs, setLoadingRefs] = useState(false);
+
+  // 当外部 refImageIds 变化时，加载对应的 URL
+  useEffect(() => {
+    if (!refImageIds || refImageIds.length === 0) return;
+    // 合并现有数据，保留已加载的 URL，避免覆盖 handleFile/handleAssetConfirm 刚设置的值
+    setRefImages(prev => {
+      if (typeof refImageIds[0] !== 'string') return prev;
+      return refImageIds.map(id => {
+        const existing = prev.find(p => p?.id === id);
+        if (existing?.url) return existing;
+        if (typeof id === 'string' && (id.startsWith('http') || id.startsWith('blob'))) {
+          return { url: id, id };
+        }
+        return { id, url: null };
+      });
+    });
+  }, [JSON.stringify(refImageIds)]);
 
   const canAddMore = refImages.length < maxImages;
 
   const handleFile = (file) => {
+    if (file.size > 5 * 1024 * 1024) {
+      alert('抱歉，平台暂不支持上传5M以上的图片资源！');
+      return;
+    }
     const url = URL.createObjectURL(file);
-    setRefImages((prev) => [...prev, url].slice(0, maxImages));
+    const newList = [...refImages, { url, id: url }].slice(0, maxImages);
+    setRefImages(newList);
+    // 通知父组件：上传本地文件作为参考图
+    if (onRefImagesChange) {
+      onRefImagesChange(newList.map(r => r.url));
+    }
   };
 
-  const handleAssetConfirm = (ids) => {
-    // ids are real asset IDs — URL resolution handled by the data layer when integrated
+  const handleAssetConfirm = (selectedAssets) => {
+    // 从资产库选择了资产，需要绑定到主体
+    const assetIds = selectedAssets.map(a => a.id);
+    const newList = [
+      ...refImages,
+      ...selectedAssets.map(a => ({ url: normalizeImageUrl(a.thumbnailUrl || a.thumbnail_url || a.originalUrl || a.original_url || a.url || a.file_url), id: a.id })),
+    ].slice(0, maxImages);
+    setRefImages(newList);
+    setAssetPickerOpen(false);
+
+    // 调用后端绑定参考图接口
+    if (projectId && subjectId && assetIds.length > 0) {
+      setLoadingRefs(true);
+      apiBindSubjectReferenceImages(projectId, subjectId, { asset_ids: assetIds })
+        .then(() => {
+          if (onRefImagesChange) {
+            onRefImagesChange(newList.map(r => r.id));
+          }
+        })
+        .catch((err) => {
+          console.error('[SubjectPage] 绑定参考图失败:', err);
+        })
+        .finally(() => setLoadingRefs(false));
+    }
   };
 
   return (
@@ -1199,6 +1333,7 @@ function RefImageField({ maxImages = 3 }) {
         open={assetPickerOpen}
         onClose={() => setAssetPickerOpen(false)}
         onConfirm={handleAssetConfirm}
+        projectId={projectId}
       />
       <input
         ref={fileInputRef}
@@ -1208,15 +1343,19 @@ function RefImageField({ maxImages = 3 }) {
         onChange={(e) => { if (e.target.files?.[0]) handleFile(e.target.files[0]); e.target.value = ''; }}
       />
       <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px' }}>
-        <span style={{ flex: 1, fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF99' }}>参考图</span>
+        <span style={{ flex: 1, fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF99' }}>参考图{loadingRefs ? '（绑定中…）' : ''}</span>
         <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF66' }}>{refImages.length}/{maxImages}</span>
       </div>
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: '10px', alignItems: 'flex-start' }}>
-        {refImages.map((url, i) => (
+        {refImages.map((item, i) => (
           <RefImageItem
-            key={url + i}
-            url={url}
-            onRemove={() => setRefImages((prev) => prev.filter((_, idx) => idx !== i))}
+            key={item.id ?? item.url + i}
+            url={item.url}
+            onRemove={() => {
+              const newList = refImages.filter((_, idx) => idx !== i);
+              setRefImages(newList);
+              if (onRefImagesChange) onRefImagesChange(newList.map(r => r.id));
+            }}
           />
         ))}
         {canAddMore && (
@@ -1230,25 +1369,282 @@ function RefImageField({ maxImages = 3 }) {
   );
 }
 
-function EditSubjectPanel({ char, tabLabel = '角色', onClose, onCommit, onCoverChange }) {
+// 模块级缓存：跨弹窗打开/关闭保留生成中的图片状态
+// key: subjectId, value: { placeholderId, status: 'pending'|'done', imageUrl?, rawUrl? }
+const pendingGenerations = new Map();
+
+function EditSubjectPanel({ projectId, char, tabLabel = '角色', projectRatio, onClose, onCommit, onCoverChange }) {
+  // ── 从后端拉取模型列表，直接使用后端 capabilities ──────────────
+  const [imageModels, setImageModels] = useState([]);
+  const [modelsLoading, setModelsLoading] = useState(true);
+
+  useEffect(() => {
+    (async () => {
+      let merged;
+      try {
+        const data = await apiListModels({ category: 'image' });
+        const list = Array.isArray(data) ? data : (data?.items || data?.models || []);
+        merged = list.map((m) => {
+          const modelId = m.model_id || m.id;
+         const caps = m.capabilities || {};
+          const resolutions = (caps.supported_resolutions?.length ? caps.supported_resolutions : caps.supported_sizes) || [];
+          const resolutionSizeMap = caps.resolution_size_map || {};
+          const ratios = caps.supported_aspect_ratios || [];
+          return {
+            value: modelId,
+            label: m.name || modelId,
+            resolutions,
+            resolutionSizeMap,
+            ratios,
+            is_default: m.is_default,
+            maxRefImages: caps.max_reference_images || 3,
+          };
+        });
+        setImageModels(merged.length > 0 ? merged : getFallbackModels());
+      } catch {
+        setImageModels(getFallbackModels());
+      } finally {
+        setModelsLoading(false);
+      }
+
+      // 如果角色没有预设模型，加载完后自动选中默认模型
+      if (merged.length > 0 && !char?.model && !char?.default_image_model) {
+        const def = merged.find(m => m.is_default) || merged[0];
+        if (def) setSelectedModel(def.value);
+      }
+    })();
+  }, [projectId]);
+
+  // 本地兜底（后端不可用时）
+  function getFallbackModels() {
+    return [
+      { value: 'doubao-seedream-5.0-lite', label: 'Doubao-Seed-5.0-Lite', resolutions: ['2K','3K','4K'], resolutionSizeMap: {}, ratios: ['1:1','16:9','9:16','4:3','3:4'], maxRefImages: 3 },
+      { value: 'doubao-seedream-4.5', label: 'Doubao-Seed-4.5', resolutions: ['2K','4K'], resolutionSizeMap: {}, ratios: ['1:1','16:9','9:16','4:3','3:4'], maxRefImages: 3 },
+      { value: 'doubao-seedream-4.0', label: 'Doubao-Seed-4.0', resolutions: ['1K','2K','4K'], resolutionSizeMap: {}, ratios: ['1:1','16:9','9:16','4:3','3:4'], maxRefImages: 3 },
+    ];
+  }
+
   const [closeHovered, setCloseHovered] = useState(false);
   const [genHovered, setGenHovered] = useState(false);
   const [genPressed, setGenPressed] = useState(false);
   const [promptFocused, setPromptFocused] = useState(false);
   const [promptHovered, setPromptHovered] = useState(false);
-  const [promptText, setPromptText] = useState('一只雄性成年孟加拉虎，大型健壮体型，肩背宽厚，四肢粗壮，橘黄色短毛，黑色条纹较粗且分布稳定，右眼上方有一道浅色旧疤，颈部一圈深棕色较长鬃毛，头部较大，口鼻宽，尾巴中等长度，站姿平稳，角色设定图。');
+  // 提示词：优先从 char 对象取，再从后端拉取
+  const [promptText, setPromptText] = useState(char?.prompt || char?.prompt_text || '');
   const [modelHovered, setModelHovered] = useState(false);
   const [modelOpen, setModelOpen] = useState(false);
-  const [selectedModel, setSelectedModel] = useState('Doubao-Seed-2.0-Pro');
+  // 模型：优先从 char 对象取，否则用默认
+  const [selectedModel, setSelectedModel] = useState(char?.model || char?.default_image_model || imageModels[0]?.value || 'doubao-seedream-5.0-lite');
+  const modelTriggerRef = useRef(null);
   const [ratioHovered, setRatioHovered] = useState(false);
   const [ratioOpen, setRatioOpen] = useState(false);
-  const [selectedRatio, setSelectedRatio] = useState('2:1');
-  const [qualityHovered, setQualityHovered] = useState(false);
-  const [qualityOpen, setQualityOpen] = useState(false);
-  const [selectedQuality, setSelectedQuality] = useState('1K');
+  const [selectedRatio, setSelectedRatio] = useState(char?.ratio || projectRatio || '16:9');
+  const ratioTriggerRef = useRef(null);
+  const [resolutionHovered, setResolutionHovered] = useState(false);
+  const [resolutionOpen, setResolutionOpen] = useState(false);
+  const [selectedResolution, setSelectedResolution] = useState(char?.resolution || '2K');
+  const resolutionTriggerRef = useRef(null);
+  const modelDropdownRef = useRef(null);
+  const ratioDropdownRef = useRef(null);
+  const resolutionDropdownRef = useRef(null);
   const [genMode, setGenMode] = useState('main');
   const [generatedImages, setGeneratedImages] = useState([]);
+  const [refImageIds, setRefImageIds] = useState(Array.isArray(char?.reference_image_ids) ? char.reference_image_ids : []);
   const [viewImageUrl, setViewImageUrl] = useState(null);
+  const [viewImageId, setViewImageId] = useState(null);
+  const [toast, setToast] = useState(null);
+  const toastTimerRef = useRef(null);
+  const isMountedRef = useRef(true); // 跟踪组件是否已挂载，关闭弹窗后仍让请求跑完
+  const [detailLoaded, setDetailLoaded] = useState(false);
+
+  const [primaryImageUrl, setPrimaryImageUrl] = useState(null);
+  const [primaryImageId, setPrimaryImageId] = useState(null);
+
+  useEffect(() => {
+    isMountedRef.current = true;
+    return () => { isMountedRef.current = false; };
+  }, []);
+
+  // ── 从后端拉取主体详情和已生成图片 ─────────────────────────────
+  useEffect(() => {
+    if (!projectId || !char?.id) return;
+    let cancelled = false;
+
+    (async () => {
+      // 并行拉取详情和图片列表
+      const [detailRes, imagesRes] = await Promise.allSettled([
+        apiGetSubjectDetail(projectId, char.id).catch(() => null),
+        apiGetSubjectImages(projectId, char.id).catch(() => []),
+      ]);
+
+      if (cancelled) return;
+
+      // 处理详情
+      const detail = detailRes.status === 'fulfilled' ? detailRes.value : null;
+      if (detail) {
+        if (detail.prompt || detail.prompt_text) {
+          setPromptText(detail.prompt || detail.prompt_text);
+        }
+        if (detail.model || detail.default_image_model) {
+          setSelectedModel(detail.model || detail.default_image_model);
+        }
+        if (detail.ratio) setSelectedRatio(detail.ratio);
+        if (detail.resolution) setSelectedResolution(detail.resolution);
+        if (Array.isArray(detail.reference_image_ids)) setRefImageIds(detail.reference_image_ids);
+      } else if (!promptText) {
+        // 如果 char 对象没有 prompt 且后端也没返回，使用默认提示词
+        setPromptText(defaultPromptForTab(tabLabel));
+      }
+
+      // 处理已生成图片列表
+      const imgList = imagesRes.status === 'fulfilled' ? imagesRes.value : [];
+      const imgs = Array.isArray(imgList) ? imgList : (imgList?.images || imgList?.items || []);
+      let finalImages;
+      if (imgs.length > 0) {
+        finalImages = imgs.map((img) => ({
+          id: img.id || img.image_id || `img-${Math.random()}`,
+          rawUrl: img.image_url || img.file_url || img.url || null,
+          url: normalizeImageUrl(img.image_url || img.file_url || img.url),
+          settled: img.is_primary || img.is_settled || false,
+        }));
+      } else {
+        finalImages = [];
+      }
+
+      // 检查是否有进行中/已完成的跨弹窗生成
+      const pending = pendingGenerations.get(char.id);
+      if (pending) {
+        if (pending.status === 'pending') {
+          // 生成中：在列表最前面插入加载占位
+          finalImages.unshift({ url: null, settled: false, id: pending.placeholderId });
+        } else if (pending.status === 'done') {
+          // 弹窗关闭期间生成完成：在列表最前面插入结果图
+          finalImages.unshift({
+            rawUrl: pending.rawUrl,
+            url: normalizeImageUrl(pending.rawUrl),
+            settled: false,
+            id: pending.placeholderId,
+          });
+          pendingGenerations.delete(char.id);
+        }
+      }
+
+      if (finalImages.length > 0) {
+        setGeneratedImages(finalImages);
+      } else if (char?.imageUrl) {
+        // 兜底用 char 的封面图
+        setGeneratedImages([{ rawUrl: char.imageUrl, url: normalizeImageUrl(char.imageUrl), settled: true, id: char.imageUrl }]);
+      } else {
+        setGeneratedImages([]);
+      }
+
+      setDetailLoaded(true);
+
+      // 将后端返回的定稿图同步到卡片封面（修复刷新后定稿不显示在卡片上的 BUG）
+      const _settledImg = finalImages.find(img => img.settled && img.rawUrl);
+      if (_settledImg) {
+        setPrimaryImageUrl(_settledImg.rawUrl);
+        setPrimaryImageId(_settledImg.id);
+        if (onCoverChange) {
+          onCoverChange(_settledImg.rawUrl);
+        }
+      }
+    })();
+
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId, char?.id]);
+
+  // ── 默认提示词 ────────────────────────────────────────────────
+  function defaultPromptForTab(tab) {
+    const defaults = {
+      '角色': '一只雄性成年角色，站姿平稳，角色设定图。',
+      '场景': '一个场景环境，宽阔视野，场景设定图。',
+      '道具': '一个道具，细节清晰，道具设定图。',
+    };
+    return defaults[tab] || '高质量设定图，细节清晰。';
+  }
+
+  // 获取当前模型的能力配置（直接从后端 capabilities 读取）
+  const currentModel = imageModels.find(m => m.value === selectedModel) || {};
+  // 比例根据当前选中的分辨率动态获取，不同分辨率可能支持不同比例
+  const availableRatios = useMemo(() => {
+    const resRatios = currentModel.resolutionSizeMap?.[selectedResolution];
+    if (resRatios) return Object.keys(resRatios);
+    return currentModel.ratios || [];
+  }, [currentModel, selectedResolution]);
+  const availableResolutions = currentModel.resolutions || [];
+  const maxRefImages = currentModel.maxRefImages || 3;
+
+  // 当模型切换时（非首次加载），保留当前比例/分辨率（若新模型支持）
+  const prevModelRef = useRef(selectedModel);
+  useEffect(() => {
+    // 跳过首次渲染（初始化）
+    if (!detailLoaded) {
+      prevModelRef.current = selectedModel;
+      return;
+    }
+    // 只有用户主动切换模型时才处理
+    if (prevModelRef.current === selectedModel) return;
+    prevModelRef.current = selectedModel;
+
+    const newModel = imageModels.find(m => m.value === selectedModel);
+    const resList = newModel?.resolutions || [];
+    if (resList.length > 0) {
+      // 若新模型支持当前分辨率则保留，否则回退到第一个
+      const currentResSupported = resList.includes(selectedResolution);
+      const newRes = currentResSupported ? selectedResolution : resList[0];
+      setSelectedResolution(newRes);
+      // 若新模型在该分辨率下支持当前比例则保留
+      const resRatios = newModel?.resolutionSizeMap?.[newRes];
+      if (resRatios) {
+        const ratioKeys = Object.keys(resRatios);
+        if (currentResSupported && ratioKeys.includes(selectedRatio)) {
+          setSelectedRatio(selectedRatio);
+        } else {
+          setSelectedRatio(ratioKeys[0] || '16:9');
+        }
+      }
+    } else {
+      setSelectedResolution('');
+      setSelectedRatio('16:9');
+    }
+  }, [selectedModel, detailLoaded, imageModels]);
+
+  // 当选中的分辨率/比例不在当前模型支持列表中时，自动修正到第一个可用值
+  useEffect(() => {
+    if (!availableResolutions.includes(selectedResolution)) {
+      setSelectedResolution(availableResolutions[0]);
+    }
+  }, [availableResolutions, selectedResolution]);
+  useEffect(() => {
+    if (!availableRatios.includes(selectedRatio)) {
+      setSelectedRatio(availableRatios[0]);
+    }
+  }, [availableRatios, selectedRatio]);
+
+  // 点击外部关闭下拉菜单
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (modelOpen && modelTriggerRef.current && !modelTriggerRef.current.contains(e.target) && modelDropdownRef.current && !modelDropdownRef.current.contains(e.target)) {
+        setModelOpen(false);
+      }
+      if (ratioOpen && ratioTriggerRef.current && !ratioTriggerRef.current.contains(e.target) && ratioDropdownRef.current && !ratioDropdownRef.current.contains(e.target)) {
+        setRatioOpen(false);
+      }
+      if (resolutionOpen && resolutionTriggerRef.current && !resolutionTriggerRef.current.contains(e.target) && resolutionDropdownRef.current && !resolutionDropdownRef.current.contains(e.target)) {
+        setResolutionOpen(false);
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [modelOpen, ratioOpen, resolutionOpen]);
+
+  function showToast(msg, type = 'success') {
+    clearTimeout(toastTimerRef.current);
+    setToast({ msg, type });
+    toastTimerRef.current = setTimeout(() => setToast(null), 2500);
+  }
   const [charName, setCharName] = useState(char?.name ?? '');
   const [charDesc, setCharDesc] = useState(char?.desc ?? '');
   const [nameFocused, setNameFocused] = useState(false);
@@ -1267,6 +1663,15 @@ function EditSubjectPanel({ char, tabLabel = '角色', onClose, onCommit, onCove
   });
 
   return (
+    <>
+    {/* 点击遮罩层关闭弹窗 */}
+    <div
+      onClick={onClose}
+      style={{
+        position: 'fixed', inset: 0, zIndex: 49,
+        background: 'transparent',
+      }}
+    />
     <div
       style={{
         position: 'fixed', top: '60px', right: '24px', bottom: '24px',
@@ -1276,6 +1681,7 @@ function EditSubjectPanel({ char, tabLabel = '角色', onClose, onCommit, onCove
         borderRadius: '16px', boxShadow: '#00000099 0px 24px 64px',
         overflow: 'hidden',
       }}
+      onClick={(e) => e.stopPropagation()}
     >
       {/* header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', paddingBlock: '20px', paddingInline: '24px', background: '#161616', flexShrink: 0 }}>
@@ -1302,7 +1708,7 @@ function EditSubjectPanel({ char, tabLabel = '角色', onClose, onCommit, onCove
       {/* two-column body */}
       <div style={{ flex: 1, display: 'flex', alignItems: 'flex-start', overflow: 'hidden' }}>
         {/* left: form */}
-        <div style={{ width: 'round(70%, 1px)', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '20px', paddingLeft: '24px', paddingRight: '12px', paddingTop: '8px', paddingBottom: '8px', background: '#161616', height: '100%', boxSizing: 'border-box' }}>
+        <div style={{ width: 'round(70%, 1px)', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '20px', paddingLeft: '24px', paddingRight: '12px', paddingTop: '8px', paddingBottom: '80px', background: '#161616', height: '100%', boxSizing: 'border-box' }}>
           {/* name + desc — editable */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF99' }}>角色名称</span>
@@ -1372,7 +1778,7 @@ function EditSubjectPanel({ char, tabLabel = '角色', onClose, onCommit, onCove
                 onBlur={() => setPromptFocused(false)}
                 style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', resize: 'none', fontFamily: FONT, fontSize: '14px', lineHeight: '150%', color: '#FFFFFF' }}
               />
-              <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '18px', color: promptText.length > 300 ? '#F75F5F' : '#FFFFFF66', textAlign: 'right' }}>{promptText.length}/300</span>
+              <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '18px', color: promptText.length > 1000 ? '#F75F5F' : '#FFFFFF66', textAlign: 'right' }}>{promptText.length}/1000</span>
             </div>
           </div>
 
@@ -1380,33 +1786,61 @@ function EditSubjectPanel({ char, tabLabel = '角色', onClose, onCommit, onCove
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', position: 'relative' }}>
             <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF99' }}>选择模型</span>
             <div
+              ref={modelTriggerRef}
               style={{ ...selectStyle(modelHovered || modelOpen), border: `1px solid ${modelOpen ? 'rgba(45,195,225,0.6)' : modelHovered ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.08)'}` }}
               onMouseEnter={() => setModelHovered(true)}
               onMouseLeave={() => setModelHovered(false)}
-              onClick={() => setModelOpen((v) => !v)}
+              onClick={() => {
+                console.log('[SubjectPage] 点击模型选择器，当前状态:', modelOpen);
+                setModelOpen((v) => !v);
+              }}
             >
-              <span style={{ flex: 1, fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF' }}>{selectedModel}</span>
+              <span style={{ flex: 1, fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: modelsLoading ? '#FFFFFF66' : '#FFFFFF' }}>
+                {modelsLoading ? '加载模型中…' : (imageModels.find(m => m.value === selectedModel)?.label || selectedModel)}
+              </span>
               <ChevronDownIcon />
             </div>
-            {modelOpen && (
-              <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 60, background: '#1D1E1E', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '8px', padding: '4px', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
-                {['Doubao-Seed-2.0-Pro', 'Doubao-Seed-1.6', 'FLUX.1-dev', 'Stable Diffusion XL'].map((opt) => (
+            {modelOpen && createPortal(
+              <div
+                ref={modelDropdownRef}
+                style={{
+                  position: 'fixed',
+                  top: `${(modelTriggerRef.current?.getBoundingClientRect().bottom || 0) + 4}px`,
+                  left: `${modelTriggerRef.current?.getBoundingClientRect().left || 0}px`,
+                  width: `${modelTriggerRef.current?.getBoundingClientRect().width || 200}px`,
+                  zIndex: 9999,
+                  background: '#1D1E1E',
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  borderRadius: '8px',
+                  padding: '4px',
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                  maxHeight: '300px',
+                  overflowY: 'auto'
+                }}
+              >
+                {console.log('[SubjectPage] 渲染模型下拉菜单，选项数量:', imageModels.length)}
+                {imageModels.map((model) => (
                   <div
-                    key={opt}
-                    onClick={() => { setSelectedModel(opt); setModelOpen(false); }}
+                    key={model.value}
+                    onClick={() => {
+                      console.log('[SubjectPage] 点击模型选项:', model.value);
+                      setSelectedModel(model.value);
+                      setModelOpen(false);
+                    }}
                     style={{
                       padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', fontFamily: FONT, fontSize: '14px', lineHeight: '18px',
-                      color: selectedModel === opt ? '#2DC3E1' : '#FFFFFFCC',
-                      background: selectedModel === opt ? 'rgba(45,195,225,0.08)' : 'transparent',
+                      color: selectedModel === model.value ? '#2DC3E1' : '#FFFFFFCC',
+                      background: selectedModel === model.value ? 'rgba(45,195,225,0.08)' : 'transparent',
                       transition: 'background 80ms',
                     }}
-                    onMouseEnter={(e) => { if (selectedModel !== opt) e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = selectedModel === opt ? 'rgba(45,195,225,0.08)' : 'transparent'; }}
+                    onMouseEnter={(e) => { if (selectedModel !== model.value) e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = selectedModel === model.value ? 'rgba(45,195,225,0.08)' : 'transparent'; }}
                   >
-                    {opt}
+                    {model.label}
                   </div>
                 ))}
-              </div>
+              </div>,
+              document.body
             )}
           </div>
 
@@ -1414,20 +1848,45 @@ function EditSubjectPanel({ char, tabLabel = '角色', onClose, onCommit, onCove
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', position: 'relative' }}>
             <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF99' }}>选择画面比例</span>
             <div
+              ref={ratioTriggerRef}
               style={{ ...selectStyle(ratioHovered || ratioOpen), border: `1px solid ${ratioOpen ? 'rgba(45,195,225,0.6)' : ratioHovered ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.08)'}` }}
               onMouseEnter={() => setRatioHovered(true)}
               onMouseLeave={() => setRatioHovered(false)}
-              onClick={() => setRatioOpen((v) => !v)}
+              onClick={() => {
+                console.log('[SubjectPage] 点击画面比例选择器，当前状态:', ratioOpen);
+                setRatioOpen((v) => !v);
+              }}
             >
               <span style={{ flex: 1, fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF' }}>{selectedRatio}</span>
               <ChevronDownIcon />
             </div>
-            {ratioOpen && (
-              <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 60, background: '#1D1E1E', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '8px', padding: '4px', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
-                {['1:1', '2:1', '16:9', '4:3', '3:4', '9:16'].map((opt) => (
+            {ratioOpen && createPortal(
+              <div
+                ref={ratioDropdownRef}
+                style={{
+                  position: 'fixed',
+                  top: `${(ratioTriggerRef.current?.getBoundingClientRect().bottom || 0) + 4}px`,
+                  left: `${ratioTriggerRef.current?.getBoundingClientRect().left || 0}px`,
+                  width: `${ratioTriggerRef.current?.getBoundingClientRect().width || 200}px`,
+                  zIndex: 9999,
+                  background: '#1D1E1E',
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  borderRadius: '8px',
+                  padding: '4px',
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                  maxHeight: '300px',
+                  overflowY: 'auto'
+                }}
+              >
+                {console.log('[SubjectPage] 渲染画面比例下拉菜单，选项:', availableRatios)}
+                {availableRatios.map((opt) => (
                   <div
                     key={opt}
-                    onClick={() => { setSelectedRatio(opt); setRatioOpen(false); }}
+                    onClick={() => {
+                      console.log('[SubjectPage] 点击画面比例选项:', opt);
+                      setSelectedRatio(opt);
+                      setRatioOpen(false);
+                    }}
                     style={{
                       padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', fontFamily: FONT, fontSize: '14px', lineHeight: '18px',
                       color: selectedRatio === opt ? '#2DC3E1' : '#FFFFFFCC',
@@ -1440,52 +1899,85 @@ function EditSubjectPanel({ char, tabLabel = '角色', onClose, onCommit, onCove
                     {opt}
                   </div>
                 ))}
-              </div>
+              </div>,
+              document.body
             )}
           </div>
 
           {/* quality */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px', position: 'relative' }}>
-            <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF99' }}>质量</span>
+            <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF99' }}>分辨率</span>
             <div
-              style={{ ...selectStyle(qualityHovered || qualityOpen), border: `1px solid ${qualityOpen ? 'rgba(45,195,225,0.6)' : qualityHovered ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.08)'}` }}
-              onMouseEnter={() => setQualityHovered(true)}
-              onMouseLeave={() => setQualityHovered(false)}
-              onClick={() => setQualityOpen((v) => !v)}
+              ref={resolutionTriggerRef}
+              style={{ ...selectStyle(resolutionHovered || resolutionOpen), border: `1px solid ${resolutionOpen ? 'rgba(45,195,225,0.6)' : resolutionHovered ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.08)'}` }}
+              onMouseEnter={() => setResolutionHovered(true)}
+              onMouseLeave={() => setResolutionHovered(false)}
+              onClick={() => {
+                console.log('[SubjectPage] 点击分辨率选择器，当前状态:', resolutionOpen);
+                setResolutionOpen((v) => !v);
+              }}
             >
-              <span style={{ flex: 1, fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF' }}>{selectedQuality}</span>
+              <span style={{ flex: 1, fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF' }}>{selectedResolution}</span>
               <ChevronDownIcon />
             </div>
-            {qualityOpen && (
-              <div style={{ position: 'absolute', top: 'calc(100% + 4px)', left: 0, right: 0, zIndex: 60, background: '#1D1E1E', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '8px', padding: '4px', boxShadow: '0 8px 24px rgba(0,0,0,0.5)' }}>
-                {['720P', '1K', '2K', '4K'].map((opt) => (
+            {resolutionOpen && createPortal(
+              <div
+                ref={resolutionDropdownRef}
+                style={{
+                  position: 'fixed',
+                  top: `${(resolutionTriggerRef.current?.getBoundingClientRect().bottom || 0) + 4}px`,
+                  left: `${resolutionTriggerRef.current?.getBoundingClientRect().left || 0}px`,
+                  width: `${resolutionTriggerRef.current?.getBoundingClientRect().width || 200}px`,
+                  zIndex: 9999,
+                  background: '#1D1E1E',
+                  border: '1px solid rgba(255,255,255,0.12)',
+                  borderRadius: '8px',
+                  padding: '4px',
+                  boxShadow: '0 8px 24px rgba(0,0,0,0.5)',
+                  maxHeight: '300px',
+                  overflowY: 'auto'
+                }}
+              >
+                {console.log('[SubjectPage] 渲染分辨率下拉菜单，选项:', availableResolutions)}
+                {availableResolutions.map((opt) => (
                   <div
                     key={opt}
-                    onClick={() => { setSelectedQuality(opt); setQualityOpen(false); }}
+                    onClick={() => {
+                      console.log('[SubjectPage] 点击分辨率选项:', opt);
+                      setSelectedResolution(opt);
+                      setResolutionOpen(false);
+                    }}
                     style={{
                       padding: '8px 12px', borderRadius: '6px', cursor: 'pointer', fontFamily: FONT, fontSize: '14px', lineHeight: '18px',
-                      color: selectedQuality === opt ? '#2DC3E1' : '#FFFFFFCC',
-                      background: selectedQuality === opt ? 'rgba(45,195,225,0.08)' : 'transparent',
+                      color: selectedResolution === opt ? '#2DC3E1' : '#FFFFFFCC',
+                      background: selectedResolution === opt ? 'rgba(45,195,225,0.08)' : 'transparent',
                       transition: 'background 80ms',
                     }}
-                    onMouseEnter={(e) => { if (selectedQuality !== opt) e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
-                    onMouseLeave={(e) => { e.currentTarget.style.background = selectedQuality === opt ? 'rgba(45,195,225,0.08)' : 'transparent'; }}
+                    onMouseEnter={(e) => { if (selectedResolution !== opt) e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+                    onMouseLeave={(e) => { e.currentTarget.style.background = selectedResolution === opt ? 'rgba(45,195,225,0.08)' : 'transparent'; }}
                   >
                     {opt}
                   </div>
                 ))}
-              </div>
+              </div>,
+              document.body
             )}
           </div>
 
           {/* ref image */}
-          <RefImageField maxImages={MODEL_MAX_IMAGES[selectedModel] ?? 3} />
+          <RefImageField
+            maxImages={maxRefImages}
+            projectId={projectId}
+            subjectId={char?.id}
+            refImageIds={refImageIds}
+            onRefImagesChange={(ids) => setRefImageIds(ids)}
+          />
 
           {/* generation mode radio */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF99' }}>生成方式</span>
             <div style={{ display: 'flex', gap: '24px', alignItems: 'center' }}>
-              {[{ key: 'main', label: '主视图' }, { key: 'multi', label: '多视图' }].map(({ key, label }) => {
+              {[{ key: 'main', label: '单视图' }, { key: 'three_view', label: '多视图' }].map(({ key, label }) => {
                 const active = genMode === key;
                 return (
                   <RadioOption key={key} label={label} checked={active} onChange={() => setGenMode(key)} />
@@ -1493,49 +1985,22 @@ function EditSubjectPanel({ char, tabLabel = '角色', onClose, onCommit, onCove
               })}
             </div>
           </div>
-
-          {/* generate button — follows content, not fixed to bottom */}
-          <div style={{ paddingBottom: '8px' }}>
-            <button
-              type="button"
-              onMouseEnter={() => setGenHovered(true)}
-              onMouseLeave={() => { setGenHovered(false); setGenPressed(false); }}
-              onMouseDown={() => setGenPressed(true)}
-              onMouseUp={() => setGenHovered(true)}
-              onClick={async () => {
-                const placeholder = `generated-${Date.now()}`;
-                setGeneratedImages((prev) => [{ url: null, settled: false, id: placeholder }, ...prev]);
-                const { imageUrl } = await apiGenerateSubjectImage(char.id, { model: selectedModel, referenceImages });
-                setGeneratedImages((prev) => prev.map((img) => img.id === placeholder ? { ...img, url: imageUrl, settled: true } : img));
-              }}
-              style={{
-                display: 'flex', alignItems: 'center', height: '36px', borderRadius: '8px', padding: '0 16px', gap: '4px', cursor: 'pointer', border: '1px solid rgba(255,255,255,0.2)',
-                background: genPressed ? '#28AFCA' : genHovered ? '#35D4F5' : '#2DC3E1',
-                outline: '1px solid #00000080',
-                backgroundImage: 'linear-gradient(in oklab 107.51deg, oklab(84.6% -0.114 0.031 / 30%) 8.14%, oklab(84.6% -0.114 0.031 / 0%) 54.48%)',
-                transition: 'background 100ms',
-              }}
-            >
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
-                <path d="M3 5V3.188C3 2.891 3.029 2.783 3.083 2.674C3.138 2.566 3.218 2.481 3.32 2.422C3.422 2.364 3.523 2.333 3.801 2.333H12.199C12.477 2.333 12.578 2.364 12.68 2.422C12.782 2.481 12.862 2.566 12.916 2.674C12.971 2.783 13 2.891 13 3.188V5" stroke="#090909" strokeLinecap="round" strokeLinejoin="round" />
-                <path d="M1.667 5H14.333V13.667H1.667V5Z" stroke="#090909" strokeLinejoin="round" />
-                <path fillRule="evenodd" clipRule="evenodd" d="M4.333 8.667C4.886 8.667 5.333 8.219 5.333 7.667C5.333 7.114 4.886 6.667 4.333 6.667C3.781 6.667 3.333 7.114 3.333 7.667C3.333 8.219 3.781 8.667 4.333 8.667Z" fill="#090909" />
-                <path d="M1.856 13.463L5 10L6.667 11.333L8.667 9L14.131 13.463" stroke="#090909" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-              <span style={{ fontFamily: FONT_MEDIUM, fontWeight: 500, fontSize: '14px', lineHeight: '18px', color: '#090909', whiteSpace: 'nowrap' }}>生成图片</span>
-            </button>
-          </div>
         </div>
 
         {/* right: image list */}
         <div style={{ flex: 1, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '12px', paddingLeft: '12px', paddingRight: '24px', paddingTop: '8px', paddingBottom: '8px', background: '#161616', height: '100%', boxSizing: 'border-box' }}>
-          <ImageViewModal open={!!viewImageUrl} imageUrl={viewImageUrl} onClose={() => setViewImageUrl(null)} />
+          <ImageViewModal open={!!viewImageUrl} imageUrl={viewImageUrl} imageId={viewImageId} projectId={projectId} subjectId={char?.id} onClose={() => { setViewImageUrl(null); setViewImageId(null); }} />
           {/* upload card always first */}
           <ImageItemUpload
+            projectId={projectId}
             onUpload={(fileOrId) => {
               if (typeof fileOrId !== 'string') {
                 const url = URL.createObjectURL(fileOrId);
-                setGeneratedImages((prev) => [{ url, settled: false, id: url }, ...prev]);
+                setGeneratedImages((prev) => [{ rawUrl: url, url, settled: false, id: url }, ...prev]);
+              } else if (fileOrId?.url) {
+                // 从资产库选择的图片，有 url 属性
+                const raw = fileOrId.url || fileOrId.file_url;
+                setGeneratedImages((prev) => [{ rawUrl: raw, url: normalizeImageUrl(raw), settled: false, id: fileOrId.id || raw }, ...prev]);
               }
             }}
           />
@@ -1543,69 +2008,500 @@ function EditSubjectPanel({ char, tabLabel = '角色', onClose, onCommit, onCove
             <ImageItem
               key={img.id ?? img.url + i}
               imageUrl={img.url}
+              imageId={img.id}
               settled={img.settled}
-              onView={setViewImageUrl}
+              onView={(url) => { setViewImageUrl(url); setViewImageId(img.id); }}
+              onDownload={async () => {
+                try {
+                  const blob = await apiDownloadSubjectImage(projectId, char.id, img.id);
+                  triggerBlobDownload(blob, `subject-image-${img.id}.jpg`);
+                  showToast('下载成功', 'success');
+                } catch (err) {
+                  console.error('[SubjectPage] 下载图片失败:', err);
+                  showToast('下载失败', 'error');
+                }
+              }}
               onSettledChange={(newSettled) => {
-                setGeneratedImages((prev) => {
-                  const next = prev.map((item, idx) =>
+                // 先处理副作用（通知父组件 + 调后端接口），放在 setState 外部
+                if (newSettled) {
+                  onCoverChange?.(img?.rawUrl ?? img?.url ?? null);
+                  // 仅当 ID 不是前端占位符时才调后端接口
+                  if (img.id && !String(img.id).startsWith('generated-')) {
+                    apiSetPrimarySubjectImage(projectId, char.id, img.id).catch((err) => {
+                      console.error('[SubjectPage] 设置定稿图失败:', err);
+                    });
+                  }
+                }
+
+                setGeneratedImages((prev) =>
+                  prev.map((item, idx) =>
                     idx === i
                       ? { ...item, settled: newSettled }
                       : { ...item, settled: newSettled ? false : item.settled }
-                  );
-                  const settledImg = next.find((item) => item.settled);
-                  onCoverChange?.(settledImg?.url ?? null);
-                  return next;
-                });
+                  )
+                );
               }}
             />
           ))}
         </div>
       </div>
+
+      {/* footer: 生成图片按钮 — 绝对定位于底部 */}
+      <div
+        style={{
+          position: 'absolute',
+          left: 0,
+          bottom: 0,
+          width: 'round(70%, 1px)',
+          padding: '16px 24px',
+          background: '#161616',
+          borderBottomLeftRadius: '16px',
+          borderBottomRightRadius: '0',
+          display: 'flex',
+          alignItems: 'center',
+        }}
+      >
+        <button
+          type="button"
+          onMouseEnter={() => setGenHovered(true)}
+          onMouseLeave={() => { setGenHovered(false); setGenPressed(false); }}
+          onMouseDown={() => setGenPressed(true)}
+          onMouseUp={() => setGenHovered(true)}
+          onClick={async () => {
+            if (!promptText.trim()) {
+              showToast('请输入提示词', 'error');
+              return;
+            }
+
+            // 防止同一主体重复点击生成
+            const existing = pendingGenerations.get(char.id);
+            if (existing && existing.status === 'pending') {
+              showToast('该主体已有生成任务进行中', 'error');
+              return;
+            }
+
+            const placeholder = `generated-${Date.now()}`;
+            // 写入模块级缓存，跨弹窗打开/关闭保持
+            pendingGenerations.set(char.id, { placeholderId: placeholder, status: 'pending' });
+            setGeneratedImages((prev) => [{ url: null, settled: false, id: placeholder }, ...prev]);
+
+            const genParams = {
+              model: selectedModel,
+              ratio: selectedRatio,
+              resolution: selectedResolution,
+              prompt: promptText,
+              generation_mode: genMode,
+            };
+            if (Array.isArray(refImageIds) && refImageIds.length > 0) {
+              genParams.reference_mode = 'subject';
+            }
+
+            // 使用 .then() 代替 await，使回调在组件卸载后仍能更新缓存
+            apiGenerateSubjectImage(projectId, char.id, genParams)
+              .then((result) => {
+                const rawUrl = result.image_url || result.imageUrl || result.url || null;
+                if (rawUrl) {
+                  onCoverChange?.(rawUrl);
+                }
+
+                if (isMountedRef.current) {
+                  // 弹窗仍打开：正常更新图片列表
+                  const imageUrl = normalizeImageUrl(rawUrl);
+                  const realImageId = result.id || result.image_id || null;
+                  setGeneratedImages((prev) => {
+                    const updated = prev.map((img) =>
+                      img.id === placeholder
+                        ? { ...img, id: realImageId || placeholder, rawUrl, url: imageUrl, settled: false }
+                        : img
+                    );
+                    return updated;
+                  });
+                  showToast('图片生成成功', 'success');
+                  pendingGenerations.delete(char.id);
+                } else {
+                  // 弹窗已关闭：缓存结果，下次打开弹窗时显示
+                  pendingGenerations.set(char.id, {
+                    placeholderId: placeholder,
+                    status: 'done',
+                    rawUrl,
+                    imageUrl: result.image_url || result.imageUrl || result.url || null,
+                  });
+                  console.log('[SubjectPage] 弹窗已关闭，图片后台生成完成，结果已缓存');
+                }
+              })
+              .catch((err) => {
+                console.error('[SubjectPage] 生成图片失败:', err);
+                pendingGenerations.delete(char.id);
+                if (isMountedRef.current) {
+                  setGeneratedImages((prev) => prev.filter((img) => img.id !== placeholder));
+                }
+                const errMsg = err?.message || '图片生成失败';
+                showToast(errMsg, 'error');
+              });
+          }}
+          style={{
+            display: 'flex', alignItems: 'center', height: '36px', borderRadius: '8px', padding: '0 16px', gap: '4px', cursor: 'pointer',
+            backgroundColor: genPressed ? '#28AFCA' : genHovered ? '#35D4F5' : '#2DC3E1',
+            border: '1px solid #FFFFFF33',
+            outline: '1px solid #00000080',
+            backgroundImage: 'linear-gradient(in oklab 107.51deg, oklab(84.6% -0.114 0.031 / 30%) 8.14%, oklab(84.6% -0.114 0.031 / 0%) 54.48%)',
+            transition: 'background 100ms',
+          }}
+        >
+          <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+            <path d="M3 5V3.188C3 2.891 3.029 2.783 3.083 2.674C3.138 2.566 3.218 2.481 3.32 2.422C3.422 2.364 3.523 2.333 3.801 2.333H12.199C12.477 2.333 12.578 2.364 12.68 2.422C12.782 2.481 12.862 2.566 12.916 2.674C12.971 2.783 13 2.891 13 3.188V5" stroke="#090909" strokeLinecap="round" strokeLinejoin="round" />
+            <path d="M1.667 5H14.333V13.667H1.667V5Z" stroke="#090909" strokeLinejoin="round" />
+            <path fillRule="evenodd" clipRule="evenodd" d="M4.333 8.667C4.886 8.667 5.333 8.219 5.333 7.667C5.333 7.114 4.886 6.667 4.333 6.667C3.781 6.667 3.333 7.114 3.333 7.667C3.333 8.219 3.781 8.667 4.333 8.667Z" fill="#090909" />
+            <path d="M1.856 13.463L5 10L6.667 11.333L8.667 9L14.131 13.463" stroke="#090909" strokeLinecap="round" strokeLinejoin="round" />
+          </svg>
+          <span style={{ fontFamily: FONT_MEDIUM, fontWeight: 500, fontSize: '14px', lineHeight: '18px', color: '#090909', whiteSpace: 'nowrap' }}>生成图片</span>
+        </button>
+      </div>
     </div>
+    {toast && createPortal(
+      <div style={{ position: 'fixed', top: '25vh', left: '50%', transform: 'translateX(-50%)', zIndex: 9999, pointerEvents: 'none', animation: 'slideUpBounce 250ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards' }}>
+        <div className="flex items-center gap-[8px] px-[16px] py-[8px] rounded-medium bg-toast-bg backdrop-blur-[20px]" style={{ whiteSpace: 'nowrap' }}>
+          {toast.type === 'success' && (
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+              <path d="M8 14.667C9.841 14.667 11.508 13.921 12.714 12.714C13.921 11.508 14.667 9.841 14.667 8C14.667 6.159 13.921 4.492 12.714 3.286C11.508 2.08 9.841 1.333 8 1.333C6.159 1.333 4.492 2.08 3.286 3.286C2.08 4.492 1.333 6.159 1.333 8C1.333 9.841 2.08 11.508 3.286 12.714C4.492 13.921 6.159 14.667 8 14.667Z" fill="#52BF92" stroke="#52BF92" strokeWidth="1.333" strokeLinejoin="round" />
+              <path d="M5.333 8L7.333 10L11.333 6" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          )}
+          {toast.type === 'warning' && (
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+              <path d="M8 14.667C9.841 14.667 11.508 13.921 12.714 12.714C13.921 11.508 14.667 9.841 14.667 8C14.667 6.159 13.921 4.492 12.714 3.286C11.508 2.08 9.841 1.333 8 1.333C6.159 1.333 4.492 2.08 3.286 3.286C2.08 4.492 1.333 6.159 1.333 8C1.333 9.841 2.08 11.508 3.286 12.714C4.492 13.921 6.159 14.667 8 14.667Z" fill="#EB8B14" stroke="#EB8B14" strokeWidth="1.333" strokeLinejoin="round" />
+              <path fillRule="evenodd" clipRule="evenodd" d="M8 12.333C8.46 12.333 8.833 11.96 8.833 11.5C8.833 11.04 8.46 10.667 8 10.667C7.54 10.667 7.167 11.04 7.167 11.5C7.167 11.96 7.54 12.333 8 12.333Z" fill="#FFFFFF" />
+              <path d="M8 4V9.333" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          )}
+          {toast.type === 'error' && (
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+              <path d="M8 14.667C9.841 14.667 11.508 13.921 12.714 12.714C13.921 11.508 14.667 9.841 14.667 8C14.667 6.159 13.921 4.492 12.714 3.286C11.508 2.08 9.841 1.333 8 1.333C6.159 1.333 4.492 2.08 3.286 3.286C2.08 4.492 1.333 6.159 1.333 8C1.333 9.841 2.08 11.508 3.286 12.714C4.492 13.921 6.159 14.667 8 14.667Z" fill="#F75F5F" stroke="#F75F5F" strokeWidth="1.333" strokeLinejoin="round" />
+              <path d="M5.333 5.333L10.667 10.667M10.667 5.333L5.333 10.667" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" />
+            </svg>
+          )}
+          <span className="text-text-primary text-font-size-16 font-font-weight-regular" style={{ fontFamily: FONT }}>
+            {toast.msg}
+          </span>
+        </div>
+      </div>,
+      document.body
+    )}
+    </>
   );
 }
 
 // ── Main export ────────────────────────────────────────────────────────────
 
-export default function SubjectPage({ projectName = '两只老虎的奇遇', onBack, onUnlockStep, onStartStoryboard, initialTab = 'char', chars: externalChars, onCharsChange, scenes: externalScenes, onScenesChange, props: externalProps, onPropsChange }) {
+export default function SubjectPage({ serverReachable, projectId, projectName = '两只老虎的奇遇', onBack, onUnlockStep, onStartStoryboard, onExtractSubjects, extractError = null, isStoryboardGenerated = false, initialTab = 'char', projectRatio, chars: externalChars, onCharsChange, scenes: externalScenes, onScenesChange, props: externalProps, onPropsChange }) {
+
+  if (serverReachable === false) {
+    return (
+      <div className="flex flex-col items-center justify-center gap-3" style={{ flex: 1, paddingTop: "80px" }}>
+        <div className="flex items-center gap-2 px-16 py-2 rounded-lg text-sm" style={{ backgroundColor: "rgba(255,77,79,0.1)", color: "#FF4D4F" }}>
+          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1L13 12H1L7 1Z" stroke="#FF4D4F" strokeLinejoin="round"/><path d="M7 5V8" stroke="#FF4D4F" strokeLinecap="round"/><circle cx="7" cy="10.5" r="0.5" fill="#FF4D4F"/></svg>
+          后端服务连接异常，部分功能不可用
+        </div>
+      </div>
+    );
+  }
+
   const [activeTab, setActiveTab] = useState(initialTab);
-  const [episodes, setEpisodes] = useState([]);
-  const [activeEpisode, setActiveEpisode] = useState('');
   const [batchGenOpen, setBatchGenOpen] = useState(false);
+  const [isExtracting, setIsExtracting] = useState(false);
+  const extractingRef = useRef(false);
+
+  // 仅从剧本页「开始提取主体」触发（Home.jsx 传入 onExtractSubjects 回调），
+  // 浏览器刷新 / tab 切换等场景不触发提取
+  useEffect(() => {
+    if (!onExtractSubjects) return;
+    if (extractingRef.current) return;
+    extractingRef.current = true;
+    setIsExtracting(true);
+    onExtractSubjects().finally(() => {
+      setIsExtracting(false);
+      extractingRef.current = false;
+    });
+  }, [onExtractSubjects]);
+
+  // 循环 loading 文案
+  const [loadingTextIndex, setLoadingTextIndex] = useState(0);
+  const loadingTexts = ['正在抽取剧本灵魂', '正在抽取剧本主角', '正在抽取剧本配角', '正在抽取场景', '正在抽取道具'];
+
+  useEffect(() => {
+    if (!isExtracting) return;
+    const timer = setInterval(() => {
+      setLoadingTextIndex(prev => (prev + 1) % loadingTexts.length);
+    }, 2500);
+    return () => clearInterval(timer);
+  }, [isExtracting]);
+
+  const [batchGenerating, setBatchGenerating] = useState(false);
+  const [batchToast, setBatchToast] = useState(null);
+  const batchToastTimerRef = useRef(null);
+  // 批量生成加载状态：{ [subjectId]: true }
+  const [batchLoadingSubjects, setBatchLoadingSubjects] = useState({});
+  // 批量生成前的封面 URL 快照
+  const prevCoverUrlsRef = useRef({});
+  // 批量生成 AbortController，组件卸载时取消
+  const batchAbortRef = useRef(null);
+
+  function showBatchToast(msg, type = 'success') {
+    if (batchToastTimerRef.current) clearTimeout(batchToastTimerRef.current);
+    setBatchToast({ msg, type });
+    batchToastTimerRef.current = setTimeout(() => setBatchToast(null), 3000);
+  }
+
+  // 归一化后端返回的主体数据（对齐 Home.jsx 的 normalizeSubjects）
+  function normalizeSubjectList(items) {
+    const list = (items || []).map(item => ({
+      ...item,
+      desc: item.description ?? item.desc ?? '',
+      imageUrl: normalizeImageUrl(item.primary_image_url ?? item.image_url ?? item.imageUrl),
+    }));
+    list.sort((a, b) => {
+      const timeA = a.created_at || a.createdAt || a.create_time || '';
+      const timeB = b.created_at || b.createdAt || b.create_time || '';
+      if (timeA && timeB) return timeA.localeCompare(timeB);
+      return (a.name || '').localeCompare(b.name || '');
+    });
+    return list;
+  }
+
+  const handleBatchGenerate = async (params) => {
+    // 收集当前 tab 下的主体 ID 列表
+    const currentSubjects = activeTab === 'char' ? chars : activeTab === 'scene' ? scenes : props;
+    const subjectIds = (currentSubjects || []).map(s => s.id).filter(Boolean);
+    if (subjectIds.length === 0) {
+      showBatchToast('当前没有可生成的主体', 'error');
+      return;
+    }
+
+    // 防止重复触发（已有加载中的主体）
+    if (Object.keys(batchLoadingSubjects).length > 0) {
+      showBatchToast('批量生成进行中，请等待当前任务完成', 'error');
+      return;
+    }
+
+    // 关闭弹窗
+    setBatchGenOpen(false);
+
+    // 保存当前 tab 引用（stream 期间 tab 不会变）
+    const captureTab = activeTab;
+    // 根据 tab 确定 setter 函数
+    const targetSetter =
+      captureTab === 'char' ? setChars :
+      captureTab === 'scene' ? setScenes :
+      setProps;
+
+    // 快照当前所有封面 URL
+    prevCoverUrlsRef.current = {};
+    (currentSubjects || []).forEach(s => {
+      prevCoverUrlsRef.current[s.id] = s.imageUrl;
+    });
+
+    // 所有卡片进入 loading 状态
+    const loadingMap = {};
+    subjectIds.forEach(id => { loadingMap[id] = true; });
+    setBatchLoadingSubjects(loadingMap);
+
+    setBatchGenerating(true);
+
+    // 创建 AbortController，用于组件卸载时取消
+    const controller = new AbortController();
+    batchAbortRef.current = controller;
+
+    // 统计成功/失败数
+    let successCount = 0;
+    let failCount = 0;
+
+    try {
+      await apiBatchGenerateStream(projectId, { model: params.model, ratio: params.ratio, resolution: params.resolution, generation_mode: params.mode, subject_ids: subjectIds }, {
+        signal: controller.signal,
+        onSubjectImage: (subjectId, imageUrl) => {
+          successCount++;
+          const fullUrl = normalizeImageUrl(imageUrl);
+          // 更新对应 tab 的主体封面
+          targetSetter(prev => prev.map(s =>
+            s.id === subjectId ? { ...s, imageUrl: fullUrl } : s
+          ));
+          // 该主体退出 loading
+          setBatchLoadingSubjects(prev => {
+            const next = { ...prev };
+            delete next[subjectId];
+            return next;
+          });
+        },
+        onSubjectError: (subjectId, errorMsg) => {
+          failCount++;
+          console.error(`[SubjectPage] 主体 ${subjectId} 批量生成失败:`, errorMsg);
+          // Toast 提示单个失败
+          const sub = (currentSubjects || []).find(s => s.id === subjectId);
+          const label = sub?.name || subjectId;
+          showBatchToast(`「${label}」生成失败: ${errorMsg || '未知错误'}`, 'error');
+          // 该主体退出 loading（封面恢复为之前的图片或占位图）
+          setBatchLoadingSubjects(prev => {
+            const next = { ...prev };
+            delete next[subjectId];
+            return next;
+          });
+        },
+       onComplete: () => {
+         if (successCount > 0) {
+           showBatchToast(successCount === subjectIds.length
+             ? '批量生成全部完成'
+             : `批量生成完成（成功 ${successCount}，失败 ${failCount}）`, 'success');
+         }
+          else if (failCount > 0) {
+            showBatchToast('批量生成失败，可能是调用服务商模型失败了，请换个模型再试下', 'error');
+          }
+          else {
+            showBatchToast('批量生成失败，未能接收到任何结果', 'error');
+          }
+       },
+      });
+    } catch (err) {
+      // 忽略用户主动取消的错误
+      if (err?.name === 'AbortError') return;
+
+      console.error('[SubjectPage] 批量生成流失败:', err);
+      // 网络断开或整体请求失败 — toast 后统一恢复
+      const errMsg = err?.isNetworkError
+        ? '网络连接失败，请检查网络后重试'
+        : (err?.message || '批量生成失败，请重试');
+      showBatchToast(errMsg, 'error');
+
+      // 生图失败后重新从后端获取主体数据，恢复真实封面
+      try {
+        const [newChars, newScenes, newProps] = await Promise.all([
+          apiGetSubjects(projectId, { type: 'character' }),
+          apiGetSubjects(projectId, { type: 'scene' }),
+          apiGetSubjects(projectId, { type: 'prop' }),
+        ]);
+        setChars(normalizeSubjectList(newChars));
+        setScenes(normalizeSubjectList(newScenes));
+        setProps(normalizeSubjectList(newProps));
+      } catch (refetchErr) {
+        console.error('[SubjectPage] 失败后刷新主体数据也失败:', refetchErr);
+      }
+
+      // 整体失败时，所有卡片的 loading 都会由于 finally 清除而消失，
+      // 封面自然恢复为之前的图片（因为我们没有修改过 imageUrl）
+    } finally {
+      // 清空所有 loading 状态
+      setBatchLoadingSubjects({});
+      setBatchGenerating(false);
+      batchAbortRef.current = null;
+    }
+  };
+
+  const [confirmStoryboardOpen, setConfirmStoryboardOpen] = useState(false);
   const [selectedChar, setSelectedChar] = useState(null);
   const [selectedScene, setSelectedScene] = useState(null);
   const [selectedProp, setSelectedProp] = useState(null);
   const [voiceModalChar, setVoiceModalChar] = useState(null);
+  const [voiceList, setVoiceList] = useState([]);
   const [internalChars, setInternalChars] = useState(INITIAL_CHARS);
   const chars = (externalChars !== undefined && externalChars !== null) ? externalChars : internalChars;
+  const hasExternalChars = externalChars !== undefined && externalChars !== null;
   function setChars(updater) {
-    const next = typeof updater === 'function' ? updater(chars) : updater;
-    setInternalChars(next);
-    onCharsChange?.(next);
+    if (typeof updater === 'function') {
+      if (hasExternalChars) {
+        onCharsChange?.(updater);
+      } else {
+        setInternalChars(prev => {
+          const next = updater(prev);
+          onCharsChange?.(next);
+          return next;
+        });
+      }
+    } else {
+      if (hasExternalChars) {
+        onCharsChange?.(updater);
+      } else {
+        setInternalChars(updater);
+        onCharsChange?.(updater);
+      }
+    }
   }
   const [internalScenes, setInternalScenes] = useState([]);
   const scenes = (externalScenes !== undefined && externalScenes !== null) ? externalScenes : internalScenes;
+  const hasExternalScenes = externalScenes !== undefined && externalScenes !== null;
   function setScenes(updater) {
-    const next = typeof updater === 'function' ? updater(scenes) : updater;
-    setInternalScenes(next);
-    onScenesChange?.(next);
+    if (typeof updater === 'function') {
+      if (hasExternalScenes) {
+        onScenesChange?.(updater);
+      } else {
+        setInternalScenes(prev => {
+          const next = updater(prev);
+          onScenesChange?.(next);
+          return next;
+        });
+      }
+    } else {
+      if (hasExternalScenes) {
+        onScenesChange?.(updater);
+      } else {
+        setInternalScenes(updater);
+        onScenesChange?.(updater);
+      }
+    }
   }
   const [internalProps, setInternalProps] = useState([]);
   const props = (externalProps !== undefined && externalProps !== null) ? externalProps : internalProps;
+  const hasExternalProps = externalProps !== undefined && externalProps !== null;
   function setProps(updater) {
-    const next = typeof updater === 'function' ? updater(props) : updater;
-    setInternalProps(next);
-    onPropsChange?.(next);
+    if (typeof updater === 'function') {
+      if (hasExternalProps) {
+        onPropsChange?.(updater);
+      } else {
+        setInternalProps(prev => {
+          const next = updater(prev);
+          onPropsChange?.(next);
+          return next;
+        });
+      }
+    } else {
+      if (hasExternalProps) {
+        onPropsChange?.(updater);
+      } else {
+        setInternalProps(updater);
+        onPropsChange?.(updater);
+      }
+    }
   }
   const [charVoices, setCharVoices] = useState(() =>
     Object.fromEntries(INITIAL_CHARS.map((c) => [c.id, c.voice]))
   );
 
+  // 从后端数据同步 voice_id 到本地 charVoices（仅当本地无记录时）
   useEffect(() => {
-    apiGetEpisodes().then((list) => {
-      setEpisodes(list);
-      setActiveEpisode((prev) => prev || list[0] || '');
+    if (!externalChars || externalChars.length === 0) return;
+    setCharVoices((prev) => {
+      const next = { ...prev };
+      let changed = false;
+      externalChars.forEach((c) => {
+        if (c.voice_id && prev[c.id] === undefined) {
+          next[c.id] = c.voice_id;
+          changed = true;
+        }
+      });
+      return changed ? next : prev;
     });
+  }, [externalChars]);
+
+  useEffect(() => {
+    apiGetVoices({ tab: 'all' }).then((data) => {
+      const list = Array.isArray(data) ? data : data?.items ?? data?.voices ?? [];
+      setVoiceList(list);
+    }).catch(() => {});
+  }, []);
+
+  // 组件卸载时取消进行中的批量生成流
+  useEffect(() => {
+    return () => {
+      batchAbortRef.current?.abort();
+    };
   }, []);
 
   // 初始化时把内部默认数据同步给父组件（仅当父组件尚未持有数据时）
@@ -1624,19 +2520,136 @@ export default function SubjectPage({ projectName = '两只老虎的奇遇', onB
 
   const handleAdd = async () => {
     const type = activeTab; // 'char' | 'scene' | 'prop'
-    const { id } = await apiCreateSubject(type, { name: '待定', desc: '待定' });
+    const typeMap = { char: 'character', scene: 'scene', prop: 'prop' };
+    const labelMap = { char: '角色', scene: '场景', prop: '道具' };
+    const actualType = typeMap[type];
+    const labelPrefix = labelMap[type];
+    const num = counts[type] + 1;
+    const defaultName = `${labelPrefix}${String(num).padStart(3, '0')}`;
+    const defaultDesc = '自定义描述';
+
+    const { id } = await apiCreateSubject(projectId, { type: actualType, name: defaultName, description: defaultDesc });
     if (activeTab === 'char') {
-      setChars((prev) => [...prev, { id, name: '待定', desc: '待定', imageUrl: null, voice: null }]);
+      setChars((prev) => [...prev, { id, name: defaultName, desc: defaultDesc, imageUrl: null, voice: null }]);
     } else if (activeTab === 'scene') {
-      setScenes((prev) => [...prev, { id, name: '待定', desc: '待定', imageUrl: null }]);
+      setScenes((prev) => [...prev, { id, name: defaultName, desc: defaultDesc, imageUrl: null }]);
     } else if (activeTab === 'prop') {
-      setProps((prev) => [...prev, { id, name: '待定', desc: '待定', imageUrl: null }]);
+      setProps((prev) => [...prev, { id, name: defaultName, desc: defaultDesc, imageUrl: null }]);
+    }
+  };
+
+  // ── 下载主体封面图 ────────────────────────────────────────────
+  const handleDownloadSubjectImage = async (subjectId) => {
+    try {
+      // 获取主体图片列表，找到主图
+      const imgRes = await apiGetSubjectImages(projectId, subjectId);
+      const imgs = Array.isArray(imgRes) ? imgRes : (imgRes?.images || imgRes?.items || []);
+      const primaryImg = imgs.find((img) => img.is_primary);
+      const targetImg = primaryImg || imgs[0];
+      if (!targetImg?.id) {
+        console.warn('[SubjectPage] 没有可下载的图片');
+        return;
+      }
+      // 调用下载 API
+      const blob = await apiDownloadSubjectImage(projectId, subjectId, targetImg.id);
+      triggerBlobDownload(blob, `subject-${subjectId}.jpg`);
+    } catch (err) {
+      console.error('[SubjectPage] 下载图片失败:', err);
+    }
+  };
+
+  // ── 删除主体 ──────────────────────────────────────────────────
+  const handleDeleteSubject = async (subjectId) => {
+    try {
+      await apiDeleteSubject(projectId, subjectId);
+      setChars((prev) => prev.filter((c) => c.id !== subjectId));
+      setScenes((prev) => prev.filter((s) => s.id !== subjectId));
+      setProps((prev) => prev.filter((p) => p.id !== subjectId));
+      setSelectedChar(null);
+      setSelectedScene(null);
+      setSelectedProp(null);
+    } catch (err) {
+      console.error('[SubjectPage] 删除主体失败:', err);
     }
   };
 
   useEffect(() => {
     if (chars.length > 0) onUnlockStep?.('subject');
   }, [chars.length]);
+
+  // 开始智能分镜：跳转到分镜页（由 Home 处理解锁和导航）
+  const handleStartStoryboardRequest = () => {
+    if (isStoryboardGenerated) {
+      setConfirmStoryboardOpen(true);
+      return;
+    }
+    onStartStoryboard?.();
+  };
+
+  // 判断是否显示 loading / 错误态
+  const allEmpty = (!externalChars || externalChars.length === 0) && (!externalScenes || externalScenes.length === 0) && (!externalProps || externalProps.length === 0);
+  const showLoading = isExtracting;
+  const showError = !!extractError && allEmpty;
+
+  if (showLoading) {
+    return (
+      <div
+        style={{
+          position: 'absolute', inset: 0, marginBottom: '24px', marginRight: '32px',
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', gap: '16px',
+          backgroundColor: '#161616', borderRadius: '16px',
+          border: '1px solid #FFFFFF14',
+        }}
+      >
+        <DotsLoading size={4} color="#2DC3E1" gap={4} />
+        <span style={{ fontFamily: "'AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif", fontSize: '12px', color: '#FFFFFF99' }}>
+          {loadingTexts[loadingTextIndex]}
+        </span>
+      </div>
+    );
+  }
+
+  if (showError) {
+    return (
+      <div
+        style={{
+          position: 'absolute', inset: 0, marginBottom: '24px', marginRight: '32px',
+          display: 'flex', flexDirection: 'column',
+          alignItems: 'center', justifyContent: 'center', gap: '24px',
+          backgroundColor: '#161616', borderRadius: '16px',
+          border: '1px solid #FFFFFF14',
+        }}
+      >
+        <svg width="32" height="32" viewBox="0 0 32 32" fill="none" style={{ flexShrink: 0 }}>
+          <circle cx="16" cy="16" r="15" stroke="#FFFFFF66" strokeWidth="1.5" />
+          <circle cx="10" cy="13" r="2" fill="#FFFFFF66" />
+          <circle cx="22" cy="13" r="2" fill="#FFFFFF66" />
+          <path d="M10 23 Q16 19 22 23" stroke="#FFFFFF66" strokeWidth="1.5" strokeLinecap="round" />
+        </svg>
+        <span style={{ fontFamily: "'AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif", fontSize: '14px', color: '#FFFFFF99' }}>
+          糟糕，提取主体失败了，待会儿再试试吧！
+        </span>
+        <button
+          type="button"
+          onClick={() => {
+            setIsExtracting(true);
+            onExtractSubjects?.().finally(() => setIsExtracting(false));
+          }}
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            height: '36px', borderRadius: '8px', paddingInline: '16px',
+            backgroundColor: '#2DC3E1', border: '1px solid #FFFFFF33',
+            cursor: 'pointer', outline: '1px solid #00000080',
+            fontFamily: "'AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif",
+            fontSize: '14px', lineHeight: '18px', color: '#090909',
+          }}
+        >
+          重新提取主体
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div
@@ -1657,7 +2670,7 @@ export default function SubjectPage({ projectName = '两只老虎的奇遇', onB
         addLabel={`添加${TABS.find((t) => t.key === activeTab)?.label ?? '主体'}`}
         onAddChar={handleAdd}
         onBatchGen={() => setBatchGenOpen(true)}
-        onStartStoryboard={onStartStoryboard}
+        onStartStoryboard={handleStartStoryboardRequest}
         tabLabel={TABS.find((t) => t.key === activeTab)?.label ?? '主体'}
       />
 
@@ -1684,8 +2697,13 @@ export default function SubjectPage({ projectName = '两只老虎的奇遇', onB
             desc={char.desc}
             imageUrl={char.imageUrl}
             voice={charVoices[char.id]}
+            voiceName={(() => { const v = voiceList.find(x => x.voice_id === charVoices[char.id]); return v ? `${v.name}-${v.style}` : undefined; })()}
+            voicePreviewUrl={voiceList.find((v) => v.voice_id === charVoices[char.id])?.preview_url}
             onVoiceClick={() => setVoiceModalChar(char)}
             onClick={() => setSelectedChar(char)}
+            onDownloadImage={() => handleDownloadSubjectImage(char.id)}
+            onDeleteSubject={() => handleDeleteSubject(char.id)}
+            loading={!!batchLoadingSubjects[char.id]}
           />
         ))}
         {activeTab === 'char' && <AddCard onClick={handleAdd} />}
@@ -1695,7 +2713,11 @@ export default function SubjectPage({ projectName = '两只老虎的奇遇', onB
             name={scene.name}
             desc={scene.desc}
             imageUrl={scene.imageUrl}
+            placeholderImg={scenePlaceholderImg}
             onClick={() => setSelectedScene(scene)}
+            onDownloadImage={() => handleDownloadSubjectImage(scene.id)}
+            onDeleteSubject={() => handleDeleteSubject(scene.id)}
+            loading={!!batchLoadingSubjects[scene.id]}
           />
         ))}
         {activeTab === 'scene' && <AddCard onClick={handleAdd} />}
@@ -1705,7 +2727,11 @@ export default function SubjectPage({ projectName = '两只老虎的奇遇', onB
             name={prop.name}
             desc={prop.desc}
             imageUrl={prop.imageUrl}
+            placeholderImg={propPlaceholderImg}
             onClick={() => setSelectedProp(prop)}
+            onDownloadImage={() => handleDownloadSubjectImage(prop.id)}
+            onDeleteSubject={() => handleDeleteSubject(prop.id)}
+            loading={!!batchLoadingSubjects[prop.id]}
           />
         ))}
         {activeTab === 'prop' && <AddCard onClick={handleAdd} />}
@@ -1715,51 +2741,61 @@ export default function SubjectPage({ projectName = '两只老虎的奇遇', onB
       {selectedChar && (
         <EditSubjectPanel
           key={selectedChar.id}
+          projectId={projectId}
+          projectRatio={projectRatio}
           char={selectedChar}
           tabLabel="角色"
           onClose={() => setSelectedChar(null)}
           onCommit={(name, desc) => {
             setChars((prev) => prev.map((c) => c.id === selectedChar.id ? { ...c, name, desc } : c));
             setSelectedChar((prev) => ({ ...prev, name, desc }));
-            apiUpdateSubject(selectedChar.id, { name, desc });
+            apiUpdateSubject(projectId, selectedChar.id, { name, description: desc });
           }}
           onCoverChange={(imageUrl) => {
-            setChars((prev) => prev.map((c) => c.id === selectedChar.id ? { ...c, imageUrl } : c));
-            apiUpdateSubject(selectedChar.id, { imageUrl });
+            // imageUrl: 原始相对路径，用于 API；同时存储完整 URL 用于卡片展示
+            const fullUrl = normalizeImageUrl(imageUrl);
+            setChars((prev) => prev.map((c) => c.id === selectedChar.id ? { ...c, imageUrl: fullUrl } : c));
+            apiUpdateSubject(projectId, selectedChar.id, { image_url: imageUrl });
           }}
         />
       )}
       {selectedScene && (
         <EditSubjectPanel
           key={selectedScene.id}
+          projectId={projectId}
+          projectRatio={projectRatio}
           char={selectedScene}
           tabLabel="场景"
           onClose={() => setSelectedScene(null)}
           onCommit={(name, desc) => {
             setScenes((prev) => prev.map((s) => s.id === selectedScene.id ? { ...s, name, desc } : s));
             setSelectedScene((prev) => ({ ...prev, name, desc }));
-            apiUpdateSubject(selectedScene.id, { name, desc });
+            apiUpdateSubject(projectId, selectedScene.id, { name, description: desc });
           }}
           onCoverChange={(imageUrl) => {
-            setScenes((prev) => prev.map((s) => s.id === selectedScene.id ? { ...s, imageUrl } : s));
-            apiUpdateSubject(selectedScene.id, { imageUrl });
+            const fullUrl = normalizeImageUrl(imageUrl);
+            setScenes((prev) => prev.map((s) => s.id === selectedScene.id ? { ...s, imageUrl: fullUrl } : s));
+            apiUpdateSubject(projectId, selectedScene.id, { image_url: imageUrl });
           }}
         />
       )}
       {selectedProp && (
         <EditSubjectPanel
           key={selectedProp.id}
+          projectId={projectId}
+          projectRatio={projectRatio}
           char={selectedProp}
           tabLabel="道具"
           onClose={() => setSelectedProp(null)}
           onCommit={(name, desc) => {
             setProps((prev) => prev.map((p) => p.id === selectedProp.id ? { ...p, name, desc } : p));
             setSelectedProp((prev) => ({ ...prev, name, desc }));
-            apiUpdateSubject(selectedProp.id, { name, desc });
+            apiUpdateSubject(projectId, selectedProp.id, { name, description: desc });
           }}
           onCoverChange={(imageUrl) => {
-            setProps((prev) => prev.map((p) => p.id === selectedProp.id ? { ...p, imageUrl } : p));
-            apiUpdateSubject(selectedProp.id, { imageUrl });
+            const fullUrl = normalizeImageUrl(imageUrl);
+            setProps((prev) => prev.map((p) => p.id === selectedProp.id ? { ...p, imageUrl: fullUrl } : p));
+            apiUpdateSubject(projectId, selectedProp.id, { image_url: imageUrl });
           }}
         />
       )}
@@ -1770,18 +2806,63 @@ export default function SubjectPage({ projectName = '两只老虎的奇遇', onB
           open
           currentVoice={charVoices[voiceModalChar.id]}
           onClose={() => setVoiceModalChar(null)}
-          onConfirm={(v) => {
-            setCharVoices((prev) => ({ ...prev, [voiceModalChar.id]: v }));
+          onVoicesLoaded={setVoiceList}
+          onConfirm={(voiceId) => {
+            setCharVoices((prev) => ({ ...prev, [voiceModalChar.id]: voiceId }));
+            apiUpdateSubject(projectId, voiceModalChar.id, { voice_id: voiceId });
             setVoiceModalChar(null);
           }}
         />
       )}
 
       <BatchGenerateModal
+        projectRatio={projectRatio}
         open={batchGenOpen}
-        onClose={() => setBatchGenOpen(false)}
-        onConfirm={(params) => apiBatchGenerate(params)}
+        onClose={() => { if (!batchGenerating) setBatchGenOpen(false); }}
+        onConfirm={handleBatchGenerate}
+        generating={batchGenerating}
       />
+
+      {confirmStoryboardOpen && (
+        <ConfirmStoryboardModal
+          onConfirm={() => {
+            setConfirmStoryboardOpen(false);
+            onStartStoryboard?.();
+          }}
+          onCancel={() => setConfirmStoryboardOpen(false)}
+        />
+      )}
+
+      {/* 批量生成 toast */}
+      {batchToast && createPortal(
+        <div style={{ position: 'fixed', top: '25vh', left: '50%', transform: 'translateX(-50%)', zIndex: 9999, pointerEvents: 'none', animation: 'slideUpBounce 250ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards' }}>
+          <div className="flex items-center gap-[8px] px-[16px] py-[8px] rounded-medium bg-toast-bg backdrop-blur-[20px]" style={{ whiteSpace: 'nowrap' }}>
+            {batchToast.type === 'success' && (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+                <path d="M8 14.667C9.841 14.667 11.508 13.921 12.714 12.714C13.921 11.508 14.667 9.841 14.667 8C14.667 6.159 13.921 4.492 12.714 3.286C11.508 2.08 9.841 1.333 8 1.333C6.159 1.333 4.492 2.08 3.286 3.286C2.08 4.492 1.333 6.159 1.333 8C1.333 9.841 2.08 11.508 3.286 12.714C4.492 13.921 6.159 14.667 8 14.667Z" fill="#52BF92" stroke="#52BF92" strokeWidth="1.333" strokeLinejoin="round" />
+                <path d="M5.333 8L7.333 10L11.333 6" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            )}
+            {batchToast.type === 'warning' && (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+                <path d="M8 14.667C9.841 14.667 11.508 13.921 12.714 12.714C13.921 11.508 14.667 9.841 14.667 8C14.667 6.159 13.921 4.492 12.714 3.286C11.508 2.08 9.841 1.333 8 1.333C6.159 1.333 4.492 2.08 3.286 3.286C2.08 4.492 1.333 6.159 1.333 8C1.333 9.841 2.08 11.508 3.286 12.714C4.492 13.921 6.159 14.667 8 14.667Z" fill="#EB8B14" stroke="#EB8B14" strokeWidth="1.333" strokeLinejoin="round" />
+                <path fillRule="evenodd" clipRule="evenodd" d="M8 12.333C8.46 12.333 8.833 11.96 8.833 11.5C8.833 11.04 8.46 10.667 8 10.667C7.54 10.667 7.167 11.04 7.167 11.5C7.167 11.96 7.54 12.333 8 12.333Z" fill="#FFFFFF" />
+                <path d="M8 4V9.333" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            )}
+            {batchToast.type === 'error' && (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+                <path d="M8 14.667C9.841 14.667 11.508 13.921 12.714 12.714C13.921 11.508 14.667 9.841 14.667 8C14.667 6.159 13.921 4.492 12.714 3.286C11.508 2.08 9.841 1.333 8 1.333C6.159 1.333 4.492 2.08 3.286 3.286C2.08 4.492 1.333 6.159 1.333 8C1.333 9.841 2.08 11.508 3.286 12.714C4.492 13.921 6.159 14.667 8 14.667Z" fill="#F75F5F" stroke="#F75F5F" strokeWidth="1.333" strokeLinejoin="round" />
+                <path d="M5.333 5.333L10.667 10.667M10.667 5.333L5.333 10.667" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" />
+              </svg>
+            )}
+            <span className="text-text-primary text-font-size-16 font-font-weight-regular" style={{ fontFamily: FONT }}>
+              {batchToast.msg}
+            </span>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }

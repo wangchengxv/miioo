@@ -1,17 +1,84 @@
 import { useRef, useState } from 'react';
+import { apiCreateProject, apiUploadProjectCover } from '../api/project.js';
+import { apiCreateUserStyle } from '../api/user-styles.js';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
 
-// coverImg: 前端写死的封面占位图路径，后期替换为真实图片资源
-// prompt: 传给后端的风格提示词，后端接入时直接读取此字段
 const VISUAL_STYLES = [
-  { value: 'realistic', label: '写实',    coverImg: null, prompt: 'photorealistic, cinematic lighting, high detail, 8k' },
-  { value: 'anime',     label: '动漫',    coverImg: null, prompt: 'anime style, cel shading, vibrant colors, studio ghibli' },
-  { value: 'ink',       label: '水墨',    coverImg: null, prompt: 'Chinese ink wash painting, monochrome, brush strokes, traditional' },
-  { value: 'cyber',     label: '赛博朋克', coverImg: null, prompt: 'cyberpunk, neon lights, rain, dark city, futuristic' },
-  { value: 'retro',     label: '复古胶片', coverImg: null, prompt: 'vintage film, grain, warm tones, 35mm, nostalgic' },
-  { value: 'custom',    label: '自定义',   coverImg: null, prompt: null },
+  {
+    value: 'custom',
+    label: '自定义',
+    coverImg: null,
+    gradient: null,
+    prompt: null,
+  },
+  {
+    value: 'xianxia-3d',
+    label: '3D东方仙侠',
+    coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF1YMA3KDCVA9GNPRN1912B.png',
+    gradient: 'linear-gradient(in oklab 135deg, oklab(34.8% 0 0) 0%, oklab(21.8% 0 0) 100%)',
+  },
+  {
+    value: 'suspense-anime-2d',
+    label: '2D悬疑动漫',
+    coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF1ZTAX3W6NZKYMH0PYVYH7.png',
+    gradient: 'linear-gradient(in oklab 135deg, oklab(34.4% -0.009 -0.032) 0%, oklab(24.6% -0.001 -0.032) 100%)',
+  },
+  {
+    value: 'cyberpunk-3d',
+    label: '3D赛博朋克',
+    coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF212REFTJS0T5TX853C6PV.png',
+    gradient: 'linear-gradient(in oklab 135deg, oklab(26.4% 0 0) 0%, oklab(17.8% 0 0) 100%)',
+  },
+  {
+    value: 'pixar-style',
+    label: '皮克斯风格',
+    coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF21N68B569JWD37XGXMJHY.png',
+    gradient: 'linear-gradient(in oklab 135deg, oklab(22.8% 0.009 -0.037) 0%, oklab(16.6% 0.006 -0.026) 100%)',
+  },
+  {
+    value: 'wuxia-cg',
+    label: 'CG武侠',
+    coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF261TC70JTZ75NHHN40S7B.png',
+    gradient: 'linear-gradient(in oklab 135deg, oklab(22.8% 0.009 -0.037) 0%, oklab(16.6% 0.006 -0.026) 100%)',
+  },
+  {
+    value: 'ghibli-style',
+    label: '宫崎骏风格',
+    coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF26SR6DGWH3J83QYYG7YQ2.png',
+    gradient: 'linear-gradient(in oklab 135deg, oklab(22.8% 0.009 -0.037) 0%, oklab(16.6% 0.006 -0.026) 100%)',
+  },
+  {
+    value: 'shinkai-style',
+    label: '新海诚风格',
+    coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/79F37XWHB4KFX7387QRVPJRGW2.png',
+    gradient: 'linear-gradient(in oklab 135deg, oklab(26.8% 0.007 0.027) 0%, oklab(18.9% 0.007 0.022) 100%)',
+  },
+  {
+    value: 'ancient-chinese-live-action',
+    label: '真人古风写实',
+    coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF2JXQECN3C3V6A1RSK2NAQ.png',
+    gradient: 'linear-gradient(in oklab 135deg, oklab(22.8% 0.009 -0.037) 0%, oklab(16.6% 0.006 -0.026) 100%)',
+  },
+  {
+    value: 'urban-workplace',
+    label: '都市职场',
+    coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/2PWDW8VRNFGH4RWESGMQD6FQ11.png',
+    gradient: 'linear-gradient(in oklab 135deg, oklab(26.8% 0.007 0.027) 0%, oklab(18.9% 0.007 0.022) 100%)',
+  },
+  {
+    value: 'post-apocalyptic-modern',
+    label: '末日废土',
+    coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF2K6XQRPBT11ZHQ9E7GT2Q.png',
+    gradient: 'linear-gradient(in oklab 135deg, oklab(26.8% 0.007 0.027) 0%, oklab(18.9% 0.007 0.022) 100%)',
+  },
+  {
+    value: 'live-action-suspense',
+    label: '真人悬疑',
+    coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF2KG4DMWE4165JR2K270R7.png',
+    gradient: 'linear-gradient(in oklab 135deg, oklab(22.8% 0.009 -0.037) 0%, oklab(16.6% 0.006 -0.026) 100%)',
+  },
 ];
 
 const PRIMARY_BTN_GRADIENT =
@@ -45,33 +112,18 @@ function PlusIcon() {
   );
 }
 
-// 占位图背景色，后期 coverImg 有值时直接渲染 <img>
-const STYLE_PLACEHOLDER_BG = {
-  realistic: 'linear-gradient(135deg, #3a3a3a 0%, #1a1a1a 100%)',
-  anime:     'linear-gradient(135deg, #2d3a4a 0%, #1a2030 100%)',
-  ink:       'linear-gradient(135deg, #252525 0%, #111111 100%)',
-  cyber:     'linear-gradient(135deg, #1a1a2e 0%, #0d0d1a 100%)',
-  retro:     'linear-gradient(135deg, #2e2416 0%, #1a1208 100%)',
-};
-
 function StyleCard({ item, selected, customDesc, onClick }) {
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
 
   const isCustom = item.value === 'custom';
-  const placeholderBg = STYLE_PLACEHOLDER_BG[item.value];
-
-  // 自定义卡片无描述时不显示实线外框，有描述后与其他卡片一致
-  const hasCustomContent = isCustom && customDesc;
-  const showSolidBorder = !isCustom || hasCustomContent;
 
   let borderColor;
   if (selected) borderColor = '#2DC3E1';
-  else if (!showSolidBorder) borderColor = 'transparent';
   else if (hovered) borderColor = '#FFFFFF33';
   else borderColor = '#FFFFFF14';
 
-  const labelColor = selected ? 'text-text-accent' : isCustom && !customDesc ? 'text-text-disabled' : 'text-text-secondary';
+  const labelColor = selected ? '#2DC3E1' : isCustom && !customDesc ? '#FFFFFF33' : '#FFFFFF66';
 
   return (
     <button
@@ -88,43 +140,49 @@ function StyleCard({ item, selected, customDesc, onClick }) {
       }}
     >
       <div
-        className="w-full h-[88px] rounded-md overflow-hidden relative shrink-0"
+        className="w-full h-[88px] rounded-md overflow-hidden relative shrink-0 bg-[#2A2A2A]"
         style={{
-          border: `1.5px solid ${borderColor}`,
+          borderWidth: '1.5px',
+          borderStyle: isCustom && !customDesc ? 'dashed' : 'solid',
+          borderColor: isCustom ? (selected ? '#2DC3E1' : '#FFFFFF33') : borderColor,
           transition: 'border-color 150ms ease',
           boxShadow: selected ? '0 0 8px rgba(45,195,225,0.25)' : hovered ? '0 0 6px rgba(255,255,255,0.06)' : 'none',
         }}
       >
         {isCustom ? (
-          // 自定义：有描述时显示文字预览，否则显示加号
           customDesc ? (
-            <div className="absolute inset-0 bg-input-bg-normal flex items-center justify-center p-[8px]">
-              <span className="text-text-secondary text-font-size-12 text-center line-clamp-3" style={{ fontFamily: FONT }}>
+            <div className="absolute inset-0 bg-[#1D1E1E] flex items-center justify-center p-[8px]">
+              <span className="text-[#FFFFFF99] text-[12px] leading-[16px] text-center line-clamp-3" style={{ fontFamily: FONT }}>
                 {customDesc}
               </span>
             </div>
           ) : (
-            <div className="absolute inset-0 bg-input-bg-normal flex items-center justify-center" style={{ border: '1px dashed #FFFFFF33' }}>
+            <div className="absolute inset-0 bg-[#1D1E1E] flex items-center justify-center">
               <PlusIcon />
             </div>
           )
-        ) : item.coverImg ? (
-          // 有真实封面图时渲染图片（后期替换 coverImg 路径即可）
-          <img src={item.coverImg} alt={item.label} className="absolute inset-0 w-full h-full object-cover" />
         ) : (
-          // 占位渐变背景
-          <div className="absolute inset-0" style={{ background: placeholderBg }} />
+          <>
+            {item.gradient && (
+              <div className="absolute inset-0" style={{ backgroundImage: item.gradient }} />
+            )}
+            {item.coverImg && (
+              <div
+                className="absolute inset-0 bg-cover"
+                style={{ backgroundImage: `url(${item.coverImg})`, backgroundPosition: '50%' }}
+              />
+            )}
+          </>
         )}
 
-        {/* hover 时叠加高亮遮罩（非选中态） */}
         {hovered && !selected && !isCustom && (
           <div
             className="absolute inset-0 pointer-events-none"
-            style={{ background: 'rgba(255,255,255,0.06)', transition: 'opacity 150ms ease' }}
+            style={{ background: 'rgba(255,255,255,0.06)' }}
           />
         )}
       </div>
-      <span className={`text-font-size-12 ${labelColor}`} style={{ fontFamily: FONT }}>
+      <span className="text-[12px] leading-[16px]" style={{ fontFamily: FONT, color: labelColor }}>
         {item.label}
       </span>
     </button>
@@ -227,11 +285,22 @@ function CustomStyleModal({ open, onClose, onConfirm, initialDesc = '' }) {
   );
 }
 
+function sanitizeInput(val) {
+  val = val.replace(/[^a-zA-Z0-9一-龥_.  -]/g, '');
+  val = val.replace(/^[_. -]+/, '');
+  val = val.replace(/([_ .-])\1+/g, '$1');
+  return val;
+}
+
+function trimTrailingSpecials(val) {
+  return val.replace(/[_. -]+$/, '');
+}
+
 export default function NewProjectModal({ open, onClose, onConfirm }) {
   const [name, setName] = useState('');
   const [desc, setDesc] = useState('');
   const [ratio, setRatio] = useState('16:9');
-  const [style, setStyle] = useState('realistic');
+  const [style, setStyle] = useState('xianxia-3d');
   const [customStyleDesc, setCustomStyleDesc] = useState('');
   const [customStyleOpen, setCustomStyleOpen] = useState(false);
   const [coverFile, setCoverFile] = useState(null);
@@ -243,6 +312,7 @@ export default function NewProjectModal({ open, onClose, onConfirm }) {
   const [coverHovered, setCoverHovered] = useState(false);
   const [coverPressed, setCoverPressed] = useState(false);
   const [nameError, setNameError] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const fileInputRef = useRef(null);
 
   if (!open) return null;
@@ -250,28 +320,63 @@ export default function NewProjectModal({ open, onClose, onConfirm }) {
   const handleCoverChange = (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
+    if (file.size > 5 * 1024 * 1024) { alert('抱歉，平台暂不支持上传5M以上的图片资源！'); e.target.value = ''; return; }
     setCoverFile(file);
     setCoverPreview(URL.createObjectURL(file));
   };
 
-  const handleConfirm = () => {
+  const handleConfirm = async () => {
     if (!name.trim()) {
       setNameError(true);
       return;
     }
-    onConfirm?.({ name: name.trim(), desc, ratio, style, customStyleDesc, coverFile });
-    handleClose();
+    setSubmitting(true);
+    try {
+      let cover_url = null;
+      if (coverFile) {
+        cover_url = await apiUploadProjectCover(coverFile);
+      }
+      // 自定义风格：先创建 user-style，再用 custom:{id} 引用
+      let visual_style = style;
+      if (style === 'custom' && customStyleDesc.trim()) {
+        const styleName = customStyleDesc.replace(/\n/g, ' ').slice(0, 30);
+        try {
+          const userStyle = await apiCreateUserStyle({
+            name: styleName,
+            prompt: customStyleDesc,
+          });
+          visual_style = `custom:${userStyle.id || userStyle.value}`;
+        } catch (err) {
+          console.error('创建自定义风格失败', err);
+        }
+      }
+      const result = await apiCreateProject({
+        name: name.trim(),
+        description: desc,
+        aspect_ratio: ratio,
+        visual_style,
+        project_type: 'video',
+        cover_url,
+      });
+      onConfirm?.(result);
+      handleClose();
+    } catch (err) {
+      console.error('创建项目失败', err);
+    } finally {
+      setSubmitting(false);
+    }
   };
 
   const handleClose = () => {
     setName('');
     setDesc('');
     setRatio('16:9');
-    setStyle('realistic');
+    setStyle('xianxia-3d');
     setCustomStyleDesc('');
     setCoverFile(null);
     setCoverPreview(null);
     setNameError(false);
+    setSubmitting(false);
     onClose?.();
   };
 
@@ -305,7 +410,12 @@ export default function NewProjectModal({ open, onClose, onConfirm }) {
     ? { boxShadow: '0px 0px 10px var(--color-glow)', mixBlendMode: 'lighten' }
     : {};
 
-  const styleRows = [VISUAL_STYLES.slice(0, 3), VISUAL_STYLES.slice(3)];
+  const styleRows = [
+    VISUAL_STYLES.slice(0, 3),
+    VISUAL_STYLES.slice(3, 6),
+    VISUAL_STYLES.slice(6, 9),
+    VISUAL_STYLES.slice(9, 12),
+  ];
 
   return (
     <>
@@ -335,26 +445,40 @@ export default function NewProjectModal({ open, onClose, onConfirm }) {
           >
             {/* 项目名称 */}
             <div className="flex flex-col gap-[8px]">
-              <div className="flex items-center gap-[4px]">
-                <span className="text-text-secondary text-font-size-14" style={{ fontFamily: FONT }}>项目名称</span>
-                <span className="text-text-accent text-font-size-14" style={{ fontFamily: FONT }}>*</span>
+              <span className="text-text-secondary text-font-size-14" style={{ fontFamily: FONT }}>项目名称</span>
+              <div className="relative">
+                <input
+                  type="text"
+                  value={name}
+                  placeholder="请输入项目名称"
+                  maxLength={50}
+                  onChange={(e) => {
+                    const sanitized = sanitizeInput(e.target.value);
+                    setName(sanitized);
+                    if (sanitized.trim()) setNameError(false);
+                  }}
+                  onFocus={() => setNameFocused(true)}
+                  onBlur={() => {
+                    setNameFocused(false);
+                    const trimmed = trimTrailingSpecials(name);
+                    const finalName = trimmed !== name ? (setName(trimmed), trimmed) : name;
+                    if (!finalName.trim()) setNameError(true);
+                  }}
+                  onMouseEnter={() => setNameHovered(true)}
+                  onMouseLeave={() => setNameHovered(false)}
+                  className={`h-[36px] w-full pl-[12px] pr-[60px] rounded-medium bg-input-bg-normal border border-solid ${nameBorderClass} [outline:1px_solid_var(--color-stroke-outline)] outline-offset-0 text-font-size-14 text-input-text-content placeholder:text-input-text-hint antialiased transition-[border-color] duration-150`}
+                  style={{ fontFamily: FONT, ...nameGlowStyle }}
+                />
+                <span
+                  className="absolute right-[12px] top-1/2 -translate-y-1/2 text-font-size-12 text-text-disabled pointer-events-none select-none"
+                  style={{ fontFamily: FONT }}
+                >
+                  {name.length}/50
+                </span>
               </div>
-              <input
-                type="text"
-                value={name}
-                placeholder="请输入项目名称"
-                maxLength={50}
-                onChange={(e) => { setName(e.target.value); if (e.target.value.trim()) setNameError(false); }}
-                onFocus={() => setNameFocused(true)}
-                onBlur={() => setNameFocused(false)}
-                onMouseEnter={() => setNameHovered(true)}
-                onMouseLeave={() => setNameHovered(false)}
-                className={`h-[36px] w-full px-[12px] rounded-medium bg-input-bg-normal border border-solid ${nameBorderClass} [outline:1px_solid_var(--color-stroke-outline)] outline-offset-0 text-font-size-14 text-input-text-content placeholder:text-input-text-hint antialiased transition-[border-color] duration-150`}
-                style={{ fontFamily: FONT, ...nameGlowStyle }}
-              />
               {nameError && (
                 <span className="text-status-wrong text-font-size-12 px-[12px]" style={{ fontFamily: FONT }}>
-                  项目名称不能为空
+                  项目名称不可为空
                 </span>
               )}
             </div>
@@ -365,18 +489,30 @@ export default function NewProjectModal({ open, onClose, onConfirm }) {
                 <span className="text-text-secondary text-font-size-14" style={{ fontFamily: FONT }}>项目描述</span>
                 <span className="text-text-disabled text-font-size-12" style={{ fontFamily: FONT }}>选填</span>
               </div>
-              <textarea
-                value={desc}
-                placeholder="简单描述一下这个项目…"
-                maxLength={200}
-                onChange={(e) => setDesc(e.target.value)}
-                onFocus={() => setDescFocused(true)}
-                onBlur={() => setDescFocused(false)}
-                onMouseEnter={() => setDescHovered(true)}
-                onMouseLeave={() => setDescHovered(false)}
-                className={`h-[72px] w-full px-[12px] py-[9px] rounded-medium resize-none bg-input-bg-normal border border-solid ${descBorderClass} [outline:1px_solid_var(--color-stroke-outline)] outline-offset-0 text-font-size-14 text-input-text-content placeholder:text-input-text-hint antialiased transition-[border-color] duration-150`}
-                style={{ fontFamily: FONT, ...descGlowStyle }}
-              />
+              <div className="relative">
+                <textarea
+                  value={desc}
+                  placeholder="简单描述一下这个项目…"
+                  maxLength={300}
+                  onChange={(e) => setDesc(sanitizeInput(e.target.value))}
+                  onFocus={() => setDescFocused(true)}
+                  onBlur={() => {
+                    setDescFocused(false);
+                    const trimmed = trimTrailingSpecials(desc);
+                    if (trimmed !== desc) setDesc(trimmed);
+                  }}
+                  onMouseEnter={() => setDescHovered(true)}
+                  onMouseLeave={() => setDescHovered(false)}
+                  className={`h-[72px] w-full px-[12px] pt-[9px] pb-[26px] rounded-medium resize-none bg-input-bg-normal border border-solid ${descBorderClass} [outline:1px_solid_var(--color-stroke-outline)] outline-offset-0 text-font-size-14 text-input-text-content placeholder:text-input-text-hint antialiased transition-[border-color] duration-150`}
+                  style={{ fontFamily: FONT, ...descGlowStyle }}
+                />
+                <span
+                  className="absolute right-[12px] bottom-[8px] text-font-size-12 text-text-disabled pointer-events-none select-none"
+                  style={{ fontFamily: FONT }}
+                >
+                  {desc.length}/300
+                </span>
+              </div>
             </div>
 
             {/* 选择画面比例 */}
@@ -495,11 +631,14 @@ export default function NewProjectModal({ open, onClose, onConfirm }) {
             <button
               type="button"
               onClick={handleConfirm}
-              className="flex flex-col h-9 shrink-0 rounded-medium p-px [outline:1px_solid_var(--color-stroke-outline)] outline-offset-0 [box-shadow:var(--color-shadow)_3px_3px_8px] cursor-pointer"
+              disabled={submitting}
+              className="flex flex-col h-9 shrink-0 rounded-medium p-px [outline:1px_solid_var(--color-stroke-outline)] outline-offset-0 [box-shadow:var(--color-shadow)_3px_3px_8px] cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed"
               style={{ backgroundImage: PRIMARY_BTN_GRADIENT }}
             >
               <div className="flex items-center grow shrink basis-[0%] rounded-[7px] px-[20px] gap-[4px] bg-btn-primary-bg-normal hover:bg-btn-primary-bg-hover active:bg-btn-primary-bg-active">
-                <span className="text-text-primary text-font-size-14" style={{ fontFamily: FONT }}>确定</span>
+                <span className="text-text-primary text-font-size-14" style={{ fontFamily: FONT }}>
+                  {submitting ? '创建中…' : '确定'}
+                </span>
               </div>
             </button>
           </div>

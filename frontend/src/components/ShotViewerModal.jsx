@@ -87,6 +87,11 @@ export default function ShotViewerModal({ shot, onClose, onFinalizeChange }) {
     return () => { document.body.style.overflow = ''; };
   }, []);
 
+  // 音量同步到 video
+  useEffect(() => {
+    if (videoRef.current) videoRef.current.volume = volume;
+  }, [volume]);
+
   // 键盘快捷键
   useEffect(() => {
     const onKey = (e) => {
@@ -316,16 +321,29 @@ export default function ShotViewerModal({ shot, onClose, onFinalizeChange }) {
                 </div>
 
                 {/* 音量 */}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ opacity: 0.4, flexShrink: 0 }}>
+                <div
+                  className="volume-control-group"
+                  style={{ display: 'flex', alignItems: 'center', gap: '8px' }}
+                >
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none"
+                    className="volume-icon"
+                    style={{ flexShrink: 0 }}
+                  >
+                    <style>{'.volume-control-group:hover .volume-icon { opacity: 1 !important; } .volume-icon { opacity: 0.4; }'}</style>
+                    <style>{'.volume-control-group:hover .volume-slider-track { background-color: rgba(255,255,255,0.2) !important; }'}</style>
+                    <style>{'.volume-control-group:hover .volume-slider-fill { background-color: rgba(255,255,255,1) !important; }'}</style>
                     <path d="M3 6H1V10H3L7 13V3L3 6Z" fill="white" />
                     <path d="M10 5C11.1 6.1 11.1 9.9 10 11M12.5 3C14.7 5.2 14.7 10.8 12.5 13" stroke="white" strokeWidth="1.2" strokeLinecap="round" />
                   </svg>
                   <div
                     onClick={handleVolumeSeek}
+                    className="volume-slider-track"
                     style={{ width: '60px', height: '3px', backgroundColor: 'rgba(255,255,255,0.12)', borderRadius: '2px', cursor: 'pointer' }}
                   >
-                    <div style={{ width: `${volume * 100}%`, height: '100%', backgroundColor: 'rgba(255,255,255,0.4)', borderRadius: '2px' }} />
+                    <div
+                      className="volume-slider-fill"
+                      style={{ width: `${volume * 100}%`, height: '100%', backgroundColor: 'rgba(255,255,255,0.4)', borderRadius: '2px' }}
+                    />
                   </div>
                 </div>
               </div>
@@ -351,12 +369,12 @@ export default function ShotViewerModal({ shot, onClose, onFinalizeChange }) {
 
             <div style={{ height: '1px', backgroundColor: 'rgba(255,255,255,0.06)', margin: '0 20px' }} />
 
-            {/* AI 提示词 */}
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '16px 20px' }}>
-              <span style={{ fontFamily: FONT, fontSize: '11px', lineHeight: '14px', color: 'rgba(255,255,255,0.3)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
-                AI 提示词
+            {/* 提示词 */}
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '16px 20px', minWidth: 0 }}>
+              <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: 'rgba(255,255,255,0.6)', letterSpacing: '0.01em' }}>
+                提示词
               </span>
-              <p style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '20px', color: 'rgba(255,255,255,0.6)', letterSpacing: '0.01em', margin: 0 }}>
+              <p style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '20px', color: 'rgba(255,255,255,0.8)', letterSpacing: '0.01em', margin: 0, overflowWrap: 'break-word', wordBreak: 'break-word' }}>
                 {shot?.prompt ?? '—'}
               </p>
             </div>
@@ -365,7 +383,7 @@ export default function ShotViewerModal({ shot, onClose, onFinalizeChange }) {
 
             {/* 生成参数 */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px 20px' }}>
-              <span style={{ fontFamily: FONT, fontSize: '11px', lineHeight: '14px', color: 'rgba(255,255,255,0.3)', letterSpacing: '0.06em', textTransform: 'uppercase' }}>
+              <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: 'rgba(255,255,255,0.6)', letterSpacing: '0.01em' }}>
                 生成参数
               </span>
               {[
@@ -375,15 +393,59 @@ export default function ShotViewerModal({ shot, onClose, onFinalizeChange }) {
                 { label: '比例', value: shot?.aspectRatio ?? '—' },
               ].map(({ label, value }) => (
                 <div key={label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                  <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: 'rgba(255,255,255,0.35)', letterSpacing: '0.01em' }}>
+                  <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: 'rgba(255,255,255,0.6)', letterSpacing: '0.01em' }}>
                     {label}
                   </span>
-                  <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: 'rgba(255,255,255,0.7)', letterSpacing: '0.01em' }}>
+                  <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: 'rgba(255,255,255,0.8)', letterSpacing: '0.01em' }}>
                     {value}
                   </span>
                 </div>
               ))}
             </div>
+
+            {/* 参考素材 */}
+            {(shot?.referenceImages?.length > 0 || shot?.firstFrameUrl || shot?.lastFrameUrl || shot?.referenceVideoUrl || shot?.referenceAudioUrl) && (
+              <>
+                <div style={{ height: '1px', backgroundColor: 'rgba(255,255,255,0.06)', margin: '0 20px' }} />
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px 20px' }}>
+                  <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: 'rgba(255,255,255,0.6)', letterSpacing: '0.01em' }}>
+                    参考素材
+                  </span>
+                  {shot?.referenceImages?.length > 0 && shot.referenceImages.map((url, i) => (
+                    <div key={`refimg-${i}`} style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: 'rgba(255,255,255,0.6)', letterSpacing: '0.01em' }}>
+                        参考图{i > 0 ? ` ${i + 1}` : ''}
+                      </span>
+                      <img src={url} alt="" style={{ width: '100%', maxHeight: '120px', objectFit: 'cover', borderRadius: '4px' }} />
+                    </div>
+                  ))}
+                  {shot?.firstFrameUrl && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: 'rgba(255,255,255,0.6)', letterSpacing: '0.01em' }}>首帧</span>
+                      <img src={shot.firstFrameUrl} alt="" style={{ width: '100%', maxHeight: '120px', objectFit: 'cover', borderRadius: '4px' }} />
+                    </div>
+                  )}
+                  {shot?.lastFrameUrl && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: 'rgba(255,255,255,0.6)', letterSpacing: '0.01em' }}>尾帧</span>
+                      <img src={shot.lastFrameUrl} alt="" style={{ width: '100%', maxHeight: '120px', objectFit: 'cover', borderRadius: '4px' }} />
+                    </div>
+                  )}
+                  {shot?.referenceVideoUrl && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: 'rgba(255,255,255,0.6)', letterSpacing: '0.01em' }}>参考视频</span>
+                      <video src={shot.referenceVideoUrl} controls style={{ width: '100%', borderRadius: '4px' }} />
+                    </div>
+                  )}
+                  {shot?.referenceAudioUrl && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '6px' }}>
+                      <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: 'rgba(255,255,255,0.6)', letterSpacing: '0.01em' }}>参考音频</span>
+                      <audio src={shot.referenceAudioUrl} controls style={{ width: '100%' }} />
+                    </div>
+                  )}
+                </div>
+              </>
+            )}
 
             {/* 弹性空白 */}
             <div style={{ flex: 1 }} />

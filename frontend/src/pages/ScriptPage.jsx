@@ -3,60 +3,19 @@ import { useEditor, EditorContent } from '@tiptap/react';
 import StarterKit from '@tiptap/starter-kit';
 import { Markdown } from 'tiptap-markdown';
 import ReactMarkdown from 'react-markdown';
+import { apiSaveScriptWorkspace, apiGetScriptWorkspace, apiChatScriptWorkspaceStream, apiUploadScriptWorkspace, apiFinalizeScriptWorkspace, apiUpdateEpisode, apiGetEpisodes } from '../api/subject';
+import { apiListModels } from '../api/config';
 import { PulsingBorder } from '@paper-design/shaders-react';
+import DotsLoading from '../components/DotsLoading';
+import ConfirmDialog from '../components/ConfirmDialog';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
 
-const ALLOWED_EXTS = ['.txt', '.md', '.pdf', '.docx'];
-
-const MOCK_SCRIPT_MARKDOWN = `# 两只老虎的青枫奇遇
-
-## 第一集：陌生的邻居
-
-**场景1：青枫林·晨光草地（0:00-1:30）**
-
-【镜头1】俯拍：青枫林被晨雾笼罩，金黄的枫叶落在草地上，露珠折射阳光。背景音乐：轻快的森林鸟鸣声，轻柔的钢琴旋律。
-
-【镜头2】近景：橙色皮毛的小老虎乐乐，额头上的"王"字歪歪扭扭，尾巴翘得老高，正追着一只蝴蝶跑，爪子偶尔扒拉一下地上的枫叶。
-
-乐乐（活泼大喊，耳朵抖动）：别跑呀！陪我玩一会儿～
-
-【镜头3】特写：蝴蝶停在一片枫叶上，乐乐猛地扑过去，摔了个四脚朝天，肚皮露在外面，一脸懊恼。
-
-乐乐（揉着鼻子，小声嘟囔）：哼，居然敢耍我！
-
-**场景2：青枫林·枫树下（1:30-4:00）**
-
-【镜头1】侧拍：一棵粗壮的枫树下，白色皮毛的小老虎安安正安静地趴在石头上，闭着眼睛晒太阳，耳朵时不时动一下，警惕周围的动静。它的"王"字整齐端正，眼神沉稳。
-
-【镜头2】全景：乐乐摔疼后，抬头看到安安，眼睛一亮，尾巴甩得更欢，踮着脚尖跑过去。
-
-乐乐（凑到安安身边，小声试探）：喂！你是谁呀？怎么和我长得不一样？你也是老虎吗？
-
-【镜头3】特写：安安缓缓睁开眼睛，眼神冷淡，瞥了乐乐一眼，没有说话，只是往石头里面挪了挪，避开乐乐。
-
-乐乐（不气馁，凑得更近，鼻子快碰到安安的皮毛）：我叫乐乐！我住在这片林子的东边，你住在这里吗？我们一起玩好不好？
-
-【镜头4】中景：安安猛地站起身，耳朵竖起来，对着乐乐低吼了一声，转身跳进枫树林深处，只留下一个白色的背影。
-
-乐乐（被吓了一跳，往后退了两步，挠了挠头）：奇怪，它怎么不理我呀？
-
-**场景3：青枫林·小溪边（4:00-6:00）**
-
-【镜头1】中景：乐乐跟着安安的脚印，走到小溪边，看到安安正低头喝水，动作优雅，尾巴轻轻搭在地上。
-
-【镜头2】近景：乐乐小心翼翼地走过去，蹲在小溪另一边，也低下头喝水，时不时偷偷瞥向安安。
-
-乐乐（小声说）：我知道啦，你是不是不喜欢热闹？我不吵你，我们一起喝水好不好？
-
-【镜头3】特写：安安喝水的动作顿了一下，没有回头，也没有回应，但尾巴轻轻动了一下，没有再赶走乐乐。
-
-【镜头4】全景：阳光穿透枫叶，洒在两只老虎身上，小溪潺潺流淌，画面安静又温暖。
-
-【音效】轻微的水流声，远处的鸟鸣声，背景音乐渐弱。
-
-**【结尾字幕】** 下集预告：意外降临，乐乐陷入麻烦，安安会出手相助吗？`;
+const ALLOWED_EXTS = ['.txt', '.md', '.pdf', '.docx', '.doc'];
+const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
+const MAX_CHARS = 100000;
+const CHAT_TIMEOUT_MS = 120_000; // 2 分钟客户端超时兜底（后端通常先返回 504）
 
 function parseScriptOutline(markdown) {
   if (!markdown) return [];
@@ -73,7 +32,7 @@ function parseScriptOutline(markdown) {
       });
     } else if (/^##\s/.test(line)) {
       entries.push({
-        title: line.replace(/^##\s+/, '').trim(),
+        title: line.replace(/^##\s+/, '').replace(/\*\*/g, '').replace(/\*/g, '').replace(/__/g, '').replace(/_/g, '').trim(),
         level: 2,
         offset,
       });
@@ -83,6 +42,16 @@ function parseScriptOutline(markdown) {
   });
 
   return entries;
+}
+
+/**
+ * 将后端返回的"第X集"转换为 Markdown 二级标题 `## 第X集`，
+ * 以便 parseScriptOutline 正确识别并生成分集导航。
+ * 兼容：纯文本"第X集"、已有一级标题"# 第X集"、无空格"#第X集"。
+ */
+function formatEpisodeHeaders(content) {
+  if (!content) return '';
+  return content.replace(/^(?:#\s*)?第(\d+)集/gm, '## 第$1集');
 }
 
 function formatFileSize(bytes) {
@@ -99,6 +68,50 @@ function truncateFileName(name) {
   const maxBase = 12;
   if (base.length <= maxBase) return name;
   return base.slice(0, maxBase) + '… ' + ext;
+}
+
+const SPINNER_STYLE_ID = 'script-spinner-style';
+function ensureSpinnerStyle() {
+  if (document.getElementById(SPINNER_STYLE_ID)) return;
+  const style = document.createElement('style');
+  style.id = SPINNER_STYLE_ID;
+  style.textContent = `@keyframes btn-spin { to { transform: rotate(360deg); } }`;
+  document.head.appendChild(style);
+}
+
+function Toast({ toasts }) {
+  return (
+    <div style={{ position: 'fixed', top: '25vh', left: '50%', transform: 'translateX(-50%)', zIndex: 9999, display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px', pointerEvents: 'none' }}>
+      {toasts.map((t) => (
+        <div
+          key={t.id}
+          className="flex items-center gap-[8px] px-[16px] py-[8px] rounded-medium bg-toast-bg backdrop-blur-[20px]"
+          style={{ whiteSpace: 'nowrap', animation: 'slideUpBounce 250ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards' }}
+        >
+          {t.type === 'success' && (
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+              <path d="M8 14.667C9.841 14.667 11.508 13.921 12.714 12.714C13.921 11.508 14.667 9.841 14.667 8C14.667 6.159 13.921 4.492 12.714 3.286C11.508 2.08 9.841 1.333 8 1.333C6.159 1.333 4.492 2.08 3.286 3.286C2.08 4.492 1.333 6.159 1.333 8C1.333 9.841 2.08 11.508 3.286 12.714C4.492 13.921 6.159 14.667 8 14.667Z" fill="#52BF92" stroke="#52BF92" strokeWidth="1.333" strokeLinejoin="round" />
+              <path d="M5.333 8L7.333 10L11.333 6" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          )}
+          {t.type === 'warning' && (
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+              <path d="M8 14.667C9.841 14.667 11.508 13.921 12.714 12.714C13.921 11.508 14.667 9.841 14.667 8C14.667 6.159 13.921 4.492 12.714 3.286C11.508 2.08 9.841 1.333 8 1.333C6.159 1.333 4.492 2.08 3.286 3.286C2.08 4.492 1.333 6.159 1.333 8C1.333 9.841 2.08 11.508 3.286 12.714C4.492 13.921 6.159 14.667 8 14.667Z" fill="#EB8B14" stroke="#EB8B14" strokeWidth="1.333" strokeLinejoin="round" />
+              <path fillRule="evenodd" clipRule="evenodd" d="M8 12.333C8.46 12.333 8.833 11.96 8.833 11.5C8.833 11.04 8.46 10.667 8 10.667C7.54 10.667 7.167 11.04 7.167 11.5C7.167 11.96 7.54 12.333 8 12.333Z" fill="#FFFFFF" />
+              <path d="M8 4V9.333" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          )}
+          {t.type === 'error' && (
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+              <path d="M8 14.667C9.841 14.667 11.508 13.921 12.714 12.714C13.921 11.508 14.667 9.841 14.667 8C14.667 6.159 13.921 4.492 12.714 3.286C11.508 2.08 9.841 1.333 8 1.333C6.159 1.333 4.492 2.08 3.286 3.286C2.08 4.492 1.333 6.159 1.333 8C1.333 9.841 2.08 11.508 3.286 12.714C4.492 13.921 6.159 14.667 8 14.667Z" fill="#F75F5F" stroke="#F75F5F" strokeWidth="1.333" strokeLinejoin="round" />
+              <path d="M5.333 5.333L10.667 10.667M10.667 5.333L5.333 10.667" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" />
+            </svg>
+          )}
+          <span className="text-text-primary text-font-size-16 font-font-weight-regular" style={{ fontFamily: FONT }}>{t.message}</span>
+        </div>
+      ))}
+    </div>
+  );
 }
 
 const ROTATE_STYLE_ID = 'chatbox-rotate-keyframe';
@@ -285,18 +298,39 @@ function UploadPlaceholder({ onFileSelect, disabled = false }) {
   const icon = hovered ? hoverIcon : defaultIcon;
   const transition = 'all 0.35s cubic-bezier(0.4, 0, 0.2, 1)';
 
-  const handleChange = (e) => {
+  const handleChange = async (e) => {
     const selected = Array.from(e.target.files || []);
     if (!selected.length) return;
+
     const invalid = selected.filter((file) => {
       const ext = '.' + file.name.split('.').pop().toLowerCase();
       return !ALLOWED_EXTS.includes(ext);
     });
     if (invalid.length) {
-      alert('仅支持 txt、md、pdf、docx 格式的文件');
+      alert('仅支持 .txt/.docx/.pdf/.md/.doc 格式的文件');
       e.target.value = '';
       return;
     }
+
+    const tooLarge = selected.filter((file) => file.size > MAX_FILE_SIZE);
+    if (tooLarge.length) {
+      alert(`文件大小不能超过 10MB：${tooLarge.map((f) => f.name).join('、')}`);
+      e.target.value = '';
+      return;
+    }
+
+    for (const file of selected) {
+      const ext = '.' + file.name.split('.').pop().toLowerCase();
+      if (ext === '.txt' || ext === '.md') {
+        const content = await file.text();
+        if (content.length > MAX_CHARS) {
+          alert(`"${file.name}" 超过 10 万字符限制`);
+          e.target.value = '';
+          return;
+        }
+      }
+    }
+
     onFileSelect?.(selected);
     e.target.value = '';
   };
@@ -323,7 +357,7 @@ function UploadPlaceholder({ onFileSelect, disabled = false }) {
         borderRadius: '8px',
       }}
     >
-      <input ref={fileInputRef} type="file" multiple accept=".txt,.md,.pdf,.docx" className="hidden" onChange={handleChange} />
+      <input ref={fileInputRef} type="file" multiple accept=".txt,.md,.pdf,.docx,.doc" className="hidden" onChange={handleChange} />
       <div
         style={{
           width: '44px',
@@ -375,15 +409,15 @@ function UploadPlaceholder({ onFileSelect, disabled = false }) {
   );
 }
 
-const MODEL_OPTIONS_1 = ['Doubao-Seed-2.0-Pro', 'Doubao-Seed-1.6', 'Claude Sonnet 4.6', 'GPT-4o'];
-const MODEL_OPTIONS_2 = ['集数：自动适应', '集数：1集', '集数：3集', '集数：5集', '集数：10集'];
 
-function ModelSelector({ label, options, width, disabled = false }) {
+function ModelSelector({ label, options, width, disabled = false, onSelect }) {
   const [open, setOpen] = useState(false);
   const [selected, setSelected] = useState(label);
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const ref = useRef(null);
+
+  useEffect(() => { setSelected(label); }, [label]);
 
   useEffect(() => {
     if (!open) return;
@@ -457,19 +491,18 @@ function ModelSelector({ label, options, width, disabled = false }) {
 
       {open && !disabled && (
         <div
+          className="rounded-medium bg-select-bg border border-select-border p-[4px]"
           style={{
             position: 'absolute',
             zIndex: 50,
             left: 0,
             marginBottom: '4px',
-            borderRadius: '8px',
-            overflow: 'hidden',
-            background: '#1D1E1E',
-            border: '1px solid #FFFFFF14',
-            outline: '1px solid #00000080',
             minWidth: '100%',
-            boxShadow: '0 -8px 24px #00000066',
+            maxWidth: '100%',
+            width: '100%',
             bottom: '100%',
+            outline: '1px solid #00000080',
+            boxShadow: '0px -4px 16px var(--color-select-shadow)',
           }}
         >
           {options.map((option) => (
@@ -479,32 +512,16 @@ function ModelSelector({ label, options, width, disabled = false }) {
               onClick={() => {
                 setSelected(option);
                 setOpen(false);
+                onSelect?.(option);
               }}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                width: '100%',
-                height: '32px',
-                paddingLeft: '12px',
-                paddingRight: '12px',
-                cursor: 'pointer',
-                border: 'none',
-                textAlign: 'left',
-                fontFamily: FONT,
-                fontSize: '12px',
-                lineHeight: '16px',
-                color: option === selected ? '#FFFFFF' : '#FFFFFFCC',
-                background: option === selected ? '#FFFFFF14' : 'transparent',
-                transition: 'background 0.15s',
-              }}
-              onMouseEnter={(event) => {
-                if (option !== selected) event.currentTarget.style.background = '#FFFFFF0A';
-              }}
-              onMouseLeave={(event) => {
-                if (option !== selected) event.currentTarget.style.background = 'transparent';
-              }}
+              className={`flex items-center px-[12px] py-[8px] self-stretch rounded-md text-font-size-14 w-full cursor-pointer border-none text-left transition-colors duration-150 ${
+                option === selected
+                  ? 'bg-select-item-bg-active text-select-item-text-active'
+                  : 'bg-select-item-bg-normal text-select-item-text-normal hover:bg-select-item-bg-hover hover:text-select-item-text-hover'
+              }`}
+              style={{ fontFamily: FONT }}
             >
-              {option}
+              <span className="truncate" title={option}>{option}</span>
             </button>
           ))}
         </div>
@@ -513,24 +530,157 @@ function ModelSelector({ label, options, width, disabled = false }) {
   );
 }
 
-function SendButton({ onClick, disabled = false, loading = false }) {
+function EpisodeCountSelector({ value, onChange, disabled = false }) {
+  const [open, setOpen] = useState(false);
+  const [inputVal, setInputVal] = useState(typeof value === 'number' ? value : 1);
+  const [hovered, setHovered] = useState(false);
+  const [focused, setFocused] = useState(false);
+  const ref = useRef(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const handler = (e) => {
+      if (ref.current && !ref.current.contains(e.target)) setOpen(false);
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [open]);
+
+  const isActive = open || hovered;
+  const label = value == null ? '集数：自动适应' : `集数：${value} 集`;
+
+  const handleAutoSelect = () => { onChange(null); setOpen(false); };
+
+  const adjustCount = (delta) => {
+    const base = typeof inputVal === 'number' ? inputVal : 1;
+    const next = Math.max(1, base + delta);
+    setInputVal(next);
+    onChange(next);
+  };
+
+  const handleInputChange = (e) => {
+    const raw = e.target.value;
+    if (raw === '') { setInputVal(''); return; }
+    const n = parseInt(raw, 10);
+    if (!isNaN(n) && n >= 1) { setInputVal(n); onChange(n); }
+  };
+
+  const handleInputBlur = () => {
+    const n = parseInt(inputVal, 10);
+    if (isNaN(n) || n < 1) { setInputVal(1); onChange(1); }
+  };
+
+  return (
+    <div ref={ref} style={{ position: 'relative', width: '140px' }}>
+      <button
+        type="button"
+        disabled={disabled}
+        onClick={() => !disabled && setOpen((v) => !v)}
+        onMouseEnter={() => !disabled && setHovered(true)}
+        onMouseLeave={() => setHovered(false)}
+        onFocus={() => setFocused(true)}
+        onBlur={() => setFocused(false)}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          gap: '8px',
+          height: '32px',
+          paddingLeft: '12px',
+          paddingRight: '6px',
+          borderRadius: '8px',
+          justifyContent: 'space-between',
+          flexShrink: 0,
+          border: '1px solid',
+          width: '100%',
+          cursor: disabled ? 'not-allowed' : 'pointer',
+          background: open ? '#252525' : isActive ? '#222222' : '#1D1E1E',
+          borderColor: open ? '#FFFFFF33' : '#FFFFFF14',
+          outline: focused || open ? '1px solid #2DC3E180' : '1px solid #00000080',
+          transition: 'background 0.2s, border-color 0.2s, outline 0.2s, opacity 0.2s',
+          opacity: disabled ? 0.45 : 1,
+        }}
+      >
+        <div style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: '#FFFFFFCC', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          {label}
+        </div>
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0, transition: 'transform 0.2s', transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }}>
+          <path d="M12 6.333L8 10.333L4 6.333H12Z" fill="#FFFFFF" stroke="#FFFFFF" strokeWidth="1.333" strokeLinejoin="round" />
+        </svg>
+      </button>
+
+      {open && !disabled && (
+        <div
+          className="rounded-medium bg-select-bg border border-select-border p-[4px]"
+          style={{
+            position: 'absolute', zIndex: 50, left: 0, marginBottom: '4px',
+            width: '100%', maxWidth: '100%', bottom: '100%',
+            outline: '1px solid #00000080',
+            boxShadow: '0px -4px 16px var(--color-select-shadow)',
+          }}
+        >
+          <button
+            type="button"
+            onClick={handleAutoSelect}
+            className={`flex items-center px-[12px] py-[8px] self-stretch rounded-md text-font-size-14 w-full cursor-pointer border-none text-left transition-colors duration-150 ${
+              value == null
+                ? 'bg-select-item-bg-active text-select-item-text-active'
+                : 'bg-select-item-bg-normal text-select-item-text-normal hover:bg-select-item-bg-hover hover:text-select-item-text-hover'
+            }`}
+            style={{ fontFamily: FONT }}
+          >
+            集数：自动适应
+          </button>
+
+          <div
+            className={`flex items-center px-[12px] py-[8px] rounded-md gap-[4px] ${
+              value != null
+                ? 'bg-select-item-bg-active'
+                : 'bg-select-item-bg-normal hover:bg-select-item-bg-hover'
+            }`}
+          >
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); adjustCount(-1); }}
+              className="w-[20px] h-[20px] rounded-[4px] border-none bg-white-8 text-select-item-text-normal cursor-pointer flex items-center justify-center text-[14px] shrink-0 hover:bg-white-20 transition-colors duration-150"
+            >−</button>
+            <input
+              type="number"
+              min="1"
+              value={inputVal}
+              onChange={handleInputChange}
+              onBlur={handleInputBlur}
+              onClick={(e) => { e.stopPropagation(); if (value == null) { setInputVal(1); onChange(1); } }}
+              className="[&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none text-select-item-text-normal bg-white-5 border border-stroke-normal rounded-[4px] text-center outline-none text-font-size-14 flex-1 min-w-0"
+              style={{ height: '20px', fontFamily: FONT, MozAppearance: 'textfield' }}
+            />
+            <button
+              type="button"
+              onClick={(e) => { e.stopPropagation(); adjustCount(1); }}
+              className="w-[20px] h-[20px] rounded-[4px] border-none bg-white-8 text-select-item-text-normal cursor-pointer flex items-center justify-center text-[14px] shrink-0 hover:bg-white-20 transition-colors duration-150"
+            >+</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function SendButton({ onClick, disabled = false, loading = false, isGenerating = false }) {
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
-  const [focused, setFocused] = useState(false);
 
+  const isClickable = isGenerating || !disabled;
   const scale = pressed ? 'scale(0.9)' : hovered ? 'scale(1.1)' : 'scale(1)';
 
   return (
     <button
       type="button"
-      disabled={disabled}
-      onMouseEnter={() => !disabled && setHovered(true)}
+      disabled={!isClickable}
+      onMouseEnter={() => isClickable && setHovered(true)}
       onMouseLeave={() => { setHovered(false); setPressed(false); }}
-      onMouseDown={() => !disabled && setPressed(true)}
+      onMouseDown={() => isClickable && setPressed(true)}
       onMouseUp={() => setPressed(false)}
-      onFocus={() => setFocused(true)}
-      onBlur={() => setFocused(false)}
-      onClick={disabled ? undefined : onClick}
+      onClick={isClickable ? onClick : undefined}
       style={{
         display: 'flex',
         flexDirection: 'column',
@@ -543,14 +693,13 @@ function SendButton({ onClick, disabled = false, loading = false }) {
         boxShadow: '#2DC3E133 0px 0px 12px',
         width: '40px',
         height: '40px',
-        cursor: disabled ? 'not-allowed' : 'pointer',
-        transform: disabled ? 'scale(1)' : scale,
+        cursor: !isClickable ? 'not-allowed' : 'pointer',
+        transform: !isClickable ? 'scale(1)' : scale,
         transition: 'transform 0.15s cubic-bezier(0.4,0,0.2,1), opacity 0.15s',
-        opacity: disabled ? 0.45 : 1,
+        opacity: (!isClickable) ? 0.45 : 1,
         background: 'transparent',
         border: 'none',
-        outline: focused ? '1px solid #2DC3E180' : 'none',
-        outlineOffset: '4px',
+        outline: 'none',
         padding: 0,
       }}
     >
@@ -574,11 +723,14 @@ function SendButton({ onClick, disabled = false, loading = false }) {
         colorBack="#00000000"
         className="rounded-full flex-1 w-full [box-shadow:#34DDFFB3_0px_0px_4px_2px_inset] bg-neutral-300"
       />
-      {loading ? (
-        <div style={{ position: 'absolute', left: '50%', top: '50%', translate: '-50% -50%', display: 'flex', alignItems: 'center', gap: '3px' }}>
-          {[0, 1, 2].map((index) => (
-            <div key={index} className="thinking-dot" style={{ width: '4px', height: '4px', borderRadius: '9999px', background: '#FFFFFF' }} />
-          ))}
+      {isGenerating ? (
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ position: 'absolute', left: '50%', top: '50%', translate: '-50% -50%' }}>
+          <rect x="4" y="3" width="3" height="10" rx="1.5" fill="white" />
+          <rect x="9" y="3" width="3" height="10" rx="1.5" fill="white" />
+        </svg>
+      ) : loading ? (
+        <div style={{ position: 'absolute', left: '50%', top: '50%', translate: '-50% -50%' }}>
+          <DotsLoading size={4} color="#FFFFFF" gap={3} />
         </div>
       ) : (
         <svg width="20" height="20" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ position: 'absolute', left: '50%', top: '50%', translate: '-50% -50%' }}>
@@ -668,16 +820,35 @@ function FileCard({ file, onRemove, disabled = false }) {
   );
 }
 
-function InputCard({ onSend, width = '700px', disabled = false }) {
-  const [text, setText] = useState('');
+function InputCard({ onSend, onStop, restoreText = '', restoreFiles = [], selectedModel, onModelChange, episodeCount, onEpisodeCountChange, width = '700px', disabled = false }) {
+  const [text, setText] = useState(restoreText); // 挂载时使用 restoreText 作为初始值（超时回到空状态时预填充）
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
-  const [files, setFiles] = useState([]);
+  const [files, setFiles] = useState(restoreFiles);
+  const [models, setModels] = useState([]);
+  const prevDisabledRef = useRef(false);
 
   useEffect(() => {
     ensureRotateKeyframe();
     ensureThinkingStyle();
   }, []);
+
+  useEffect(() => {
+    apiListModels({ category: 'chat' }).then((list) => {
+      if (Array.isArray(list) && list.length > 0) {
+        setModels(list);
+        if (!selectedModel) { const def = list.find(m => m.is_default === true) || list[0]; onModelChange?.(def.model_id); }
+      }
+    }).catch(() => {});
+  }, []);
+
+  useEffect(() => {
+    if (prevDisabledRef.current && !disabled) {
+      setText(restoreText);
+      setFiles(restoreFiles);
+    }
+    prevDisabledRef.current = disabled;
+  }, [disabled, restoreText, restoreFiles]);
 
   const handleFileSelect = (newFiles) => setFiles((prev) => [...prev, ...newFiles]);
   const handleRemoveFile = (index) => setFiles((prev) => prev.filter((_, itemIndex) => itemIndex !== index));
@@ -686,9 +857,13 @@ function InputCard({ onSend, width = '700px', disabled = false }) {
 
   const handleSend = () => {
     if (!canSend) return;
-    onSend(text.trim(), files);
+    onSend(text.trim(), files, selectedModel, episodeCount);
     setText('');
     setFiles([]);
+  };
+
+  const handleStop = () => {
+    onStop?.();
   };
 
   const handleKeyDown = (e) => {
@@ -698,7 +873,7 @@ function InputCard({ onSend, width = '700px', disabled = false }) {
     }
   };
 
-  const isTyping = focused || text.length > 0;
+  const isTyping = focused;
   const hoverBg = 'conic-gradient(from var(--chatbox-angle), oklab(86.8% -0.081 -0.057 / 30%) 0%, oklab(75.5% -0.102 -0.072 / 25%) 15%, oklab(75.5% -0.102 -0.072 / 0%) 50%, oklab(100% 0 0 / 5%) 55%, oklab(86.8% -0.081 -0.057 / 30%) 100%)';
   const idleBg = 'linear-gradient(in oklab 161.1deg, oklab(86.8% -0.081 -0.057 / 30%) 9.06%, oklab(75.5% -0.102 -0.072 / 25%) 15.35%, oklab(75.5% -0.102 -0.072 / 0%) 52.98%, oklab(100% 0 0 / 5%) 56.39%)';
 
@@ -780,7 +955,7 @@ function InputCard({ onSend, width = '700px', disabled = false }) {
               lineHeight: '18px',
               color: text ? '#FFFFFFCC' : '#FFFFFF66',
             }}
-            placeholder="告诉导演你想拍什么或者直接上传剧本"
+            placeholder="支持.txt/.docx/.pdf/.md/.doc格式，最大 10MB，剧本不超过10w字符"
             value={text}
             onChange={(e) => setText(e.target.value)}
             onKeyDown={handleKeyDown}
@@ -788,19 +963,28 @@ function InputCard({ onSend, width = '700px', disabled = false }) {
             onBlur={() => setFocused(false)}
           />
         </div>
-        <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0px', justifyContent: 'space-between', alignSelf: 'stretch' }}>
+          <div style={{ display: 'flex', alignItems: 'flex-end', gap: '0px', justifyContent: 'space-between', alignSelf: 'stretch' }}>
           <div style={{ display: 'flex', alignItems: 'flex-start', gap: '8px', padding: 0 }}>
-            <ModelSelector label="Doubao-Seed-2.0-Pro" options={MODEL_OPTIONS_1} width="180px" disabled={disabled} />
-            <ModelSelector label="集数：自动适应" options={MODEL_OPTIONS_2} width="140px" disabled={disabled} />
+            <ModelSelector
+              label={selectedModel ? (models.find(m => m.model_id === selectedModel)?.name ?? selectedModel) : (models[0]?.name ?? '加载中…')}
+              options={models.map(m => m.name)}
+              width="200px"
+              disabled={disabled}
+              onSelect={(name) => {
+                const m = models.find(m => m.name === name);
+                if (m) onModelChange?.(m.model_id);
+              }}
+            />
+            <EpisodeCountSelector value={episodeCount} onChange={(v) => onEpisodeCountChange?.(v)} disabled={disabled} />
           </div>
-          <SendButton onClick={handleSend} disabled={!canSend} loading={disabled} />
+          <SendButton onClick={disabled ? handleStop : handleSend} disabled={!canSend && !disabled} loading={disabled && !onStop} isGenerating={disabled && !!onStop} />
         </div>
       </div>
     </div>
   );
 }
 
-function ScriptEmptyState({ onSend }) {
+function ScriptEmptyState({ onSend, selectedModel, onModelChange, episodeCount, onEpisodeCountChange, restoreText = '', restoreFiles = [] }) {
   return (
     <div
       style={{
@@ -814,7 +998,16 @@ function ScriptEmptyState({ onSend }) {
         paddingBottom: '24px',
       }}
     >
-      <InputCard onSend={onSend} width="700px" />
+      <InputCard
+        onSend={onSend}
+        width="700px"
+        selectedModel={selectedModel}
+        onModelChange={onModelChange}
+        episodeCount={episodeCount}
+        onEpisodeCountChange={onEpisodeCountChange}
+        restoreText={restoreText}
+        restoreFiles={restoreFiles}
+      />
     </div>
   );
 }
@@ -953,9 +1146,7 @@ function AiThinkingMessage() {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: '10px', alignSelf: 'stretch', justifyContent: 'center' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '5px', height: '20px' }}>
-        {[0, 1, 2].map((index) => (
-          <div key={index} className="thinking-dot" style={{ width: '5px', height: '5px', borderRadius: '9999px', flexShrink: 0, background: '#2DC3E1' }} />
-        ))}
+        <DotsLoading size={5} color="#2DC3E1" gap={5} />
       </div>
       <div style={{ position: 'relative', height: '20px', minWidth: '120px', overflow: 'hidden' }}>
         <span
@@ -980,41 +1171,59 @@ function AiThinkingMessage() {
   );
 }
 
-const CHAR_INTERVAL = 5;
+// 流式打字动画速度：每个字符之间的间隔（毫秒）
+const CHAR_INTERVAL = 15;
 
-function AiStreamingContent({ content, index: indexProp, onIndexChange, onDone }) {
+// 流式内容渲染组件：逐字打字动画 + 自动滚动到底部
+// content 由 SSE 实时推送逐步增长，组件负责以打字机效果逐字展示
+// 当浏览器标签页切到后台时，跳过打字动画直接展示全部内容，避免 setTimeout 被浏览器节流导致卡顿
+function AiStreamingContent({ content, onDone }) {
   const allChars = useMemo(() => [...content], [content]);
-  const [indexLocal, setIndexLocal] = useState(0);
-  const isControlled = indexProp !== undefined;
-  const index = isControlled ? indexProp : indexLocal;
-  const setIndex = isControlled
-    ? (updater) => {
-        const next = typeof updater === 'function' ? updater(indexProp) : updater;
-        onIndexChange?.(next);
-      }
-    : setIndexLocal;
-
+  const [renderIndex, setRenderIndex] = useState(0);
+  const [pageVisible, setPageVisible] = useState(true);
   const containerRef = useRef(null);
   const shouldStickToBottomRef = useRef(true);
+  const onDoneRef = useRef(onDone);
+  onDoneRef.current = onDone;
 
+  // 监听标签页可见性
   useEffect(() => {
-    if (index >= allChars.length) {
-      onDone?.();
+    const handle = () => setPageVisible(document.visibilityState === 'visible');
+    document.addEventListener('visibilitychange', handle);
+    return () => document.removeEventListener('visibilitychange', handle);
+  }, []);
+
+  // 标签页隐藏时，直接跳到末尾展示全部已接收内容（跳过逐字动画）
+  useEffect(() => {
+    if (!pageVisible && renderIndex < allChars.length && allChars.length > 0) {
+      setRenderIndex(allChars.length);
+    }
+  }, [pageVisible, allChars.length, renderIndex]);
+
+  // 逐字渲染定时器 —— 仅在标签页可见时运行
+  useEffect(() => {
+    if (!pageVisible) return undefined;
+
+    if (renderIndex >= allChars.length) {
+      if (allChars.length > 0) {
+        onDoneRef.current?.();
+      }
       return undefined;
     }
 
     const timer = window.setTimeout(() => {
-      setIndex((value) => value + 1);
+      setRenderIndex((value) => value + 1);
     }, CHAR_INTERVAL);
 
     return () => window.clearTimeout(timer);
-  }, [allChars.length, index, onDone]);
+  }, [pageVisible, allChars.length, renderIndex]);
 
+  // 自动滚动到底部
   useEffect(() => {
     const container = containerRef.current;
     if (!container || !shouldStickToBottomRef.current) return;
     container.scrollTop = container.scrollHeight;
-  }, [index]);
+  }, [renderIndex]);
 
   const handleScroll = useCallback(() => {
     const container = containerRef.current;
@@ -1023,20 +1232,15 @@ function AiStreamingContent({ content, index: indexProp, onIndexChange, onDone }
     shouldStickToBottomRef.current = distanceToBottom <= 24;
   }, []);
 
-  const displayed = allChars.slice(0, index).join('');
-  const done = index >= allChars.length;
+  const displayed = allChars.slice(0, renderIndex).join('');
+  const done = renderIndex >= allChars.length;
 
   return (
     <div
       ref={containerRef}
       onScroll={handleScroll}
       className={done ? 'script-md script-scroll' : 'script-md script-scroll ai-text--typing'}
-      style={{
-        alignSelf: 'stretch',
-        flex: 1,
-        minHeight: 0,
-        overflowY: 'auto',
-      }}
+      style={{ alignSelf: 'stretch', flex: 1, minHeight: 0, overflowY: 'auto' }}
     >
       <ReactMarkdown
         components={{
@@ -1312,6 +1516,8 @@ function PrimaryBtn({ onClick, children, disabled = false }) {
   );
 }
 
+// ConfirmExtractModal 已迁移至 ConfirmDialog 共享组件（confirmVariant='orange'）
+
 function ScriptPanel({
   phase,
   scriptContent,
@@ -1320,13 +1526,14 @@ function ScriptPanel({
   onEdit,
   onSave,
   onCancelEdit,
-  onGoToSubject,
+  onExtractRequest,
+  isExtractingSubjects,
+  isSubjectUnlocked,
   onStreamingDone,
   onActiveIndexChange,
-  streamingIndex,
-  onStreamingIndexChange,
   renderedContentRef,
   editorContentRef,
+  isSaving,
 }) {
   const isThinking = phase === 'thinking';
   const isStreaming = phase === 'streaming';
@@ -1334,6 +1541,9 @@ function ScriptPanel({
   const hasScript = Boolean(scriptContent);
   const displayContent = isEditing ? draftContent : scriptContent;
   const showActions = phase === 'view' || phase === 'edit';
+
+  // 按钮禁用：无剧本 / 提取中
+  const isExtractDisabled = !scriptContent;
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', alignSelf: 'stretch', minHeight: 0, flex: 1 }}>
@@ -1361,7 +1571,7 @@ function ScriptPanel({
             <AiThinkingMessage />
           </div>
         ) : isStreaming ? (
-          <AiStreamingContent key={scriptContent} content={scriptContent} index={streamingIndex} onIndexChange={onStreamingIndexChange} onDone={onStreamingDone} />
+          <AiStreamingContent content={scriptContent} onDone={onStreamingDone} />
         ) : isEditing ? (
           <ScriptEditor initialContent={draftContent} onContentChange={onDraftChange} containerRef={editorContentRef} />
         ) : (
@@ -1382,10 +1592,17 @@ function ScriptPanel({
         >
           {isEditing ? (
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <SecondaryBtn onClick={onSave}>
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                  <path d="M13 4.5L6 11.5L3 8.5" stroke="#FFFFFF" strokeWidth="1.33" strokeLinecap="round" strokeLinejoin="round" />
-                </svg>
+              <SecondaryBtn onClick={onSave} disabled={isSaving}>
+                {isSaving ? (
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ animation: 'btn-spin 0.75s linear infinite', transformOrigin: '50% 50%' }}>
+                    <circle cx="8" cy="8" r="6" stroke="#FFFFFF33" strokeWidth="1.5" />
+                    <path d="M14 8a6 6 0 0 0-6-6" stroke="#FFFFFFCC" strokeWidth="1.5" strokeLinecap="round" />
+                  </svg>
+                ) : (
+                  <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+                    <path d="M13 4.5L6 11.5L3 8.5" stroke="#FFFFFF" strokeWidth="1.33" strokeLinecap="round" strokeLinejoin="round" />
+                  </svg>
+                )}
                 <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFFCC' }}>定稿</span>
               </SecondaryBtn>
               <SecondaryBtn onClick={onCancelEdit}>
@@ -1406,7 +1623,7 @@ function ScriptPanel({
           )}
 
           <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <PrimaryBtn onClick={() => onGoToSubject?.('char')} disabled={!scriptContent}>
+            <PrimaryBtn onClick={isExtractDisabled ? undefined : onExtractRequest} disabled={isExtractDisabled}>
               <span style={{ fontFamily: FONT_MEDIUM, fontSize: '14px', lineHeight: '18px', color: '#090909', whiteSpace: 'nowrap' }}>
                 开始提取主体
               </span>
@@ -1422,58 +1639,273 @@ function ScriptPanel({
   );
 }
 
-export default function ScriptPage({ onGoToSubject, onEpisodesChange, phase: phaseProp, onPhaseChange, hasStarted: hasStartedProp, onHasStartedChange, scriptContent: scriptContentProp, onScriptContentChange, draftContent: draftContentProp, onDraftContentChange, streamingIndex: streamingIndexProp, onStreamingIndexChange }) {
+export default function ScriptPage({ projectId, onGoToSubject, onScriptFinalized, onEpisodesChange, phase: phaseProp, onPhaseChange, hasStarted: hasStartedProp, onHasStartedChange, scriptContent: scriptContentProp, onScriptContentChange, draftContent: draftContentProp, onDraftContentChange, isSubjectUnlocked = false }) {
   const [phaseLocal, setPhaseLocalRaw] = useState('initial');
   const [hasStartedLocal, setHasStartedLocalRaw] = useState(false);
   const [scriptContentLocal, setScriptContentLocalRaw] = useState('');
   const [draftContentLocal, setDraftContentLocalRaw] = useState('');
-  const [streamingIndexLocal, setStreamingIndexLocal] = useState(0);
 
   const isControlled = phaseProp !== undefined;
   const phase = isControlled ? phaseProp : phaseLocal;
   const hasStarted = isControlled ? hasStartedProp : hasStartedLocal;
   const scriptContent = isControlled ? scriptContentProp : scriptContentLocal;
   const draftContent = isControlled ? draftContentProp : draftContentLocal;
-  const streamingIndex = (isControlled && streamingIndexProp !== undefined) ? streamingIndexProp : streamingIndexLocal;
-  const setStreamingIndex = (isControlled && onStreamingIndexChange) ? onStreamingIndexChange : setStreamingIndexLocal;
 
   const setPhase = isControlled ? onPhaseChange : setPhaseLocalRaw;
   const setHasStarted = isControlled ? onHasStartedChange : setHasStartedLocalRaw;
   const setScriptContent = isControlled ? onScriptContentChange : setScriptContentLocalRaw;
   const setDraftContent = isControlled ? onDraftContentChange : setDraftContentLocalRaw;
   const [selectedEpisode, setSelectedEpisode] = useState(0);
+  const [lastSentText, setLastSentText] = useState('');
+  const [lastSentFiles, setLastSentFiles] = useState([]);
+  // 仅在超时时设为已发送的内容，触发输入框恢复；成功/用户主动停止保持 '' 不恢复
+  const [inputRestoreText, setInputRestoreText] = useState('');
+  const [inputRestoreFiles, setInputRestoreFiles] = useState([]);
+  const [selectedModel, setSelectedModel] = useState(null);
+  const [episodeCount, setEpisodeCount] = useState(null);
+  const [backendEpisodes, setBackendEpisodes] = useState(null);
+  const [toasts, setToasts] = useState([]);
+  const [isSaving, setIsSaving] = useState(false);
   const renderedContentRef = useRef(null);
   const editorContentRef = useRef(null);
+  const abortControllerRef = useRef(null); // 用于取消进行中的流式请求
 
   useEffect(() => {
     ensureScrollbarStyle();
     ensureEditorStyle();
     ensureThinkingStyle();
+    ensureSpinnerStyle();
   }, []);
 
+  const showToast = (message, type = 'error') => {
+    const id = Date.now();
+    setToasts((prev) => [...prev, { id, message, type }]);
+    setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3000);
+  };
+
+  // 页面加载时从后端恢复剧本（仅非受控模式下自行加载，受控模式由父组件负责）
+  useEffect(() => {
+    if (!projectId || isControlled) return;
+
+    apiGetScriptWorkspace(projectId)
+      .then((data) => {
+        const content = data?.script?.content || data?.content;
+        if (content) {
+          setScriptContent(content);
+          setPhase('view');
+          setHasStarted(true);
+        }
+      })
+      .catch((err) => {
+        console.error('[ScriptPage] 加载剧本失败:', err);
+      });
+  }, [projectId, isControlled, setScriptContent, setPhase, setHasStarted]);
+
   const visibleContent = phase === 'edit' ? draftContent : scriptContent;
-  const outline = useMemo(() => parseScriptOutline(visibleContent).filter((item) => item.level === 2), [visibleContent]);
+  const markdownOutline = useMemo(() => parseScriptOutline(visibleContent).filter((item) => item.level === 2), [visibleContent]);
+  const outline = useMemo(
+    () => (phase !== 'edit' && backendEpisodes)
+      ? backendEpisodes.map((ep, idx) => ({ ...ep, title: ep.title, level: 2, offset: idx }))
+      : markdownOutline,
+    [phase, backendEpisodes, markdownOutline],
+  );
 
   useEffect(() => {
-    onEpisodesChange?.(outline.map((item) => item.title));
-  }, [outline, onEpisodesChange]);
-  const episodeRailLoading = hasStarted && (phase === 'thinking' || phase === 'streaming');
+    if (backendEpisodes) {
+      onEpisodesChange?.(backendEpisodes.map((ep) => ({ id: ep.id, title: ep.title, episode_number: ep.episode_number })));
+    }
+  }, [backendEpisodes, onEpisodesChange]);
   const safeSelectedEpisode = outline.length > 0 ? Math.min(selectedEpisode, outline.length - 1) : 0;
 
-  const handleSend = (text, files) => {
+  const episodeRailLoading = hasStarted && (phase === "thinking" || phase === "streaming");
+  const handleStop = useCallback(() => {
+    // 中止流式请求，后续状态由 handleSend 的 catch(AbortError) 分支处理
+    abortControllerRef.current?.abort();
+  }, []);
+
+  useEffect(() => {
+    const onKeyDown = (e) => {
+      if (e.key === 'Escape' && (phase === 'thinking' || phase === 'streaming')) {
+        handleStop();
+      }
+    };
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+  }, [phase, handleStop]);
+
+  const handleSend = async (text, files, model, epCount) => {
     if (!text && files.length === 0) return;
 
+    // 发送前保存当前内容，超时时可恢复（避免丢失已有剧本）
+    const prevContent = scriptContent;
+
+    // 每次发送前清除上次的恢复内容（成功时不恢复）
+    setInputRestoreText('');
+    setInputRestoreFiles([]);
+
+    // 取消上一次未完成的请求
+    abortControllerRef.current?.abort();
+    const abortController = new AbortController();
+    abortControllerRef.current = abortController;
+
+    // 客户端兜底超时：后端通常先返回 504，此处作为最后保障
+    let isClientTimeout = false;
+    const timeoutId = setTimeout(() => {
+      isClientTimeout = true;
+      abortController.abort();
+    }, CHAT_TIMEOUT_MS);
+
+    setLastSentText(text);
+    setLastSentFiles(files);
     setHasStarted(true);
     setPhase('thinking');
     setScriptContent('');
     setDraftContent('');
     setSelectedEpisode(0);
-    setStreamingIndex(0);
+    setBackendEpisodes(null);
 
-    setTimeout(() => {
-      setScriptContent(MOCK_SCRIPT_MARKDOWN);
-      setPhase('streaming');
-    }, 3000);
+    let receivedContent = '';
+
+    // 超时统一处理：toast + 恢复输入 + 恢复内容
+    // 关键：不调用 setHasStarted(false)，保持底部 InputCard 同一实例，
+    // 通过 disabled(true→false) 转换触发 restoreText 机制，避免重新挂载的时序问题
+    const handleTimeout = () => {
+      showToast('请求超时，请稍后重试');
+      setInputRestoreText(text);
+      setInputRestoreFiles(files);
+      if (receivedContent) {
+        // 流式已收到部分内容则保留
+        setScriptContent(receivedContent);
+        setPhase('view');
+      } else {
+        // 恢复发送前的内容（如有），否则退回 initial；hasStarted 保持 true
+        setScriptContent(prevContent);
+        setPhase(prevContent ? 'view' : 'initial');
+      }
+    };
+
+    try {
+      // 1. 先上传文件（逐个上传，最后一个生效）
+      //    上传内容仅在后端存储为上下文，不在前端展示为剧本
+      if (files.length > 0) {
+        for (const file of files) {
+          const uploadResult = await apiUploadScriptWorkspace(projectId, file);
+          const uploadContent = uploadResult?.script?.content ?? uploadResult?.script?.parsed_content ?? uploadResult?.content;
+          if (uploadContent) {
+            receivedContent = formatEpisodeHeaders(uploadContent);
+            // 仅在纯上传路径（无提示词）时直接展示内容
+            if (!text) {
+              setScriptContent(formatEpisodeHeaders(uploadContent));
+            }
+          }
+        }
+      }
+
+      // 2. 有文字消息时走流式 chat 接口
+      if (text) {
+        const chatMessage = epCount != null
+          ? `${text}（集数要求：${epCount} 集）`
+          : text;
+
+        // 保持 thinking 阶段（DotsLoading 加载动画），等首个 SSE chunk 到达后再切 streaming
+        receivedContent = '';
+
+        let hasStartedStreaming = false;
+
+        await apiChatScriptWorkspaceStream(
+          projectId,
+          { message: chatMessage, model, episode_count: epCount },
+          {
+            onChunk: (accumulated) => {
+              const formatted = formatEpisodeHeaders(accumulated);
+              receivedContent = formatted;
+              if (!hasStartedStreaming) {
+                hasStartedStreaming = true;
+                setScriptContent(formatted);
+                setPhase('streaming');
+              } else {
+                setScriptContent(formatted);
+              }
+            },
+            signal: abortController.signal,
+          }
+        );
+        // SSE 完成后不立即切 view，由 AiStreamingContent 的打字动画播完后
+        // 通过 onDone → handleStreamingDone 来切换到 view 阶段
+      } else {
+        // 无文字消息 → 纯上传路径，直接展示内容，无打字动画
+        if (!receivedContent) {
+          throw new Error('后端未返回剧本内容');
+        }
+        setPhase('view');
+      }
+    } catch (err) {
+      // 504 网关超时
+      if (err.isGatewayTimeout) {
+        handleTimeout();
+        return;
+      }
+
+      // 网络层错误（DNS 失败、连接被拒等）→ 保留已有内容，不丢失
+      if (err.isNetworkError) {
+        if (receivedContent) {
+          setScriptContent(receivedContent);
+          setPhase('view');
+        } else {
+          setScriptContent(prevContent);
+          setPhase(prevContent ? 'view' : 'initial');
+        }
+        setInputRestoreText(text);
+        setInputRestoreFiles(files);
+        showToast('网络连接失败，请检查网络后重试');
+        return;
+      }
+
+      if (err.name === 'AbortError') {
+        if (isClientTimeout) {
+          // 客户端兜底超时触发
+          handleTimeout();
+        } else {
+          // 用户主动点击停止
+          if (receivedContent) {
+            setScriptContent(receivedContent);
+            setPhase('view');
+        } else {
+          setInputRestoreText(text);
+          setInputRestoreFiles(files);
+          setPhase('initial');
+          setHasStarted(false);
+        }
+        }
+        return;
+      }
+
+      console.error('[ScriptPage] 生成剧本失败:', err);
+      setInputRestoreText(text);
+      setInputRestoreFiles(files);
+      setPhase('initial');
+      setHasStarted(false);
+      (() => {
+        const rawMsg = err?.message || '';
+        let toastMsg;
+        const upstreamMatch = rawMsg.match(/上游模型服务返回\s*(\d+)/);
+        if (upstreamMatch) {
+          const code = upstreamMatch[1];
+          toastMsg = code === '404' ? '上游模型服务返回 404，请换个模型重试' : `上游模型服务返回 ${code}，请稍后重试`;
+        } else if (rawMsg.toLowerCase().includes('deprecated') || rawMsg.toLowerCase().includes('migrate')) {
+          toastMsg = '当前模型已废弃，请换个模型重试';
+        } else if (err?.status) {
+          toastMsg = `请求失败 (HTTP ${err.status})，请稍后重试`;
+        } else if (rawMsg.length > 0 && rawMsg.length < 60) {
+          toastMsg = rawMsg;
+        } else {
+          toastMsg = '剧本生成失败，请稍后重试';
+        }
+        showToast(toastMsg);
+      })();
+    } finally {
+      clearTimeout(timeoutId);
+    }
   };
 
   const handleStreamingDone = useCallback(() => {
@@ -1485,10 +1917,62 @@ export default function ScriptPage({ onGoToSubject, onEpisodesChange, phase: pha
     setPhase('edit');
   };
 
-  const handleSave = () => {
+  const handleSave = async () => {
     if (!draftContent) return;
-    setScriptContent(draftContent);
-    setPhase('view');
+
+    setIsSaving(true);
+    try {
+      // 1. 保存 markdown 内容
+      if (projectId) {
+        await apiSaveScriptWorkspace(projectId, { content: draftContent });
+      }
+
+      // 2. 从编辑内容解析分集结构（## 标题 + 序号），确保定稿时传给后端
+      const parsedEpisodes = parseScriptOutline(draftContent)
+        .filter(item => item.level === 2)
+        .map((item, i) => ({
+          title: item.title,
+          episode_number: i + 1,
+        }));
+      const resolvedEpisodeCount = episodeCount ?? (parsedEpisodes.length > 0 ? parsedEpisodes.length : null);
+
+      // 3. 定稿：拆分为分集
+      if (projectId) {
+        const finalizeResult = await apiFinalizeScriptWorkspace(projectId, {
+          episode_count: resolvedEpisodeCount,
+          model: selectedModel,
+        });
+        // 兼容后端可能返回的不同字段名：items / episodes / data
+        const episodesFromFinalize = finalizeResult?.items || finalizeResult?.episodes || finalizeResult?.data;
+        if (Array.isArray(episodesFromFinalize) && episodesFromFinalize.length > 0) {
+          // 重新获取分集列表（含正确 ID），再用每集 content 中第一个 ## 标题更新
+          const episodesWithIds = await apiGetEpisodes(projectId);
+          if (Array.isArray(episodesWithIds)) {
+           for (const ep of episodesWithIds) {
+             const firstHeading = ep.content?.match(/^##\s+(.+)/m)?.[1];
+             if (firstHeading && firstHeading !== ep.title) {
+               try {
+                 await apiUpdateEpisode(projectId, ep.id, { title: firstHeading });
+                ep.title = firstHeading;
+               } catch (e) {
+                 console.error('更新分集标题失败:', e);
+               }
+             }
+           }
+            setBackendEpisodes(episodesWithIds);
+          }
+        }
+      }
+      setScriptContent(draftContent);
+      setPhase('view');
+      onScriptFinalized?.();
+      showToast('保存定稿成功！', 'success');
+    } catch (err) {
+      console.error('[ScriptPage] 定稿失败:', err);
+      showToast('保存定稿失败，请重试', 'error');
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const handleCancelEdit = () => {
@@ -1496,6 +1980,18 @@ export default function ScriptPage({ onGoToSubject, onEpisodesChange, phase: pha
     setPhase('view');
   };
 
+  // 提取主体按钮点击：已提取过主体 → 弹窗二次确认（覆盖风险）；首次 → 直接跳转
+  const [extractConfirmOpen, setExtractConfirmOpen] = useState(false);
+
+  const handleExtractRequest = () => {
+    if (isSubjectUnlocked) {
+      setExtractConfirmOpen(true);
+      return;
+    }
+    onGoToSubject?.('char');
+  };
+
+  // 提取主体二次确认弹窗
   const handleSelectEpisode = useCallback(
     (index) => {
       setSelectedEpisode(index);
@@ -1517,7 +2013,24 @@ export default function ScriptPage({ onGoToSubject, onEpisodesChange, phase: pha
     [outline, phase],
   );
 
+  if (extractConfirmOpen) {
+    return (
+      <ConfirmDialog
+        title="确定要提取主体吗？"
+        description="本次提取主体会覆盖之前的主体内容，一旦提取不可撤销，请谨慎操作！"
+        confirmText="确认提取主体"
+        confirmVariant="orange"
+        onConfirm={() => {
+          setExtractConfirmOpen(false);
+          onGoToSubject?.('char');
+        }}
+        onCancel={() => setExtractConfirmOpen(false)}
+      />
+    );
+  }
+
   return (
+    <>
     <div
       style={{
         display: 'flex',
@@ -1537,7 +2050,15 @@ export default function ScriptPage({ onGoToSubject, onEpisodesChange, phase: pha
       }}
     >
       {!hasStarted ? (
-        <ScriptEmptyState onSend={handleSend} />
+        <ScriptEmptyState
+          onSend={handleSend}
+          selectedModel={selectedModel}
+          onModelChange={setSelectedModel}
+          episodeCount={episodeCount}
+          onEpisodeCountChange={setEpisodeCount}
+          restoreText={inputRestoreText}
+          restoreFiles={inputRestoreFiles}
+        />
       ) : (
         <div style={{ display: 'flex', minHeight: 0, flex: 1, alignItems: 'stretch', gap: '24px', alignSelf: 'stretch' }}>
           <EpisodeList outline={outline} selectedIndex={safeSelectedEpisode} onSelect={handleSelectEpisode} loading={episodeRailLoading} />
@@ -1553,23 +2074,36 @@ export default function ScriptPage({ onGoToSubject, onEpisodesChange, phase: pha
                   onEdit={handleEdit}
                   onSave={handleSave}
                   onCancelEdit={handleCancelEdit}
-                  onGoToSubject={onGoToSubject}
+                  onExtractRequest={handleExtractRequest}
+
                   onStreamingDone={handleStreamingDone}
                   onActiveIndexChange={setSelectedEpisode}
-                  streamingIndex={streamingIndex}
-                  onStreamingIndexChange={setStreamingIndex}
                   renderedContentRef={renderedContentRef}
                   editorContentRef={editorContentRef}
+                  isSaving={isSaving}
                 />
               </div>
             </div>
 
             <div style={{ display: 'flex', justifyContent: 'center', alignSelf: 'stretch', paddingTop: '8px', overflow: 'visible', flexShrink: 0 }}>
-              <InputCard onSend={handleSend} width="min(700px, 100%)" disabled={phase === 'thinking' || phase === 'streaming'} />
+              <InputCard
+                onSend={handleSend}
+                onStop={handleStop}
+                restoreText={inputRestoreText}
+                restoreFiles={inputRestoreFiles}
+                selectedModel={selectedModel}
+                onModelChange={setSelectedModel}
+                episodeCount={episodeCount}
+                onEpisodeCountChange={setEpisodeCount}
+                width="min(700px, 100%)"
+                disabled={phase === 'thinking' || phase === 'streaming'}
+              />
             </div>
           </div>
         </div>
       )}
     </div>
-  );
+    <Toast toasts={toasts} />
+
+    </>  );
 }

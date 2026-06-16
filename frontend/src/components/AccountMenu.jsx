@@ -65,7 +65,7 @@ function InfoRow({ label, value }) {
   );
 }
 
-function AvatarTrigger({ size, onOpenProfile }) {
+function AvatarTrigger({ size, onOpenProfile, avatarUrl }) {
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
 
@@ -81,7 +81,7 @@ function AvatarTrigger({ size, onOpenProfile }) {
       onClick={(e) => { e.stopPropagation(); onOpenProfile(); }}
       title="编辑个人信息"
     >
-      <AvatarSvg size={size} />
+      <AvatarSvg size={size} avatarUrl={avatarUrl} />
       <div
         style={{
           position: 'absolute',
@@ -104,7 +104,18 @@ function AvatarTrigger({ size, onOpenProfile }) {
   );
 }
 
-function AvatarSvg({ size }) {
+function AvatarSvg({ size, avatarUrl }) {
+  if (avatarUrl) {
+    return (
+      <img
+        src={avatarUrl}
+        alt="avatar"
+        width={size}
+        height={size}
+        style={{ borderRadius: 'calc(infinity * 1px)', display: 'block', width: size, height: size, objectFit: 'cover' }}
+      />
+    );
+  }
   return (
     <svg width={size} height={size} viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ borderRadius: 'calc(infinity * 1px)', display: 'block' }}>
       <rect width="28" height="28" rx="14" fill="#2DC3E1" />
@@ -118,10 +129,10 @@ function AvatarSvg({ size }) {
 }
 
 export default function AccountMenu({
-  userName = 'user-name',
-  userId = 'miioo_user',
+  nickname = '',
   phone = '未绑定',
   wechat = '未绑定',
+  avatarUrl = '',
   onLogout,
   onOpenProfile,
 }) {
@@ -142,14 +153,11 @@ export default function AccountMenu({
       {/* Trigger */}
       <button
         type="button"
-        className="[font-synthesis:none] flex items-center gap-[8px] rounded-full pl-[4px] pr-[8px] py-[4px] bg-black-20 antialiased cursor-pointer border-0"
+        className="[font-synthesis:none] flex items-center gap-[4px] rounded-full pl-[4px] pr-[8px] py-[4px] bg-black-20 antialiased cursor-pointer border-0"
         onClick={() => setOpen((v) => !v)}
         aria-expanded={open}
       >
-        <AvatarSvg size={28} />
-        <span style={{ fontFamily: FONT_MEDIUM, fontWeight: 500, fontSize: '14px', lineHeight: '20px', color: '#fff' }}>
-          {userName}
-        </span>
+        <AvatarSvg size={28} avatarUrl={avatarUrl} />
         <svg
           width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"
           style={{ flexShrink: 0, transition: 'transform 0.15s', transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }}
@@ -172,25 +180,26 @@ export default function AccountMenu({
             <AvatarTrigger
               size={40}
               onOpenProfile={() => { setOpen(false); onOpenProfile?.(); }}
+              avatarUrl={avatarUrl}
             />
-            {/* User ID */}
+            {/* Nickname */}
             <span
               className="mt-[10px] w-full text-center truncate"
               style={{ fontFamily: FONT_MEDIUM, fontWeight: 500, fontSize: '16px', lineHeight: '20px', color: '#FFFFFF' }}
             >
-              {userId}
+              {nickname}
             </span>
             {/* Phone + WeChat */}
             <div className="flex flex-col items-start w-full pt-[8px] gap-[2px]">
               {/* Phone */}
               <div className="flex items-center justify-between w-full mt-[6px] gap-[4px]">
-                <span style={{ fontFamily: FONT_REGULAR, fontSize: '12px', lineHeight: '18px', color: '#FFFFFF4D', flexShrink: 0 }}>手机号</span>
+                <span style={{ fontFamily: FONT_REGULAR, fontSize: '12px', lineHeight: '18px', color: '#FFFFFF99', flexShrink: 0 }}>手机号</span>
                 <span className="truncate" style={{ fontFamily: FONT_REGULAR, fontSize: '12px', lineHeight: '18px', color: '#FFFFFFCC' }}>{phone}</span>
               </div>
               {/* WeChat */}
               <div className="flex items-center justify-between w-full mt-[2px] gap-[4px]">
-                <span style={{ fontFamily: FONT_REGULAR, fontSize: '12px', lineHeight: '18px', color: '#FFFFFF4D', flexShrink: 0 }}>微信</span>
-                <span className="truncate" style={{ fontFamily: FONT_REGULAR, fontSize: '12px', lineHeight: '18px', color: '#FFFFFFCC' }}>{wechat}</span>
+                <span style={{ fontFamily: FONT_REGULAR, fontSize: '12px', lineHeight: '18px', color: '#FFFFFF99', flexShrink: 0 }}>微信</span>
+                <span className="truncate" style={{ fontFamily: FONT_REGULAR, fontSize: '12px', lineHeight: '18px', color: '#FFFFFF66' }}>{wechat}</span>
               </div>
             </div>
           </div>

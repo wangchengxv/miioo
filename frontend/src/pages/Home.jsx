@@ -1,68 +1,33 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { PulsingBorder } from '@paper-design/shaders-react';
-import bgImage from '../assets/home-bg.png';
-import { apiCreateProject, apiGetProjects } from '../api/project';
+import { apiGetProjects, apiUpdateProject, apiDeleteProject, apiGetProject, apiGetProjectOverview } from '../api/project';
+import { getToken, getRefreshToken, refreshAccessToken } from '../api/request';
+import { clearTokens, apiLogout } from '../api/auth';
+import { apiListProviders } from '../api/config';
 import { apiGetCurrentUser, apiGetNotifications } from '../api/user';
+import { apiGetSubjects, apiGetEpisodes, apiGetScriptWorkspace, apiFinalizeScriptWorkspace, apiExtractSubjectsFromScript } from '../api/subject';
+import { apiGetStoryboards, apiGenerateStoryboardsFromFinalScript } from '../api/storyboard';
+import { normalizeImageUrl } from '../utils/imageUrl';
+import wechatQR from '../assets/wechat.jpg';
 import PrimaryNav from '../components/PrimaryNav';
 import LoginModal from '../components/LoginModal';
 import ApiConfigModal from '../components/ApiConfigModal';
+import NoModelNotice from '../components/NoModelNotice';
 import AccountMenu from '../components/AccountMenu';
 import ProfileModal from '../components/ProfileModal';
 import NewProjectModal from '../components/NewProjectModal';
+import WatermarkSettingsModal from '../components/WatermarkSettingsModal';
+import NotificationCenterModal from '../components/NotificationCenterModal';
 import ProjectList from './ProjectList';
 import GlobalSettings from './GlobalSettings';
 import SubjectPage from './SubjectPage';
 import StoryboardPage from './StoryboardPage';
+import DotsLoading from '../components/DotsLoading';
 import AssetsPage from './AssetsPage';
+import CreationPage from './CreationPage';
 
 const ICON_STYLE = { flexShrink: '0' };
-
-const MAX_NOTIFICATION_ITEMS = 5;
-
-const NOTIFICATION_ITEMS = [
-  {
-    id: 'n1',
-    title: '系统通知',
-    content: '你的项目《海上残响》已完成自动保存，可以继续编辑。',
-    time: '3小时前',
-    unread: true,
-  },
-  {
-    id: 'n2',
-    title: '创作提醒',
-    content: '分镜草稿已生成完成，去时间轴里继续细化镜头。',
-    time: '昨天',
-    unread: true,
-  },
-  {
-    id: 'n3',
-    title: '协作动态',
-    content: '林渡在《晨雾码头》里留下了 2 条批注。',
-    time: '昨天',
-    unread: false,
-  },
-  {
-    id: 'n4',
-    title: '系统通知',
-    content: '你收藏的参考镜头包已同步到资产中心。',
-    time: '2天前',
-    unread: false,
-  },
-  {
-    id: 'n5',
-    title: '创作提醒',
-    content: '角色设定页检测到可复用的风格提示词。',
-    time: '2天前',
-    unread: false,
-  },
-  {
-    id: 'n6',
-    title: '系统通知',
-    content: '新一轮模型能力更新已开放体验。',
-    time: '3天前',
-    unread: false,
-  },
-];
 
 const NAV_ITEMS = [
   {
@@ -115,19 +80,20 @@ const NAV_ITEMS = [
   },
 ];
 
-function MenuPopupItem({ label }) {
+function MenuPopupItem({ label, onClick }) {
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
 
   return (
     <button
       type="button"
-      className="flex items-center gap-1 w-full rounded-md border-0 bg-transparent text-left cursor-pointer"
+      className="flex items-center gap-[4px] w-full rounded-[6px] border-0 bg-transparent text-left cursor-pointer"
       style={{
         padding: '8px 12px',
         backgroundColor: pressed ? '#FFFFFF14' : hovered ? '#FFFFFF0D' : 'transparent',
         transition: 'background-color 120ms ease, color 120ms ease',
       }}
+      onClick={onClick}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => {
         setHovered(false);
@@ -137,7 +103,7 @@ function MenuPopupItem({ label }) {
       onMouseUp={() => setPressed(false)}
     >
       <div
-        className="w-fit shrink-0 font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-sm/4.5"
+        className="w-fit shrink-0 font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-font-size-14"
         style={{ color: pressed || hovered ? '#FFFFFF' : '#FFFFFF99' }}
       >
         {label}
@@ -146,223 +112,109 @@ function MenuPopupItem({ label }) {
   );
 }
 
-const COMMUNITY_QR_CODE_URL = 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KR8EAVS6CW9V257SBVP40T1A.png';
+const COMMUNITY_QR_CODE_URL = wechatQR;
+const BIZ_QR_CODE_URL = 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KT856M9JGFA1FF8DBG9699ZM.png';
+
+const CREATION_MANUAL_URL = 'https://gcn0je6sgrhe.feishu.cn/wiki/QaKLwOx0ii2qWakn4cXcybbMnrf?from=from_copylink';
 
 function QRCodePopup({ anchorLeft }) {
   return (
     <div className="qr-popup" style={{ left: anchorLeft ?? 40, bottom: 24, translate: '0 -50%' }} role="dialog" aria-label="官方社群二维码">
       <div className="qr-popup-code" style={{ backgroundImage: `url(${COMMUNITY_QR_CODE_URL})` }} />
       <div className="qr-popup-caption font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif]">
-        扫码加入官方社群
+        扫码加入用户交流群
       </div>
     </div>
   );
 }
 
-function NotificationEmptyIcon() {
-  return (
-    <svg width="56" height="56" viewBox="0 0 56 56" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-      <rect x="6" y="6" width="44" height="44" rx="22" fill="url(#notification-empty-bg)" />
-      <rect x="6.5" y="6.5" width="43" height="43" rx="21.5" stroke="url(#notification-empty-stroke)" />
-      <path d="M20.667 29.667H20V30.333H20.667V29.667ZM35.333 29.667V30.333H36V29.667H35.333ZM17.5 29C17.132 29 16.833 29.298 16.833 29.667C16.833 30.035 17.132 30.333 17.5 30.333V29ZM38.5 30.333C38.868 30.333 39.167 30.035 39.167 29.667C39.167 29.298 38.868 29 38.5 29V30.333ZM30.667 29.667H31.333C31.333 29.298 31.035 29 30.667 29V29.667ZM25.333 29.667V29C24.965 29 24.667 29.298 24.667 29.667H25.333ZM28 12.333V11.667C23.4 11.667 19.667 15.4 19.667 20H20.333H21C21 16.136 24.136 13 28 13V12.333ZM20.333 20H19.667V29.667H20.333H21V20H20.333ZM20.333 29.667V30.333H35.333V29.667V29H20.333V29.667ZM35.333 29.667H36V20H35.333H34.667V29.667H35.333ZM35.333 20H36C36 15.4 32.6 11.667 28 11.667V12.333V13C31.864 13 34.667 16.136 34.667 20H35.333ZM17.5 29.667V30.333H38.5V29.667V29H17.5V29.667ZM28 33V33.667C29.841 33.667 31.333 32.174 31.333 30.333H30.667H30C30 31.438 29.105 32.333 28 32.333V33ZM30.667 30.333H31.333V29.667H30.667H30V30.333H30.667ZM30.667 29.667V29H25.333V29.667V30.333H30.667V29.667ZM25.333 29.667H24.667V30.333H25.333H26V29.667H25.333ZM25.333 30.333H24.667C24.667 32.174 26.159 33.667 28 33.667V33V32.333C26.895 32.333 26 31.438 26 30.333H25.333Z" fill="url(#notification-empty-bell)" fillOpacity="0.92" />
-      <circle cx="35" cy="17" r="3" fill="#7AE5B9" fillOpacity="0.9" />
-      <defs>
-        <linearGradient id="notification-empty-bg" x1="10" y1="10" x2="46" y2="46" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#FFFFFF" stopOpacity="0.12" />
-          <stop offset="1" stopColor="#FFFFFF" stopOpacity="0.04" />
-        </linearGradient>
-        <linearGradient id="notification-empty-stroke" x1="10" y1="10" x2="46" y2="46" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#FFFFFF" stopOpacity="0.24" />
-          <stop offset="1" stopColor="#FFFFFF" stopOpacity="0.08" />
-        </linearGradient>
-        <linearGradient id="notification-empty-bell" x1="28" y1="11.667" x2="28" y2="33.667" gradientUnits="userSpaceOnUse">
-          <stop stopColor="#FFFFFF" />
-          <stop offset="1" stopColor="#B7C0CC" />
-        </linearGradient>
-      </defs>
-    </svg>
-  );
-}
+function MoreOptionsMenu({ close, setWatermarkSettingsOpen }) {
+  const [bizQrVisible, setBizQrVisible] = useState(false);
+  const bizItemRef = useRef(null);
 
-function NotificationEmptyState() {
-  return (
-    <div className="notification-empty-state">
-      <div className="notification-empty-icon-wrap">
-        <NotificationEmptyIcon />
-      </div>
-      <div className="font-['AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] font-medium text-base/5 text-white">
-        暂无通知
-      </div>
-      <div className="max-w-[220px] text-center font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-sm/5 text-[#FFFFFF99]">
-        新的系统消息和创作提醒会显示在这里
-      </div>
-    </div>
-  );
-}
-
-function NotificationDetailModal({ item, onClose }) {
-  return (
-    <div
-      className="fixed inset-0 z-[200] flex items-center justify-center bg-surface-overlay backdrop-blur-[20px]"
-      onClick={onClose}
-    >
-      <div
-        className="[font-synthesis:none] w-[400px] flex flex-col rounded-large bg-surface-modal overflow-hidden antialiased"
-        style={{ boxShadow: '0px 8px 32px rgba(0,0,0,0.6)' }}
-        onClick={(e) => e.stopPropagation()}
-      >
-        {/* Header */}
-        <div className="flex items-center gap-[16px] justify-between w-100 py-[16px] bg-surface-modal rounded-t-large rounded-b-none px-[24px]">
-          <span className="flex-1 font-['AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] font-medium text-white text-base/5">
-            {item.title}
-          </span>
-          <button type="button" onClick={onClose} className="shrink-0 cursor-pointer" aria-label="关闭">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
-              <path d="M2.667 2.667L13.333 13.333" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
-              <path d="M2.667 13.333L13.333 2.667" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
-            </svg>
-          </button>
-        </div>
-
-        {/* Body */}
-        <div className="flex flex-col items-start gap-[16px] py-[8px] w-100 bg-surface-modal px-[24px]">
-          <div className="text-[14px] leading-[175%] self-stretch font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFFCC]">
-            {item.content}
-          </div>
-        </div>
-
-        {/* Footer */}
-        <div className="flex items-center gap-[16px] justify-between w-100 bg-surface-modal py-[16px] px-[24px] rounded-t-none rounded-b-large">
-          <div className="flex flex-1 items-center">
-            <div className="flex-1 h-fit font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFF66] text-xs/4">
-              {item.time}
-            </div>
-            <button
-              type="button"
-              onClick={onClose}
-              className="flex flex-col h-9 shrink-0 rounded-lg [box-shadow:#00000066_3px_3px_8px] [outline:1px_solid_#00000080] p-px cursor-pointer"
-              style={{ backgroundImage: 'linear-gradient(in oklab 148.76deg, oklab(94.7% -0.078 -0.022 / 30%) 3.64%, oklab(75.5% -0.102 -0.072 / 0%) 42.81%), linear-gradient(in oklab 180deg, #FFFFFF14, #FFFFFF14)' }}
-            >
-              <div className="flex items-center grow shrink basis-[0%] rounded-[7px] px-[15px] gap-[4px] bg-btn-primary-bg-normal hover:bg-btn-primary-bg-hover active:bg-btn-primary-bg-active">
-                <span className="inline-block w-max shrink-0 font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-white text-sm/4.5">
-                  关闭
-                </span>
-              </div>
-            </button>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function NotificationCard({ item, onOpenDetail }) {
-  const [hovered, setHovered] = useState(false);
-  const [pressed, setPressed] = useState(false);
-
-  return (
-    <button
-      type="button"
-      className="notification-card"
-      data-hovered={hovered}
-      data-pressed={pressed}
-      onClick={onOpenDetail}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => {
-        setHovered(false);
-        setPressed(false);
-      }}
-      onMouseDown={() => setPressed(true)}
-      onMouseUp={() => setPressed(false)}
-    >
-      <div className="flex items-start gap-3 self-stretch">
-        <div className="flex flex-col items-start gap-1 flex-1 min-w-0">
-          <div className="flex items-center gap-2 w-full min-w-0">
-            <div className="truncate font-['AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] font-medium text-sm/4.5 text-white">
-              {item.title}
-            </div>
-            {item.unread && <span className="notification-card-dot" aria-hidden="true" />}
-          </div>
-          <div className="notification-card-content font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-sm/5 text-[#FFFFFF99]">
-            {item.content}
-          </div>
-        </div>
-        <div className="shrink-0 font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-xs/4 text-[#FFFFFF66]">
-          {item.time}
-        </div>
-      </div>
-    </button>
-  );
-}
-
-function NotificationPopup({ items, onClose, anchorLeft }) {
-  const [closeHovered, setCloseHovered] = useState(false);
-  const [closePressed, setClosePressed] = useState(false);
-  const [isScrolling, setIsScrolling] = useState(false);
-  const [detailItem, setDetailItem] = useState(null);
-  const scrollEndTimerRef = useRef(null);
-  const visibleItems = items.slice(0, MAX_NOTIFICATION_ITEMS);
-  const isEmpty = visibleItems.length === 0;
-
-  useEffect(() => () => {
-    if (scrollEndTimerRef.current) {
-      window.clearTimeout(scrollEndTimerRef.current);
+  const handleMenuClick = (label) => {
+    if (label === '创作手册' && CREATION_MANUAL_URL) {
+      window.open(CREATION_MANUAL_URL, '_blank');
+    } else if (label === '用户协议') {
+      window.open('https://gcn0je6sgrhe.feishu.cn/wiki/FIspwGURtikxiwk28svc4thOn9c?from=from_copylink', '_blank');
+    } else if (label === '隐私政策') {
+      window.open('https://gcn0je6sgrhe.feishu.cn/wiki/LKlewdQJ0iaYVmkOPXVc4PWgnoc?from=from_copylink', '_blank');
+    } else if (label === '水印设置') {
+      close();
+      setWatermarkSettingsOpen(true);
+    } else if (label === '商务合作') {
+      setBizQrVisible((v) => !v);
     }
-  }, []);
+  };
 
-  const handleListScroll = () => {
-    setIsScrolling(true);
-    if (scrollEndTimerRef.current) {
-      window.clearTimeout(scrollEndTimerRef.current);
-    }
-    scrollEndTimerRef.current = window.setTimeout(() => {
-      setIsScrolling(false);
-      scrollEndTimerRef.current = null;
-    }, 480);
+  const containerRef = useRef(null);
+
+  const getBizQrTop = () => {
+    if (!bizItemRef.current || !containerRef.current) return 0;
+    const itemTop = bizItemRef.current.offsetTop;
+    // 浮窗高度：padding(16+16) + 图片(120) + gap(9) + 文字(16) = 177px
+    const popupHeight = 177;
+    const containerRect = containerRef.current.getBoundingClientRect();
+    const maxTop = window.innerHeight - 24 - popupHeight - containerRect.top;
+    return Math.min(itemTop, maxTop);
   };
 
   return (
-    <>
-      {detailItem && (
-        <NotificationDetailModal item={detailItem} onClose={() => setDetailItem(null)} />
-      )}
-      <div className="notification-popup" style={{ left: anchorLeft ?? 40, bottom: 24 }} role="dialog" aria-label="消息中心">
-        <div className="notification-popup-header">
-          <div className="font-['AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] font-medium text-base/5 text-white">
-            消息中心
+    <div
+      ref={containerRef}
+      className="flex flex-col items-start w-max rounded-medium absolute left-[40px] bottom-0 [box-shadow:#00000066_0px_4px_16px] bg-neutral-200 border border-solid border-[#FFFFFF0D] p-[4px]"
+      style={{ zIndex: 50 }}
+    >
+      {['创作手册', '更新日志', '用户协议', '隐私政策', '商务合作', '水印设置'].map((label) =>
+        label === '商务合作' ? (
+          <div key={label} ref={bizItemRef} style={{ width: '100%' }}>
+            <MenuPopupItem label={label} onClick={() => handleMenuClick(label)} />
           </div>
-          <button
-            type="button"
-            className="notification-close"
-            data-hovered={closeHovered}
-            data-pressed={closePressed}
-            onClick={onClose}
-            onMouseEnter={() => setCloseHovered(true)}
-            onMouseLeave={() => {
-              setCloseHovered(false);
-              setClosePressed(false);
-            }}
-            onMouseDown={() => setClosePressed(true)}
-            onMouseUp={() => setClosePressed(false)}
-            aria-label="关闭消息中心"
-          >
-            <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden="true">
-              <path d="M3.5 3.5L10.5 10.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-              <path d="M10.5 3.5L3.5 10.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-            </svg>
-          </button>
-        </div>
-        {isEmpty ? (
-          <NotificationEmptyState />
         ) : (
-          <div className="notification-popup-list" data-scrolling={isScrolling} onScroll={handleListScroll} role="list">
-            {visibleItems.map((item) => (
-              <NotificationCard key={item.id} item={item} onOpenDetail={() => setDetailItem(item)} />
-            ))}
+          <MenuPopupItem key={label} label={label} onClick={() => handleMenuClick(label)} />
+        )
+      )}
+      {bizQrVisible && (
+        <div
+          style={{
+            position: 'absolute',
+            left: 'calc(100% + 8px)',
+            top: getBizQrTop(),
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            gap: '9px',
+            borderRadius: '8px',
+            boxShadow: '#00000066 0px 4px 16px',
+            backgroundColor: '#161616',
+            border: '1px solid #FFFFFF14',
+            padding: '16px',
+            zIndex: 60,
+          }}
+        >
+          <div
+            style={{
+              width: '120px',
+              height: '120px',
+              backgroundImage: `url(${BIZ_QR_CODE_URL})`,
+              backgroundSize: 'cover',
+              backgroundPosition: '50%',
+              flexShrink: 0,
+            }}
+          />
+          <div
+            style={{
+              fontFamily: "'AlibabaPuHuiTi_2_55_Regular', 'Alibaba PuHuiTi 2.0', system-ui, sans-serif",
+              color: '#FFFFFFCC',
+              fontSize: '12px',
+              lineHeight: '16px',
+            }}
+          >
+            扫码添加客服
           </div>
-        )}
-      </div>
-    </>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -390,7 +242,6 @@ const BOTTOM_NAV_ITEMS = [
     key: 'notifications',
     label: '通知',
     tooltip: '通知',
-    popup: ({ close, anchorLeft }) => <NotificationPopup items={NOTIFICATION_ITEMS} onClose={close} anchorLeft={anchorLeft} />,
     icon: (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={ICON_STYLE}>
         <path d="M3.8 12.2H3.3V12.7H3.8V12.2ZM12.2 12.2V12.7H12.7V12.2H12.2ZM2 11.7C1.724 11.7 1.5 11.924 1.5 12.2C1.5 12.476 1.724 12.7 2 12.7V12.2V11.7ZM14 12.7C14.276 12.7 14.5 12.476 14.5 12.2C14.5 11.924 14.276 11.7 14 11.7V12.2V12.7ZM9.5 12.2H10C10 11.924 9.776 11.7 9.5 11.7V12.2ZM6.5 12.2V11.7C6.224 11.7 6 11.924 6 12.2H6.5ZM8 2V1.5C5.404 1.5 3.3 3.604 3.3 6.2H3.8H4.3C4.3 4.157 5.957 2.5 8 2.5V2ZM3.8 6.2H3.3V12.2H3.8H4.3V6.2H3.8ZM3.8 12.2V12.7H12.2V12.2V11.7H3.8V12.2ZM12.2 12.2H12.7V6.2H12.2H11.7V12.2H12.2ZM12.2 6.2H12.7C12.7 3.604 10.596 1.5 8 1.5V2V2.5C10.043 2.5 11.7 4.157 11.7 6.2H12.2ZM2 12.2V12.7H14V12.2V11.7H2V12.2ZM8 14V14.5C9.105 14.5 10 13.605 10 12.5H9.5H9C9 13.052 8.552 13.5 8 13.5V14ZM9.5 12.5H10V12.2H9.5H9V12.5H9.5ZM9.5 12.2V11.7H6.5V12.2V12.7H9.5V12.2ZM6.5 12.2H6V12.5H6.5H7V12.2H6.5ZM6.5 12.5H6C6 13.605 6.895 14.5 8 14.5V14V13.5C7.448 13.5 7 13.052 7 12.5H6.5Z" fill="#FFFFFF" />
@@ -412,13 +263,7 @@ const BOTTOM_NAV_ITEMS = [
     key: 'menu',
     label: '菜单',
     tooltip: '更多选项',
-    popup: ({ close, anchorLeft }) => (
-      <div className="flex flex-col items-start w-max rounded-lg absolute left-10 bottom-0 [box-shadow:#00000066_0px_4px_16px] bg-[#161616] border border-solid border-[#FFFFFF0D] p-1" style={{ zIndex: 50 }}>
-        {['操作手册', '更新日志', '用户协议', '隐私政策', '商务合作', '关于我们'].map((label) => (
-          <MenuPopupItem key={label} label={label} />
-        ))}
-      </div>
-    ),
+    popup: null, // 将在组件内部动态注入
     icon: (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={ICON_STYLE}>
         <path d="M2.65 3.983H13.317" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
@@ -429,7 +274,7 @@ const BOTTOM_NAV_ITEMS = [
   },
 ];
 
-const BG_URL = bgImage;
+
 
 const CMB_ICON_DEFAULT = (
   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: '0' }}>
@@ -467,6 +312,7 @@ function CreationManualButton() {
     <button
       type="button"
       className="flex items-center rounded-[7px] gap-1 h-9 py-0 bg-transparent border-0 cursor-pointer"
+      onClick={() => { if (CREATION_MANUAL_URL) window.open(CREATION_MANUAL_URL, '_blank'); }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => { setHovered(false); setPressed(false); }}
       onMouseDown={() => setPressed(true)}
@@ -753,11 +599,11 @@ const STEP_TABS = [
   },
 ];
 
-function WorkflowHeadbar({ activeStep, onStepChange, unlockedSteps, isLoggedIn, onLoginClick, onLogout, onOpenProfile }) {
+function WorkflowHeadbar({ activeStep, onStepChange, unlockedSteps, isLoggedIn, currentUser, onLoginClick, onLogout, onOpenProfile, onLogoClick }) {
   return (
     <div className="[font-synthesis:none] flex items-center justify-between gap-[37px] self-stretch h-[60px] relative shrink-0 antialiased px-24">
       {/* Logo */}
-      <svg width="80" height="25" viewBox="0 0 80 25" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+      <svg width="80" height="25" viewBox="0 0 80 25" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0, cursor: 'pointer' }} onClick={onLogoClick} role="button" aria-label="返回首页">
         <path d="M28.3 7.265H32.862V24.161H28.3V7.265Z" fill="#FFFFFF" />
         <path d="M35.903 7.265H40.465V24.161H35.903V7.265Z" fill="#FFFFFF" />
         <path d="M15.206 21.204C15.206 22.837 13.882 24.16 12.249 24.16C10.616 24.16 9.292 22.837 9.292 21.204C9.292 19.571 10.616 18.247 12.249 18.247C13.882 18.247 15.206 19.571 15.206 21.204Z" fill="#00D4FF" />
@@ -777,10 +623,10 @@ function WorkflowHeadbar({ activeStep, onStepChange, unlockedSteps, isLoggedIn, 
         <CreationManualButton />
         {isLoggedIn ? (
           <AccountMenu
-            userName={currentUser.name ?? ''}
-            userId={currentUser.id ?? ''}
-            phone={currentUser.phone ?? ''}
-            wechat={currentUser.wechat ?? ''}
+            nickname={currentUser.nickname ?? ''}
+            phone={currentUser.phone_bound ? (currentUser.phone ?? '已绑定') : '未绑定'}
+            wechat={currentUser.wechat_bound ? (currentUser.wechat ?? '已绑定') : '未绑定'}
+            avatarUrl={currentUser.avatar_url ?? ''}
             onLogout={onLogout}
             onOpenProfile={onOpenProfile}
           />
@@ -869,39 +715,401 @@ function WorkflowHeadbar({ activeStep, onStepChange, unlockedSteps, isLoggedIn, 
   );
 }
 
+// 归一化：后端 API 返回 snake_case -> 前端 camelCase/shorthand
+function normalizeSubjects(items) {
+  const list = items.map(item => ({
+    ...item,
+    desc: item.description ?? item.desc ?? '',
+    imageUrl: normalizeImageUrl(item.primary_image_url ?? item.image_url ?? item.imageUrl),
+  }));
+
+  // 按创建时间稳定排序，避免后端返回顺序不一致导致列表跳动
+  list.sort((a, b) => {
+    const timeA = a.created_at || a.createdAt || a.create_time || '';
+    const timeB = b.created_at || b.createdAt || b.create_time || '';
+    if (timeA && timeB) return timeA.localeCompare(timeB);
+    // 没有时间字段时按名称排序
+    return (a.name || '').localeCompare(b.name || '');
+  });
+
+  return list;
+}
+
+const BG_VIDEOS = ["/video/bg-video-01.mp4", "/video/bg-video-02.mp4", "/video/bg-video-03.mp4"];
+const BG_VIDEO_POSTER = "/video/bg-video-poster.png";
+
 export default function Home({ onProjectCreated }) {
-  const [activeKey, setActiveKey] = useState('home');
+  const [activeKey, setActiveKey] = useState(() => {
+    // 只有明确保存了非 home 的 activeKey 才恢复，否则默认 home
+    const savedKey = localStorage.getItem('miioo_active_key');
+    return savedKey || 'home';
+  });
   const [bottomActiveKey, setBottomActiveKey] = useState(null);
   const [loginOpen, setLoginOpen] = useState(false);
   const [apiConfigOpen, setApiConfigOpen] = useState(false);
+  const [noModelNoticeOpen, setNoModelNoticeOpen] = useState(false);
+  const [notificationCenterOpen, setNotificationCenterOpen] = useState(false);
+  // mock 模式下也需要检查 token，退出登录后应该显示未登录状态
   const [isLoggedIn, setIsLoggedIn] = useState(false);
+  const [serverReachable, setServerReachable] = useState(null); // null=检测中, true=可达, false=降级
   const [apiConfigured, setApiConfigured] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
-  // TODO: 替换为真实接口 GET /projects，在 useEffect 中拉取并 setProjects
+  const [watermarkSettingsOpen, setWatermarkSettingsOpen] = useState(false);
   const [projects, setProjects] = useState([]);
   const [activeProject, setActiveProject] = useState(null);
-  const [activeStep, setActiveStep] = useState('script');
+  const [isLoadingProject, setIsLoadingProject] = useState(false);
+  const [projectsLoaded, setProjectsLoaded] = useState(false);
+  const [activeProjectId, setActiveProjectId] = useState(null);
+  const [activeStep, setActiveStep] = useState('script'); // loadProjectDetails 会按项目恢复正确步骤
   const [subjectInitialTab, setSubjectInitialTab] = useState('char');
   const [sharedChars, setSharedChars] = useState(null);
   const [sharedScenes, setSharedScenes] = useState(null);
   const [sharedProps, setSharedProps] = useState(null);
+  const [extractError, setExtractError] = useState(null);
+  const [extractErrorProjectId, setExtractErrorProjectId] = useState(null);
+  const [generateError, setGenerateError] = useState(null);
+  const [generateErrorProjectId, setGenerateErrorProjectId] = useState(null);
+  const [isGeneratingStoryboards, setIsGeneratingStoryboards] = useState(false);
+  const generatingStoryboardsRef = useRef(false); // 同步锁，防止并发调用
+  // 自上次提取主体后，剧本是否又重新定稿过（用于控制"开始提取主体"按钮行为）
+  const [scriptFinalizedSinceExtraction, setScriptFinalizedSinceExtraction] = useState(false);
   const [scriptEpisodes, setScriptEpisodes] = useState([]);
   const [scriptPhase, setScriptPhase] = useState('initial');
   const [scriptHasStarted, setScriptHasStarted] = useState(false);
   const [scriptContent, setScriptContent] = useState('');
   const [scriptDraftContent, setScriptDraftContent] = useState('');
-  const [scriptStreamingIndex, setScriptStreamingIndex] = useState(0);
   const [episodeStatuses, setEpisodeStatuses] = useState({});
   // Tracks which non-alwaysEnabled steps have ever had content — once unlocked, stays unlocked
   const [unlockedSteps, setUnlockedSteps] = useState(new Set());
   const [currentUser, setCurrentUser] = useState({});
+  const [forceExtract, setForceExtract] = useState(false);
   const [notifications, setNotifications] = useState([]);
 
+  // 同步跟踪当前项目 ID
   useEffect(() => {
-    apiGetProjects().then(setProjects);
-    apiGetCurrentUser().then(setCurrentUser);
-    apiGetNotifications().then(setNotifications);
+    currentProjectIdRef.current = activeProject?.id || null;
+  }, [activeProject?.id]);
+  const [toast, setToast] = useState(null);
+  const toastTimerRef = useRef(null);
+  // 跨项目异步操作的 pending 结果暂存
+  const pendingExtractionsRef = useRef({}); // { projectId: { chars, scenes, props } }
+  const currentProjectIdRef = useRef(null);  // 同步跟踪当前项目
+  const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
+  const bgVideoRef = useRef(null);
+  const [videoReady, setVideoReady] = useState(false);
+
+
+
+  const showToast = (msg, type = 'warning') => {
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    setToast({ msg, type });
+    toastTimerRef.current = setTimeout(() => setToast(null), 2500);
+  };
+
+  // 背景视频循环：播完当前视频后切换到下一个
+  const handleVideoEnded = () => {
+    setVideoReady(false);
+
+    setCurrentVideoIndex((prev) => (prev + 1) % BG_VIDEOS.length);
+  };
+
+  // 统一的退出登录处理函数
+  const handleLogout = async () => {
+    try {
+      // 调用后端退出登录接口
+      await apiLogout();
+    } catch (error) {
+      console.error('退出登录接口调用失败:', error);
+    }
+
+    // 清除登录凭证
+    clearTokens();
+
+    // 只清除当前会话状态，保留项目数据和解锁状态供下次登录使用
+    localStorage.removeItem('miioo_active_project_id');
+    localStorage.removeItem('miioo_active_step');
+    localStorage.removeItem('miioo_active_key');
+
+    // 强制刷新页面并跳转到首页
+    // 使用 location.replace 而不是 location.href，确保不会留在历史记录中
+    window.location.replace('/');
+  };
+
+  // 监听项目切换并保存 ID（仅在有→无切换时清除，初始化/null→null 不操作）
+  const prevProjectIdRef = useRef();
+  useEffect(() => {
+    const prevId = prevProjectIdRef.current;
+    const currentId = activeProject?.id;
+    if (currentId) {
+      localStorage.setItem('miioo_active_project_id', currentId);
+    } else if (prevId) {
+      // 之前有项目，现在没了 → 用户主动退出项目
+      localStorage.removeItem('miioo_active_project_id');
+    }
+    // 初始化时 prevId=undefined, currentId=undefined → 什么都不做
+    prevProjectIdRef.current = currentId;
+  }, [activeProject?.id]);
+
+  // 监听步骤切换并保存（按项目 ID 单独存储，避免不同项目间互相污染）
+  useEffect(() => {
+    if (activeProject?.id) {
+      localStorage.setItem(`miioo_active_step_${activeProject.id}`, activeStep);
+    }
+  }, [activeStep, activeProject?.id]);
+
+  // 监听 activeKey 变化并保存
+  useEffect(() => {
+    if (activeKey !== 'home') {
+      localStorage.setItem('miioo_active_key', activeKey);
+    } else {
+      // 回到首页时清除缓存，确保刷新不会跳转
+      localStorage.removeItem('miioo_active_key');
+    }
+  }, [activeKey]);
+
+  // 监听解锁状态变化并保存（按项目 ID）
+  useEffect(() => {
+    if (activeProject?.id && unlockedSteps.size > 0) {
+      const key = `miioo_unlocked_steps_${activeProject.id}`;
+      localStorage.setItem(key, JSON.stringify([...unlockedSteps]));
+    }
+  }, [unlockedSteps, activeProject?.id]);
+
+  // 统一的项目数据加载函数
+  const loadProjectDetails = async (projectId) => {
+    setIsLoadingProject(true);
+    try {
+      // 0. 切换项目前先清空旧项目所有数据状态，避免闪现旧数据
+      setActiveProject(null);
+      setActiveStep('script');
+      setScriptContent('');
+      setScriptEpisodes([]);
+      setScriptPhase('initial');
+      setScriptHasStarted(false);
+      setScriptFinalizedSinceExtraction(false);
+      setSharedChars([]);
+      setSharedScenes([]);
+      setSharedProps([]);
+      setEpisodeStatuses({});
+      setUnlockedSteps(new Set());
+      if (extractErrorProjectId !== projectId) {
+        setExtractError(null);
+        setExtractErrorProjectId(null);
+      }
+      if (generateErrorProjectId !== projectId) {
+        setGenerateError(null);
+        setGenerateErrorProjectId(null);
+      }
+      setSubjectInitialTab('char');
+      // 1. 加载项目基本信息
+      const projectData = await apiGetProject(projectId);
+      setActiveProject(projectData);
+
+      // 2. 恢复步骤解锁状态（从 localStorage，按项目 ID）
+      const savedUnlocked = localStorage.getItem(`miioo_unlocked_steps_${projectId}`);
+      if (savedUnlocked) {
+        setUnlockedSteps(new Set(JSON.parse(savedUnlocked)));
+      } else {
+        setUnlockedSteps(new Set());
+      }
+
+      // 如果后端已有主体数据，自动解锁 subject 步骤
+      // （避免换浏览器/清缓存后明明有数据却被锁住）
+      if (!savedUnlocked || !JSON.parse(savedUnlocked).includes('subject')) {
+        try {
+          const anySubjects = await apiGetSubjects(projectId, { type: 'character' }).catch(() => []);
+          if (Array.isArray(anySubjects) && anySubjects.length > 0) {
+            setUnlockedSteps(prev => {
+              const next = new Set(prev);
+              next.add('subject');
+              return next;
+            });
+          }
+        } catch {}
+      }
+
+      // 恢复"定稿 flag"（按项目 ID）
+      const savedFinalized = localStorage.getItem(`miioo_finalized_since_extraction_${projectId}`);
+      setScriptFinalizedSinceExtraction(savedFinalized === 'true');
+
+      // 恢复当前步骤（按项目 ID，新项目默认回到 script）
+      // 注意：不使用全局 miioo_active_step，避免不同项目间互相污染
+      const savedStep = localStorage.getItem(`miioo_active_step_${projectId}`);
+      setActiveStep(savedStep || 'script');
+
+      // 3. 并行加载所有数据
+      const [scriptData, charsData, scenesData, propsData, episodesData, overviewData] = await Promise.all([
+        apiGetScriptWorkspace(projectId).catch(err => {
+          console.error('加载剧本数据失败:', err);
+          return { content: '', episodes: [], phase: 'initial' };
+        }),
+        apiGetSubjects(projectId, { type: 'character' }).catch(() => []),
+        apiGetSubjects(projectId, { type: 'scene' }).catch(() => []),
+        apiGetSubjects(projectId, { type: 'prop' }).catch(() => []),
+        apiGetEpisodes(projectId).catch(() => []),
+        apiGetProjectOverview(projectId).catch(() => null),
+      ]);
+
+      // 4. 更新状态
+      // API 返回结构: { script: { content, status, ... }, messages: [...] }
+      const scriptContent = scriptData.script?.content || scriptData.content || '';
+      setScriptContent(scriptContent);
+      setScriptEpisodes(episodesData || []);
+      setScriptPhase(scriptContent ? 'view' : 'initial');
+      setScriptHasStarted(!!scriptContent);
+
+      // 归一化：后端 API 返回 snake_case -> 前端 camelCase/shorthand
+      setSharedChars(normalizeSubjects(charsData));
+      setSharedScenes(normalizeSubjects(scenesData));
+      setSharedProps(normalizeSubjects(propsData));
+
+      // 从后端数据中提取剧集状态，优先用 overview 的 episode_progress（状态更精准）
+      // 只接受 edited / generated / pending，其他值统一回退为 pending
+      const VALID_STATUSES = ['edited', 'generated', 'pending'];
+      const normalizeStatus = (s) => VALID_STATUSES.includes(s) ? s : 'pending';
+      if (overviewData?.episode_progress?.length > 0) {
+        const statusMap = {};
+        overviewData.episode_progress.forEach((ep, index) => {
+          statusMap[index] = normalizeStatus(ep.status);
+        });
+        setEpisodeStatuses(statusMap);
+      } else if (episodesData.length > 0) {
+        const statusMap = {};
+        episodesData.forEach((episode, index) => {
+          statusMap[index] = normalizeStatus(episode.status);
+        });
+        setEpisodeStatuses(statusMap);
+      }
+
+      // 5. 加载分镜数据（需要剧集 ID）
+      if (episodesData.length > 0) {
+        const storyboardsData = await apiGetStoryboards(projectId, {
+          episode_id: episodesData[0].id
+        }).catch(() => []);
+
+        // 根据分镜数据判断是否解锁分镜步骤
+        if (storyboardsData.length > 0) {
+          setUnlockedSteps(prev => new Set([...prev, 'storyboard']));
+        }
+      }
+
+    } catch (error) {
+      console.error('加载项目详情失败:', error);
+      // 加载失败时清除缓存
+      localStorage.removeItem('miioo_active_project_id');
+      localStorage.removeItem('miioo_active_step');
+      localStorage.removeItem('miioo_active_key');
+      setActiveProject(null);
+      setActiveProjectId(null);
+    } finally {
+      setIsLoadingProject(false);
+    }
+  };
+
+  useEffect(() => {
+    // 没有 token → 跳过所有鉴权请求，避免 401
+    if (!getToken()) {
+      setProjectsLoaded(true);
+      setServerReachable(null);
+      return;
+    }
+
+    // 启动验证：先尝试刷新 token（避免过期 token 直接发 401），再确认 token 有效
+    const doAuth = async () => {
+      // 先静默刷新一次 token（有 refresh_token 才尝试）
+      if (getRefreshToken()) {
+        await refreshAccessToken();
+      }
+
+      // token 刷新后仍然无效 → 跳过 API 请求，避免无意义的 401
+      if (!getToken()) {
+        setProjectsLoaded(true);
+        setServerReachable(null);
+        return;
+      }
+
+      try {
+        const user = await apiGetCurrentUser();
+        setServerReachable(true);
+        setIsLoggedIn(true);
+        setCurrentUser(user);
+      } catch (err) {
+        if (err.isNetworkError) {
+          setServerReachable(false);
+          showToast('后端服务连接异常，部分功能不可用', 'error');
+        }
+        // 401 / 其他鉴权错误 → authFetch 已清 token + 触发 logout 事件
+        setProjectsLoaded(true);
+        return; // 阻止后续加载
+      }
+      // 仅在验证成功时加载鉴权数据（此时 token 必然有效）
+      if (!getToken()) return;
+      refreshAccessToken().finally(() => {
+      apiGetProjects().then((data) => {
+        const normalized = data.map((p) => ({ ...p, cover: p.cover ?? p.cover_url }));
+        // 按创建时间倒序排列，最新的在前
+        const sorted = [...normalized].sort((a, b) => {
+          const timeA = new Date(a.created_at || 0).getTime();
+          const timeB = new Date(b.created_at || 0).getTime();
+          return timeB - timeA;
+        });
+        setProjects(sorted);
+
+        // 只在项目页面（activeKey === 'project'）且有缓存项目 ID 时才恢复
+        const savedProjectId = localStorage.getItem('miioo_active_project_id');
+        const savedKey = localStorage.getItem('miioo_active_key');
+
+        if (savedKey === 'project' && savedProjectId) {
+          const exists = sorted.some(p => p.id === savedProjectId);
+          if (exists) {
+            setActiveProjectId(savedProjectId);
+            loadProjectDetails(savedProjectId);
+          } else {
+            // 项目已被删除，清除缓存
+            localStorage.removeItem('miioo_active_project_id');
+            localStorage.removeItem('miioo_active_step');
+            localStorage.removeItem('miioo_active_key');
+          }
+        }
+      }).catch(() => {}).finally(() => {
+        setProjectsLoaded(true);
+      });
+          apiGetNotifications().then(setNotifications).catch(() => {});
+          apiListProviders().then((data) => {
+            const providers = Array.isArray(data) ? data : (data?.providers || []);
+            if (providers.length > 0) setApiConfigured(true);
+          }).catch(() => {});
+        });
+      };
+      doAuth(); // 启动鉴权流程
+  }, []);
+
+  useEffect(() => {
+    const handleForceLogout = () => {
+      if (!localStorage.getItem('token')) return;
+      setIsLoggedIn(false);
+      setLoginOpen(true);
+    };
+
+    const handleBackendUnreachable = () => {
+      if (!getToken()) return;
+      setServerReachable(false);
+      showToast('后端服务连接异常，部分功能不可用', 'error');
+    };
+
+    const handleBackendReachable = () => {
+      setServerReachable(true);
+    };
+
+    window.addEventListener('auth:logout', handleForceLogout);
+    window.addEventListener('backend:unreachable', handleBackendUnreachable);
+    window.addEventListener('backend:reachable', handleBackendReachable);
+    return () => {
+      window.removeEventListener('auth:logout', handleForceLogout);
+      window.removeEventListener('backend:unreachable', handleBackendUnreachable);
+      window.removeEventListener('backend:reachable', handleBackendReachable);
+    };
   }, []);
 
   const handleUnlockStep = (stepKey) => {
@@ -913,14 +1121,160 @@ export default function Home({ onProjectCreated }) {
     });
   };
 
+  // 提取主体回调（由 SubjectPage 在挂载时调用）
+  const handleExtractSubjects = async () => {
+    const projectId = activeProject.id;
+    const projectName = activeProject.name || projectId;
+    setExtractError(null);
+    try {
+      // 调用主动提取接口（POST）而非仅查询已有主体
+      const result = await apiExtractSubjectsFromScript(projectId);
+      const allSubjects = [...(result.created || []), ...(result.updated || [])];
+
+      const charsData = allSubjects.filter(s => s.type === 'character');
+      const scenesData = allSubjects.filter(s => s.type === 'scene');
+      const propsData = allSubjects.filter(s => s.type === 'prop');
+
+      const normalizedChars = normalizeSubjects(charsData);
+      const normalizedScenes = normalizeSubjects(scenesData);
+      const normalizedProps = normalizeSubjects(propsData);
+
+      if (normalizedChars.length === 0 && normalizedScenes.length === 0 && normalizedProps.length === 0) {
+        if (currentProjectIdRef.current === projectId) {
+          setExtractError('提取主体失败，请稍后重试');
+          setExtractErrorProjectId(projectId);
+          showToast('提取主体失败，请稍后重试', 'error');
+        }
+        return;
+      }
+
+      // 项目已切换：暂存结果 + toast 通知
+      if (currentProjectIdRef.current !== projectId) {
+        pendingExtractionsRef.current[projectId] = {
+          chars: normalizedChars,
+          scenes: normalizedScenes,
+          props: normalizedProps,
+        };
+        showToast(`「${projectName}」主体抽取完成`, 'success');
+        return;
+      }
+
+      setSharedChars(normalizedChars);
+      setSharedScenes(normalizedScenes);
+      setSharedProps(normalizedProps);
+      setForceExtract(false);
+    } catch (err) {
+      console.error('提取主体失败:', err);
+      if (currentProjectIdRef.current === projectId) {
+        setExtractError('提取主体失败，请重试');
+        setExtractErrorProjectId(projectId);
+        showToast('提取主体失败，请重试', 'error');
+      }
+    }
+  };
+
+  // 切回项目时，检查是否有暂存的提取结果等待应用
+  useEffect(() => {
+    const pid = activeProject?.id;
+    if (!pid) return;
+    const pending = pendingExtractionsRef.current[pid];
+    if (!pending) return;
+    setSharedChars(pending.chars);
+    setSharedScenes(pending.scenes);
+    setSharedProps(pending.props);
+    setForceExtract(false);
+    delete pendingExtractionsRef.current[pid];
+  }, [activeProject?.id]);
+
+  // 智能分镜生成回调（由 StoryboardPage 在挂载时调用）
+  const handleGenerateStoryboards = async () => {
+    if (generatingStoryboardsRef.current) return;
+    generatingStoryboardsRef.current = true;
+    setIsGeneratingStoryboards(true);
+    setGenerateError(null);
+    setGenerateErrorProjectId(null);
+    try {
+      let freshEpisodes = await apiGetEpisodes(activeProject.id).catch(() => []);
+      if (freshEpisodes.length === 0 && scriptContent) {
+        const finalizeResult = await apiFinalizeScriptWorkspace(activeProject.id, {
+          episode_count: null, model: null,
+        });
+        const finalized = finalizeResult?.items || finalizeResult?.episodes || finalizeResult?.data;
+        if (Array.isArray(finalized) && finalized.length > 0) {
+          freshEpisodes = finalized;
+          setScriptEpisodes(freshEpisodes);
+        }
+      }
+      await apiGenerateStoryboardsFromFinalScript(activeProject.id);
+    } catch (err) {
+      console.error('智能分镜生成失败:', err);
+      const status = err?.status;
+      const msg = err?.message || String(err);
+      let errorMsg;
+      if (status === 502) {
+        errorMsg = '服务器繁忙，请稍后重试';
+      } else if (status === 504 || msg.includes('timeout') || msg.includes('Timeout') || msg.includes('abort')) {
+        errorMsg = '请求超时，请重试！';
+      } else if (status === 500) {
+        errorMsg = '服务器内部错误，请稍后重试';
+      } else if (status === 503) {
+        errorMsg = '服务暂时不可用，请稍后重试';
+      } else if (msg.includes('Failed to fetch') || msg.includes('NetworkError') || msg.includes('network')) {
+        errorMsg = '网络连接失败，请检查网络后重试';
+      } else if (msg) {
+        errorMsg = `分镜生成失败：${msg}`;
+      } else {
+        errorMsg = '分镜生成失败，请重试';
+      }
+      setGenerateError(errorMsg);
+      setGenerateErrorProjectId(activeProject?.id);
+      showToast(errorMsg, 'error');
+    }
+    setIsGeneratingStoryboards(false);
+    generatingStoryboardsRef.current = false;
+  };
+
+  // 定稿成功回调：标记"提取主体后已重新定稿"，允许用户再次提取（弹确认弹窗）
+  const handleScriptFinalized = () => {
+    setScriptFinalizedSinceExtraction(true);
+    if (activeProject?.id) {
+      localStorage.setItem(`miioo_finalized_since_extraction_${activeProject.id}`, 'true');
+    }
+  };
+
   const handleNavChange = (key) => {
     setActiveKey(key);
     setActiveProject(null);
+    setActiveProjectId(null);
+    localStorage.removeItem('miioo_active_project_id');
+    localStorage.removeItem('miioo_active_step');
+          localStorage.removeItem('miioo_active_key');
+
+    // 每次切到项目列表都从后端拉取最新数据
+    if (key === 'project') {
+      apiGetProjects().then((data) => {
+        const normalized = data.map((p) => ({ ...p, cover: p.cover ?? p.cover_url }));
+        const sorted = [...normalized].sort((a, b) => {
+          const timeA = new Date(a.created_at || 0).getTime();
+          const timeB = new Date(b.created_at || 0).getTime();
+          return timeB - timeA;
+        });
+        setProjects(sorted);
+      }).catch(() => {});
+    }
   };
 
   const showApiBubble = !apiConfigOpen && (!isLoggedIn || (isLoggedIn && !apiConfigured));
 
-  const bottomNavItems = BOTTOM_NAV_ITEMS.map((item) => {
+  const bottomNavItems = useMemo(() => BOTTOM_NAV_ITEMS.map((item) => {
+    if (item.key === 'menu') {
+      return {
+        ...item,
+        popup: ({ close }) => (
+          <MoreOptionsMenu close={close} setWatermarkSettingsOpen={setWatermarkSettingsOpen} />
+        ),
+      };
+    }
     if (item.key !== 'api' || !showApiBubble) return item;
     return {
       ...item,
@@ -967,12 +1321,18 @@ export default function Home({ onProjectCreated }) {
         </div>
       ),
     };
-  });
+  }), [showApiBubble, setWatermarkSettingsOpen]);
 
   const handleBottomNavChange = (key) => {
     if (key === 'api') {
+      if (!isLoggedIn) { setLoginOpen(true); return; }
       setBottomActiveKey(null);
       setApiConfigOpen(true);
+      return;
+    }
+    if (key === 'notifications') {
+      setBottomActiveKey(null);
+      setNotificationCenterOpen(true);
       return;
     }
 
@@ -980,7 +1340,9 @@ export default function Home({ onProjectCreated }) {
   };
 
   const handleProjectCreated = (project) => {
-    setProjects((prev) => [...prev, project]);
+    // 新项目插入到列表最前面，统一字段映射：cover_url -> cover
+    const normalized = { ...project, cover: project.cover ?? project.cover_url };
+    setProjects((prev) => [normalized, ...prev]);
     setActiveKey('project');
   };
 
@@ -989,7 +1351,24 @@ export default function Home({ onProjectCreated }) {
       {/* background — only visible on home page */}
       {activeKey === 'home' && (
         <>
-          <div className="absolute bg-cover bg-center inset-0" style={{ backgroundImage: `url(${BG_URL})` }} />
+          <img
+            src={BG_VIDEO_POSTER}
+            alt=""
+            className="absolute inset-0 object-cover"
+            style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center center' }}
+          />
+          <video
+            ref={bgVideoRef}
+            key={currentVideoIndex}
+            src={BG_VIDEOS[currentVideoIndex]}
+            autoPlay
+            muted
+            playsInline
+            onCanPlay={() => setVideoReady(true)}
+            onEnded={handleVideoEnded}
+            className="absolute inset-0 object-cover"
+            style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center center', opacity: videoReady ? 1 : 0, transition: 'opacity 500ms ease' }}
+          />
           <div
             className="absolute inset-0 pointer-events-none"
             style={{ backgroundImage: 'linear-gradient(in oklab 180deg, oklab(0% 0 0 / 0%) 81.58%, oklab(0% 0 0) 100%), linear-gradient(in oklab 90deg, oklab(0% 0 0 / 60%) 0%, oklab(0% 0 0 / 0%) 9.99%)' }}
@@ -1000,11 +1379,11 @@ export default function Home({ onProjectCreated }) {
         <div className="absolute inset-0 bg-neutral-400" />
       )}
 
-      <div className="flex flex-col items-start absolute inset-0">
+      <div className="flex flex-col items-start absolute inset-0" style={{ paddingBottom: "0px" }}>
         {/* headbar */}
         {!activeProject ? (
         <div className="flex items-center px-24 py-12 justify-between gap-[37px] self-stretch">
-          <svg width="66" height="19.92" viewBox="0 0 947 286" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flex: '0 1 auto', width: '66px' }} aria-label="miioo">
+          <svg width="66" height="19.92" viewBox="0 0 947 286" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flex: '0 1 auto', width: '66px', cursor: activeKey !== 'home' ? 'pointer' : 'default' }} aria-label="miioo" role={activeKey !== 'home' ? 'button' : undefined} onClick={activeKey !== 'home' ? () => setActiveKey('home') : undefined}>
             <path d="M335 86H389V286H335V86Z" fill="white"/>
             <path d="M425 86H479V286H425V86Z" fill="white"/>
             <path d="M180 251C180 270.33 164.33 286 145 286C125.67 286 110 270.33 110 251C110 231.67 125.67 216 145 216C164.33 216 180 231.67 180 251Z" fill="#00D4FF"/>
@@ -1022,11 +1401,11 @@ export default function Home({ onProjectCreated }) {
             <CreationManualButton />
             {isLoggedIn ? (
               <AccountMenu
-                userName="Suzy"
-                userId="miioo_suzy"
-                phone="178 **** 0361"
-                wechat="suzylee"
-                onLogout={() => setIsLoggedIn(false)}
+                nickname={currentUser.nickname ?? ''}
+                phone={currentUser.phone_bound ? (currentUser.phone ?? '已绑定') : '未绑定'}
+                wechat={currentUser.wechat_bound ? (currentUser.wechat ?? '已绑定') : '未绑定'}
+                avatarUrl={currentUser.avatar_url ?? ''}
+                onLogout={handleLogout}
                 onOpenProfile={() => setProfileOpen(true)}
               />
             ) : (
@@ -1040,21 +1419,30 @@ export default function Home({ onProjectCreated }) {
           onStepChange={setActiveStep}
           unlockedSteps={unlockedSteps}
           isLoggedIn={isLoggedIn}
+          currentUser={currentUser}
           onLoginClick={() => setLoginOpen(true)}
-          onLogout={() => setIsLoggedIn(false)}
+          onLogout={handleLogout}
           onOpenProfile={() => setProfileOpen(true)}
+          onLogoClick={() => {
+            setActiveProject(null);
+            setActiveProjectId(null);
+            setActiveKey('home');
+            localStorage.removeItem('miioo_active_project_id');
+            localStorage.removeItem('miioo_active_step');
+          localStorage.removeItem('miioo_active_key');
+          }}
         />
         )}
 
         {/* body: nav + content */}
-        <div className="flex flex-1 overflow-hidden self-stretch">
+        <div className="flex flex-1 min-h-0 overflow-hidden self-stretch w-auto">
           {/* primary navigation */}
-          <div className="flex flex-col items-start gap-0">
+          <div className="flex flex-col items-start gap-0 px-[16px] self-stretch w-auto" style={{ position: 'relative', zIndex: 10 }}>
             <div
-              className="flex flex-col items-start py-24 flex-1"
+              className="flex flex-col items-start justify-center py-24 flex-1"
               style={{
-                paddingLeft: (activeKey === 'project' || activeKey === 'assets') ? '12px' : '24px',
-                paddingRight: (activeKey === 'project' || activeKey === 'assets') ? '12px' : '24px',
+                paddingLeft: '0px',
+                paddingRight: '0px',
                 transition: 'padding-left 320ms cubic-bezier(0.4, 0, 0.2, 1), padding-right 320ms cubic-bezier(0.4, 0, 0.2, 1)',
               }}
             >
@@ -1065,9 +1453,9 @@ export default function Home({ onProjectCreated }) {
             <div
               className="py-24"
               style={{
-                paddingLeft: (activeKey === 'project' || activeKey === 'assets') ? '8px' : '32px',
-                paddingRight: (activeKey === 'project' || activeKey === 'assets') ? '8px' : '32px',
-                alignSelf: 'stretch',
+                paddingLeft: '0px',
+                paddingRight: '0px',
+                                alignSelf: 'stretch',
                 transition: 'padding-left 320ms cubic-bezier(0.4, 0, 0.2, 1), padding-right 320ms cubic-bezier(0.4, 0, 0.2, 1)',
               }}
             >
@@ -1081,24 +1469,82 @@ export default function Home({ onProjectCreated }) {
           </div>
 
           {/* page content */}
-          <div className="flex-1 overflow-hidden relative">
-            {activeKey === 'home' && (
-              <StartCreationButton onClick={() => setNewProjectOpen(true)} />
+          <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden relative">
+            {/* 后端不可达降级横幅 */}
+            {serverReachable === false && (
+              <div className="flex items-center justify-center gap-2 px-16 py-2 text-sm" style={{ backgroundColor: 'rgba(255,77,79,0.12)', color: '#FF4D4F' }}>
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1L13 12H1L7 1Z" stroke="#FF4D4F" strokeLinejoin="round"/><path d="M7 5V8" stroke="#FF4D4F" strokeLinecap="round"/><circle cx="7" cy="10.5" r="0.5" fill="#FF4D4F"/></svg>
+                后端服务连接异常，部分功能不可用
+              </div>
             )}
-            {activeKey === 'project' && !activeProject && (
+            {activeKey === 'home' && (
+              <StartCreationButton onClick={() => {
+                if (!isLoggedIn) { setLoginOpen(true); return; }
+                setNewProjectOpen(true);
+              }} />
+            )}
+            {activeKey === 'project' && isLoadingProject && (
+              <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                <DotsLoading size={6} color="#2DC3E1" gap={5} />
+              </div>
+            )}
+            {activeKey === 'project' && !activeProject && !isLoadingProject && projectsLoaded && (
               <ProjectList
+                serverReachable={serverReachable}
                 projects={projects}
-                onNewProject={() => setNewProjectOpen(true)}
-                onOpenProject={(p) => setActiveProject(p)}
+                onNewProject={() => {
+                  if (!isLoggedIn) { setLoginOpen(true); return; }
+                  if (!apiConfigured) { setNoModelNoticeOpen(true); return; }
+                  setNewProjectOpen(true);
+                }}
+                onOpenProject={(p) => {
+                  loadProjectDetails(p.id);
+                  setActiveKey('project');
+                }}
+                onRenameProject={(projectId, newName) => {
+                  apiUpdateProject(projectId, { name: newName }).then(() => {
+                    setProjects((prev) => prev.map((p) => (p.id === projectId ? { ...p, name: newName } : p)));
+                  });
+                }}
+                onDeleteProject={(projectId) => {
+                  apiDeleteProject(projectId).then(() => {
+                    setProjects((prev) => prev.filter((p) => p.id !== projectId));
+                  });
+                }}
               />
             )}
             {activeKey === 'project' && activeProject && activeStep !== 'subject' && activeStep !== 'storyboard' && (
               <GlobalSettings
+                projectId={activeProject.id}
                 projectName={activeProject.name}
-                onBack={() => setActiveProject(null)}
+                projectDescription={activeProject.description || activeProject.desc}
+                projectCoverUrl={activeProject.cover_url || activeProject.cover}
+                projectRatio={activeProject.aspect_ratio || activeProject.ratio}
+                projectStyle={activeProject.visual_style || activeProject.style}
+                onProjectUpdate={(updates) => {
+                  return apiUpdateProject(activeProject.id, updates).then(() => {
+                    // 字段映射：cover_url -> cover
+                    const mappedUpdates = { ...updates };
+                    if (updates.cover_url !== undefined) {
+                      mappedUpdates.cover = updates.cover_url;
+                      showToast('封面保存成功', 'success');
+                    }
+                    setActiveProject((prev) => ({ ...prev, ...mappedUpdates }));
+                    setProjects((prev) => prev.map((p) => (p.id === activeProject.id ? { ...p, ...mappedUpdates } : p)));
+                  });
+                }}
+                onBack={() => {
+                  setActiveProject(null);
+                  setActiveProjectId(null);
+                  localStorage.removeItem('miioo_active_project_id');
+                  localStorage.removeItem('miioo_active_step');
+          localStorage.removeItem('miioo_active_key');
+                }}
+                showToast={showToast}
                 activeStep={activeStep}
                 onStepChange={setActiveStep}
                 onUnlockStep={handleUnlockStep}
+                isSubjectUnlocked={unlockedSteps.has('subject')}
                 chars={sharedChars ?? []}
                 scenes={sharedScenes ?? []}
                 props={sharedProps ?? []}
@@ -1112,20 +1558,30 @@ export default function Home({ onProjectCreated }) {
                 onScriptContentChange={setScriptContent}
                 scriptDraftContent={scriptDraftContent}
                 onScriptDraftContentChange={setScriptDraftContent}
-                scriptStreamingIndex={scriptStreamingIndex}
-                onScriptStreamingIndexChange={setScriptStreamingIndex}
                 onGoToSubject={(tab) => {
                   setSubjectInitialTab(tab ?? 'char');
+                  setForceExtract(true);
                   handleUnlockStep('subject');
                   setActiveStep('subject');
                 }}
+                scriptFinalizedSinceExtraction={scriptFinalizedSinceExtraction}
+                onScriptFinalized={handleScriptFinalized}
                 episodeStatuses={episodeStatuses}
               />
             )}
             {activeKey === 'project' && activeProject && activeStep === 'subject' && (
               <SubjectPage
+                projectRatio={activeProject.aspect_ratio || activeProject.ratio}
+                serverReachable={serverReachable}
+                projectId={activeProject.id}
                 projectName={activeProject.name}
-                onBack={() => setActiveProject(null)}
+                onBack={() => {
+                  setActiveProject(null);
+                  setActiveProjectId(null);
+                  localStorage.removeItem('miioo_active_project_id');
+                  localStorage.removeItem('miioo_active_step');
+          localStorage.removeItem('miioo_active_key');
+                }}
                 episodeName="第一集"
                 onUnlockStep={handleUnlockStep}
                 initialTab={subjectInitialTab}
@@ -1135,20 +1591,30 @@ export default function Home({ onProjectCreated }) {
                 onScenesChange={setSharedScenes}
                 props={sharedProps}
                 onPropsChange={setSharedProps}
+                isStoryboardGenerated={unlockedSteps.has('storyboard')}
                 onStartStoryboard={() => {
                   handleUnlockStep('storyboard');
+                  handleGenerateStoryboards();
                   setActiveStep('storyboard');
                 }}
+                onExtractSubjects={forceExtract ? handleExtractSubjects : undefined}
+                extractError={extractError}
               />
             )}
             {activeKey === 'project' && activeProject && activeStep === 'storyboard' && (
               <StoryboardPage
+                serverReachable={serverReachable}
+                projectId={activeProject.id}
                 projectName={activeProject.name}
                 chars={sharedChars ?? []}
                 scenes={sharedScenes ?? []}
                 props={sharedProps ?? []}
                 episodes={scriptEpisodes}
                 onUnlockStep={handleUnlockStep}
+                onUnlockStep={handleUnlockStep}
+                onGenerateStoryboards={handleGenerateStoryboards}
+                isGenerating={isGeneratingStoryboards}
+                generateError={generateError}
                 onVideoGenerated={(episodeIndex) => {
                   setEpisodeStatuses((prev) => {
                     if (prev[episodeIndex] === 'generated' || prev[episodeIndex] === 'edited') return prev;
@@ -1158,32 +1624,125 @@ export default function Home({ onProjectCreated }) {
               />
             )}
             {activeKey === 'assets' && (
-              <AssetsPage projects={projects} />
+              <AssetsPage serverReachable={serverReachable} projects={projects} />
+            )}
+            {activeKey === 'create' && (
+              <CreationPage
+                serverReachable={serverReachable}
+                isLoggedIn={isLoggedIn}
+                onLoginClick={() => setLoginOpen(true)}
+                apiConfigured={apiConfigured}
+                onShowNoModelNotice={() => setNoModelNoticeOpen(true)}
+              />
             )}
           </div>
         </div>
       </div>
 
-      <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} onSuccess={() => { setLoginOpen(false); setIsLoggedIn(true); }} />
+      {/* 网站备案信息 — 仅首页可见 */}
+      {activeKey === 'home' && createPortal(
+        <div
+          className="fixed bottom-0 right-0 flex items-center gap-16 text-text-hint z-10"
+          style={{ height: "32px", paddingRight: "24px", fontSize: "12px" }}
+        >
+          <span>ⓒ2026 MiiooAI 版权所有</span>
+          <span>鲁ICP备2026030778号</span>
+        </div>,
+        document.body
+      )}
+      <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} onSuccess={() => {
+        setLoginOpen(false);
+        setIsLoggedIn(true);
+        apiGetProjects().then((data) => {
+          const normalized = data.map((p) => ({ ...p, cover: p.cover ?? p.cover_url }));
+          const sorted = [...normalized].sort((a, b) => {
+            const timeA = new Date(a.created_at || 0).getTime();
+            const timeB = new Date(b.created_at || 0).getTime();
+            return timeB - timeA;
+          });
+          setProjects(sorted);
+        }).catch(() => {});
+        apiListProviders().then((data) => {
+          const providers = Array.isArray(data) ? data : (data?.providers || []);
+          if (providers.length > 0) setApiConfigured(true);
+        }).catch(() => {});
+      }} />
       <ApiConfigModal open={apiConfigOpen} onClose={() => setApiConfigOpen(false)} onConfigured={() => setApiConfigured(true)} />
+      {noModelNoticeOpen && (
+        <NoModelNotice
+          onConfigureAPI={() => {
+            setNoModelNoticeOpen(false);
+            setApiConfigOpen(true);
+          }}
+          onViewTutorial={() => setNoModelNoticeOpen(false)}
+          onClose={() => setNoModelNoticeOpen(false)}
+        />
+      )}
+      <NotificationCenterModal
+        open={notificationCenterOpen}
+        onClose={() => setNotificationCenterOpen(false)}
+        showToast={showToast}
+      />
       <ProfileModal
         open={profileOpen}
         onClose={() => setProfileOpen(false)}
-        userName="Suzy"
-        userId="miioo_suzy"
-        phone="178 **** 0361"
-        wechat="suzylee"
+        onLogout={handleLogout}
+        currentUser={currentUser}
+        onProfileUpdated={(updated) => setCurrentUser(prev => ({ ...prev, ...updated }))}
       />
       <NewProjectModal
         open={newProjectOpen}
         onClose={() => setNewProjectOpen(false)}
-        onConfirm={({ name, desc, ratio, style, customStyleDesc, coverFile }) => {
-          setNewProjectOpen(false);
-          apiCreateProject({ name, desc, ratio, style, customStyleDesc, coverFile }).then((project) => {
-            handleProjectCreated({ id: project.id, name, desc, ratio, style, customStyleDesc, date: '刚刚' });
-          });
+        onConfirm={(project) => {
+          handleProjectCreated(project);
         }}
       />
+      {watermarkSettingsOpen && (
+        <WatermarkSettingsModal
+          onClose={() => setWatermarkSettingsOpen(false)}
+          showToast={showToast}
+        />
+      )}
+      {toast && createPortal(
+        <div style={{
+          position: 'fixed',
+          top: '25vh',
+          left: '50%',
+          transform: 'translateX(-50%)',
+          zIndex: 9999,
+          pointerEvents: 'none',
+          animation: 'slideUpBounce 250ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards',
+        }}>
+          <div
+            className="flex items-center gap-[8px] px-[16px] py-[8px] rounded-medium bg-toast-bg backdrop-blur-[20px]"
+            style={{ whiteSpace: 'nowrap' }}
+          >
+            {toast.type === 'success' && (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+                <path d="M8 14.667C9.841 14.667 11.508 13.921 12.714 12.714C13.921 11.508 14.667 9.841 14.667 8C14.667 6.159 13.921 4.492 12.714 3.286C11.508 2.08 9.841 1.333 8 1.333C6.159 1.333 4.492 2.08 3.286 3.286C2.08 4.492 1.333 6.159 1.333 8C1.333 9.841 2.08 11.508 3.286 12.714C4.492 13.921 6.159 14.667 8 14.667Z" fill="#52BF92" stroke="#52BF92" strokeWidth="1.333" strokeLinejoin="round" />
+                <path d="M5.333 8L7.333 10L11.333 6" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            )}
+            {toast.type === 'warning' && (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+                <path d="M8 14.667C9.841 14.667 11.508 13.921 12.714 12.714C13.921 11.508 14.667 9.841 14.667 8C14.667 6.159 13.921 4.492 12.714 3.286C11.508 2.08 9.841 1.333 8 1.333C6.159 1.333 4.492 2.08 3.286 3.286C2.08 4.492 1.333 6.159 1.333 8C1.333 9.841 2.08 11.508 3.286 12.714C4.492 13.921 6.159 14.667 8 14.667Z" fill="#EB8B14" stroke="#EB8B14" strokeWidth="1.333" strokeLinejoin="round" />
+                <path fillRule="evenodd" clipRule="evenodd" d="M8 12.333C8.46 12.333 8.833 11.96 8.833 11.5C8.833 11.04 8.46 10.667 8 10.667C7.54 10.667 7.167 11.04 7.167 11.5C7.167 11.96 7.54 12.333 8 12.333Z" fill="#FFFFFF" />
+                <path d="M8 4V9.333" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+            )}
+            {toast.type === 'error' && (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+                <path d="M8 14.667C9.841 14.667 11.508 13.921 12.714 12.714C13.921 11.508 14.667 9.841 14.667 8C14.667 6.159 13.921 4.492 12.714 3.286C11.508 2.08 9.841 1.333 8 1.333C6.159 1.333 4.492 2.08 3.286 3.286C2.08 4.492 1.333 6.159 1.333 8C1.333 9.841 2.08 11.508 3.286 12.714C4.492 13.921 6.159 14.667 8 14.667Z" fill="#F75F5F" stroke="#F75F5F" strokeWidth="1.333" strokeLinejoin="round" />
+                <path d="M5.333 5.333L10.667 10.667M10.667 5.333L5.333 10.667" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" />
+              </svg>
+            )}
+            <span className="text-text-primary text-font-size-16 font-font-weight-regular" style={{ fontFamily: "'AlibabaPuHuiTi 2 55 Regular','Alibaba PuHuiTi 2.0',system-ui,sans-serif" }}>
+              {toast.msg}
+            </span>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }

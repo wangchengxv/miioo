@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<title>Miioo API 前后端差异报告</title>
+<style>
+  body { font-family: -apple-system, sans-serif; background: #111; color: #eee; padding: 40px; line-height: 1.7; }
+  h1 { border-bottom: 2px solid #333; padding-bottom: 10px; }
+  h2 { color: #ff6b35; margin-top: 48px; }
+  h3 { color: #aaa; margin-top: 24px; }
+  table { border-collapse: collapse; width: 100%; margin: 16px 0 32px; }
+  th { background: #222; color: #ccc; font-weight: 600; text-align: left; }
+  th, td { border: 1px solid #333; padding: 8px 12px; font-size: 13px; vertical-align: top; }
+  td code { background: #222; padding: 1px 5px; border-radius: 3px; color: #80cbc4; font-size: 12px; }
+  .tag { display: inline-block; padding: 1px 7px; border-radius: 3px; font-size: 11px; font-weight: 700; margin-right: 4px; }
+  .tag-wrong { background: #662222; color: #ff8888; }
+  .tag-missing { background: #554400; color: #ffcc00; }
+  .tag-extra { background: #224466; color: #88ccff; }
+  .tag-ok { background: #224422; color: #88ff88; }
+  .tag-field { background: #443355; color: #cc99ff; }
+  .tag-new { background: #553322; color: #ffaa66; }
+  .section-desc { color: #999; margin-bottom: 12px; font-size: 13px; }
+  .note { background: #1a1a2e; border-left: 3px solid #ff6b35; padding: 10px 16px; margin: 20px 0; font-size: 13px; color: #ccc; }
+  details { margin: 4px 0; }
+  summary { cursor: pointer; color: #88ccff; }
+  .file-badge { background: #1a2a1a; border: 1px solid #2a4a2a; padding: 2px 8px; border-radius: 4px; font-size: 11px; color: #88ff88; }
+</style>
+</head>
+<body>
+
+<h1>Miioo API 前后端差异报告</h1>
+<p style="color:#666">更新时间：2026-06-04 &nbsp;|&nbsp; 对照文档：<code>api文档latest.json</code>（OpenAPI 3.1）&nbsp;|&nbsp; 上次生成：2026-06-03</p>
+
+<div class="note" style="border-left-color: #88ff88; background: #1a2a1a;">
+  <strong>✅ 本轮更新（2026-06-04）：</strong>对照 <code>api文档latest.json</code> 与上版差异，新增 10 个接口（手机/微信绑定、卡片可见性、Fal 配置、项目模板、主体提取），
+  2 处响应字段新增（<code>display_id</code>/<code>phone_bound</code>/<code>wechat</code>/<code>wechat_bound</code>）。
+  微信绑定/手机换绑后端接口已落地，从"后端无接口"迁移至"前端缺失"。
+  <span class="tag tag-new">新发现</span> 标记为本次新增条目。
+</div>
+
+<div class="note">
+  <strong>说明：</strong>
+  <span class="tag tag-wrong">路径错误</span> 前端调用路径与后端不符 &nbsp;
+  <span class="tag tag-field">字段差异</span> 请求体字段名/结构不一致 &nbsp;
+  <span class="tag tag-missing">前端缺失</span> 后端有路由前端无函数 &nbsp;
+  <span class="tag tag-extra">后端无接口</span> 前端有函数后端无路由 &nbsp;
+  <span class="tag tag-ok">已修复</span> 本轮已对齐 &nbsp;
+  <span class="tag tag-new">新发现</span> 上轮报告未覆盖
+</div>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>一、路径错误（当前仍存在）</h2>
+<p class="section-desc">上轮全部路径问题已修复。以下为本轮新发现的路径差异。</p>
+
+<table>
+<tr><th>文件 / 函数</th><th>前端当前路径</th><th>后端正确路径</th><th>差异说明</th></tr>
+
+<tr>
+  <td><span class="file-badge">settings.js</span><br><code>apiGetWatermarkSettings</code><br><code>apiUpdateWatermarkSettings</code></td>
+  <td><code>GET/POST /api/settings/watermark</code></td>
+  <td>（后端无此路由）</td>
+  <td><span class="tag tag-wrong">路径错误</span><span class="tag tag-new">新发现</span>后端无 <code>/api/settings/*</code> 路由。水印开关存于 <code>ProviderResponse</code> 的 <code>default_image_watermark</code> / <code>default_video_watermark</code> 字段，应通过 <code>PATCH /api/providers/{id}</code> 更新</td>
+</tr>
+
+<tr>
+  <td><span class="file-badge">config.js</span><br><code>apiGetBanner</code></td>
+  <td><code>GET /api/config/banner</code></td>
+  <td><code>GET /api/api-config/banner</code></td>
+  <td><span class="tag tag-wrong">路径错误</span><span class="tag tag-new">新发现</span>前缀 <code>/api/config</code> 应为 <code>/api/api-config</code></td>
+</tr>
+
+<tr>
+  <td><span class="file-badge">user.js</span><br><code>apiClearAllNotifications</code></td>
+  <td><code>POST /api/notifications/clear-all</code></td>
+  <td>（后端无此路由）</td>
+  <td><span class="tag tag-extra">后端无接口</span><span class="tag tag-new">新发现</span>后端只有 <code>POST /api/notifications/read-all</code>（全部已读），无清空接口</td>
+</tr>
+
+<tr>
+  <td><span class="file-badge">auth.js</span><br><code>apiLogout</code></td>
+  <td>仅本地清 token，未调后端</td>
+  <td><code>POST /api/auth/logout</code></td>
+  <td><span class="tag tag-missing">前端缺失</span><span class="tag tag-new">新发现</span>后端有 logout 接口，当前前端只清本地 token，服务端 session 未失效</td>
+</tr>
+
+<tr>
+  <td><span class="file-badge">creation.js</span><br>音频任务轮询（缺函数）</td>
+  <td>（无独立函数，复用图片 tasks）</td>
+  <td><code>GET /api/creation/audios/tasks/{task_id}</code></td>
+  <td><span class="tag tag-missing">前端缺失</span><span class="tag tag-new">新发现</span>视频有 <code>apiGetCreationVideoTask</code>，音频缺少对应的 <code>apiGetCreationAudioTask</code>，应用 <code>/api/creation/audios/tasks/{task_id}</code></td>
+</tr>
+
+</table>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>二、请求体字段差异（当前仍存在）</h2>
+<p class="section-desc">上轮字段问题已全部修复。以下为本轮新发现的字段差异。</p>
+
+<table>
+<tr><th>文件 / 函数</th><th>后端 Schema</th><th>前端发送</th><th>差异详情</th></tr>
+
+<tr>
+  <td><span class="file-badge">creation.js</span><br><code>apiGenerateCreationVideo</code></td>
+  <td><code>CreationVideoGenerateRequest</code></td>
+  <td>透传 <code>data</code> 对象</td>
+  <td>
+    <span class="tag tag-field">字段差异</span><span class="tag tag-new">新发现</span>
+    后端 schema 有 <code>audio_setting</code>（音频设置对象）字段，前端未传。
+    后端无 <code>save_to_assets</code>（已在 apiGenerateCreation legacy wrapper 中移除）✅<br>
+    后端有 <code>audio_type</code>、<code>off_peak</code>、<code>attachments</code>、<code>mentions</code>、<code>subjects</code>、<code>multiframe_segments</code> 等高级字段，按需补充
+  </td>
+</tr>
+
+<tr>
+  <td><span class="file-badge">subject.js</span><br><code>apiChatScriptWorkspace</code></td>
+  <td><code>ProjectScriptChatRequest</code></td>
+  <td><code>{ message }</code></td>
+  <td>
+    <span class="tag tag-field">字段差异</span><span class="tag tag-new">新发现</span>
+    需确认后端 <code>ProjectScriptChatRequest</code> 是否仅有 <code>message</code>，还是有 <code>model</code>、<code>session_id</code> 等附加字段
+  </td>
+</tr>
+
+<tr>
+  <td><span class="file-badge">user.js</span><br><code>apiSendPhoneCode</code></td>
+  <td><code>/api/auth/send-code</code></td>
+  <td><code>{ phone }</code></td>
+  <td>
+    <span class="tag tag-field">字段差异</span>复用登录验证码接口，语义上是换绑手机，但后端此接口用于登录/注册。
+    发送成功但行为可能与换绑场景预期不符，需与后端确认是否要增加 <code>purpose</code> 字段区分场景
+  </td>
+</tr>
+
+<tr>
+  <td><span class="file-badge">auth.js</span><br><code>apiGetCurrentUser</code></td>
+  <td><code>GET /api/auth/me</code> 响应</td>
+  <td>未使用新字段</td>
+  <td>
+    <span class="tag tag-field">字段差异</span><span class="tag tag-new">新发现</span>
+    最新文档响应新增 <code>display_id</code>、<code>phone_bound</code>、<code>wechat</code>、<code>wechat_bound</code> 四字段。
+    前端若需展示手机/微信绑定状态，需从此接口读取
+  </td>
+</tr>
+
+<tr>
+  <td><span class="file-badge">user.js</span><br><code>apiUpdateProfile</code></td>
+  <td><code>PATCH /api/users/me</code> 响应</td>
+  <td>未使用新字段</td>
+  <td>
+    <span class="tag tag-field">字段差异</span><span class="tag tag-new">新发现</span>
+    响应同步新增 <code>display_id</code>、<code>phone_bound</code>、<code>wechat</code>、<code>wechat_bound</code>。
+    更新资料后可直接从响应刷新绑定状态，无需再次调 <code>/api/auth/me</code>
+  </td>
+</tr>
+
+</table>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>三、前端已修复（上轮 P0/P1 差异汇总）</h2>
+<p class="section-desc">本节记录上轮报告中已修复的问题，供历史追溯。</p>
+
+<table>
+<tr><th>文件 / 函数</th><th>问题类型</th><th>修复内容</th></tr>
+<tr><td><span class="file-badge">subject.js</span> <code>apiUpdateSubject</code> / <code>apiBatchGenerate</code></td><td><span class="tag tag-ok">已修复</span></td><td>增加 <code>projectId</code> 路径参数，路径改为 <code>/api/projects/{projectId}/subjects/...</code></td></tr>
+<tr><td><span class="file-badge">storyboard.js</span> 全部函数</td><td><span class="tag tag-ok">已修复</span></td><td>统一改为 <code>/api/projects/{projectId}/storyboards/...</code>，<code>reorder</code> 改 POST，字段 <code>orderedIds</code>→<code>ordered_ids</code></td></tr>
+<tr><td><span class="file-badge">assets.js</span> <code>apiGetProjectAssets</code></td><td><span class="tag tag-ok">已修复</span></td><td>改用 <code>GET /api/assets?project_id=&amp;scope=project</code></td></tr>
+<tr><td><span class="file-badge">user.js</span> <code>apiUploadAvatar</code></td><td><span class="tag tag-ok">已修复</span></td><td>改用 <code>POST /api/images/upload</code></td></tr>
+<tr><td><span class="file-badge">storyboard.js</span> <code>apiUploadFile</code></td><td><span class="tag tag-ok">已修复</span></td><td>改用 <code>POST /api/images/upload</code></td></tr>
+<tr><td><span class="file-badge">project.js</span> <code>apiCreateProject</code></td><td><span class="tag tag-ok">已修复</span></td><td>字段对齐：<code>desc</code>→<code>description</code>，<code>ratio</code>→<code>aspect_ratio</code>，<code>style</code>→<code>visual_style</code>，增加 <code>project_type</code>/<code>cover_url</code></td></tr>
+<tr><td><span class="file-badge">config.js</span> <code>apiSaveApiConfig</code></td><td><span class="tag tag-ok">已修复</span></td><td>增加 <code>provider_type</code> 必填字段，<code>models</code> 移除（改走 <code>POST /api/models</code>）</td></tr>
+<tr><td><span class="file-badge">auth.js</span> 微信登录</td><td><span class="tag tag-ok">已修复</span></td><td>新增 <code>apiGetWechatLoginQrCode</code> / <code>apiPollWechatLogin</code> / <code>apiConfirmWechatLogin</code> 对应正确路径</td></tr>
+<tr><td><span class="file-badge">creation.js</span> 图片生成</td><td><span class="tag tag-ok">已修复</span></td><td><code>count</code>→<code>image_count</code>，补充 <code>reference_images</code>/<code>category</code>/<code>inherit_project_style</code> 等字段</td></tr>
+<tr><td><span class="file-badge">user.js</span> 微信账号绑定/解绑</td><td><span class="tag tag-ok">已修复</span></td><td>新增 <code>apiBindWechat</code>（<code>POST /api/users/me/wechat/bind</code>）/ <code>apiUnbindWechat</code>（<code>DELETE /api/users/me/wechat</code>），替换原 mock 实现</td></tr>
+<tr><td><span class="file-badge">user.js</span> 手机解绑</td><td><span class="tag tag-ok">已修复</span></td><td>新增 <code>apiSendPhoneUnbindCode</code>（<code>POST /api/users/me/phone/unbind/send-code</code>）/ <code>apiUnbindPhone</code>（<code>POST /api/users/me/phone/unbind</code>），替换原 mock 实现</td></tr>
+</table>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>四、后端有接口，前端未实现（<span class="tag tag-missing" style="font-size:11px">前端缺失</span>）</h2>
+<p class="section-desc">以下接口后端已存在，前端 <code>src/api/</code> 中无对应函数。新 api 文档新增的接口用 <span class="tag tag-new">新发现</span> 标注。</p>
+
+<table>
+<tr><th>后端接口</th><th>方法</th><th>备注</th></tr>
+<tr><td><code>/api/auth/logout</code></td><td>POST</td><td><span class="tag tag-new">新发现</span> 前端 <code>apiLogout</code> 仅清本地 token，服务端 session 未失效</td></tr>
+<tr><td><code>/api/creation/audios/tasks/{task_id}</code></td><td>GET</td><td><span class="tag tag-new">新发现</span> 音频异步生成任务轮询，缺 <code>apiGetCreationAudioTask</code></td></tr>
+<tr><td><code>/api/api-config/banner</code></td><td>GET</td><td><span class="tag tag-new">新发现</span> 前端函数路径写错为 <code>/api/config/banner</code>（见表一）</td></tr>
+<tr><td><code>/api/api-config/banner/image</code></td><td>GET</td><td><span class="tag tag-new">新发现</span> Banner 图片接口，前端无对应函数</td></tr>
+<tr><td><code>/api/assets/{asset_id}/ensure-thumbnail</code></td><td>POST</td><td><span class="tag tag-new">新发现</span> 确保资产缩略图生成，前端无对应函数</td></tr>
+<tr><td><code>/api/minimax/t2a</code> / <code>/api/minimax/t2a/async</code></td><td>POST</td><td><span class="tag tag-new">新发现</span> Minimax 文字转语音接口，前端未实现</td></tr>
+<tr><td><code>/api/minimax/voices/clone</code> / <code>design</code> / <code>query</code></td><td>POST/GET</td><td><span class="tag tag-new">新发现</span> Minimax 音色管理，前端未实现</td></tr>
+<tr><td><code>/api/minimax/files/upload</code></td><td>POST</td><td><span class="tag tag-new">新发现</span> Minimax 文件上传，前端未实现</td></tr>
+<tr><td><code>/api/providers/aiping-setup</code></td><td>POST</td><td><span class="tag tag-new">新发现</span> 爱拼一键配置，前端无对应函数（已有 oneclick-setup）</td></tr>
+<tr><td><code>/api/providers/minimax-setup</code></td><td>POST</td><td><span class="tag tag-new">新发现</span> Minimax 一键配置</td></tr>
+<tr><td><code>/api/providers/vidu-setup</code></td><td>POST</td><td><span class="tag tag-new">新发现</span> Vidu 一键配置</td></tr>
+<tr><td><code>/api/providers/volcengine-setup</code></td><td>POST</td><td><span class="tag tag-new">新发现</span> 火山引擎一键配置</td></tr>
+<tr><td><code>/api/providers/fal-setup</code></td><td>POST</td><td><span class="tag tag-new">新发现</span> Fal 一键配置，前端无对应函数</td></tr>
+<tr><td><code>/api/creation/images/{image_id}/like</code></td><td>POST</td><td><span class="tag tag-new">新发现</span> 图片点赞（区别于 <code>/favorite</code> 收藏），前端只有 <code>apiToggleImageFavorite</code></td></tr>
+<tr><td><code>/api/api-config/card-visibility</code></td><td>GET</td><td><span class="tag tag-new">新发现</span> 卡片可见性查询，前端无对应函数</td></tr>
+<tr><td><code>/api/api-config/card-visibility/{card_key}</code></td><td>PUT</td><td><span class="tag tag-new">新发现</span> 更新单个卡片可见性，前端无对应函数</td></tr>
+<tr><td><code>/api/project-templates</code></td><td>GET</td><td><span class="tag tag-new">新发现</span> 项目模板列表，前端无对应函数</td></tr>
+<tr><td><code>/api/projects/{project_id}/subjects/{subject_id}/extract-fields</code></td><td>POST</td><td><span class="tag tag-new">新发现</span> 主体字段提取，前端无对应函数</td></tr>
+<tr><td><code>/api/projects/{project_id}/subjects/{subject_id}/extract-scene-summary</code></td><td>POST</td><td><span class="tag tag-new">新发现</span> 主体场景摘要提取，前端无对应函数</td></tr>
+<tr><td><code>/api/users/me/wechat/bind</code></td><td>POST</td><td><span class="tag tag-ok">已修复</span> 账号绑定微信，已新增 <code>apiBindWechat</code></td></tr>
+<tr><td><code>/api/users/me/wechat</code></td><td>DELETE</td><td><span class="tag tag-ok">已修复</span> 账号解绑微信，<code>apiUnbindWechat</code> 已对齐真实路径</td></tr>
+<tr><td><code>/api/users/me/phone/unbind/send-code</code></td><td>POST</td><td><span class="tag tag-ok">已修复</span> 手机解绑发验证码，已新增 <code>apiSendPhoneUnbindCode</code></td></tr>
+<tr><td><code>/api/users/me/phone/unbind</code></td><td>POST</td><td><span class="tag tag-ok">已修复</span> 手机解绑，已新增 <code>apiUnbindPhone</code></td></tr>
+<tr><td><code>/api/projects/{project_id}/script-workspace/split-preview</code></td><td>POST</td><td>剧本拆集预览，前端未实现</td></tr>
+<tr><td><code>/api/projects/{project_id}/script-workspace/apply-split</code></td><td>POST</td><td>应用拆集，前端未实现</td></tr>
+<tr><td><code>/api/projects/{project_id}/script-workspace/finalize</code></td><td>POST</td><td>定稿剧本，前端未实现</td></tr>
+<tr><td><code>/api/projects/{project_id}/script-workspace/extract-subjects</code></td><td>POST</td><td>从剧本提取主体，前端未实现</td></tr>
+<tr><td><code>/api/projects/{project_id}/script-workspace/history</code></td><td>GET</td><td>剧本历史列表，前端未实现</td></tr>
+<tr><td><code>/api/projects/{project_id}/script-workspace/history/{history_id}/restore</code></td><td>POST</td><td>恢复历史版本，前端未实现</td></tr>
+<tr><td><code>/api/projects/{project_id}/compositions</code></td><td>GET/POST</td><td>合成管理，前端未实现</td></tr>
+<tr><td><code>/api/exports/prepare</code></td><td>POST</td><td>导出准备，前端未实现</td></tr>
+<tr><td><code>/api/llm/chat</code> / <code>/stream</code> / <code>/models</code></td><td>POST/GET</td><td>LLM 对话，前端未实现</td></tr>
+</table>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>五、前端有但后端无接口（<span class="tag tag-extra" style="font-size:11px">后端无接口</span>）</h2>
+<p class="section-desc">这些函数目前返回 mock 数据或 no-op，需与后端确认是否规划。</p>
+
+<table>
+<tr><th>文件 / 函数</th><th>前端意图</th><th>建议处理方式</th></tr>
+<tr>
+  <td><span class="file-badge">settings.js</span><br><code>apiGetWatermarkSettings</code><br><code>apiUpdateWatermarkSettings</code></td>
+  <td>水印开关读写</td>
+  <td>改从 <code>GET/PATCH /api/providers/{id}</code> 读写 <code>default_image_watermark</code> / <code>default_video_watermark</code></td>
+</tr>
+<tr>
+  <td><span class="file-badge">user.js</span><br><code>apiClearAllNotifications</code></td>
+  <td>清空所有通知</td>
+  <td>后端只有全部已读，无清空接口，需与后端确认</td>
+</tr>
+<tr>
+  <td><span class="file-badge">user.js</span><br><code>apiGetWechatQrCode</code> / <code>apiPollWechatBind</code> / <code>apiUnbindWechat</code></td>
+  <td>账号绑定/解绑微信</td>
+  <td><span class="tag tag-ok">已修复</span> 后端本轮新增接口，前端已新增 <code>apiBindWechat</code> / <code>apiUnbindWechat</code> 对齐真实路径</td>
+</tr>
+<tr>
+  <td><span class="file-badge">user.js</span><br><code>apiVerifyPhoneCode</code> / <code>apiRebindPhone</code></td>
+  <td>换绑手机验证/直接换绑</td>
+  <td><span class="tag tag-ok">已修复</span> 后端本轮新增接口，前端已新增 <code>apiSendPhoneUnbindCode</code> / <code>apiUnbindPhone</code> 对齐真实路径</td>
+</tr>
+<tr>
+  <td><span class="file-badge">creation.js</span><br><code>apiGetVideoLastFrame</code></td>
+  <td>提取视频尾帧</td>
+  <td>后端无此接口，可用 ffmpeg.wasm 前端处理，或等后端规划</td>
+</tr>
+</table>
+
+<!-- ═══════════════════════════════════════════ -->
+<h2>六、修复优先级建议</h2>
+
+<table>
+<tr><th>优先级</th><th>问题</th><th>影响</th></tr>
+<tr><td><strong>P0</strong></td><td><code>apiGetBanner</code> 路径错误（<code>/api/config/banner</code>→<code>/api/api-config/banner</code>）</td><td>Banner 直接 404</td></tr>
+<tr><td><strong>P0</strong></td><td><code>apiGetWatermarkSettings</code> / <code>apiUpdateWatermarkSettings</code> 路径不存在</td><td>水印设置功能完全不可用</td></tr>
+<tr><td><strong>P1</strong></td><td><code>apiLogout</code> 未调后端 <code>/api/auth/logout</code></td><td>服务端 session 不失效，安全问题</td></tr>
+<tr><td><strong>P1</strong></td><td>缺 <code>apiGetCreationAudioTask</code>（<code>/api/creation/audios/tasks/{task_id}</code>）</td><td>音频异步生成无法轮询任务状态</td></tr>
+<tr><td><strong>P2</strong></td><td><code>apiClearAllNotifications</code> 路径不存在</td><td>清空通知功能失效，可改用全部已读替代</td></tr>
+<tr><td><strong>P2</strong></td><td>多个 provider setup 接口（aiping/minimax/vidu/volcengine/<strong>fal</strong>）前端无实现</td><td>对应平台快速配置功能缺失</td></tr>
+<tr><td><strong>P3</strong></td><td>图片 like 接口（<code>/api/creation/images/{id}/like</code>）与 favorite 未区分</td><td>点赞和收藏语义混淆</td></tr>
+<tr><td><strong>P3 ✅</strong></td><td>微信绑定/手机解绑路径需对齐（后端本轮已落地）</td><td>已修复：新增 <code>apiBindWechat</code> / <code>apiUnbindWechat</code> / <code>apiSendPhoneUnbindCode</code> / <code>apiUnbindPhone</code></td></tr>
+<tr><td><strong>P3</strong></td><td>卡片可见性接口（<code>/api/api-config/card-visibility</code>）前端未实现</td><td>首页卡片显示控制功能缺失</td></tr>
+<tr><td><strong>P3</strong></td><td>主体字段提取 / 场景摘要提取接口前端未实现</td><td>主体智能填写功能缺失</td></tr>
+<tr><td><strong>P4</strong></td><td>Minimax 音色/TTS 系列接口前端未实现</td><td>Minimax 相关功能尚未开发</td></tr>
+<tr><td><strong>P4</strong></td><td>项目模板接口（<code>/api/project-templates</code>）前端未实现</td><td>创建项目时模板选择功能缺失</td></tr>
+</table>
+
+</body>
+</html>

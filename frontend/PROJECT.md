@@ -1,6 +1,6 @@
 # miioo 项目进度管理文档
 
-> 最后更新：2026-05-20（ProfileModal 交互补全 + ApiConfigModal 模型列表接入 API 规范）
+> 最后更新：2026-06-03
 
 ---
 
@@ -24,8 +24,8 @@
 |------|----------|----------|
 | 首页 | 开始创作主按钮、登录/个人中心、设置、消息、社群二维码、创作手册、API 配置、Logo | ✅ 已完成 |
 | 项目 | 新建项目、项目列表（卡片式）、工作流（全局设定/剧本/主体/分镜/剪辑成片） | 开发中 |
-| 创作 | AI 生图、AI 生视频（参考即梦 AI 交互模式） | 待开发 |
-| 资产库 | 项目资产、创作资产，可编辑 | 待开发 |
+| 创作 | AI 生图、AI 生视频 | 开发中 |
+| 资产库 | 项目资产、创作资产，可编辑 | 开发中 |
 
 ### 项目工作流详细说明
 
@@ -44,106 +44,17 @@
 
 ## 三、技术栈
 
-| 技术 | 版本 | 说明 |
-|------|------|------|
-| React | ^19.2.5 | UI 框架 |
-| Tailwind CSS | ^4.2.4 | 样式，通过 `@theme` 注册 token |
-| Vite | ^8.x | 构建工具 |
-| @tailwindcss/vite | ^4.2.4 | Tailwind v4 Vite 插件 |
+| 技术 | 版本 |
+|------|------|
+| React | ^19.2.5 |
+| Tailwind CSS | ^4.2.4 |
+| Vite | ^8.x |
 
 **主题**：仅深色主题，无浅色皮肤切换。
 
 ---
 
-## 四、启动方式
-
-```bash
-# 克隆仓库
-git clone https://github.com/wangchengxv/miioo.git
-cd miioo
-
-# 安装依赖
-npm install
-
-# 启动开发服务器（默认 http://localhost:5173）
-npm run dev
-
-# 构建生产包
-npm run build
-
-# 预览生产包
-npm run preview
-```
-
----
-
-## 五、文件结构
-
-```
-miioo/
-├── public/                    # 静态资源
-├── src/
-│   ├── assets/                # 图片、SVG 等资源
-│   │   ├── hero.png
-│   │   ├── home-bg.png
-│   │   └── project-default-cover.png
-│   ├── components/            # 通用组件
-│   │   ├── PrimaryNav.jsx         # 左侧一级导航（expanded / compact / vertical）
-│   │   ├── ApiConfigModal.jsx     # API 配置弹窗（多服务商，最多 9 张卡片）
-│   │   ├── LoginModal.jsx         # 登录弹窗（手机号 / 微信扫码 / 绑定手机）
-│   │   ├── AccountMenu.jsx        # 账户菜单 popup
-│   │   ├── NewProjectModal.jsx    # 新建项目弹窗
-│   │   ├── ProfileModal.jsx       # 个人资料弹窗
-│   │   ├── BatchDownloadModal.jsx # 分镜批量下载弹窗
-│   │   ├── ShotViewerModal.jsx    # 分镜镜头全屏查看弹窗
-│   │   ├── Toggle.jsx             # 开关组件（分镜页使用）
-│   │   └── LiquidGlassDefs.jsx    # 液态玻璃 SVG filter 定义
-│   ├── layouts/               # 页面框架（侧边栏、顶栏）← 待建立
-│   ├── pages/                 # 业务页面
-│   │   ├── Home.jsx               # 首页 + 项目工作流 shell（导航、页面切换）
-│   │   ├── ProjectList.jsx        # 项目列表页（卡片网格）
-│   │   ├── GlobalSettings.jsx     # 工作流 — 全局设定
-│   │   ├── ScriptPage.jsx         # 工作流 — 剧本（LLM 对话式创作）
-│   │   ├── SubjectPage.jsx        # 工作流 — 主体（角色/场景/道具）
-│   │   ├── StoryboardPage.jsx     # 工作流 — 分镜（分镜卡片、批量下载、镜头查看）
-│   │   ├── ButtonShowcase.jsx     # 按钮组件展示页
-│   │   └── InputShowcase.jsx      # 输入框组件展示页
-│   ├── api/                   # 接口函数（按模块命名）
-│   │   ├── auth.js                # 登录/注册/登出
-│   │   ├── user.js                # 用户信息/头像/注销
-│   │   ├── project.js             # 项目增删改查
-│   │   ├── config.js              # API 配置读写（apiGetApiConfig / apiSaveApiConfig / apiTestConnection）
-│   │   ├── storyboard.js          # 分镜/镜头增删改生成
-│   │   ├── subject.js             # 主体（角色/场景/道具）增删改生成
-│   │   └── assets.js              # 资产库（项目资产/创作资产/详情）
-│   ├── ref/                   # 设计稿参考代码（只读，不引入业务）
-│   ├── App.jsx                # 根组件
-│   ├── main.jsx               # 入口文件
-│   └── index.css              # 全局样式 + Design Token 定义
-├── design-system/             # 设计系统文档（AI 开发必读）
-│   ├── tokens.md              # Token 完整说明 ← 开发前必读
-│   ├── spacing.md             # 间距规范 ← 随写随更新
-│   ├── motion.md              # 动效规范（待完成）
-│   ├── patterns.md            # 交互模式（待完成）
-│   └── components/            # 组件文档
-│       ├── button.md
-│       ├── input.md
-│       ├── tag.md
-│       ├── form.md
-│       ├── modal.md
-│       ├── select.md
-│       ├── toast-notification.md
-│       ├── tooltip.md
-│       ├── checkbox-radio.md
-│       └── tab.md
-├── PROJECT.md                 # 本文档
-├── package.json
-└── vite.config.js
-```
-
----
-
-## 六、当前进度
+## 四、当前进度
 
 ### Design System 文档
 - [x] tokens.md — Token 完整定义
@@ -151,261 +62,331 @@ miioo/
 - [ ] patterns.md — 交互模式
 
 ### 组件文档（design-system/components/）
-- [x] Button 按钮
-- [x] Input 输入框
-- [x] Tag 标签
-- [x] Form 表单布局
-- [x] Modal 弹窗
-- [x] Select 选择器
-- [x] Toast & Notification 提示
-- [x] Tooltip 提示气泡
-- [x] Checkbox & Radio
-- [x] Tab 标签页
-- [x] Navigation 导航（PrimaryNav 组件，expanded / compact / vertical 三种变体）
-- [x] Switch Button 开关按钮（API 配置 / 模型卡片开关场景）
+- [x] Button / Input / Tag / Form / Modal / Select / Toast / Tooltip / Checkbox & Radio / Tab
+- [x] Navigation（PrimaryNav，expanded / compact / vertical 三种变体）
+- [x] Switch Button
 
-### 业务页面（src/pages/）
-- [x] 首页 — 顶部栏（Logo、创作手册按钮、登录按钮）
-- [x] 首页 — 左侧一级导航（4个主导航按钮，vertical 变体，56×56，液态玻璃激活态）
-- [x] 首页 — 左侧底部工具栏（4个图标按钮，compact 变体，32×32）
-- [x] 首页 — 开始创作按钮（200×52，PulsingBorder 动效）
-- [x] 首页 — 底部工具交互（社群二维码、消息中心、更多菜单 popup；API 按钮打开配置弹窗）
-- [x] 首页 — 登录弹窗原型（手机号登录 / 微信扫码 / 绑定手机号）
-- [x] 首页 — API 配置弹窗（推荐配置 / 多服务商卡片，最多 9 张，支持新增与编辑自定义服务商）
-- [x] 首页 — 交互验收（API 配置多服务商新增与编辑已手动验证通过）
-- [x] 首页 — 细节收尾（通知详情弹窗、更多菜单补充选项、浮窗点击外部收起等）
-- [x] 项目列表页 — 架构调整（ProjectList 作为纯内容组件，Home.jsx 统一管理导航与页面切换）
-- [x] 项目列表页 — 内容区（卡片网格、搜索、新建、重命名、删除）
-- [x] 项目列表页 — 导航栏细节（gap、indicator radius、padding 收窄动画）
-- [x] 项目列表页 — 卡片交互（悬停边框高亮、hover 遮罩、点击缩放动效、点击进入工作流）
-- [x] 项目工作流 — 顶部工作流导航栏（进入项目后 headbar 替换为工作流专属布局：Logo + 右侧操作区 + 5步骤条绝对居中）
-- [x] 项目工作流 — 步骤条交互（全局设定/剧本始终可点击；主体/分镜/剪辑无内容时禁用；激活步骤 PulsingBorder 高亮；高度统一 32px）
-- [x] 项目工作流 — 步骤解锁逻辑（主体/分镜/剪辑步骤一旦有内容即永久解锁，不因内容清空而重新禁用）
-- [x] 项目工作流 — 全局设定页面（项目概况统计卡片、模型配置区含对话/图片/视频/配音模型 tab 与模型卡片）
-- [x] 项目工作流 — 剧本页面（单剧本工作区模型；InputCard 固定底部 700px；AI 思考动画 + 流式输出；左侧剧集目录（首发后常驻）；右侧剧本查看/编辑双态；编辑态富文本（Tiptap）+ 工具栏；左右联动滚动定位；定稿后解锁主体步骤）
-- [x] 项目工作流 — 主体页面（角色/场景/道具卡片列表；有内容时触发步骤解锁回调）
-- [x] 项目工作流 — 分镜页面（分镜卡片网格；集数切换；批量下载 BatchDownloadModal；镜头全屏查看 ShotViewerModal；Toggle 开关组件；从 Home 接收 chars/scenes/props 资产数据）
-- [x] 项目工作流 — 全局设定细节修正（StatCard 标题/数值移至顶部渐变遮罩；跳转按钮移至右下角）
-- [x] 项目工作流 — 全局设定资产概况卡片完善（2026-05-19）：
-  - 剧集结构卡片：pending 状态数字颜色改为 `#FFFFFF99`（60% 白），集数标签字号 10px → 12px，容器始终可见，无数据时显示空状态图标
-  - 角色/场景/道具卡片：有素材时展示 3×3 宫格（取 SubjectPage 定稿图 imageUrl，最多 9 张，均分父容器，gap 4px，圆角 4px，无图格子保留 `#FFFFFF08` 背景）；无素材时显示空状态图标
-  - 标题和数量统计移至卡片内顶部（position: relative + zIndex: 1，grid 用 flex: 1 + minHeight: 0 填充剩余空间）
-  - 点击场景/道具卡片直接跳转到主体页对应 Tab 激活态（onGoToSubject 接收 tab 参数）
-  - 修复角色数量显示为 0 的 BUG：SubjectPage 挂载时通过 useEffect 将 INITIAL_CHARS 同步到 Home.jsx 的 sharedChars（仅当 externalChars 为 null 时触发）
-- [x] 项目工作流 — 剧本流式动画 BUG 修复（离开页面再返回不再重播动画；streamingIndex 提升至 Home.jsx 持久化，通过 GlobalSettings → ScriptPage → ScriptPanel → AiStreamingContent 受控传递）
-- [x] 前端 API 接入审查（2026-05-18）— 扫描全部页面和组件，找出所有硬编码数据和缺失接口调用，逐一补全参数传递逻辑并用 mock 函数占位；详见 `API_AUDIT.md`
-- [x] 项目工作流 — 分镜页面 BUG 修复（2026-05-19）：
-  - 黑屏修复：`AssetPickerModal` 组件被多处引用但从未定义，导致 React 渲染崩溃；添加占位实现解除黑屏（待后续接入真实资产选择逻辑）
-  - 提示词输入框 `@` 标签颜色污染问题：同名但不同类型的标签（如场景和道具同名）会互相覆盖颜色；确认业务上保证 chars/scenes/props 之间不重名，原逻辑可正常工作，回滚至稳定版本
-- [x] 项目工作流 — 剧本页面响应式修复（2026-05-19）：屏幕宽度 < 1240px 时 InputCard 宽度跟随剧本框收缩（`width: min(700px, 100%)`，移除 `flexShrink: 0`）
-- [x] 项目工作流 — 分镜页面优化（2026-05-19）：
-  - 工具栏批量生成按钮合并：原「批量生成分镜图」+「批量生成分镜视频」两个按钮合并为单个「批量生成」按钮，点击打开 BatchImageModal
-  - 分镜卡片媒体列空状态悬停按钮优化：移除「本地上传」按钮，仅保留单个蓝色 AI 生成按钮（图片列显示「创作图片」，视频列显示「创作视频」），带 slideUpBounce 弹入动画
-  - 集数切换器宽度稳定：新增 `measureRef` 隐藏 span 动态测量最长集数文本宽度，切换开/关状态时容器宽度不再跳变
-- [x] 通用组件 — AssetPickerModal 项目切换下拉（2026-05-19）：
-  - 原「这是项目名称」静态 UI 改为真实可交互下拉菜单
-  - 新增 `projects`（项目名数组）、`activeProject`（当前选中）、`onProjectChange`（切换回调）三个 prop
-  - 下拉列表通过 `createPortal` 渲染到 `document.body`，`position: fixed` 锚定触发按钮下方，点击外部自动关闭
-  - 当前选中项右侧显示蓝色勾（`#2DC3E1`），悬停行背景 `#FFFFFF0F`，触发按钮打开时背景加深至 `#FFFFFF1A`，箭头图标旋转 180°
-- [x] 项目工作流 — 生成分镜视频弹窗定稿（2026-05-19）：
-  - 删除原「首尾帧生视频」/「多参生视频」Tab 分页，改为 radio 单选器「生成方式」（全能参考 / 首尾帧 / 多图参考）
-  - 全能参考字段：选择模型、参考主体、参考图、参考视频、参考音频、时长、分辨率、音效
-  - 首尾帧字段：选择模型、首帧图（含「使用当前分镜图」快捷块）、尾帧图可选（含「使用下一分镜图」快捷块）、时长、分辨率、音效
-  - 多图参考字段：选择模型、参考主体、参考图、时长、分辨率、音效
-  - 新增 `FrameUploadSlot` 组件：在标准双通道上传容器旁增加快捷块，有分镜图时显示缩略图（72×40，默认 60% 透明度，hover 100%）+ 文字，点击直接填入；无分镜图时显示灰色占位图标（不可点击）
-  - `setVideoPanel` 调用时同步传入 `nextShot`，`GenerateVideoPanel` 接收 `nextShot` prop 用于尾帧快捷块
-- [x] 通用组件 — AssetPickerModal 音频支持（2026-05-19）：
-  - 新增 `PROJECT_SUB_TABS_AUDIO = ['音频']`、`CREATIVE_SUB_TABS_AUDIO = ['配音']` 常量
-  - `accept === 'audio'` 时仅显示音频相关分页，屏蔽图片/视频分页
-  - mock 数据补充 `audio` / `dubbing` 数组；`SUB_TAB_KEY_MAP` 新增 `'音频': 'audio'`、`'配音': 'dubbing'`
-  - `AssetCard` 音频类型显示音符 SVG 占位图标
-  - `PanelUploadSlot` accept 映射修复：`audio/*` 正确传递 `accept='audio'` 给 AssetPickerModal（原先漏判导致音频 tab 不显示）
-- [x] API 层重构（2026-05-20）— 将各页面/组件顶部内联的 API stub 函数统一迁移至 `src/api/` 模块：
-  - 新建 `src/api/auth.js`：`sendVerificationCode`、`loginWithPhone`、`bindPhone`（来自 LoginModal）、`apiLogout`（来自 AccountMenu）
-  - 新建 `src/api/user.js`：`apiUpdateUser`、`apiUploadAvatar`、`apiDeleteAccount`（来自 ProfileModal）
-  - 新建 `src/api/project.js`：`apiUpdateProject`（来自 GlobalSettings）
-  - 新建 `src/api/storyboard.js`：`apiUpdateShotFinalized`（来自 ShotViewerModal）+ `apiUploadFile`、`apiGenerateImage`、`apiGenerateVideo`、`apiCreateShot`、`apiUpdateShot`、`apiDeleteShot`、`apiReorderShots`（来自 StoryboardPage）
-  - 新建 `src/api/subject.js`：`apiCreateSubject`、`apiUpdateSubject`、`apiDeleteSubject`、`apiGenerateSubjectImage`、`apiBatchGenerate`、`apiGetEpisodes`、`apiGetModels`（来自 SubjectPage，含 MOCK_EPISODES 常量迁移）
-  - 7 个原文件改为 import 引用，stub 函数块已删除
-- [x] API 接口补全（2026-05-20）— 在 `src/api/` 各模块补充缺失的读取类接口，并将页面硬编码数据替换为 API 调用：
-  - `src/api/project.js` 新增 `apiCreateProject`、`apiGetProjects`；Home.jsx 新建项目改为调用 `apiCreateProject`，项目列表初始化改为 `apiGetProjects`
-  - `src/api/user.js` 新增 `apiGetCurrentUser`、`apiGetNotifications`；Home.jsx AccountMenu 的用户信息改为从 `apiGetCurrentUser` 加载
-  - 新建 `src/api/config.js`：`apiTestConnection`、`apiSaveApiConfig`；ApiConfigModal.jsx 测试连接和保存配置改为调用真实 stub，移除 `Math.random()` mock
-  - `src/api/storyboard.js` 新增 `apiGetShots`；StoryboardPage 镜头列表改为 `useEffect` + `apiGetShots(episode)` 加载，初始值从 `INITIAL_SHOTS` 改为 `[]`
-  - SubjectPage 生成图片按钮 `onClick` 解注释，正式调用 `apiGenerateSubjectImage`
-  - StoryboardPage `EPISODES` 常量回退为 `[]`；BatchImageModal / BatchVideoModal 模型选项改为 `useEffect` + `apiGetModels()` 动态加载
-  - 新建 `src/api/assets.js`：`apiGetAssetDetail`、`apiGetShotDetail`、`apiGetShotVideoDetail`、`apiGetCreativeDays`、`apiGetProjectAssets`；AssetsPage.jsx 全部 MOCK_* 常量替换为 API 调用（ProjectAssetsPanel、CreativeAssetsPanel、AssetCard 详情弹窗均改为按需加载）
-  - 修复 AssetsPage.jsx 编辑过程中 `handleStar` 函数声明被误删导致的 parse error
-- [x] 通用组件 — ProfileModal 交互补全（2026-05-20）：
-  - 输入框（用户名/手机号/微信）补全 hover 状态：鼠标悬停时描边从 `rgba(255,255,255,0.1)` 变为 `rgba(255,255,255,0.2)`，hover 事件挂在外层 wrapper 上（含 label 区域）
-  - 头像可编辑：点击头像弹出系统文件选择窗口，限制格式为 jpg/jpeg/png/gif/webp
-  - 头像上传接入 `apiUploadAvatar`（`src/api/user.js`），上传成功后弹窗内实时更新头像显示；mock 返回 `{ avatarUrl: null }` 时保持默认 SVG 头像
-  - `Avatar` 组件支持 `src` prop：有 URL 时渲染 `<img>`，无 URL 时渲染默认 SVG
-  - `ProfileModal` 内部维护 `avatarUrl` state（初始 null），AccountMenu 头像同步待真实接口就绪后处理
-- [x] 通用组件 — ApiConfigModal 模型列表接入 API 规范（2026-05-20）：
-  - `createDefaultState()` 中 `onelinkModelsByTab` 硬编码模型列表已清空，移入 `src/api/config.js` 的 mock 数据
-  - `src/api/config.js` 新增 `apiGetApiConfig()`（mock 返回完整配置含预置模型列表，TODO: GET /api-config）
-  - `ApiConfigModal` 打开时调用 `apiGetApiConfig()` 初始化 state（mainConfigured / onelinkEnabled / onelinkApiKey / onelinkModelsByTab / customProviders）
-  - 真实接口就绪后只需修改 `config.js` 的 `apiGetApiConfig` 函数，页面代码不动
-- [ ] 项目工作流 — 剪辑成片
-- [ ] 创作页（生图/生视频）
-- [ ] 资产库
+### 业务页面进度
 
----
+**✅ 已完成（2026-05-19 前）**
+- 首页：顶部栏、一级导航、工具栏、开始创作按钮、底部工具交互、登录弹窗、API 配置弹窗
+- 项目列表页：卡片网格、搜索、新建、重命名、删除、卡片交互动效
+- 项目工作流：顶部导航栏、步骤条交互与解锁逻辑
+- 项目工作流 — 全局设定：统计卡片、模型配置、资产概况宫格、跳转联动
+- 项目工作流 — 剧本：对话式创作、流式输出动画、富文本编辑（Tiptap）、剧集目录、左右联动、定稿解锁
+- 项目工作流 — 主体：角色/场景/道具卡片列表、步骤解锁回调
+- 项目工作流 — 分镜：卡片网格、集数切换、批量下载、镜头全屏查看、Toggle 组件
+- 通用组件：AssetPickerModal（含项目切换下拉、音频支持）
 
-## 七、开发规范
+**✅ 已完成（2026-05-20 ~ 05-24）**
+- API 层重构：所有页面内联 stub 函数迁移至 `src/api/` 模块（auth / user / project / config / storyboard / subject / assets）
+- API 接口补全：页面硬编码数据全部替换为 API 调用，mock 占位完整
+- 通用组件：ProfileModal（头像上传、微信绑定流程、手机号解绑换绑二步弹窗）
+- 通用组件：ApiConfigModal 模型列表接入 API 规范
 
-### 7.0 核心开发原则
+**✅ 已完成（2026-05-25 ~ 05-27）**
+- 认证层重构：`src/api/request.js` 统一请求封装，双 token 自动刷新，401 自动重试，`clearTokens` + `auth:logout` 事件
+- 通用组件：DotsLoading 全局应用（主体页、分镜页生成等待态）
+- 创作页开发：模型/参数后端驱动、`@` 引用文件标签、图片生成结果展示、滚动布局、批量操作
+- 创作页：分标签独立生成历史（image / video / dubbing 三切片）
+- 创作页：视频模型能力配置（`src/config/`）、音频过滤、首尾帧上传组件（FrameUploader）
+- 创作页：图片详情弹窗交互完成、重新编辑回填
 
-1. **设计稿优先**：有设计稿代码时，完全按设计稿代码复刻，不自行发挥布局和间距。
-2. **Token 关联**：设计稿代码中的颜色、间距，凡是能在 `index.css` 中找到对应 token 的，必须替换为 token 类名；找不到对应 token 的，保留原始值。
-3. **间距文档**：每开发一个页面/区块，将实际使用的间距数据补充到 `design-system/spacing.md`，随写随更新。
-4. **设计规范靠后**：`design-system/` 下的组件规范是参考，设计稿代码与规范冲突时，以设计稿为准。
-5. **frontend-design 插件介入时机**：仅当没有设计稿代码示例、且需求以自然语言描述时，启用 `frontend-design` 插件辅助生成页面。插件与设计 skill 文件协作，优先级从高到低依次为：**Token（颜色/圆角/字号）> 组件文档规范 > frontend-design 插件风格 > 间距**。需求不清晰时，必须先向 Suzy 确认再动手。
+**✅ 已完成（2026-05-28 上午）**
+- 创作页：历史持久化（Zustand + persist）、资源库联动（删除/收藏同步后端 API）、generate 改用新端点、authFetch 统一
+- 资产库：创作资产数据源统一（`creativeDaysAdapter`）、AssetPickerModal 接入 store、收藏/删除双向联动、视频缩略图、详情弹窗复用
 
-**Token 替换规则（颜色）：**
+**✅ 已完成（2026-05-28 下午）— 资产联动与生成入库修复**
 
-```jsx
-// 设计稿原始值 → token 类名
-bg-[#00000033]   → bg-black-20        // Black Alpha 20%
-bg-[#FFFFFF1A]   → bg-white-10        // White Alpha 10%
-bg-[#161616]     → bg-neutral-200     // Neutral 200
-bg-[#111111]     → bg-neutral-400     // Neutral 400（页面底色）
-bg-[#090909]     → bg-neutral-500     // Neutral 500（工具栏）
-text-white       → 保留（white-100 无对应语义 token）
-```
+基于 `api-new.json`（OpenAPI 3.1 规范）逐条核对，修复以下 6 项数据一致性问题：
 
-**Token 替换规则（间距）：**
+| 优先级 | 模块 | 修复内容 |
+|--------|------|----------|
+| P0-1 | 资产库 · 项目资产 | `deleteAsset` / `deleteSelected` 调用 `DELETE /api/assets/{id}` 和 `POST /api/assets/batch-delete`，之前只改本地 state |
+| P0-2 | 资产库 · 项目资产 | `toggleStar` 调用 `PATCH /api/assets/{id}` body `{ is_starred }`，之前只改本地 state |
+| P0-3 | 主体页 | CharCard MoreMenu 删除接通 `DELETE /api/projects/{pid}/subjects/{sid}`，之前是空回调 |
+| P1-4 | 主体页 · 生成 | `apiGenerateSubjectImage` 端点修正为含 projectId，响应中的 `assetId` 存入 `generatedImages` 状态 |
+| P1-5 | 分镜页 · 生成 | `apiGenerateImage` / `apiGenerateVideo` 端点修正，picsum/w3schools mock 替换为真实 API 调用，`assetId` 入库 |
+| P2-6 | 分镜页 · 删除 | `deleteShot` 接通 `DELETE /api/projects/{pid}/storyboards/{sid}`，之前是 TODO 注释 |
 
-间距 token 在 `@theme` 中定义为 `--spacing-*`，Tailwind v4 中直接用数字类名（如 `p-4` = 16px）。设计稿导出的 Tailwind 类名本身已是正确值，无需替换，直接使用即可。
+**改动文件**：`src/api/assets.js`、`src/api/subject.js`、`src/api/storyboard.js`、`src/pages/AssetsPage.jsx`、`src/pages/SubjectPage.jsx`、`src/pages/StoryboardPage.jsx`、`src/pages/Home.jsx`
 
-### 7.1 CSS / 样式规范
+**✅ 已完成（2026-05-28 下午）— 导航栏间距与对齐统一**
 
-**颜色必须使用 Token 类名，禁止硬编码色值（无对应 token 时除外）。**
+- PrimaryNav vertical 变体：`items-start` → `items-center justify-center`，图标水平与垂直居中
+- 导航栏外层容器：移除条件 padding（`project|assets|create` 12px / `home` 24px），统一为固定 `px-[16px]`，消除页面切换时的宽度跳变
+- 底部功能图标组：移除条件 padding（8px / 32px），由外层容器统一提供间距
+- 改动文件：`src/components/PrimaryNav.jsx`、`src/pages/Home.jsx`
 
-```jsx
-// ✅ 正确
-<div className="bg-neutral-400 text-text-primary rounded-medium">
-<div className="bg-black-20">   {/* 有 token 时用 token */}
+**✅ 已完成（2026-05-28 晚）— API 层对齐真实后端**
 
-// ❌ 错误
-<div className="bg-[#111111]">  {/* 有对应 token 时不允许硬编码 */}
-<div style={{ background: '#131313' }}>
-```
+基于 `api文档.json`（OpenAPI 3.1，150+ 端点）逐条比对，重写 `src/api/` 全部 8 个文件，消除前后端分离开发期的路径与字段差异。
 
-Token 定义在 `src/index.css` 的 `@theme {}` 中，Tailwind v4 自动将其转换为可用类名：
-- 颜色：`bg-surface-card`、`text-text-primary`、`border-stroke-normal`、`bg-black-20`、`bg-white-10`
-- 间距：直接用 Tailwind 数字类（`p-4`=16px、`gap-2`=8px）
-- 圆角：`rounded-medium`
-- 字号：`text-font-size-14`
+| 类别 | 数量 | 处理方式 |
+|------|------|----------|
+| 路径错误 | 19 处 | 全部修正为后端正确路由 |
+| 请求体字段差异 | 9 处 | 字段名改为后端 snake_case 命名 |
+| 后端有接口·前端未实现 | 80+ 处 | 新增对应 API 函数 |
+| 前端有·后端无接口 | 9 处 | 以 mock stub / no-op 保留，待后端确认 |
+| 响应字段未消费 | 8 处 | 已标注在差异报告中，页面按需补充 |
 
-开发前必读 `design-system/tokens.md`，了解所有可用类名。
-间距参考 `design-system/spacing.md`。
+**各文件主要改动：**
 
-### 7.2 字体规范
+| 文件 | 改动要点 |
+|------|----------|
+| `auth.js` | 新增微信扫码登录三接口（qrcode / poll / confirm）；`apiRegister` 改为保存 token；`bindPhone` 映射为 legacy alias |
+| `user.js` | 通知拆分为 5 个独立函数；微信绑定/手机换绑以 mock stub 保留（后端无对应路由） |
+| `project.js` | `apiCreateProject` 字段改为 `description / aspect_ratio / visual_style`；新增 `apiGetProject / apiDeleteProject / apiGetProjectOverview / apiDownloadProjectAssets` |
+| `subject.js` | 所有路径加 `projectId`；新增主体详情/复制/提取/参考图绑定/主图设置/剧集 CRUD 等 15 个接口 |
+| `storyboard.js` | 路径改为 `/api/projects/{pid}/storyboards/...`；新增分镜生成/上传/下载/排序等 12 个接口 |
+| `assets.js` | 改用 `GET /api/assets?project_id=...`；新增恢复/帧提取/下载等 6 个接口 |
+| `config.js` | Provider 和 Model 拆为独立 CRUD；新增一键安装/清理/默认模型接口 |
+| `creation.js` | 全面重写，新增 Session / Shot / Image / Video / Audio / Task 全套 40+ 接口 |
 
-```css
-font-family: 'AlibabaPuHuiTi 2_55 Regular', 'Alibaba PuHuiTi 2.0', system-ui, sans-serif;
-```
+**兼容策略**：页面代码零修改。旧函数名通过 legacy alias 映射到新函数（如 `apiGetShots → apiGetStoryboards`），缺 `projectId` 的旧调用以 `console.warn` 提示。
 
-### 7.3 组件规范
+**差异报告**：`API差异报告.html`（6 张表格，覆盖路径/字段/缺失接口/响应字段全维度对比）
 
-- 通用组件放 `src/components/`，按功能命名（如 `Button.jsx`、`InputField.jsx`）
-- 页面文件放 `src/pages/`，按模块命名（如 `Home.jsx`、`ProjectList.jsx`）
-- 布局框架放 `src/layouts/`（如侧边栏、顶栏）
-- 组件文件名使用大驼峰：`ProjectCard.jsx`
-- 每个组件只做一件事，复杂组件拆分为子组件
+**构建验证**：`vite build` — 0 错误通过
 
-### 7.4 命名规范
+**改动文件**：`src/api/auth.js`、`src/api/user.js`、`src/api/project.js`、`src/api/subject.js`、`src/api/storyboard.js`、`src/api/assets.js`、`src/api/config.js`、`src/api/creation.js`
 
-| 类型 | 规范 | 示例 |
+**✅ 已完成（2026-05-29）— 项目模块 BUG 修复**
+
+修复项目列表和项目总览页面的 5 个数据同步问题：
+
+| 序号 | 问题描述 | 修复内容 |
+|------|----------|----------|
+| 1 | 项目重命名无法保存 | `ProjectList` 添加 `onRenameProject` / `onDeleteProject` 回调，调用 `apiUpdateProject` / `apiDeleteProject` 保存到后端 |
+| 2 | 项目封面数据丢失 | GlobalSettings 接收 `projectCoverUrl` prop，实现 800ms debounce 自动保存；封面上传改用 base64 data URL（可持久化）；修复字段映射 `cover_url` → `cover` |
+| 3 | 视觉风格数据不同步 | GlobalSettings 接收 `projectStyle` / `projectRatio` props，动态显示视觉风格封面图和画面比例选中状态 |
+| 4 | Mock 模式刷新丢失数据 | 项目 CRUD 操作持久化到 localStorage（key: `miioo_mock_projects`），刷新页面后数据不丢失 |
+| 5 | 时间显示格式错误 | 创建 `formatRelativeTime` 工具函数，将 ISO 时间戳格式化为友好的相对时间（刚刚、X分钟前、昨天等） |
+| 6 | 创建项目按照时间倒序排序 |
+| 7 | 将剧本页面的模型选择功能从硬编码改为从后端接口动态获取 |改造内容：StoryboardPage.jsx ｜
+
+**改动文件**：`src/pages/Home.jsx`、`src/pages/ProjectList.jsx`、`src/pages/GlobalSettings.jsx`、`src/api/project.js`、`src/utils/formatTime.js`
+
+**✅ 已完成（2026-05-29）— 刷新恢复与封面保存优化**
+
+修复浏览器刷新后项目进度丢失和封面保存时序问题：
+
+| 序号 | 问题描述 | 修复内容 |
+|------|----------|----------|
+| 1 | 刷新后项目进度丢失 | 持久化项目 ID、激活步骤、解锁状态到 localStorage；新增 `loadProjectDetails` 函数并行加载项目信息、剧本、主体、分镜数据；刷新后自动恢复到之前的项目和工作流步骤 |
+| 2 | 封面设置后返回未生效 | GlobalSettings 添加 `saveImmediately()` 异步函数，返回按钮点击时等待保存完成；修改 `onProjectUpdate` 返回 Promise 支持 await |
+| 3 | 封面保存缺少反馈 | 封面保存成功后显示 Toast 提示（绿色对勾 + "封面保存成功"），水平居中，垂直 1/4 位置 |
+| 4 | 上传中状态不明确 | 封面上传区域显示旋转加载动画 + "保存中..." 文字，保存中禁止点击，半透明遮罩效果 |
+
+**技术细节**：
+- 新增 `apiGetScriptWorkspace` API 函数对接后端剧本工作区接口
+- localStorage 键名规范：`miioo_active_project_id`、`miioo_active_step`、`miioo_unlocked_steps_{projectId}`
+- Toast 根据类型显示不同图标（success: 绿色对勾，warning: 橙色感叹号）
+- 使用 CSS `@keyframes spin` 实现加载动画
+
+**改动文件**：`src/api/subject.js`、`src/pages/Home.jsx`、`src/pages/GlobalSettings.jsx`
+
+**✅ 已完成（2026-05-29 下午）— Mock 模式数据持久化修复**
+
+修复 Mock 模式下刷新后数据丢失的三个核心问题：
+
+| 序号 | 问题描述 | 修复内容 |
+|------|----------|----------|
+| 1 | 刷新后总是回到首页 | `activeKey` 状态从 localStorage 恢复；监听变化并保存；所有清理逻辑同时清除 `miioo_active_key` |
+| 2 | 封面保存无反馈 | 自动保存逻辑添加 `isSaving` 状态设置；上传时显示加载动画和"保存中..."；保存完成显示 Toast |
+| 3 | Mock 模式剧本数据丢失 | `apiGetScriptWorkspace` 从 localStorage 读取；新增 `apiSaveScriptWorkspace` 保存到 localStorage；`ScriptPage` 保存时调用 API |
+| 4 | Mock 模式主体数据丢失 | `apiGetSubjects` 从 localStorage 读取；`apiCreateSubject` / `apiUpdateSubject` / `apiDeleteSubject` 保存到 localStorage |
+
+**技术细节**：
+- localStorage 键名规范：
+  - `miioo_active_key` - 当前页面（home / project / create / assets）
+  - `miioo_script_{projectId}` - 剧本数据（content / episodes / phase）
+  - `miioo_subjects_{projectId}_{type}` - 主体数据（按 character / scene / prop 分类）
+- Mock 模式下所有 CRUD 操作持久化到 localStorage
+- 真实后端模式不受影响，仅 Mock 分支修改
+
+**改动文件**：`src/pages/Home.jsx`、`src/pages/GlobalSettings.jsx`、`src/api/subject.js`、`src/pages/ScriptPage.jsx`
+
+**✅ 已完成（2026-05-29 下午）— Mock 模式数据持久化修复**
+
+修复 Mock 模式下刷新后数据丢失的三个核心问题：
+
+| 序号 | 问题描述 | 修复内容 |
+|------|----------|----------|
+| 1 | 刷新后总是回到首页 | `activeKey` 状态从 localStorage 恢复；监听变化并保存；所有清理逻辑同时清除 `miioo_active_key` |
+| 2 | 封面保存无反馈 | 自动保存逻辑添加 `isSaving` 状态设置；上传时显示加载动画和"保存中..."；保存完成显示 Toast |
+| 3 | Mock 模式剧本数据丢失 | `apiGetScriptWorkspace` 从 localStorage 读取；新增 `apiSaveScriptWorkspace` 保存到 localStorage；`ScriptPage` 保存时调用 API |
+| 4 | Mock 模式主体数据丢失 | `apiGetSubjects` 从 localStorage 读取；`apiCreateSubject` / `apiUpdateSubject` / `apiDeleteSubject` 保存到 localStorage |
+
+**技术细节**：
+- localStorage 键名规范：
+  - `miioo_active_key` - 当前页面（home / project / create / assets）
+  - `miioo_script_{projectId}` - 剧本数据（content / episodes / phase）
+  - `miioo_subjects_{projectId}_{type}` - 主体数据（按 character / scene / prop 分类）
+- Mock 模式下所有 CRUD 操作持久化到 localStorage
+- 真实后端模式不受影响，仅 Mock 分支修改
+
+**改动文件**：`src/pages/Home.jsx`、`src/pages/GlobalSettings.jsx`、`src/api/subject.js`、`src/pages/ScriptPage.jsx`
+
+**验证结果**：
+- ✅ 刷新后停留在当前页面（不回到首页）
+- ✅ 封面上传有加载动画和 Toast 提示
+- ✅ 剧本内容刷新后保留
+- ✅ 主体数据刷新后保留
+- ✅ 解锁状态正确恢复
+- ✅ 构建通过（0 错误）
+
+**✅ 已完成（2026-05-29 晚）— Mock 模式核心数据流修复**
+
+修复 Mock 模式下项目数据加载和字段映射问题：
+
+| 序号 | 问题描述 | 修复内容 |
+|------|----------|----------|
+| 1 | `apiGetProject` 返回空对象 | Mock 模式下从 localStorage 读取项目数据，返回完整项目对象 |
+| 2 | 字段名不匹配 | `Home.jsx` 传递 props 时兼容两种字段名：`description/desc`、`cover_url/cover`、`aspect_ratio/ratio`、`visual_style/style` |
+| 3 | 项目名称不显示 | 修复后面包屑和输入框正确显示项目名称 |
+| 4 | 封面无法保存 | 修复后 `projectId` 正确传递，自动保存触发 |
+| 5 | 主体创建 projectId undefined | `SubjectPage` 接收并传递 `projectId` 参数 |
+| 6 | 项目加载时页面闪烁 | 添加 `isLoadingProject` 状态，加载时不显示项目列表 |
+
+**技术细节**：
+- Mock 数据字段名：`description`、`cover_url`、`aspect_ratio`、`visual_style`
+- 后端字段名（兼容）：`desc`、`cover`、`ratio`、`style`
+- 使用 `||` 运算符兼容两种字段名，优先使用后端字段名
+
+**改动文件**：`src/api/project.js`、`src/pages/Home.jsx`、`src/pages/SubjectPage.jsx`、`src/pages/GlobalSettings.jsx`
+
+**验证结果**：
+- ✅ 项目名称正确显示在面包屑和输入框
+- ✅ 封面上传后自动保存，控制台显示 `[mock] update project`
+- ✅ 主体创建时 localStorage 键名正确（`miioo_subjects_{projectId}_character`）
+- ✅ 刷新后项目数据完整恢复
+- ✅ 构建通过（0 错误）
+
+**✅ 已完成（2026-06-01）— 分镜页提示词输入框优化**
+
+修复分镜页生成面板提示词输入框的三个交互问题：
+
+| 序号 | 问题描述 | 修复内容 |
+|------|----------|----------|
+| 1 | 主体参考图上传后提示词无标签 | 修复 `apiUploadImage` 未定义错误；主体参考列上传成功后自动在 `description` 末尾追加 `[参考图:URL]` 标签 |
+| 2 | 参考图标签样式不符合设计稿 | 参考图标签改为紫色样式（背景 `#8870FF1A`、文字 `#E8A1FF`、边框 `#FFFFFF14`、圆角 `6px`）；文本从 URL 提取文件名，截断到 7 字符 + `…` |
+| 3 | @ 快捷键无法引用主体参考图 | `SubjectMentionDropdown` 新增 `mainRefs` 参数，下拉菜单最前面显示已上传的主体参考图（格式：`「主体」图片名称`）；点击后插入 `[参考图:URL]` 标签 |
+| 4 | 编辑态和展示态格式不一致 | `buildPromptFromShot` 改用 `\n` 分组（镜头参数一行、光影环境音一行、画面描述一行、台词一行）；编辑态和展示态都呈现相同的换行格式，`whiteSpace: pre-wrap` 自动处理换行 |
+| 5 | 多行内容被截断 | 输入框高度从固定 `height: 120px` 改为 `minHeight: 120px`，内容多时自动撑高 |
+
+**技术细节**：
+- `handleSelectMention` 函数区分主体提及（`@name`）和参考图（`[参考图:URL]`）两种插入格式
+- `rebuildEditorDOM` 和 `SubjectTag` 组件都实现了参考图标签的文件名提取和截断逻辑
+- `parseSegments` 函数支持解析 `[参考图:URL]` 标签，type 为 `'ref'`
+- `buildPromptFromShot` 按语义分组：第一行镜头参数、第二行光影环境音、第三行画面描述、第四行台词分配
+
+**改动文件**：`src/pages/StoryboardPage.jsx`、`src/api/assets.js`
+
+**验证结果**：
+- ✅ 主体参考列上传图片后，生成面板提示词自动显示紫色参考图标签
+- ✅ 输入 `@` 后下拉菜单显示主体参考图（排在最前面）
+- ✅ 点击参考图项后插入紫色标签，文本为截断后的文件名
+- ✅ 编辑态和展示态格式一致，都按分组换行显示
+- ✅ 多行内容不被截断，输入框自动撑高
+- ✅ 构建通过（0 错误）
+
+**✅ 已完成（2026-06-01 下午）— 分镜页提示词数据关系梳理 + BUG 修复**
+
+明确产品逻辑并落为代码备注：列表固定参数实时回传后端；提示词初始内容由列表字段拼出，仅暂存弹窗本地，编辑不回写、关闭即丢弃、生图时才回传，只辅助生成不控制分镜内容。
+
+| 序号 | 问题 | 修复 |
 |------|------|------|
-| 组件文件 | 大驼峰 | `ProjectCard.jsx` |
-| 页面文件 | 大驼峰 | `ProjectList.jsx` |
-| 普通函数/变量 | 小驼峰 | `handleSubmit` |
-| CSS 类名 | 使用 Token，不自定义 | `bg-surface-card` |
+| 1 | 提示词展示字段标题 | `buildPromptFromShot` 去掉「景别：」等标题只留值（台词「角色：台词」属内容保留） |
+| 2 | 主体参考列上传污染「画面描述」列 | 上传只更新 `mainRefs`，参考图标签改为只在提示词画面描述段末尾追加 |
+| 3 | 弹窗本地上传报错（`createObjectURL` Overload resolution failed） | `apiUploadFile` 内部已建 FormData，调用处改为直接传原始 `file` |
+
+附带移除展示态每次渲染触发的调试 `console.log`。**改动文件**：`src/pages/StoryboardPage.jsx`。构建通过（0 错误）。
+
+**✅ 已完成（2026-06-01 晚）— 水印设置功能**
+
+首页左侧导航「更多选项」菜单新增「水印设置」入口，点击弹出设置弹窗：
+
+| 序号 | 功能 | 实现 |
+|------|------|------|
+| 1 | 弹窗组件 | 按 Paper 设计稿精确还原（400px 宽、圆角 16px、卡片背景 `#1D1E1E`、悬停 `#1F1F1F`） |
+| 2 | 开关交互 | Toggle 组件补充 hover/active 状态（透明度变化）；切换时显示 Toast 提示（「图片水印已开启/关闭」） |
+| 3 | API 对接 | 新增 `apiGetWatermarkSettings` / `apiUpdateWatermarkSettings`（`src/api/settings.js`）；点击保存调用后端接口 |
+| 4 | Toast 位置 | 水平居中、垂直 25vh（屏幕 1/4 位置），使用 Flexbox 全屏容器确保精确对齐 |
+| 5 | 组件文档 | 新增 `design-system/components/toggle.md`（尺寸/状态/颜色规范） |
+
+**技术细节**：
+- 所有间距使用明确 px 值（`gap-[16px]`、`py-[12px]`、`px-[16px]`），不使用 Tailwind 数字缩写
+- 按钮交互：关闭图标 hover 0.8 / active 0.6；取消/保存按钮 hover `#1C1C1C` / active `#1A1A1A`
+- 菜单项动态注入：`BOTTOM_NAV_ITEMS` 在组件内通过 `map` 为 `menu` 项注入 `popup` 函数，访问 `setWatermarkSettingsOpen` 状态
+
+**改动文件**：`src/components/WatermarkSettingsModal.jsx`、`src/components/Toggle.jsx`、`src/api/settings.js`、`src/pages/Home.jsx`、`design-system/components/toggle.md`
+
+**验证结果**：
+- ✅ 点击「水印设置」正常打开弹窗
+- ✅ Toggle 切换显示 Toast 提示
+- ✅ 卡片悬停背景色变化
+- ✅ 按钮交互状态完整
+- ✅ Toast 水平垂直位置准确
+- ✅ 构建通过（0 错误）
+
+**✅ 已完成（2026-06-01 晚）— API 配置弹窗模型默认标签**
+
+API 配置弹窗模型列表卡片新增「设为默认」交互：
+
+| 序号 | 功能 | 实现 |
+|------|------|------|
+| 1 | 标签样式 | 未激活：灰色边框/背景（`#FFFFFF14` / `#FFFFFF08`）、Regular 字体；激活：青色边框/背景（`#2DC3E133` / `#2DC3E11A`）、Medium 字体 |
+| 2 | 位置布局 | 标签紧随模型标题，gap 8px |
+| 3 | 交互逻辑 | 点击「设为默认」→ 变「默认中」；再次点击「默认中」→ 取消默认；点击其他模型自动取消前一个默认 |
+| 4 | 状态管理 | 新增 `setDefaultOnelinkModel` / `setDefaultCustomProviderModel` 函数，按 tab 独立管理默认模型（对话/图片/视频/配音各自独立） |
+| 5 | 数量统计修复 | OneLinkAI 服务商卡片「已配置模型」从硬编码 `23` 改为动态计算 `Object.values(modelsByTab).reduce(...)` |
+
+**改动文件**：`src/components/ApiConfigModal.jsx`
+
+**验证结果**：
+- ✅ 标签样式符合设计稿
+- ✅ 点击切换默认状态正常
+- ✅ 取消默认功能正常
+- ✅ 模型数量实时统计
+- ✅ 构建通过（0 错误）
+
+**✅ 已完成（2026-06-02）— API 配置弹窗后端对接**
+
+| 序号 | 功能 | 实现 |
+|------|------|------|
+| 1 | 弹窗宽度 | 配置 OneLinkAI API 二级弹窗从 400px 改为 800px |
+| 2 | 测试连接 | 调用 `POST /api/providers/oneclick-setup`，传入用户输入的 api_key，连通后自动将后端返回的模型列表按 category 分发到各 tab |
+| 3 | 添加自定义模型 | 调用 `POST /api/models`，传入 model_id；后端返回错误时 toast 提示「模型添加失败！id不匹配」 |
+| 4 | 设为默认 | 打开子弹窗时调用 `GET /api/models` 初始化 `is_default` 状态；点击时乐观更新本地 + 调用 `PATCH /api/models/{id}` 同步后端 |
+| 5 | 按钮样式 | 「添加模型」按钮去掉阴影，边框改为 `1px dashed #FFFFFF33` |
+
+**改动文件**：`src/components/ApiConfigModal.jsx`。构建通过（0 错误）。
+
+**✅ 已完成（2026-06-03）— 项目总览页面布局调整**
+
+| 序号 | 调整内容 |
+|------|----------|
+| 1 | 项目信息区字段改为单列布局（项目名称、项目描述、画面比例、视觉风格、项目封面独立成行） |
+| 2 | 所有字段宽度统一改为 24.15% |
+| 3 | 资产概况卡片网格从 9 宫格（3×3）改为 6 宫格（3×2） |
+
+**改动文件**：`src/pages/GlobalSettings.jsx`
+
+### 待开发
+- [ ] 创作页（生视频 持续完善）
+- [ ] 资产库（持续完善）
+- [ ] 页面调用方迁移：逐步将 legacy alias 替换为新函数签名（加 `projectId` 参数）
+- [ ] 与后端确认 9 个前端有·后端无接口的规划（微信绑定/换绑手机/视频尾帧等）
 
 ---
 
-## 八、Git 协作流程
+## 五、后端对接说明
 
-### 分支结构
-
-```
-main              ← 稳定版本，只接受合并，不直接提交
-  └── feat/home           ← 首页开发
-  └── feat/project        ← 项目模块开发
-  └── feat/creation       ← 创作模块开发
-  └── feat/assets         ← 资产库开发
-  └── feat/api-xxx        ← 后端接口联调（后端同学）
-```
-
-### 日常开发流程
-
-```bash
-# 1. 从 main 新建功能分支
-git checkout main
-git pull origin main
-git checkout -b feat/home
-
-# 2. 开发、提交
-git add src/pages/Home.jsx src/components/xxx.jsx
-git commit -m "feat: 完成首页布局和导航入口"
-
-# 3. 推送分支
-git push origin feat/home
-
-# 4. 在 GitHub 上发起 Pull Request，合并进 main
-```
-
-### Commit 信息规范
-
-```
-feat: 新增功能
-fix: 修复问题
-style: 样式调整（不影响逻辑）
-refactor: 代码重构
-docs: 文档更新
-```
-
-### 什么时候发 PR？
-
-以下情况适合发 PR 合并进 main：
-
-- 一个完整页面开发完成（布局、交互、样式都到位）
-- 一组相关组件开发完成（如完成了所有表单相关组件）
-- 联调前：将前端分支合并进 main，后端同学基于 main 拉取最新代码
-- 联调后：接口对接完成、功能验证通过
-
-**不建议**把半成品合并进 main，分支上可以随时提交，但 PR 要等功能完整。
-
----
-
-## 九、后端对接说明
-
-- 前端页面开发完成后，与后端同学对接接口
-- 对接时机：后端接口就绪后，双方在各自分支开发完成，发 PR 合并后联调
-- 接口文档：待后端同学提供（补充链接）
-- 对接时间节点：待定
-
-### 前端 API 占位说明
-
-前端已完成 API 接入审查（2026-05-18），所有缺失接口均已用 mock 函数占位，参数传递逻辑已补全。
-后端接口就绪后，搜索以下关键词即可快速定位所有占位点：
-
-```
-[mock]                  — console.log 占位的 mock 函数
-TODO: 替换为真实接口    — 需要替换为真实 fetch 调用的位置
-```
-
-详细清单见 `API_AUDIT.md`，按 P0 → P1 → P2 → P3 优先级排列。
-
----
-
-## 十、快速上手（新成员）
-
-1. 克隆仓库，`npm install`，`npm run dev`
-2. 读 `design-system/tokens.md`，了解所有可用的样式类名
-3. 读 `design-system/components/` 下对应组件文档，了解组件写法规范
-4. 从 main 新建功能分支，开始开发
-5. 有疑问看本文档，或查看已有页面 `src/pages/` 作为参考
+- 前端已完成 API 接入审查（2026-05-18），所有缺失接口均已用 mock 函数占位
+- 后端接口就绪后，搜索以下关键词快速定位占位点：
+  ```
+  VITE_USE_MOCK        — mock 分支入口
+  TODO: 替换为真实接口  — 需要替换的位置
+  ```
+- 详细清单见 `API_AUDIT.md`，按 P0 → P1 → P2 → P3 优先级排列

@@ -1,153 +1,192 @@
+const BASE = import.meta.env.VITE_API_BASE_URL;
+
+import { authFetch } from './request.js';
+import { normalizeImageUrl } from '../utils/imageUrl.js';
+
+/**
+ * 资产列表（支持多维过滤）
+ * @param {object} filters - { project_id, scope, asset_type, category, is_starred, is_primary, search, include_deleted, deleted_only }
+ */
+export async function apiGetAssets(filters = {}) {
+  const params = new URLSearchParams();
+  Object.entries(filters).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== '') params.append(k, v);
+  });
+  const query = params.toString();
+  const url = query ? `${BASE}/api/assets?${query}` : `${BASE}/api/assets`;
+  const res = await authFetch(url, { headers: { 'Content-Type': 'application/json' } });
+  return res.json();
+}
+
 export async function apiGetAssetDetail(assetId) {
-  // TODO: GET /assets/:id
-  console.log('[mock] get asset detail', assetId);
+  const res = await authFetch(`${BASE}/api/assets/${assetId}`, {
+    headers: { 'Content-Type': 'application/json' },
+  });
+  return res.json();
+}
+
+export async function apiCreateAsset(data) {
+  const res = await authFetch(`${BASE}/api/assets`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(data),
+  });
+  return res.json();
+}
+
+export async function apiUpdateAsset(assetId, updates) {
+  const res = await authFetch(`${BASE}/api/assets/${assetId}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  });
+  return res.json();
+}
+
+export async function apiDeleteAsset(assetId) {
+  await authFetch(`${BASE}/api/assets/${assetId}`, { method: 'DELETE' });
+}
+
+export async function apiBatchDeleteAssets(asset_ids) {
+  await authFetch(`${BASE}/api/assets/batch-delete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ asset_ids }),
+  });
+}
+
+export async function apiBatchRestoreAssets(asset_ids) {
+  await authFetch(`${BASE}/api/assets/restore`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ asset_ids }),
+  });
+}
+
+export async function apiRestoreAsset(assetId) {
+  const res = await authFetch(`${BASE}/api/assets/${assetId}/restore`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  return res.json();
+}
+
+export async function apiExtractAssetFrame(assetId, { position }) {
+  const res = await authFetch(`${BASE}/api/assets/${assetId}/extract-frame`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ position }),
+  });
+  return res.json();
+}
+
+export async function apiDownloadAsset(assetId, { prefer_origin } = {}) {
+  const params = new URLSearchParams();
+  if (prefer_origin !== undefined) params.append('prefer_origin', prefer_origin);
+  const query = params.toString();
+  const url = query ? `${BASE}/api/assets/${assetId}/download?${query}` : `${BASE}/api/assets/${assetId}/download`;
+  const res = await authFetch(url, { headers: { 'Content-Type': 'application/json' } });
+  return res.blob();
+}
+
+// ── 项目资产（按 tab key 分组） ────────────────────────────────────────────────
+
+const CATEGORY_TO_TAB = {
+  character: 'chars',
+  scene: 'scenes',
+  prop: 'props',
+  audio: 'audio',
+  film: 'final',
+};
+
+function normalizeAsset(item) {
   return {
-    name: '小虎',
-    description: '一只雄性成年孟加拉虎，大型健壮体型，肩背宽厚，四肢粗壮，橘黄色短毛，黑色条纹较粗且分布稳定，右眼上方有一道浅色旧疤，颈部一圈深棕色较长鬃毛，头部较大，口鼻宽，尾巴中等长度，站姿平稳。',
-    prompt: 'A lone detective walks through a rain-soaked alley at night, neon reflections shimmering on wet cobblestones, cinematic wide shot, shallow depth of field, moody noir atmosphere',
-    model: 'Kling 2.1 Pro',
-    ratio: '16:9',
-    resolution: '1920 × 1080',
-    generatedAt: '2026-04-21 15:30:09',
-    images: [
-      { id: 'i1', src: 'https://app.paper.design/static/flowers.webp', finalized: true },
-      { id: 'i2', src: 'https://app.paper.design/static/flowers.webp', finalized: false },
-      { id: 'i3', src: 'https://app.paper.design/static/flowers.webp', finalized: false },
-    ],
+    id: item.id,
+    name: item.name,
+    url: normalizeImageUrl(item.thumbnail_url || item.file_url) || null,
+    fileUrl: normalizeImageUrl(item.file_url) || null,
+    videoUrl: item.asset_type === 'video' ? (item.file_url || null) : null,
+    starred: item.is_starred ?? false,
+    description: item.description ?? '',
+    prompt: item.prompt ?? '',
+    model: item.model ?? '',
+    size: item.size ?? '',
+    created_at: item.created_at ?? '',
   };
 }
 
+function groupByCategory(list) {
+  const grouped = { chars: [], scenes: [], props: [], storyboard_img: [], storyboard_video: [], audio: [], final: [] };
+  list.forEach((item) => {
+    const normalized = normalizeAsset(item);
+    if (item.category === 'storyboard') {
+      const tab = item.asset_type === 'video' ? 'storyboard_video' : 'storyboard_img';
+      grouped[tab].push(normalized);
+    } else {
+      const tab = CATEGORY_TO_TAB[item.category];
+      if (tab) grouped[tab].push(normalized);
+    }
+  });
+  return grouped;
+}
+
+export async function apiGetProjectAssets(projectId) {
+  const data = await apiGetAssets({ project_id: projectId, scope: 'project' });
+  return groupByCategory(Array.isArray(data) ? data : []);
+}
+
 export async function apiGetShotDetail(shotId) {
-  // TODO: GET /shots/:id
-  console.log('[mock] get shot detail', shotId);
+  const data = await apiGetAssetDetail(shotId);
+  const meta = (data && data.metadata_json) || {};
+
+  // 提取生成结果图片列表（metadata_json.outputs / variants / variations）
+  const rawOutputs = meta.outputs || meta.variants || meta.variations;
+  let images = [];
+  if (Array.isArray(rawOutputs) && rawOutputs.length > 0) {
+    images = rawOutputs.map((out, idx) => ({
+      id: out.id || out.asset_id || `img_${idx}`,
+      src: normalizeImageUrl(out.url || out.file_url || out.image_url || ''),
+      finalized: !!(out.is_finalized != null ? out.is_finalized : (out.finalized ?? false)),
+      prompt: out.prompt || '',
+      model: out.model || '',
+      resolution: out.resolution || out.size || '',
+      generatedAt: out.created_at || '',
+    }));
+  } else {
+    // 无量产结果时用主文件作为唯一图片
+    images = [{
+      id: `${data?.id || shotId}_0`,
+      src: normalizeImageUrl(data?.file_url || data?.thumbnail_url || ''),
+      finalized: true,
+      prompt: data?.prompt || '',
+      model: data?.model || '',
+      resolution: data?.size || '',
+      generatedAt: data?.created_at || '',
+    }];
+  }
+
   return {
-    shotNumber: '01',
-    prompt: 'A lone detective walks through a rain-soaked alley at night, neon reflections shimmering on wet cobblestones, cinematic wide shot, shallow depth of field, moody noir atmosphere',
-    model: 'Kling 2.1 Pro',
-    resolution: '1920 × 1080',
-    generatedAt: '2026-04-21 15:30:09',
-    images: [
-      { id: 's1', src: 'https://app.paper.design/static/flowers.webp', finalized: true },
-      { id: 's2', src: 'https://app.paper.design/static/flowers.webp', finalized: false },
-      { id: 's3', src: 'https://app.paper.design/static/flowers.webp', finalized: false },
-    ],
+    shotNumber: meta.shot_number ?? meta.shotNumber ?? data?.name ?? '',
+    prompt: data?.prompt || '',
+    model: data?.model || '',
+    resolution: meta.resolution || data?.size || '',
+    generatedAt: data?.created_at || '',
+    images,
   };
 }
 
 export async function apiGetShotVideoDetail(shotId) {
-  // TODO: GET /shots/:id/video
-  console.log('[mock] get shot video detail', shotId);
+  const data = await apiGetAssetDetail(shotId);
   return {
-    shotNumber: '03',
-    prompt: 'A lone detective walks through a rain-soaked alley at night, neon reflections shimmering on wet cobblestones, cinematic wide shot, shallow depth of field, moody noir atmosphere',
-    model: 'Kling 2.1 Pro',
-    resolution: '1920 × 1080',
-    duration: '0:24',
-    ratio: '16:9',
-    generatedAt: '2026-04-21 15:30:09',
-    videoSrc: 'https://www.w3schools.com/html/mov_bbb.mp4',
-    frames: [
-      { id: 'v1', src: 'https://app.paper.design/static/flowers.webp', finalized: true },
-      { id: 'v2', src: 'https://app.paper.design/static/flowers.webp', finalized: false },
-      { id: 'v3', src: 'https://app.paper.design/static/flowers.webp', finalized: false },
-    ],
-  };
-}
-
-export async function apiGetCreativeDays() {
-  // TODO: GET /users/me/creative-days
-  console.log('[mock] get creative days');
-  return {
-    image: [
-      {
-        date: '今天',
-        cards: [
-          { id: 'img1', name: '镜头_001.jpg' },
-          { id: 'img2', name: '场景草图.png' },
-          { id: 'img3', name: '角色设定.jpg' },
-          { id: 'img4', name: '道具参考.png' },
-        ],
-      },
-      {
-        date: '昨天',
-        cards: [
-          { id: 'img5', name: '分镜_A01.jpg' },
-          { id: 'img6', name: '背景板.png' },
-        ],
-      },
-    ],
-    video: [
-      {
-        date: '今天',
-        cards: [
-          { id: 'vid1', name: '第1集_预览.mp4' },
-          { id: 'vid2', name: '第2集_预览.mp4' },
-        ],
-      },
-      {
-        date: '昨天',
-        cards: [
-          { id: 'vid3', name: '片头动画.mp4' },
-        ],
-      },
-    ],
-    dubbing: [
-      {
-        date: '今天',
-        cards: [
-          { id: 'dub1', name: '主角旁白_01', duration: '0:32' },
-          { id: 'dub2', name: '主角旁白_02', duration: '0:45' },
-          { id: 'dub3', name: '反派台词', duration: '1:08' },
-        ],
-      },
-    ],
-  };
-}
-
-export async function apiGetProjectAssets(projectId) {
-  // TODO: GET /projects/:id/assets
-  console.log('[mock] get project assets', projectId);
-  return {
-    chars: [
-      { id: 'c1', name: '老虎主角', starred: true, bgColor: '#252525' },
-      { id: 'c2', name: '老虎姈姈', starred: false, bgColor: '#1F2320' },
-      { id: 'c3', name: '老虎弟弟', starred: false, bgColor: '#20201F' },
-      { id: 'c4', name: '老虎妹妹', starred: false, bgColor: '#202024' },
-      { id: 'c5', name: '小老虎 A', starred: false, bgColor: '#1F2020' },
-      { id: 'c6', name: '反派狼', starred: false, bgColor: '#1D2020' },
-      { id: 'c7', name: '猎人爷爷', starred: false, bgColor: '#21201D' },
-      { id: 'c8', name: '神秘猫咪', starred: false, bgColor: '#1E1E22' },
-    ],
-    scenes: [
-      { id: 's1', name: '森林入口', starred: false, bgColor: '#1A2018' },
-      { id: 's2', name: '老虎洞穴', starred: true, bgColor: '#1E2020' },
-      { id: 's3', name: '山顶瞭望台', starred: false, bgColor: '#1C1E1A' },
-      { id: 's4', name: '村庄广场', starred: false, bgColor: '#201E1A' },
-    ],
-    props: [
-      { id: 'p1', name: '猎人陷阱', starred: false, bgColor: '#201E1A' },
-      { id: 'p2', name: '老虎项圈', starred: true, bgColor: '#1E1E22' },
-      { id: 'p3', name: '神秘宝箱', starred: false, bgColor: '#1A1E20' },
-    ],
-    storyboard_img: [
-      { id: 'si1', name: '第1集_镜头01', starred: false, bgColor: '#1E2022' },
-      { id: 'si2', name: '第1集_镜头02', starred: false, bgColor: '#201E22' },
-      { id: 'si3', name: '第1集_镜头03', starred: true, bgColor: '#1E2020' },
-      { id: 'si4', name: '第2集_镜头01', starred: false, bgColor: '#22201E' },
-      { id: 'si5', name: '第2集_镜头02', starred: false, bgColor: '#1E2220' },
-    ],
-    storyboard_video: [
-      { id: 'sv1', name: '第1集_预览', starred: false, bgColor: '#1A1E24' },
-      { id: 'sv2', name: '第2集_预览', starred: false, bgColor: '#1E1A24' },
-    ],
-    audio: [
-      { id: 'au1', name: '主题曲_片头', starred: true, duration: '2:34' },
-      { id: 'au2', name: '背景音乐_森林', starred: false, duration: '4:12' },
-      { id: 'au3', name: '音效_老虎吼叫', starred: false, duration: '0:08' },
-    ],
-    final: [
-      { id: 'f1', name: '第1集_成片', starred: true, bgColor: '#1A1E22' },
-      { id: 'f2', name: '第2集_成片', starred: false, bgColor: '#1E1A22' },
-    ],
+    shotNumber: data.shot_number ?? '',
+    prompt: data.prompt ?? '',
+    model: data.model ?? '',
+    resolution: data.resolution ?? '',
+    generatedAt: data.created_at ?? '',
+    videoSrc: data.file_url ?? '',
+    duration: data.duration ?? '',
+    ratio: data.ratio ?? '',
+    frames: [],
+    ...data,
   };
 }

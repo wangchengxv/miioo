@@ -1,1 +1,7 @@
 node_modules/
+.DS_Store
+*.local
+.claude_tmp_*
+*.zip
+.agents/
+.claude/

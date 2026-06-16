@@ -1,136 +1,24 @@
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
+import { useCreationStore } from '../stores/creationStore';
+import { generationsToFlatList } from '../utils/creativeDaysAdapter';
+import { apiGetProjects } from '../api/project';
+import { apiGetAssets } from '../api/assets';
+import { normalizeImageUrl } from '../utils/imageUrl';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
 
 // accept='image' → 只允许图片类资产；'video' → 只允许视频类资产；'audio' → 只允许音频类资产；'all' → 不限制
-const PROJECT_SUB_TABS_ALL = ['角色', '场景', '道具', '分镜图', '分镜视频'];
+const PROJECT_SUB_TABS_ALL = ['角色', '场景', '道具', '分镜图', '分镜视频', '音频', '成片'];
 const PROJECT_SUB_TABS_IMAGE = ['角色', '场景', '道具', '分镜图'];
 const PROJECT_SUB_TABS_VIDEO = ['分镜视频'];
 const PROJECT_SUB_TABS_AUDIO = ['音频'];
-const CREATIVE_SUB_TABS_ALL = ['图片', '视频'];
+const CREATIVE_SUB_TABS_ALL = ['图片', '视频', '配音'];
 const CREATIVE_SUB_TABS_IMAGE = ['图片'];
 const CREATIVE_SUB_TABS_VIDEO = ['视频'];
 const CREATIVE_SUB_TABS_AUDIO = ['配音'];
 
-// ── Mock 数据（接口接入前使用）────────────────────────────────────────────────
-const MOCK_PROJECTS = [
-  { id: 'p1', name: '星际迷途' },
-  { id: 'p2', name: '暗夜追踪' },
-  { id: 'p3', name: '光影之间' },
-  { id: 'p4', name: '未来边界' },
-];
-
-const MOCK_PROJECT_ASSETS_MAP = {
-  p1: {
-    chars: [
-      { id: 'c1', name: '老虎主角', bgColor: '#252525' },
-      { id: 'c2', name: '老虎姈姈', bgColor: '#1F2320' },
-      { id: 'c3', name: '老虎弟弟', bgColor: '#20201F' },
-      { id: 'c4', name: '老虎妹妹', bgColor: '#202024' },
-      { id: 'c5', name: '小老虎 A', bgColor: '#1F2020' },
-      { id: 'c6', name: '反派狼', bgColor: '#1D2020' },
-    ],
-    scenes: [
-      { id: 's1', name: '森林入口', bgColor: '#1A2018' },
-      { id: 's2', name: '老虎洞穴', bgColor: '#1E2020' },
-      { id: 's3', name: '山顶瞭望台', bgColor: '#1C1E1A' },
-    ],
-    props: [
-      { id: 'pr1', name: '猎人陷阱', bgColor: '#201E1A' },
-      { id: 'pr2', name: '老虎项圈', bgColor: '#1E1E22' },
-    ],
-    storyboard_img: [
-      { id: 'si1', name: '第1集_镜头01', bgColor: '#1E2022' },
-      { id: 'si2', name: '第1集_镜头02', bgColor: '#201E22' },
-      { id: 'si3', name: '第1集_镜头03', bgColor: '#1E2020' },
-    ],
-    storyboard_video: [
-      { id: 'sv1', name: '第1集_预览', bgColor: '#1A1E24' },
-      { id: 'sv2', name: '第2集_预览', bgColor: '#1E1A24' },
-    ],
-    audio: [
-      { id: 'au1', name: '背景音乐_森林.mp3', bgColor: '#1E2022', type: 'audio' },
-      { id: 'au2', name: '音效_风声.wav', bgColor: '#201E22', type: 'audio' },
-      { id: 'au3', name: '配乐_主题曲.mp3', bgColor: '#1E2020', type: 'audio' },
-    ],
-  },
-  p2: {
-    chars: [
-      { id: 'p2c1', name: '侦探主角', bgColor: '#1E2022' },
-      { id: 'p2c2', name: '神秘女人', bgColor: '#201E22' },
-    ],
-    scenes: [
-      { id: 'p2s1', name: '夜晚街道', bgColor: '#1A1A20' },
-      { id: 'p2s2', name: '废弃仓库', bgColor: '#1E1A1A' },
-    ],
-    props: [
-      { id: 'p2pr1', name: '线索笔记本', bgColor: '#201E1A' },
-    ],
-    storyboard_img: [
-      { id: 'p2si1', name: '第1集_镜头01', bgColor: '#1E2022' },
-    ],
-    storyboard_video: [],
-    audio: [
-      { id: 'p2au1', name: '悬疑背景音.mp3', bgColor: '#1A1A20', type: 'audio' },
-    ],
-  },
-  p3: {
-    chars: [
-      { id: 'p3c1', name: '摄影师', bgColor: '#1E2020' },
-    ],
-    scenes: [
-      { id: 'p3s1', name: '摄影棚', bgColor: '#201E20' },
-      { id: 'p3s2', name: '城市天台', bgColor: '#1E2022' },
-    ],
-    props: [],
-    storyboard_img: [
-      { id: 'p3si1', name: '第1集_镜头01', bgColor: '#1E2022' },
-      { id: 'p3si2', name: '第1集_镜头02', bgColor: '#201E22' },
-    ],
-    storyboard_video: [
-      { id: 'p3sv1', name: '第1集_预览', bgColor: '#1A1E24' },
-    ],
-    audio: [],
-  },
-  p4: {
-    chars: [],
-    scenes: [
-      { id: 'p4s1', name: '未来城市', bgColor: '#1A1E24' },
-    ],
-    props: [
-      { id: 'p4pr1', name: '飞行器', bgColor: '#1E1A24' },
-    ],
-    storyboard_img: [],
-    storyboard_video: [],
-    audio: [
-      { id: 'p4au1', name: '科幻音效.wav', bgColor: '#1E1A24', type: 'audio' },
-    ],
-  },
-};
-
-const MOCK_CREATIVE_ASSETS = {
-  images: [
-    { id: 'img1', name: '镜头_001.jpg', bgColor: '#1E2022', starred: true },
-    { id: 'img2', name: '场景草图.png', bgColor: '#201E22', starred: false },
-    { id: 'img3', name: '角色设定.jpg', bgColor: '#1E2020', starred: true },
-    { id: 'img4', name: '道具参考.png', bgColor: '#202024', starred: false },
-    { id: 'img5', name: '分镜_A01.jpg', bgColor: '#1F2020', starred: false },
-    { id: 'img6', name: '背景板.png', bgColor: '#1D2020', starred: false },
-  ],
-  videos: [
-    { id: 'vid1', name: '第1集_预览.mp4', bgColor: '#1A1E24', starred: true },
-    { id: 'vid2', name: '第2集_预览.mp4', bgColor: '#1E1A24', starred: false },
-    { id: 'vid3', name: '片头动画.mp4', bgColor: '#1A1A20', starred: false },
-  ],
-  dubbing: [
-    { id: 'dub1', name: '旁白_第1集.mp3', bgColor: '#1E2022', starred: true, type: 'audio' },
-    { id: 'dub2', name: '角色配音_主角.wav', bgColor: '#201E22', starred: false, type: 'audio' },
-    { id: 'dub3', name: '旁白_第2集.mp3', bgColor: '#1E2020', starred: false, type: 'audio' },
-    { id: 'dub4', name: '角色配音_反派.wav', bgColor: '#1A1A20', starred: true, type: 'audio' },
-  ],
-};
 
 // 子 Tab → projectAssetsMap 的 key
 const SUB_TAB_KEY_MAP = {
@@ -140,6 +28,7 @@ const SUB_TAB_KEY_MAP = {
   '分镜图': 'storyboard_img',
   '分镜视频': 'storyboard_video',
   '音频': 'audio',
+  '成片': 'final_cut',
   '图片': 'images',
   '视频': 'videos',
   '配音': 'dubbing',
@@ -163,14 +52,16 @@ function Checkbox({ checked, hovered }) {
   );
 }
 
-function AssetCard({ asset, isSelected, isHovered, onMouseEnter, onMouseLeave, onClick }) {
+function AssetCard({ asset, isSelected, isHovered, onMouseEnter, onMouseLeave, onClick, compact = false }) {
   return (
     <div
       onClick={onClick}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
       style={{
-        width: '175px', height: '208px', borderRadius: '10px', overflow: 'hidden',
+        width: compact ? 'calc((100% - 32px) / 3)' : '175px',
+        height: compact ? '135px' : '208px',
+        borderRadius: '10px', overflow: 'hidden',
         flexShrink: 0, display: 'flex', flexDirection: 'column',
         background: '#1C1C1C',
         border: `1px solid ${isSelected ? '#FFFFFF33' : isHovered ? 'rgba(255,255,255,0.2)' : '#FFFFFF0F'}`,
@@ -179,11 +70,18 @@ function AssetCard({ asset, isSelected, isHovered, onMouseEnter, onMouseLeave, o
     >
       {/* 图片区 */}
       <div style={{
-        height: '168px', flexShrink: 0, position: 'relative',
+        height: compact ? '100%' : '168px', flexShrink: 0, position: 'relative',
         background: asset.url ? 'transparent' : (asset.bgColor || '#252525'),
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
-        {asset.url ? (
+        {asset.asset_type === 'video' && asset.url ? (
+          <video
+            src={asset.url}
+            style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: isHovered && !isSelected ? 0.85 : 1, transition: 'opacity 100ms' }}
+            muted
+            playsInline
+          />
+        ) : asset.url ? (
           <img src={asset.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: isHovered && !isSelected ? 0.85 : 1, transition: 'opacity 100ms' }} />
         ) : asset.type === 'audio' ? (
           <svg width="32" height="32" viewBox="0 0 32 32" fill="none">
@@ -212,12 +110,14 @@ function AssetCard({ asset, isSelected, isHovered, onMouseEnter, onMouseLeave, o
         )}
       </div>
       {/* 底部标签 */}
+      {!compact && (
       <div style={{ display: 'flex', alignItems: 'center', padding: '10px 12px', background: '#1C1C1C', flex: 1 }}>
         <span style={{
           fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF',
           overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', width: '100%',
         }}>{asset.name || '未命名'}</span>
       </div>
+      )}
     </div>
   );
 }
@@ -243,13 +143,35 @@ export default function AssetPickerModal({
   onConfirm,
   // accept: 'image' | 'video' | 'all'  控制可选资产类型
   accept = 'all',
-  // projects: [{ id, name }]  项目列表；未传时使用 mock 数据
-  projects = MOCK_PROJECTS,
-  // projectAssetsMap: { [projectId]: { chars, scenes, props, storyboard_img, storyboard_video } }；未传时使用 mock 数据
-  projectAssetsMap = MOCK_PROJECT_ASSETS_MAP,
-  // creativeAssets: { images: [], videos: [] }  创作资产；未传时使用 mock 数据
-  creativeAssets = MOCK_CREATIVE_ASSETS,
+  // projectId: 当前项目 ID，传入后会从后端拉取真实项目列表和资产数据
+  projectId = null,
+  // creativeAssets: { images: [], videos: [], dubbing: [] }  创作资产；未传时从 store 读取
+  creativeAssets: creativeAssetsProp = null,
 }) {
+  const generationsByTab = useCreationStore((s) => s.generationsByTab);
+  const favorites = useCreationStore((s) => s.favorites);
+
+  const creativeAssets = useMemo(() => {
+    if (creativeAssetsProp) return creativeAssetsProp;
+
+    // 从 store 转换数据格式
+    return {
+      images: generationsToFlatList(generationsByTab.image || [], favorites).map(item => ({
+        ...item,
+        bgColor: item.bgColor || '#1F2324',
+      })),
+      videos: generationsToFlatList(generationsByTab.video || [], favorites).map(item => ({
+        ...item,
+        bgColor: item.bgColor || '#1F2324',
+      })),
+      dubbing: generationsToFlatList(generationsByTab.dubbing || [], favorites).map(item => ({
+        ...item,
+        bgColor: item.bgColor || '#1F2324',
+        type: 'audio',
+      })),
+    };
+  }, [creativeAssetsProp, generationsByTab, favorites]);
+
   const projectSubTabsAvail = accept === 'video' ? PROJECT_SUB_TABS_VIDEO : accept === 'image' ? PROJECT_SUB_TABS_IMAGE : accept === 'audio' ? PROJECT_SUB_TABS_AUDIO : PROJECT_SUB_TABS_ALL;
   const creativeSubTabsAvail = accept === 'video' ? CREATIVE_SUB_TABS_VIDEO : accept === 'image' ? CREATIVE_SUB_TABS_IMAGE : accept === 'audio' ? CREATIVE_SUB_TABS_AUDIO : CREATIVE_SUB_TABS_ALL;
 
@@ -269,15 +191,97 @@ export default function AssetPickerModal({
   const [favHovered, setFavHovered] = useState(false);
   const [projectOpen, setProjectOpen] = useState(false);
   const [projectHovIdx, setProjectHovIdx] = useState(null);
-  const [activeProjectId, setActiveProjectId] = useState(projects[0]?.id ?? null);
+  const [activeProjectId, setActiveProjectId] = useState(projectId || null);
   const projectBtnRef = useRef(null);
 
-  // 当 projects 列表变化时，同步 activeProjectId
+  // ── 从后端拉取真实数据 ──────────────────────────────────────────────────
+  const [apiProjects, setApiProjects] = useState(null);
+  const [apiAssetsMap, setApiAssetsMap] = useState(null);
+  const [assetsLoading, setAssetsLoading] = useState(false);
+  const [projectsLoading, setProjectsLoading] = useState(false);
+
   useEffect(() => {
+    if (!open) return;
+    (async () => {
+      try {
+        setProjectsLoading(true);
+        // 拉取所有项目列表
+        const projList = await apiGetProjects();
+        const projs = Array.isArray(projList) ? projList.map(p => ({ id: p.id, name: p.name })) : [];
+        setApiProjects(projs);
+      } catch (err) {
+        console.error('[AssetPickerModal] 拉取项目列表失败:', err);
+        setApiProjects([]);
+      } finally {
+        setProjectsLoading(false);
+      }
+    })();
+  }, [open]);
+
+  // 拉取或切换项目资产
+  useEffect(() => {
+    if (!open) return;
+    const pullProjectId = projectId || activeProjectId;
+    if (!pullProjectId) return;
+    (async () => {
+      try {
+        setAssetsLoading(true);
+        // 拉取当前项目的资产
+        const assetsData = await apiGetAssets({ project_id: pullProjectId, scope: 'project' });
+        const normalizedAssets = Array.isArray(assetsData) ? assetsData.map(a => ({
+          id: a.id,
+          name: a.name || '未命名',
+          url: normalizeImageUrl(a.thumbnail_url || a.file_url) || null,
+          starred: a.is_starred ?? false,
+          bgColor: '#252525',
+          category: a.category,
+          asset_type: a.asset_type,
+        })) : [];
+
+        // 按分类分组
+        const grouped = { chars: [], scenes: [], props: [], storyboard_img: [], storyboard_video: [], audio: [], final_cut: [] };
+        normalizedAssets.forEach(a => {
+          if (a.category === 'storyboard') {
+            if (a.asset_type === 'video') grouped.storyboard_video.push(a);
+            else grouped.storyboard_img.push(a);
+          } else if (a.category === 'character') {
+            grouped.chars.push(a);
+          } else if (a.category === 'scene') {
+            grouped.scenes.push(a);
+          } else if (a.category === 'prop') {
+            grouped.props.push(a);
+          } else if (a.category === 'audio') {
+            grouped.audio.push(a);
+          } else if (a.category === 'film') {
+            grouped.final_cut.push(a);
+          }
+        });
+
+        const fullMap = { [pullProjectId]: grouped };
+        setApiAssetsMap(fullMap);
+      } catch (err) {
+        console.error('[AssetPickerModal] 拉取项目资产失败:', err);
+        setApiAssetsMap({});
+      } finally {
+        setAssetsLoading(false);
+      }
+    })();
+  }, [open, projectId, activeProjectId]);
+
+  const projects = apiProjects ?? [];
+  const projectAssetsMap = apiAssetsMap ?? {};
+  // 从 store 读取创作资产数据（当 prop 未传入时）
+
+  // 当 projects 列表变化时，同步 activeProjectId（优先使用 projectId）
+  useEffect(() => {
+    if (projectId) {
+      setActiveProjectId(projectId);
+      return;
+    }
     if (projects.length > 0 && !projects.find(p => p.id === activeProjectId)) {
       setActiveProjectId(projects[0].id);
     }
-  }, [projects]);
+  }, [projects, projectId]);
 
   // 当 accept 变化时，重置子 Tab 到第一个可用项
   useEffect(() => {
@@ -314,6 +318,7 @@ export default function AssetPickerModal({
   };
 
   const getProjectBtnRect = () => projectBtnRef.current?.getBoundingClientRect() ?? null;
+  const isCompactCard = activeTab === 'creative' && (creativeSubTab === '图片' || creativeSubTab === '视频');
 
   // 获取当前内容区资产列表
   const getCurrentAssets = () => {
@@ -371,7 +376,7 @@ export default function AssetPickerModal({
                 style={{
                   display: 'flex', alignItems: 'center', gap: '4px',
                   paddingTop: '12px', paddingBottom: '6px',
-                  borderBottom: `2px solid ${isActive ? '#2DC3E1' : 'transparent'}`,
+                  borderBottom: '2px solid transparent',
                   cursor: 'pointer', flexShrink: 0, transition: 'border-color 100ms',
                 }}
               >
@@ -504,7 +509,6 @@ export default function AssetPickerModal({
                       style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', cursor: 'pointer' }}
                     >
                       <span style={{ fontFamily: isActive ? FONT_MEDIUM : FONT, fontWeight: isActive ? 500 : 400, fontSize: '14px', lineHeight: '18px', color: isActive ? '#FFFFFF' : '#FFFFFF99', transition: 'color 100ms', whiteSpace: 'nowrap' }}>{tab}</span>
-                      <div style={{ height: '2px', alignSelf: 'stretch', background: isActive ? '#DDDDDD' : 'transparent', borderRadius: '1px', transition: 'background 100ms' }} />
                     </div>
                   );
                 })}
@@ -522,7 +526,6 @@ export default function AssetPickerModal({
                     style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '4px', cursor: 'pointer' }}
                   >
                     <span style={{ fontFamily: isActive ? FONT_MEDIUM : FONT, fontWeight: isActive ? 500 : 400, fontSize: '14px', lineHeight: '18px', color: isActive ? '#FFFFFF' : '#FFFFFF99', transition: 'color 100ms', whiteSpace: 'nowrap' }}>{tab}</span>
-                    <div style={{ height: '2px', alignSelf: 'stretch', background: isActive ? '#DDDDDD' : 'transparent', borderRadius: '1px', transition: 'background 100ms' }} />
                   </div>
                 );
               })}
@@ -545,6 +548,7 @@ export default function AssetPickerModal({
                   onMouseEnter={() => setHoveredCard(asset.id)}
                   onMouseLeave={() => setHoveredCard(null)}
                   onClick={() => toggle(asset.id)}
+                  compact={isCompactCard}
                 />
               ))}
             </div>
