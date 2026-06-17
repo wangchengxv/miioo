@@ -46,7 +46,6 @@ export async function apiCreateSubject(projectId, data) {
 export async function apiUpdateSubject(projectId, subjectId, data) {
   const url = `${BASE}/api/projects/${projectId}/subjects/${subjectId}`;
   const body = JSON.stringify(data);
-  console.log('[apiUpdateSubject] PATCH', url, body);
   const res = await authFetch(url, {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },

@@ -765,8 +765,7 @@ function SubjectAssetDetailModal({ onClose, onDownload, onDeleteImage, onShowToa
 
             {/* Sticky buttons */}
             <div style={{ flexShrink: 0, paddingTop: '12px', paddingBottom: '20px', paddingLeft: '20px', paddingRight: '20px', borderTop: '1px solid #FFFFFF0A', display: 'flex', gap: '8px' }}>
-              {imgs.length > 1 && (
-                <button
+              <button
                   type="button"
                   style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -790,7 +789,6 @@ function SubjectAssetDetailModal({ onClose, onDownload, onDeleteImage, onShowToa
                   </svg>
                   <span style={{ fontFamily: FONT, fontSize: '13px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FF6B6B' }}>删除</span>
                 </button>
-              )}
               <button
                 type="button"
                 style={{
@@ -823,7 +821,16 @@ function SubjectAssetDetailModal({ onClose, onDownload, onDeleteImage, onShowToa
           onConfirm={() => {
             setShowDeleteConfirm(false);
             onShowToast?.('删除成功', 'success');
-            onDeleteImage?.(currentImg.id);
+            const deletedId = currentImg.id;
+            if (imgs.length === 1) {
+              // 最后一张：先关弹窗，再通知父组件删除
+              onDeleteImage?.(deletedId);
+            } else {
+              // 切换到上一张（若是第一张则切到下一张）
+              const nextIdx = activeImg > 0 ? activeImg - 1 : 0;
+              setActiveImg(nextIdx);
+              onDeleteImage?.(deletedId);
+            }
           }}
           zIndex={300}
         />
@@ -2513,6 +2520,7 @@ function ProjectAssetCard({ name, desc, url, selected, batchMode, onDownload, on
           }}
           onDeleteImage={(imageId) => {
             if (images.length === 1) {
+              setDetailOpen(false);
               onDelete?.();
             } else {
               onDelete?.(imageId);

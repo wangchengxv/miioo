@@ -37,10 +37,10 @@ function readRaw(medium, key) {
   try {
     const store = medium === 'session' ? sessionStorage : localStorage;
     const str = store.getItem(NS + key);
-    return str ? JSON.parse(str) : null;
-  } catch {
-    return null;
-  }
+    if (str) return JSON.parse(str);
+  } catch { /* 忽略存储访问异常 */ }
+  // 降级 fallback：localStorage 写满时数据存在 memStore，读取时也要检查
+  return memStore.get(key) ?? null;
 }
 
 function writeRaw(medium, key, entry) {

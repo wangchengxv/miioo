@@ -1389,7 +1389,7 @@ function RefImageField({ maxImages = 3, projectId, subjectId, refImageIds = [], 
 // key: subjectId, value: { placeholderId, status: 'pending'|'done', imageUrl?, rawUrl? }
 const pendingGenerations = new Map();
 
-function EditSubjectPanel({ projectId, char, tabLabel = '角色', projectRatio, onClose, onCommit, onCoverChange }) {
+function EditSubjectPanel({ projectId, char, tabLabel = '角色', projectRatio, onClose, onCommit, onCoverChange, refreshToken }) {
   // ── 从后端拉取模型列表，直接使用后端 capabilities ──────────────
   const [imageModels, setImageModels] = useState([]);
   const [modelsLoading, setModelsLoading] = useState(true);
@@ -1527,12 +1527,13 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', projectRatio, 
       // ── 手动上传的图（SubjectReferenceImage[]）也放入右侧列表 ────
       // 字段：asset_id, file_url, name, is_primary
       // 注意：不写入 refImageIds，参考图字段由用户在本次 session 手动选择，不从后端自动填充
+      // settled 强制为 false：这类图片是用户手动上传的素材，不继承原资产的定稿状态
       const refImgs = Array.isArray(detailRes.reference_images) ? detailRes.reference_images : [];
       const refMapped = refImgs.map((img) => ({
         id: img.asset_id,
         rawUrl: img.file_url,
         url: normalizeImageUrl(img.file_url),
-        settled: img.is_primary ?? false,
+        settled: false,   // 手动上传的图永远不预设为定稿
         isReference: true,
       }));
 
@@ -1581,7 +1582,7 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', projectRatio, 
 
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, char?.id]);
+  }, [projectId, char?.id, refreshToken]);
 
   // ── 默认提示词 ────────────────────────────────────────────────
   function defaultPromptForTab(tab) {
@@ -2025,6 +2026,7 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', projectRatio, 
               // 从资产库选择的资产对象（有 id 和 url 属性）
               if (fileOrId && typeof fileOrId === 'object' && fileOrId.id) {
                 const raw = fileOrId.url || fileOrId.file_url || fileOrId.fileUrl;
+                // 从资产库选择的图片，settled 强制为 false，不继承原资产的定稿状态
                 setGeneratedImages((prev) => [{ rawUrl: raw, url: normalizeImageUrl(raw), settled: false, id: fileOrId.id, isReference: true }, ...prev]);
                 // 绑定资产到主体
                 if (projectId && char?.id) {
@@ -2464,6 +2466,7 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
   const [selectedChar, setSelectedChar] = useState(null);
   const [selectedScene, setSelectedScene] = useState(null);
   const [selectedProp, setSelectedProp] = useState(null);
+  const [subjectDetailRefreshToken, setSubjectDetailRefreshToken] = useState(0);
   const [voiceModalChar, setVoiceModalChar] = useState(null);
   const [voiceList, setVoiceList] = useState([]);
   const [internalChars, setInternalChars] = useState(INITIAL_CHARS);
@@ -2610,6 +2613,16 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
     return () => {
       unsubscribers.forEach(unsub => unsub());
     };
+  }, [projectId]);
+
+  // 监听资产库删除事件，刷新已打开的主体详情弹窗
+  useEffect(() => {
+    function handleAssetsDeleted(e) {
+      if (e.detail?.projectId && e.detail.projectId !== projectId) return;
+      setSubjectDetailRefreshToken(t => t + 1);
+    }
+    window.addEventListener('project-assets:deleted', handleAssetsDeleted);
+    return () => window.removeEventListener('project-assets:deleted', handleAssetsDeleted);
   }, [projectId]);
 
   const counts = {
@@ -2845,6 +2858,7 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
           projectRatio={projectRatio}
           char={selectedChar}
           tabLabel="角色"
+          refreshToken={subjectDetailRefreshToken}
           onClose={() => setSelectedChar(null)}
           onCommit={(name, desc) => {
             setChars((prev) => prev.map((c) => c.id === selectedChar.id ? { ...c, name, desc } : c));
@@ -2866,6 +2880,7 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
           projectRatio={projectRatio}
           char={selectedScene}
           tabLabel="场景"
+          refreshToken={subjectDetailRefreshToken}
           onClose={() => setSelectedScene(null)}
           onCommit={(name, desc) => {
             setScenes((prev) => prev.map((s) => s.id === selectedScene.id ? { ...s, name, desc } : s));
@@ -2886,6 +2901,7 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
           projectRatio={projectRatio}
           char={selectedProp}
           tabLabel="道具"
+          refreshToken={subjectDetailRefreshToken}
           onClose={() => setSelectedProp(null)}
           onCommit={(name, desc) => {
             setProps((prev) => prev.map((p) => p.id === selectedProp.id ? { ...p, name, desc } : p));

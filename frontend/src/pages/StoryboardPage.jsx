@@ -52,9 +52,17 @@ function normalizeStoryboard(be) {
         ...(be.character_ids || []).map(cid =>
           typeof cid === 'string' ? { id: cid, type: 'char' } : cid
         ),
-        ...(be.reference_image_urls || []).map(url =>
-          ((() => { const n = normalizeImageUrl(url); return { id: n, url: n, name: "参考图", type: "image/jpeg" }; })())
-        ),
+        ...(be.reference_image_urls || [])
+          .filter(url => {
+            // 排除与分镜图相同的 URL，避免分镜图出现在主体参考列
+            const n = normalizeImageUrl(url);
+            const imgUrl = be.image_url ? normalizeImageUrl(be.image_url) : null;
+            return n !== imgUrl;
+          })
+          .map(url => {
+            const n = normalizeImageUrl(url);
+            return { id: n, url: n, name: "参考图", type: "image/jpeg" };
+          }),
       ]
     ),
     storyboardImage: be.storyboardImage ?? (
@@ -97,11 +105,15 @@ function toBackendStoryboard(shot) {
     voiceover: shot.narration?.segments?.length
       ? shot.narration.segments.map(s => s.role ? `${s.role}：${s.lines}` : s.lines).join('\n')
       : undefined,
-    character_ids: (shot.mainRefs || []).map(ref => ref?.id).filter(Boolean),
-   reference_image_urls: (shot.mainRefs || [])
-     .filter(ref => ref?.url && !ref.uploading)
-     .map(ref => ref.url)
-     .filter(Boolean),
+    character_ids: (shot.mainRefs || [])
+      .filter(ref => ref?.type === 'char' || ref?.type === 'scene' || ref?.type === 'prop')
+      .map(ref => ref?.id).filter(Boolean),
+    reference_image_urls: (shot.mainRefs || [])
+      .filter(ref => ref?.url && !ref.uploading)
+      .filter(ref => ref?.type !== 'char' && ref?.type !== 'scene' && ref?.type !== 'prop')
+      .filter(ref => !shot.storyboardImage?.url || ref.url !== shot.storyboardImage.url)
+      .map(ref => ref.url)
+      .filter(Boolean),
     image_url: shot.storyboardImage?.url || undefined,
     video_url: shot.storyboardVideo?.url || undefined,
   };
@@ -5330,13 +5342,20 @@ export default function StoryboardPage({ serverReachable, projectId, projectName
   const activeEpisodes = episodes.length > 0 ? episodes : EPISODES;
   // 用 peekCache 同步读取缓存，第一次渲染直接呈现旧数据，避免空状态闪烁
   const [shots, setShots] = useState(() => {
-    const initialEpisode = activeEpisodes[0] ?? '第一集';
-    if (typeof initialEpisode === 'string') return [];
+    if (!projectId) return [];
+    const cachedEpisodes = episodes.length > 0
+      ? episodes
+      : (peekCache(K.episodes(projectId), MEDIUM.CONTENT) ?? []);
+    const initialEpisode = cachedEpisodes[0];
+    if (!initialEpisode || typeof initialEpisode === 'string') return [];
     const episodeId = initialEpisode?.id ?? '';
-    if (!episodeId || !projectId) return [];
-    const cached = peekCache(K.storyboards(projectId, episodeId), MEDIUM.CONTENT);
-    if (!cached || !Array.isArray(cached)) return [];
-    return cached.map(be => enrichMainRefs(normalizeStoryboard(be), chars));
+    if (!episodeId) return [];
+    // 先找 episode 级缓存，找不到 fallback 到 :all（:all 是项目全量分镜，同样可用）
+    const raw =
+      peekCache(K.storyboards(projectId, episodeId), MEDIUM.CONTENT) ??
+      peekCache(K.storyboards(projectId), MEDIUM.CONTENT);
+    if (!raw || !Array.isArray(raw)) return [];
+    return raw.map(be => enrichMainRefs(normalizeStoryboard(be), chars));
   });
   const [globalVoiceParams, setGlobalVoiceParams] = useState({});
   const [episode, setEpisode] = useState(() => activeEpisodes[0] ?? '第一集');
@@ -5379,17 +5398,15 @@ export default function StoryboardPage({ serverReachable, projectId, projectName
   // 页面加载时从后端获取剧本数据
   useEffect(() => {
     if (!projectId) return;
-
-    // 只有 episode 是后端真实数据（对象含 id 字段）时才请求
-    // 避免先用字符串 fallback 发一次无 episode_id 的总分镜请求
     if (typeof episode === 'string') return;
 
     const episodeId = getEpisodeId(episode);
     if (!episodeId) return;
 
+    // 优先订阅带 episodeId 的 key，fallback 订阅 :all
     const cacheKey = K.storyboards(projectId, episodeId);
+    const cacheKeyAll = K.storyboards(projectId);
 
-    // normalize 函数（稳定引用，不依赖 chars 变化）
     const normalizeShots = (data) => {
       if (!Array.isArray(data)) return [];
       return data.map(be => enrichMainRefs(normalizeStoryboard(be), chars));
@@ -5403,17 +5420,16 @@ export default function StoryboardPage({ serverReachable, projectId, projectName
       })
       .catch((err) => {
         console.error('[StoryboardPage] 加载剧本失败:', err);
-        // 请求失败时不清空现有数据
       });
 
-    // 订阅后台缓存更新：当分镜数据有变化时自动刷新 UI
-    const unsubscribe = subscribe(cacheKey, (data) => {
-      if (data !== null && data !== undefined) {
-        setShots(normalizeShots(data));
-      }
+    const unsub1 = subscribe(cacheKey, (data) => {
+      if (data != null) setShots(normalizeShots(data));
+    });
+    const unsub2 = subscribe(cacheKeyAll, (data) => {
+      if (data != null) setShots(normalizeShots(data));
     });
 
-    return unsubscribe;
+    return () => { unsub1(); unsub2(); };
   }, [projectId, episode?.id, chars]);
 
   useEffect(() => {
