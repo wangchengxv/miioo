@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import DotsLoading from '../components/DotsLoading';
 import BatchGenerateModal from '../components/BatchGenerateModal';
 import AssetPickerModal from '../components/AssetPickerModal';
-import { apiCreateSubject, apiUpdateSubject, apiDeleteSubject, apiGenerateSubjectImage, apiGetSubjects, apiBatchGenerateStream, apiGetSubjectDetail, apiGetSubjectImages, apiBindSubjectReferenceImages, apiDownloadSubjectImage, apiSetPrimarySubjectImage } from '../api/subject';
+import { apiCreateSubject, apiUpdateSubject, apiDeleteSubject, apiGenerateSubjectImage, apiGetSubjects, apiBatchGenerateStream, apiGetSubjectDetail, apiGetSubjectImages, apiBindSubjectReferenceImages, apiUploadSubjectReferenceImage, apiDownloadSubjectImage, apiSetPrimarySubjectImage } from '../api/subject';
 // 模型能力直接从后端 capabilities 获取
 import { apiGetProjects } from '../api/project';
 import { apiGetAssets } from '../api/assets';
@@ -1272,13 +1272,24 @@ function RefImageField({ maxImages = 3, projectId, subjectId, refImageIds = [], 
   const [assetPickerOpen, setAssetPickerOpen] = useState(false);
   const [loadingRefs, setLoadingRefs] = useState(false);
 
-  // 当外部 refImageIds 变化时，加载对应的 URL
+  // 当外部 refImageIds 变化时，更新参考图列表
+  // refImageIds 可以是：
+  //   - { id, url }[]  — 从后端加载后的对象（新格式）
+  //   - string[]       — 纯 asset_id（兼容旧调用路径）
   useEffect(() => {
-    if (!refImageIds || refImageIds.length === 0) return;
-    // 合并现有数据，保留已加载的 URL，避免覆盖 handleFile/handleAssetConfirm 刚设置的值
+    if (!refImageIds || refImageIds.length === 0) {
+      setRefImages([]);
+      return;
+    }
     setRefImages(prev => {
-      if (typeof refImageIds[0] !== 'string') return prev;
-      return refImageIds.map(id => {
+      return refImageIds.map(item => {
+        // 新格式：{ id, url }
+        if (item && typeof item === 'object' && item.id) {
+          const existing = prev.find(p => p?.id === item.id);
+          return existing?.url ? existing : { id: item.id, url: item.url || null };
+        }
+        // 旧格式：纯字符串 id 或 URL
+        const id = item;
         const existing = prev.find(p => p?.id === id);
         if (existing?.url) return existing;
         if (typeof id === 'string' && (id.startsWith('http') || id.startsWith('blob'))) {
@@ -1476,83 +1487,95 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', projectRatio, 
     let cancelled = false;
 
     (async () => {
-      // 并行拉取详情和图片列表
-      const [detailRes, imagesRes] = await Promise.allSettled([
-        apiGetSubjectDetail(projectId, char.id).catch(() => null),
-        apiGetSubjectImages(projectId, char.id).catch(() => []),
-      ]);
-
+      // 只拉一次详情，SubjectDetailResponse 包含：
+      //   subject (SubjectResponse)
+      //   primary_image (SubjectImageResponse | null)
+      //   candidate_images (SubjectImageResponse[])
+      //   reference_images (SubjectReferenceImage[])
+      //   latest_generate_config (SubjectGenerateConfig | null)
+      const detailRes = await apiGetSubjectDetail(projectId, char.id).catch(() => null);
       if (cancelled) return;
 
-      // 处理详情
-      const detail = detailRes.status === 'fulfilled' ? detailRes.value : null;
-      if (detail) {
-        if (detail.prompt || detail.prompt_text) {
-          setPromptText(detail.prompt || detail.prompt_text);
-        }
-        if (detail.model || detail.default_image_model) {
-          setSelectedModel(detail.model || detail.default_image_model);
-        }
-        if (detail.ratio) setSelectedRatio(detail.ratio);
-        if (detail.resolution) setSelectedResolution(detail.resolution);
-        if (Array.isArray(detail.reference_image_ids)) setRefImageIds(detail.reference_image_ids);
-      } else if (!promptText) {
-        // 如果 char 对象没有 prompt 且后端也没返回，使用默认提示词
-        setPromptText(defaultPromptForTab(tabLabel));
+      if (!detailRes) {
+        if (!promptText) setPromptText(defaultPromptForTab(tabLabel));
+        setDetailLoaded(true);
+        return;
       }
 
-      // 处理已生成图片列表
-      const imgList = imagesRes.status === 'fulfilled' ? imagesRes.value : [];
-      const imgs = Array.isArray(imgList) ? imgList : (imgList?.images || imgList?.items || []);
-      let finalImages;
-      if (imgs.length > 0) {
-        finalImages = imgs.map((img) => ({
-          id: img.id || img.image_id || `img-${Math.random()}`,
-          rawUrl: img.image_url || img.file_url || img.url || null,
-          url: normalizeImageUrl(img.image_url || img.file_url || img.url),
-          settled: img.is_primary || img.is_settled || false,
-        }));
-      } else {
-        finalImages = [];
+      // ── 从 subject 字段读取基础信息 ──────────────────────────────
+      const subject = detailRes.subject || detailRes;   // 兼容后端扁平返回
+      const genCfg = detailRes.latest_generate_config || subject.gen_config || {};
+
+      if (subject.prompt) setPromptText(subject.prompt);
+      if (genCfg.model || subject.model) setSelectedModel(genCfg.model || subject.model);
+      if (genCfg.ratio || subject.ratio) setSelectedRatio(genCfg.ratio || subject.ratio);
+      if (genCfg.resolution || genCfg.size || subject.resolution) {
+        setSelectedResolution(genCfg.resolution || genCfg.size || subject.resolution);
       }
+
+      // ── 候选图列表（SubjectImageResponse[]） ─────────────────────
+      // 字段：id, image_url, is_primary
+      const candidateImgs = Array.isArray(detailRes.candidate_images) ? detailRes.candidate_images : [];
+      const candidateMapped = candidateImgs.map((img) => ({
+        id: img.id,
+        rawUrl: img.image_url,
+        url: normalizeImageUrl(img.image_url),
+        settled: img.is_primary ?? false,
+        isReference: false,
+      }));
+
+      // ── 手动上传的图（SubjectReferenceImage[]）也放入右侧列表 ────
+      // 字段：asset_id, file_url, name, is_primary
+      // 注意：不写入 refImageIds，参考图字段由用户在本次 session 手动选择，不从后端自动填充
+      const refImgs = Array.isArray(detailRes.reference_images) ? detailRes.reference_images : [];
+      const refMapped = refImgs.map((img) => ({
+        id: img.asset_id,
+        rawUrl: img.file_url,
+        url: normalizeImageUrl(img.file_url),
+        settled: img.is_primary ?? false,
+        isReference: true,
+      }));
+
+      // 合并，候选图在前，手动上传在后，去重
+      const seen = new Set();
+      let finalImages = [...candidateMapped, ...refMapped].filter((img) => {
+        if (!img.id || seen.has(img.id)) return false;
+        seen.add(img.id);
+        return true;
+      });
 
       // 检查是否有进行中/已完成的跨弹窗生成
       const pending = pendingGenerations.get(char.id);
-      if (pending) {
-        if (pending.status === 'pending') {
-          // 生成中：在列表最前面插入加载占位
-          finalImages.unshift({ url: null, settled: false, id: pending.placeholderId });
-        } else if (pending.status === 'done') {
-          // 弹窗关闭期间生成完成：在列表最前面插入结果图
-          finalImages.unshift({
-            rawUrl: pending.rawUrl,
-            url: normalizeImageUrl(pending.rawUrl),
-            settled: false,
-            id: pending.placeholderId,
-          });
-          pendingGenerations.delete(char.id);
-        }
+      if (pending?.status === 'pending') {
+        finalImages.unshift({ url: null, settled: false, id: pending.placeholderId, isReference: false });
+      } else if (pending?.status === 'done') {
+        finalImages.unshift({
+          rawUrl: pending.rawUrl,
+          url: normalizeImageUrl(pending.rawUrl),
+          settled: false,
+          id: pending.placeholderId,
+          isReference: false,
+        });
+        pendingGenerations.delete(char.id);
       }
 
       if (finalImages.length > 0) {
         setGeneratedImages(finalImages);
       } else if (char?.imageUrl) {
         // 兜底用 char 的封面图
-        setGeneratedImages([{ rawUrl: char.imageUrl, url: normalizeImageUrl(char.imageUrl), settled: true, id: char.imageUrl }]);
+        setGeneratedImages([{ rawUrl: char.imageUrl, url: normalizeImageUrl(char.imageUrl), settled: true, id: char.imageUrl, isReference: false }]);
       } else {
         setGeneratedImages([]);
       }
 
       setDetailLoaded(true);
 
-      // 将后端返回的定稿图同步到卡片封面（修复刷新后定稿不显示在卡片上的 BUG）
-      const _settledImg = finalImages.find(img => img.settled && img.rawUrl);
+      // 将后端返回的定稿图同步到卡片封面
+      const _settledImg = finalImages.find((img) => img.settled && img.rawUrl);
       if (_settledImg) {
         setPrimaryImageUrl(_settledImg.rawUrl);
         setPrimaryImageId(_settledImg.id);
-        if (onCoverChange) {
-          onCoverChange(_settledImg.rawUrl);
-        }
+        onCoverChange?.(_settledImg.rawUrl);
       }
     })();
 
@@ -1999,13 +2022,40 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', projectRatio, 
           <ImageItemUpload
             projectId={projectId}
             onUpload={(fileOrId) => {
-              if (typeof fileOrId !== 'string') {
-                const url = URL.createObjectURL(fileOrId);
-                setGeneratedImages((prev) => [{ rawUrl: url, url, settled: false, id: url }, ...prev]);
-              } else if (fileOrId?.url) {
-                // 从资产库选择的图片，有 url 属性
-                const raw = fileOrId.url || fileOrId.file_url;
-                setGeneratedImages((prev) => [{ rawUrl: raw, url: normalizeImageUrl(raw), settled: false, id: fileOrId.id || raw }, ...prev]);
+              // 从资产库选择的资产对象（有 id 和 url 属性）
+              if (fileOrId && typeof fileOrId === 'object' && fileOrId.id) {
+                const raw = fileOrId.url || fileOrId.file_url || fileOrId.fileUrl;
+                setGeneratedImages((prev) => [{ rawUrl: raw, url: normalizeImageUrl(raw), settled: false, id: fileOrId.id, isReference: true }, ...prev]);
+                // 绑定资产到主体
+                if (projectId && char?.id) {
+                  apiBindSubjectReferenceImages(projectId, char.id, { asset_ids: [fileOrId.id] }).catch((err) => {
+                    console.error('[SubjectPage] 绑定资产到主体失败:', err);
+                  });
+                }
+              } else if (fileOrId instanceof File) {
+                // 本地上传：先用 blob URL 占位，上传完成后替换为真实 asset_id + file_url
+                const blobUrl = URL.createObjectURL(fileOrId);
+                const tempId = `upload-${Date.now()}`;
+                setGeneratedImages((prev) => [{ rawUrl: blobUrl, url: blobUrl, settled: false, id: tempId, isReference: true }, ...prev]);
+                // 上传到后端，返回 SubjectReferenceImage { asset_id, file_url, name }
+                if (projectId && char?.id) {
+                  apiUploadSubjectReferenceImage(projectId, char.id, fileOrId)
+                    .then((res) => {
+                      // res: SubjectReferenceImage
+                      const realId = res?.asset_id;
+                      const realUrl = res?.file_url;
+                      setGeneratedImages((prev) => prev.map((img) =>
+                        img.id === tempId
+                          ? { ...img, id: realId || tempId, rawUrl: realUrl || blobUrl, url: normalizeImageUrl(realUrl || blobUrl) }
+                          : img
+                      ));
+                    })
+                    .catch((err) => {
+                      console.error('[SubjectPage] 上传参考图失败:', err);
+                      // 上传失败时移除占位
+                      setGeneratedImages((prev) => prev.filter((img) => img.id !== tempId));
+                    });
+                }
               }
             }}
           />
@@ -2027,14 +2077,24 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', projectRatio, 
                 }
               }}
               onSettledChange={(newSettled) => {
-                // 先处理副作用（通知父组件 + 调后端接口），放在 setState 外部
                 if (newSettled) {
                   onCoverChange?.(img?.rawUrl ?? img?.url ?? null);
-                  // 仅当 ID 不是前端占位符时才调后端接口
+                  // 只有真实 ID（非前端占位符）才调后端
                   if (img.id && !String(img.id).startsWith('generated-')) {
-                    apiSetPrimarySubjectImage(projectId, char.id, img.id).catch((err) => {
-                      console.error('[SubjectPage] 设置定稿图失败:', err);
-                    });
+                    if (img.isReference) {
+                      // 参考图：通过 bind 接口把该资产设为 primary
+                      apiBindSubjectReferenceImages(projectId, char.id, {
+                        asset_ids: [img.id],
+                        primary_asset_id: img.id,
+                      }).catch((err) => {
+                        console.error('[SubjectPage] 设置参考图为定稿失败:', err);
+                      });
+                    } else {
+                      // 候选图：set-primary 接口
+                      apiSetPrimarySubjectImage(projectId, char.id, img.id).catch((err) => {
+                        console.error('[SubjectPage] 设置定稿图失败:', err);
+                      });
+                    }
                   }
                 }
 
@@ -2849,7 +2909,6 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
           onVoicesLoaded={setVoiceList}
           onConfirm={async (voiceId) => {
             const normalizedVoiceId = voiceId || null;
-            console.log('[VoiceSelect] 确认音色:', { projectId, subjectId: voiceModalChar?.id, voiceId, normalizedVoiceId });
             try {
               await apiUpdateSubject(projectId, voiceModalChar.id, { voice_id: normalizedVoiceId });
               setCharVoices((prev) => ({ ...prev, [voiceModalChar.id]: normalizedVoiceId }));

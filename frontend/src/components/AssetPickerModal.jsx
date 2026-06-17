@@ -181,6 +181,11 @@ export default function AssetPickerModal({
   const [favOnly, setFavOnly] = useState(false);
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState(new Set());
+
+  // 每次弹窗关闭时清空选中状态，下次打开时从零开始
+  useEffect(() => {
+    if (!open) setSelected(new Set());
+  }, [open]);
   const [searchFocused, setSearchFocused] = useState(false);
   const [hoveredCard, setHoveredCard] = useState(null);
   const [closeHovered, setCloseHovered] = useState(false);
@@ -221,7 +226,8 @@ export default function AssetPickerModal({
   // 拉取或切换项目资产
   useEffect(() => {
     if (!open) return;
-    const pullProjectId = projectId || activeProjectId;
+    // activeProjectId 优先：允许用户在弹窗内切换到不同项目
+    const pullProjectId = activeProjectId || projectId;
     if (!pullProjectId) return;
     (async () => {
       try {
@@ -257,11 +263,10 @@ export default function AssetPickerModal({
           }
         });
 
-        const fullMap = { [pullProjectId]: grouped };
-        setApiAssetsMap(fullMap);
+        setApiAssetsMap(prev => ({ ...prev, [pullProjectId]: grouped }));
       } catch (err) {
         console.error('[AssetPickerModal] 拉取项目资产失败:', err);
-        setApiAssetsMap({});
+        setApiAssetsMap(prev => ({ ...prev }));
       } finally {
         setAssetsLoading(false);
       }
