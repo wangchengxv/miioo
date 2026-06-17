@@ -1269,23 +1269,63 @@ export default function ApiConfigModal({ open, onClose, onConfigured }) {
   // const updateCustomProviderDraft = (field, value) =>
   //   setState((current) => ({ ...current, customProviderDraft: { ...current.customProviderDraft, [field]: value } }));
 
-  const openOneLinkConfig = () => setState((current) => ({ ...current, childView: 'onelink-config' }));
+  const openOneLinkConfig = () => {
+    // 打开配置弹窗时重新拉取最新的模型列表
+    loadModelsFromBackend();
+    setState((current) => ({ ...current, childView: 'onelink-config' }));
+  };
 
   const openOtherProviderConfig = (providerId) => {
     const provider = state.otherProviders.find(p => p.id === providerId);
     if (!provider) return;
-    setState(current => ({
-      ...current,
-      activeOtherProviderId: providerId,
-      editProviderApiKey: provider.apiKeyMasked,
-      editProviderApiKeyActual: provider.apiKeyMasked,
-      editProviderKeyIsFromServer: provider.configured,
-      editProviderApiTested: provider.configured,
-      editProviderModelsByTab: provider.modelsByTab,
-      editProviderModelDraft: createEmptyModelDraft(),
-      childView: 'other-provider-config',
-      activeModelTab: '对话模型',
-    }));
+
+    // 打开配置弹窗时重新拉取该 provider 的最新模型列表
+    if (provider.configured) {
+      apiListModels().then((models) => {
+        if (!models || !models.length) return;
+        const providerModels = models.filter(m => m.provider_id === providerId);
+        const modelsByTab = createEmptyModelsByTab();
+        providerModels.forEach(model => {
+          const tab = getCategoryTab(model.category);
+          if (!tab) return;
+          modelsByTab[tab].push({
+            id: model.id,
+            name: model.name || model.model_id,
+            description: model.description || MODEL_DESCRIPTION,
+            enabled: model.is_enabled ?? false,
+            isDefault: model.is_default ?? false,
+            modelId: model.model_id,
+          });
+        });
+        setState(current => ({
+          ...current,
+          activeOtherProviderId: providerId,
+          editProviderApiKey: provider.apiKeyMasked,
+          editProviderApiKeyActual: provider.apiKeyMasked,
+          editProviderKeyIsFromServer: provider.configured,
+          editProviderApiTested: provider.configured,
+          editProviderModelsByTab: Object.fromEntries(
+            Object.entries(modelsByTab).map(([tab, list]) => [tab, sortModels(list)])
+          ),
+          editProviderModelDraft: createEmptyModelDraft(),
+          childView: 'other-provider-config',
+          activeModelTab: '对话模型',
+        }));
+      }).catch(err => console.error('加载模型列表失败:', err));
+    } else {
+      setState(current => ({
+        ...current,
+        activeOtherProviderId: providerId,
+        editProviderApiKey: provider.apiKeyMasked,
+        editProviderApiKeyActual: provider.apiKeyMasked,
+        editProviderKeyIsFromServer: provider.configured,
+        editProviderApiTested: provider.configured,
+        editProviderModelsByTab: provider.modelsByTab,
+        editProviderModelDraft: createEmptyModelDraft(),
+        childView: 'other-provider-config',
+        activeModelTab: '对话模型',
+      }));
+    }
   };
 
   // 通过 card_key 打开未配置服务商的配置页
@@ -1296,14 +1336,45 @@ export default function ApiConfigModal({ open, onClose, onConfigured }) {
   };
 
   const saveOtherProviderConfig = () => {
-    setState(current => {
-      const updatedOtherProviders = current.otherProviders.map(p =>
-        p.id === current.activeOtherProviderId
-          ? { ...p, modelsByTab: current.editProviderModelsByTab }
-          : p
-      );
-      return { ...current, otherProviders: updatedOtherProviders, childView: null };
-    });
+    // 保存时刷新该 provider 的模型列表以同步最新状态
+    const providerId = state.activeOtherProviderId;
+    if (providerId) {
+      apiListModels().then((models) => {
+        if (!models || !models.length) return;
+        const providerModels = models.filter(m => m.provider_id === providerId);
+        if (providerModels.length === 0) return;
+        setState(current => {
+          const modelsByTab = createEmptyModelsByTab();
+          providerModels.forEach(model => {
+            const tab = getCategoryTab(model.category);
+            if (!tab) return;
+            modelsByTab[tab].push({
+              id: model.id,
+              name: model.name || model.model_id,
+              description: model.description || MODEL_DESCRIPTION,
+              enabled: model.is_enabled ?? false,
+              isDefault: model.is_default ?? false,
+              modelId: model.model_id,
+            });
+          });
+          const updatedOtherProviders = current.otherProviders.map(p =>
+            p.id === providerId
+              ? { ...p, modelsByTab: Object.fromEntries(
+                  Object.entries(modelsByTab).map(([tab, list]) => [tab, sortModels(list)])
+                )}
+              : p
+          );
+          return {
+            ...current,
+            otherProviders: updatedOtherProviders,
+            editProviderModelsByTab: Object.fromEntries(
+              Object.entries(modelsByTab).map(([tab, list]) => [tab, sortModels(list)])
+            ),
+            childView: null,
+          };
+        });
+      }).catch(err => console.error('刷新模型列表失败:', err));
+    }
   };
 
   const toggleOtherProvider = (providerId) => {
@@ -1546,6 +1617,8 @@ export default function ApiConfigModal({ open, onClose, onConfigured }) {
   };
 
   const saveOneLinkConfig = () => {
+    // 保存时刷新模型列表以同步最新状态
+    loadModelsFromBackend();
     setState((current) => ({ ...current, mainConfigured: true, onelinkEnabled: true, childView: null }));
     onConfigured?.();
   };
