@@ -2313,7 +2313,7 @@ function GenerateImagePanel({ shot, projectId, chars = [], scenes = [], props = 
   );
 }
 
-function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scenes = [], props = [], onClose, onGenerate, onShowToast, onSettleVideo }) {
+function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scenes = [], props = [], onClose, onGenerate, onShowToast, onSettleVideo, generatedVideos = [], onSetGeneratedVideos }) {
   // 生成方式 Tab：'all' 全能参考 | 'frame' 首尾帧
   const [tab, setTab] = useState('all');
   const [modelList, setModelList] = useState([]);
@@ -2400,7 +2400,6 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
   const [loading, setLoading] = useState(false);
   const [btnHov, setBtnHov] = useState(false);
   const [btnPressed, setBtnPressed] = useState(false);
-  const [generatedVideos, setGeneratedVideos] = useState([]);
   const [viewerShot, setViewerShot] = useState(null);
 
   // 获取当前模型支持的参数（优先从后端 capabilities 派生）
@@ -2514,7 +2513,7 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
     if (loading) return;
     setLoading(true);
     const placeholder = `pending-${Date.now()}`;
-    setGeneratedVideos((prev) => [{ url: null, settled: false, id: placeholder }, ...prev]);
+    onSetGeneratedVideos?.((prev) => [{ url: null, settled: false, id: placeholder }, ...prev]);
     try {
       // 收集参考媒体（仅用户手动上传的参考图，不自动附带主体参考图避免误触模型限制）
       const maxRefImages = currentVideoModel?.capabilities?.max_reference_images ?? null;
@@ -2533,12 +2532,12 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
         reference_video_url: refVideo?.url,
         reference_audio_url: refAudio?.url,
       });
-      setGeneratedVideos((prev) =>
+      onSetGeneratedVideos?.((prev) =>
         prev.map((item) => item.id === placeholder ? { ...item, url: result?.url ?? null } : item)
       );
       onShowToast?.('视频生成成功', 'success');
     } catch (err) {
-      setGeneratedVideos((prev) => prev.filter((item) => item.id !== placeholder));
+      onSetGeneratedVideos?.((prev) => prev.filter((item) => item.id !== placeholder));
       const status = err?.status;
       const msg = err?.message || '';
       if (status === 502 || status === 504 || msg.includes('fetch') || msg.includes('Network')) {
@@ -2759,7 +2758,7 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
                 try {
                   const result = await apiUploadStoryboardVideo(projectId, shot.id, file);
                   const videoUrl = result.video_url || result.videoUrl;
-                  if (videoUrl) { const nu = normalizeImageUrl(videoUrl); setGeneratedVideos((prev) => [{ url: nu, settled: true, id: result.id || nu }, ...prev]); onSettleVideo?.(nu); }
+                  if (videoUrl) { const nu = normalizeImageUrl(videoUrl); onSetGeneratedVideos?.((prev) => [{ url: nu, settled: true, id: result.id || nu }, ...prev]); onSettleVideo?.(nu); }
                 } catch {
                   onShowToast?.('视频上传失败，请重试', 'error');
                 }
@@ -2769,7 +2768,7 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
                   const url = normalizeImageUrl(a.thumbnailUrl || a.thumbnail_url || a.originalUrl || a.original_url || a.file_url || a.url);
                   return url ? { url, settled: true, id: a.id || a.asset_id || url } : null;
                 }).filter(Boolean);
-                setGeneratedVideos(prev => [...newItems, ...prev]);
+                onSetGeneratedVideos?.(prev => [...newItems, ...prev]);
                 if (newItems.length > 0) onSettleVideo?.(newItems[0].url);
               }}
             />
@@ -2779,7 +2778,7 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
                 videoUrl={vid.url}
                 settled={vid.settled}
                 onSettledChange={(newSettled) => {
-                  setGeneratedVideos((prev) =>
+                  onSetGeneratedVideos?.((prev) =>
                     prev.map((item, idx) => idx === i ? { ...item, settled: newSettled } : { ...item, settled: newSettled ? false : item.settled })
                   );
                   if (newSettled && vid.url) onSettleVideo?.(vid.url);
@@ -5361,6 +5360,7 @@ export default function StoryboardPage({ serverReachable, projectId, projectName
   const [imagePanel, setImagePanel] = useState(null); // { shot }
   const [videoPanel, setVideoPanel] = useState(null); // { shot }
   const [genImageHistoryMap, setGenImageHistoryMap] = useState({}); // { [shotId]: generatedImages[] }
+  const [genVideoHistoryMap, setGenVideoHistoryMap] = useState({}); // { [shotId]: generatedVideos[] }
 
   // 页面加载时从后端获取剧本数据
   useEffect(() => {
@@ -5978,8 +5978,40 @@ export default function StoryboardPage({ serverReachable, projectId, projectName
             onDragStart={() => setDragId(shot.id)}
             onDragOver={() => { if (dragId && dragId !== shot.id) setOverId(shot.id); }}
             onDrop={() => handleDrop(shot.id)}
-            onGenerateImage={() => setImagePanel({ shot })}
-            onGenerateVideo={() => setVideoPanel({ shot, nextShot: shots[idx + 1] ?? null })}
+            onGenerateImage={() => {
+              // 打开面板前，检查历史列表是否已初始化，若为空则用定稿结果初始化
+              setGenImageHistoryMap((prev) => {
+                const shotId = shot.id;
+                if (!prev[shotId] || prev[shotId].length === 0) {
+                  const initialized = { ...prev };
+                  if (shot.storyboardImage?.url) {
+                    initialized[shotId] = [{ url: shot.storyboardImage.url, settled: true, id: shot.storyboardImage.id }];
+                  } else {
+                    initialized[shotId] = [];
+                  }
+                  return initialized;
+                }
+                return prev;
+              });
+              setImagePanel({ shot });
+            }}
+            onGenerateVideo={() => {
+              // 打开面板前，检查历史列表是否已初始化，若为空则用定稿结果初始化
+              setGenVideoHistoryMap((prev) => {
+                const shotId = shot.id;
+                if (!prev[shotId] || prev[shotId].length === 0) {
+                  const initialized = { ...prev };
+                  if (shot.storyboardVideo?.url) {
+                    initialized[shotId] = [{ url: shot.storyboardVideo.url, settled: true, id: shot.storyboardVideo.id }];
+                  } else {
+                    initialized[shotId] = [];
+                  }
+                  return initialized;
+                }
+                return prev;
+              });
+              setVideoPanel({ shot, nextShot: shots[idx + 1] ?? null });
+            }}
             globalVoiceParams={globalVoiceParams}
             onSaveGlobalVoice={(role, params) => setGlobalVoiceParams((prev) => ({ ...prev, [role]: params }))}
             generatingImage={generatingImageShotIds.has(shot.id)}
@@ -6123,6 +6155,14 @@ export default function StoryboardPage({ serverReachable, projectId, projectName
         chars={chars}
         scenes={scenes}
         props={props}
+        generatedVideos={genVideoHistoryMap[videoPanel.shot?.id] ?? []}
+        onSetGeneratedVideos={(updater) => {
+          const shotId = videoPanel.shot?.id;
+          setGenVideoHistoryMap((prev) => ({
+            ...prev,
+            [shotId]: typeof updater === 'function' ? updater(prev[shotId] ?? []) : updater,
+          }));
+        }}
         onClose={() => setVideoPanel(null)}
         onShowToast={showToast}
         onSettleVideo={(videoUrl) => {
