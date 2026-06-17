@@ -456,6 +456,368 @@ const MOCK_SHOT_VIDEO_DETAIL = {
   ],
 };
 
+// 主体资产详情弹窗 — 图片列表（角色/场景/道具的多张图聚合）
+function SubjectAssetDetailModal({ onClose, onDownload, onDeleteImage, name, description, images }) {
+  const imgs = images ?? [];
+  const defaultIdx = imgs.findIndex((img) => img.is_primary);
+  const [activeImg, setActiveImg] = useState(defaultIdx >= 0 ? defaultIdx : 0);
+  const [hovClose, setHovClose] = useState(false);
+  const [hovDownload, setHovDownload] = useState(false);
+  const [hovDelete, setHovDelete] = useState(false);
+  const [pressDelete, setPressDelete] = useState(false);
+  const [hovThumb, setHovThumb] = useState(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  const currentImg = imgs[activeImg];
+  const isPrimary = currentImg?.is_primary ?? false;
+  const refImages = currentImg?.refImages ?? [];
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        inset: 0,
+        zIndex: 200,
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'center',
+        backgroundColor: 'rgba(0,0,0,0.6)',
+        backdropFilter: 'blur(12px)',
+        WebkitBackdropFilter: 'blur(12px)',
+      }}
+      onClick={onClose}
+    >
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          width: '960px',
+          height: '600px',
+          borderRadius: '16px',
+          overflow: 'hidden',
+          boxShadow: '#00000099 -10px 24px 64px',
+          backgroundColor: '#161616',
+          border: '1px solid #FFFFFF14',
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          flexShrink: 0,
+          paddingTop: '20px',
+          paddingBottom: '20px',
+          paddingLeft: '24px',
+          paddingRight: '24px',
+          backgroundColor: '#161616',
+        }}>
+          <span style={{ fontFamily: FONT_MEDIUM, fontWeight: 500, fontSize: '16px', lineHeight: '20px', letterSpacing: '0.01em', color: '#FFFFFF' }}>查看详情</span>
+          <button
+            type="button"
+            style={{
+              width: '28px', height: '28px', display: 'flex', alignItems: 'center', justifyContent: 'center',
+              background: hovClose ? '#FFFFFF14' : 'transparent', border: 'none', cursor: 'pointer',
+              borderRadius: '6px', padding: 0, flexShrink: 0, transition: 'background 0.12s',
+            }}
+            onMouseEnter={() => setHovClose(true)}
+            onMouseLeave={() => setHovClose(false)}
+            onClick={onClose}
+          >
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+              <path d="M12 4L4 12M4 4L12 12" stroke="#FFFFFF99" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+          </button>
+        </div>
+
+        {/* Body */}
+        <div style={{ display: 'flex', height: '500px', flex: 1 }}>
+          {/* Left: preview + thumbnails */}
+          <div style={{ display: 'flex', flexDirection: 'column', flexGrow: 1, flexShrink: 1, flexBasis: '0%', minWidth: 0, minHeight: 0, backgroundColor: '#0D0D0D' }}>
+            {/* Main image */}
+            <div style={{ flexGrow: 1, flexShrink: 1, flexBasis: '0%', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 0, position: 'relative', backgroundColor: '#0A0A0A' }}>
+              <div style={{
+                position: 'absolute',
+                inset: '35px',
+                backgroundImage: `url(${currentImg?.fileUrl ?? currentImg?.url ?? 'https://app.paper.design/static/flowers.webp'})`,
+                backgroundSize: 'cover',
+                backgroundPosition: '50%',
+                transition: 'background-image 0.15s',
+              }} />
+            </div>
+
+            {/* Ref images strip — if exist */}
+            {refImages.length > 0 && (
+              <div style={{
+                flexShrink: 0,
+                paddingTop: '12px', paddingBottom: '12px', paddingLeft: '16px', paddingRight: '16px',
+                backgroundColor: '#111111',
+                borderTop: '1px solid #FFFFFF0A',
+              }}>
+                <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                  <span style={{ fontFamily: FONT, fontSize: '12px', color: '#FFFFFF99', flexShrink: 0, whiteSpace: 'nowrap' }}>参考图：</span>
+                  <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', flex: 1, minWidth: 0 }}>
+                    {refImages.map((ref, idx) => (
+                      <div
+                        key={idx}
+                        style={{
+                          borderRadius: '4px', overflow: 'hidden',
+                          width: '80px', height: '56px', flexShrink: 0,
+                          backgroundColor: '#FFFFFF14',
+                          border: '1px solid #FFFFFF33',
+                          backgroundImage: `url(${ref.url})`,
+                          backgroundSize: 'cover', backgroundPosition: '50%',
+                        }}
+                        title={ref.title}
+                      />
+                    ))}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* Thumbnails strip */}
+            <div style={{
+              flexShrink: 0,
+              paddingTop: '14px', paddingBottom: '16px', paddingLeft: '16px', paddingRight: '16px',
+              backgroundColor: '#111111',
+            }}>
+              <div style={{ display: 'flex', gap: '12px', overflowX: 'auto', alignItems: 'center' }}>
+                {imgs.map((img, idx) => {
+                  const isActive = activeImg === idx;
+                  const isHov = hovThumb === idx;
+                  return (
+                    <div
+                      key={img.id}
+                      style={{
+                        position: 'relative',
+                        borderRadius: '6px', overflow: 'hidden',
+                        width: '120px', height: '84px', flexShrink: 0,
+                        boxShadow: isActive ? '#2DC3E166 0px 0px 10px 1px' : 'none',
+                        backgroundColor: '#FFFFFF14',
+                        border: isActive ? '1px solid #2DC3E1' : '1px solid #FFFFFF33',
+                        cursor: 'pointer',
+                        transition: 'border-color 0.15s, box-shadow 0.15s',
+                      }}
+                      onClick={() => setActiveImg(idx)}
+                      onMouseEnter={() => setHovThumb(idx)}
+                      onMouseLeave={() => setHovThumb(null)}
+                    >
+                      <div style={{
+                        width: '100%', height: '100%',
+                        backgroundImage: `url(${img.url ?? 'https://app.paper.design/static/flowers.webp'})`,
+                        backgroundSize: 'cover', backgroundPosition: '50%',
+                      }} />
+                      {/* Primary badge */}
+                      {img.is_primary && (
+                        <div style={{
+                          position: 'absolute', top: '4px', left: '4px',
+                          paddingLeft: '4px', paddingRight: '4px', paddingTop: '2px', paddingBottom: '2px',
+                          borderRadius: '2px', backgroundColor: '#4AC981',
+                          boxShadow: '#FFFFFF14 0px 0px 0px 1px inset',
+                          height: '18px',
+                          display: 'flex',
+                          alignItems: 'center',
+                        }}>
+                          <span style={{ fontFamily: FONT, fontSize: '10px', lineHeight: '14px', color: '#0A0A0A', fontWeight: 500 }}>定稿</span>
+                        </div>
+                      )}
+                      {/* Hover overlay */}
+                      {isHov && (
+                        <div style={{
+                          position: 'absolute', bottom: 0, left: 0, right: 0,
+                          paddingTop: '8px', paddingBottom: '4px', paddingLeft: '4px', paddingRight: '4px',
+                          display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px',
+                          backgroundImage: 'linear-gradient(in oklab 180deg, oklab(0% 0 0 / 0%) 0%, oklab(0% 0 0 / 80%) 100%)',
+                        }}>
+                          <div style={{ display: 'flex', alignItems: 'center', padding: '2px', cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); setActiveImg(idx); }} title="切换">
+                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+                              <path d="M5.333 2H2.667C2.298 2 2 2.298 2 2.667V5.333" stroke="#FFFFFF" strokeLinejoin="round" />
+                              <path d="M5.333 14H2.667C2.298 14 2 13.701 2 13.333V10.667" stroke="#FFFFFF" strokeLinejoin="round" />
+                              <path d="M10.667 14H13.333C13.701 14 14 13.701 14 13.333V10.667" stroke="#FFFFFF" strokeLinejoin="round" />
+                              <path d="M10.667 2H13.333C13.701 2 14 2.298 14 2.667V5.333" stroke="#FFFFFF" strokeLinejoin="round" />
+                            </svg>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+
+          {/* Right: info panel */}
+          <div style={{
+            width: '280px', display: 'flex', flexDirection: 'column',
+            minHeight: 0, flexShrink: 0,
+            backgroundColor: '#161616', borderLeft: '1px solid #FFFFFF0F',
+          }}>
+            {/* Scrollable content */}
+            <div style={{ flexGrow: 1, flexShrink: 1, flexBasis: '0%', overflowY: 'auto', minHeight: 0 }}>
+              {/* Primary status */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px' }}>
+                <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFF99' }}>是否定稿</span>
+                {isPrimary ? (
+                  <div style={{
+                    paddingLeft: '4px', paddingRight: '4px', paddingTop: '2px', paddingBottom: '2px',
+                    borderRadius: '2px', backgroundColor: '#4AC981',
+                    boxShadow: '#FFFFFF14 0px 0px 0px 1px inset',
+                    height: '18px',
+                    display: 'flex',
+                    alignItems: 'center',
+                  }}>
+                    <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '14px', color: '#0A0A0A', fontWeight: 500 }}>定稿</span>
+                  </div>
+                ) : (
+                  <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: '#FFFFFF66' }}>否</span>
+                )}
+              </div>
+
+              <div style={{ height: '1px', backgroundColor: '#FFFFFF0A', marginLeft: '20px', marginRight: '20px' }} />
+
+              {/* Name + description */}
+              <div style={{ display: 'flex', flexDirection: 'column', paddingTop: '16px', paddingBottom: '16px', paddingLeft: '20px', paddingRight: '20px', gap: '8px' }}>
+                <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '20px', letterSpacing: '0.01em', color: '#FFFFFF' }}>{name}</span>
+                {description && (
+                  <p style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '20px', letterSpacing: '0.01em', color: '#FFFFFFCC', margin: 0 }}>{description}</p>
+                )}
+              </div>
+
+              {/* Prompt */}
+              {currentImg?.prompt && (
+                <>
+                  <div style={{ height: '1px', backgroundColor: '#FFFFFF0A', marginLeft: '20px', marginRight: '20px' }} />
+                  <div style={{ display: 'flex', flexDirection: 'column', paddingTop: '16px', paddingBottom: '16px', paddingLeft: '20px', paddingRight: '20px', gap: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                      <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>提示词</span>
+                      <button
+                        type="button"
+                        style={{
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          width: '24px', height: '24px', borderRadius: '4px',
+                          background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+                          opacity: 0.6, transition: 'opacity 0.12s',
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+                        onMouseLeave={(e) => e.currentTarget.style.opacity = '0.6'}
+                        onClick={() => {
+                          navigator.clipboard.writeText(currentImg.prompt);
+                        }}
+                        title="复制提示词"
+                      >
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+                          <path d="M4.33337 4.14383V2.60413C4.33337 2.08636 4.75311 1.66663 5.27087 1.66663H13.3959C13.9136 1.66663 14.3334 2.08636 14.3334 2.60413V10.7291C14.3334 11.2469 13.9136 11.6666 13.3959 11.6666H11.8388" stroke="white" strokeOpacity="0.6" strokeLinecap="round" strokeLinejoin="round"/>
+                          <path d="M10.7291 4.33337H2.60413C2.08636 4.33337 1.66663 4.75311 1.66663 5.27087V13.3959C1.66663 13.9136 2.08636 14.3334 2.60413 14.3334H10.7291C11.2469 14.3334 11.6666 13.9136 11.6666 13.3959V5.27087C11.6666 4.75311 11.2469 4.33337 10.7291 4.33337Z" stroke="white" strokeOpacity="0.6" strokeLinejoin="round"/>
+                        </svg>
+                      </button>
+                    </div>
+                    <p style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '20px', letterSpacing: '0.01em', color: '#FFFFFFCC', margin: 0 }}>{currentImg.prompt}</p>
+                  </div>
+                </>
+              )}
+
+              {/* Generation params */}
+              {(currentImg?.model || currentImg?.ratio || currentImg?.resolution) && (
+                <>
+                  <div style={{ height: '1px', backgroundColor: '#FFFFFF0A', marginLeft: '20px', marginRight: '20px' }} />
+                  <div style={{ display: 'flex', flexDirection: 'column', paddingTop: '16px', paddingBottom: '16px', paddingLeft: '20px', paddingRight: '20px', gap: '12px' }}>
+                    <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>生成参数</span>
+                    {[
+                      { label: '模型', value: currentImg.model },
+                      { label: '画面比例', value: currentImg.ratio },
+                      { label: '分辨率', value: currentImg.resolution },
+                    ].filter(({ value }) => value).map(({ label, value }) => (
+                      <div key={label} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFF99' }}>{label}</span>
+                        <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFFCC' }}>{value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+
+              {/* Created time */}
+              {currentImg?.created_at && (
+                <>
+                  <div style={{ height: '1px', backgroundColor: '#FFFFFF0A', marginLeft: '20px', marginRight: '20px' }} />
+                  <div style={{ display: 'flex', flexDirection: 'column', paddingTop: '16px', paddingBottom: '16px', paddingLeft: '20px', paddingRight: '20px', gap: '4px' }}>
+                    <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>创建时间</span>
+                    <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFF66' }}>{currentImg.created_at}</span>
+                  </div>
+                </>
+              )}
+            </div>
+
+            {/* Sticky buttons */}
+            <div style={{ flexShrink: 0, paddingTop: '12px', paddingBottom: '20px', paddingLeft: '20px', paddingRight: '20px', borderTop: '1px solid #FFFFFF0A', display: 'flex', gap: '8px' }}>
+              {imgs.length > 1 && (
+                <button
+                  type="button"
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    flex: 1, height: '40px', borderRadius: '8px', gap: '8px',
+                    backgroundColor: pressDelete ? '#FFFFFF26' : hovDelete ? '#FFFFFF1F' : '#FFFFFF14',
+                    border: '1px solid #FFFFFF1F', cursor: 'pointer', transition: 'background-color 0.12s',
+                    opacity: pressDelete ? 0.8 : 1,
+                  }}
+                  onMouseEnter={() => setHovDelete(true)}
+                  onMouseLeave={() => { setHovDelete(false); setPressDelete(false); }}
+                  onMouseDown={() => setPressDelete(true)}
+                  onMouseUp={() => setPressDelete(false)}
+                  onClick={() => setShowDeleteConfirm(true)}
+                >
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ flexShrink: 0 }}>
+                    <path d="M2.333 3.667V12.333C2.333 12.784 2.716 13.167 3.167 13.167H10.833C11.284 13.167 11.667 12.784 11.667 12.333V3.667" stroke="#FF6B6B" strokeLinejoin="round" />
+                    <path d="M5.333 6V10.667" stroke="#FF6B6B" strokeLinecap="round" />
+                    <path d="M8.667 6V10.667" stroke="#FF6B6B" strokeLinecap="round" />
+                    <path d="M1 3.667H13" stroke="#FF6B6B" strokeLinecap="round" />
+                    <path d="M4.333 3.667L5.15 1.333H8.85L9.667 3.667" stroke="#FF6B6B" strokeLinejoin="round" />
+                  </svg>
+                  <span style={{ fontFamily: FONT, fontSize: '13px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FF6B6B' }}>删除</span>
+                </button>
+              )}
+              <button
+                type="button"
+                style={{
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  flex: 1, height: '40px', borderRadius: '8px', gap: '8px',
+                  backgroundColor: hovDownload ? '#FFFFFF1F' : '#FFFFFF14',
+                  border: '1px solid #FFFFFF1F', cursor: 'pointer', transition: 'background-color 0.12s',
+                }}
+                onMouseEnter={() => setHovDownload(true)}
+                onMouseLeave={() => setHovDownload(false)}
+                onClick={() => onDownload?.(currentImg.id, currentImg.fileUrl)}
+              >
+                <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ flexShrink: 0 }}>
+                  <path d="M7 2V9M7 9L4 6.5M7 9L10 6.5M2 11H12" stroke="#FFFFFF99" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+                </svg>
+                <span style={{ fontFamily: FONT, fontSize: '13px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFF99' }}>下载</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Delete confirmation */}
+      {showDeleteConfirm && (
+        <ConfirmDialog
+          title="确定要删除吗？"
+          description={`删除此图片后，将无法恢复。`}
+          confirmText="删除"
+          onCancel={() => setShowDeleteConfirm(false)}
+          onConfirm={() => {
+            setShowDeleteConfirm(false);
+            onDeleteImage?.(currentImg.id);
+          }}
+          zIndex={300}
+        />
+      )}
+    </div>
+  );
+}
+
 // Props: name, description, prompt, model, ratio, resolution, images (array of {id, src, finalized})
 // images[0] should be the finalized image; default activeImg = index of first finalized image
 function AssetDetailModal({ onClose, onDownload, name, description, prompt, model, ratio, resolution, generatedAt, images }) {
@@ -1528,6 +1890,9 @@ function ProjectAssetCard({ name, desc, url, selected, batchMode, onDownload, on
   const [hov, setHov] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
 
+  const images = asset.images ?? [];
+  const imageCount = asset.imageCount ?? 1;
+
   function handleClick() {
     if (batchMode) { onSelect?.(); return; }
     setDetailOpen(true);
@@ -1579,6 +1944,22 @@ function ProjectAssetCard({ name, desc, url, selected, batchMode, onDownload, on
             </svg>
           )}
 
+          {/* Image count badge — if > 1 */}
+          {imageCount > 1 && (
+            <div style={{
+              position: 'absolute', bottom: '8px', right: '8px',
+              paddingLeft: '6px', paddingRight: '6px', paddingTop: '3px', paddingBottom: '3px',
+              borderRadius: '4px', backgroundColor: '#00000080',
+              display: 'flex', alignItems: 'center', gap: '4px',
+            }}>
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ flexShrink: 0 }}>
+                <path d="M2 1H9C9.55228 1 10 1.44772 10 2V8C10 8.55228 9.55228 9 9 9H2C1.44772 9 1 8.55228 1 8V2C1 1.44772 1.44772 1 2 1Z" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" strokeWidth="0.8" />
+                <path d="M2 4H9C9.55228 4 10 4.44772 10 5V11C10 11.5523 9.55228 12 9 12H2C1.44772 12 1 11.5523 1 11V5C1 4.44772 1.44772 4 2 4Z" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" strokeWidth="0.8" />
+              </svg>
+              <span style={{ fontFamily: FONT, fontSize: '11px', lineHeight: '14px', color: '#FFFFFF' }}>{imageCount}</span>
+            </div>
+          )}
+
           {/* top-right: batch checkbox or more menu */}
           {batchMode ? (
             <div style={{
@@ -1628,7 +2009,42 @@ function ProjectAssetCard({ name, desc, url, selected, batchMode, onDownload, on
         </div>
       </div>
 
-      {detailOpen && (
+      {/* 多图聚合详情弹窗 */}
+      {detailOpen && images.length > 0 && (
+        <SubjectAssetDetailModal
+          onClose={() => setDetailOpen(false)}
+          name={name}
+          description={desc}
+          images={images}
+          onDownload={(imageId, fileUrl) => {
+            // 下载单张图
+            const img = images.find(i => i.id === imageId);
+            if (img?.fileUrl || fileUrl) {
+              const url = fileUrl || img.fileUrl;
+              const a = document.createElement('a');
+              a.href = url;
+              a.download = `${name}_${imageId}`;
+              document.body.appendChild(a);
+              a.click();
+              document.body.removeChild(a);
+            }
+          }}
+          onDeleteImage={(imageId) => {
+            // 删除单张图
+            if (images.length === 1) {
+              // 只有一张图，等同删除整个主体
+              onDelete?.();
+            } else {
+              // 删除该图
+              onDelete?.(imageId);
+            }
+            setDetailOpen(false);
+          }}
+        />
+      )}
+
+      {/* 兼容旧逻辑：若无 images 则用原 ImageDetailModal */}
+      {detailOpen && (!images || images.length === 0) && (
         <ImageDetailModal
           card={{
             imageUrl: asset.fileUrl || asset.url || url,
@@ -2091,6 +2507,7 @@ function ProjectAssetsPanel() {
   const [renameTarget, setRenameTarget] = useState(null);
   const [renameValue, setRenameValue] = useState('');
   const [deleteTarget, setDeleteTarget] = useState(null);
+  const [batchDeleteConfirm, setBatchDeleteConfirm] = useState(false);
 
   useEffect(() => {
     apiGetProjects().then(async (list) => {
@@ -2132,17 +2549,66 @@ function ProjectAssetsPanel() {
     }));
   }
 
-  function deleteAsset(id) {
-    apiDeleteAsset(id).catch(console.error);
-    setAssetsMap((prev) => ({
-      ...prev,
-      [activeCategory]: prev[activeCategory].filter((a) => a.id !== id),
-    }));
+  function deleteAsset(id, singleImageId = null) {
+    // singleImageId 存在时表示删除单张图，否则删除整个主体
+    if (singleImageId) {
+      // 删除单张图：在该主体下移除这张图
+      apiDeleteAsset(singleImageId).catch(console.error);
+      setAssetsMap((prev) => ({
+        ...prev,
+        [activeCategory]: prev[activeCategory].map((asset) => {
+          if (asset.id === id && asset.images) {
+            const filtered = asset.images.filter((img) => img.id !== singleImageId);
+            if (filtered.length === 0) {
+              // 如果删完了该主体的所有图，则删除这个主体卡片
+              return null;
+            }
+            // 否则更新主体卡片的 images 和 imageCount
+            return {
+              ...asset,
+              images: filtered,
+              imageCount: filtered.length,
+              // 如果被删除的是定稿图，重新取第一张作为卡片封面
+              url: filtered[0]?.url || asset.url,
+            };
+          }
+          return asset;
+        }).filter(Boolean),
+      }));
+    } else {
+      // 删除整个主体：删除 images 中所有图片
+      const asset = assetsMap[activeCategory]?.find((a) => a.id === id);
+      if (asset && asset.images) {
+        apiBatchDeleteAssets(asset.images.map((img) => img.id)).catch(console.error);
+      } else {
+        apiDeleteAsset(id).catch(console.error);
+      }
+      setAssetsMap((prev) => ({
+        ...prev,
+        [activeCategory]: prev[activeCategory].filter((a) => a.id !== id),
+      }));
+    }
   }
 
   function deleteSelected() {
     const ids = [...selected];
-    apiBatchDeleteAssets(ids).catch(console.error);
+
+    // 对于主体卡片（chars/scenes/props），需要删除该主体下的所有图片
+    if (SUBJECT_CARD_CATEGORIES.has(activeCategory)) {
+      const allImageIds = [];
+      ids.forEach((cardId) => {
+        const card = assetsMap[activeCategory]?.find((a) => a.id === cardId);
+        if (card && card.images) {
+          allImageIds.push(...card.images.map((img) => img.id));
+        } else {
+          allImageIds.push(cardId);
+        }
+      });
+      apiBatchDeleteAssets(allImageIds).catch(console.error);
+    } else {
+      apiBatchDeleteAssets(ids).catch(console.error);
+    }
+
     setAssetsMap((prev) => ({
       ...prev,
       [activeCategory]: prev[activeCategory].filter((a) => !selected.has(a.id)),
@@ -2274,7 +2740,7 @@ function ProjectAssetsPanel() {
                   </svg>
                   <span style={{ fontFamily: FONT, fontSize: '14px', color: '#FFFFFF', whiteSpace: 'nowrap' }}>下载</span>
                 </GhostBtn>
-                <PlainBtn onClick={deleteSelected} danger>
+                <PlainBtn onClick={() => setBatchDeleteConfirm(true)} danger>
                   <TrashIcon color="#F75F5F" />
                   <span style={{ fontFamily: FONT, fontSize: '14px', color: '#F75F5F', whiteSpace: 'nowrap' }}>删除</span>
                 </PlainBtn>
@@ -2338,7 +2804,7 @@ function ProjectAssetsPanel() {
                 batchMode={batchMode}
                 onSelect={() => toggleSelect(asset.id)}
                 onDownload={() => downloadAsset(asset.id, asset.name)}
-                onDelete={() => deleteAsset(asset.id)}
+                onDelete={(imageId) => deleteAsset(asset.id, imageId)}
                 asset={asset}
               />
             ) : (
@@ -2641,6 +3107,22 @@ function ProjectAssetsPanel() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Batch delete confirmation */}
+      {batchDeleteConfirm && (
+        <ConfirmDialog
+          title="确定要删除吗？"
+          description={`将删除已选中的 ${selected.size} 项及其所有相关内容，删除后无法恢复。`}
+          confirmText="删除"
+          onCancel={() => setBatchDeleteConfirm(false)}
+          onConfirm={() => {
+            setBatchDeleteConfirm(false);
+            deleteSelected();
+            exitBatch();
+          }}
+          zIndex={100}
+        />
       )}
     </div>
   );

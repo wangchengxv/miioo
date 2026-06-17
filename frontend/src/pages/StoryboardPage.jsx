@@ -2464,7 +2464,11 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
   const showRefVideo = maxRefVideos === null || maxRefVideos > 0;
   const showRefAudio = maxRefAudios === null || maxRefAudios > 0;
   const showRefImages = maxRefImages === null || maxRefImages > 0;
-  const showRefSubjects = showRefImages && videoCaps.supports_reference_subjects === true;
+  const showRefSubjects = showRefImages && (
+    videoCaps.supports_reference_subjects === true ||
+    (videoCaps.supported_generation_modes || []).includes('full') ||
+    (videoCaps.supported_generation_modes || []).includes('reference_subjects')
+  );
   const imageCount = (showRefSubjects ? refSubjects.length : 0) + refImages.length;
   const canAddImage = maxRefImages === null || imageCount < maxRefImages;
   const imageCountLabel = maxRefImages != null ? `${imageCount}/${maxRefImages}` : null;

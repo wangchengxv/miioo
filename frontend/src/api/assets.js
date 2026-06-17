@@ -110,23 +110,99 @@ function normalizeAsset(item) {
     description: item.description ?? '',
     prompt: item.prompt ?? '',
     model: item.model ?? '',
+    ratio: item.ratio ?? '',
+    resolution: item.resolution ?? item.size ?? '',
     size: item.size ?? '',
     created_at: item.created_at ?? '',
+    is_primary: item.is_primary ?? false,
+    subject_id: item.subject_id ?? null,
+    refImages: (Array.isArray(item.ref_images) ? item.ref_images : []).map(img => ({
+      url: normalizeImageUrl(img.url || img.file_url || ''),
+      title: img.title || img.name || '',
+    })).filter(img => img.url),
   };
+}
+
+/**
+ * 按主体(subject_id 或 name)分组，生成聚合卡片
+ * @param {Array} normalized - normalizeAsset 后的资产数组
+ * @returns {Array} 主体卡片数组，每张是 { id, name, description, url, images, imageCount, ...firstImage }
+ */
+function groupBySubject(normalized) {
+  const subjectMap = {};
+
+  normalized.forEach((asset) => {
+    // 按 subject_id 或 name 分组（无 subject_id 时用 name）
+    const key = asset.subject_id || asset.name;
+    if (!subjectMap[key]) {
+      subjectMap[key] = [];
+    }
+    subjectMap[key].push(asset);
+  });
+
+  // 转换为主体卡片数组
+  return Object.entries(subjectMap).map(([key, images]) => {
+    // 找到定稿图（is_primary=true），未找到则用第一张
+    const primaryIdx = images.findIndex((img) => img.is_primary);
+    const primaryImage = primaryIdx >= 0 ? images[primaryIdx] : images[0];
+
+    // 排序：定稿图优先
+    const sorted = [
+      ...images.filter((img) => img.is_primary),
+      ...images.filter((img) => !img.is_primary),
+    ];
+
+    return {
+      id: primaryImage.id, // 卡片 id 取定稿图的 id
+      name: primaryImage.name,
+      description: primaryImage.description,
+      url: primaryImage.url,
+      fileUrl: primaryImage.fileUrl,
+      images: sorted, // 所有图片，定稿图排第一
+      imageCount: images.length,
+      // 其他字段供详情弹窗使用
+      prompt: primaryImage.prompt,
+      model: primaryImage.model,
+      ratio: primaryImage.ratio,
+      resolution: primaryImage.resolution,
+      created_at: primaryImage.created_at,
+    };
+  });
 }
 
 function groupByCategory(list) {
   const grouped = { chars: [], scenes: [], props: [], storyboard_img: [], storyboard_video: [], audio: [], final: [] };
+
+  // 先按 category 初步分类
+  const byCategory = {};
   list.forEach((item) => {
-    const normalized = normalizeAsset(item);
     if (item.category === 'storyboard') {
       const tab = item.asset_type === 'video' ? 'storyboard_video' : 'storyboard_img';
-      grouped[tab].push(normalized);
+      if (!byCategory[tab]) byCategory[tab] = [];
+      byCategory[tab].push(item);
     } else {
       const tab = CATEGORY_TO_TAB[item.category];
-      if (tab) grouped[tab].push(normalized);
+      if (tab) {
+        if (!byCategory[tab]) byCategory[tab] = [];
+        byCategory[tab].push(item);
+      }
     }
   });
+
+  // 对 chars/scenes/props 进行主体分组，其他保持原样
+  const SUBJECT_CATEGORIES = new Set(['chars', 'scenes', 'props']);
+
+  Object.entries(byCategory).forEach(([tab, items]) => {
+    if (SUBJECT_CATEGORIES.has(tab)) {
+      // 主体分组逻辑
+      const normalized = items.map(normalizeAsset);
+      grouped[tab] = groupBySubject(normalized);
+    } else {
+      // 其他分类直接 normalize
+      grouped[tab] = items.map(normalizeAsset);
+    }
+  });
+
   return grouped;
 }
 
