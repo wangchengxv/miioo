@@ -189,12 +189,17 @@ function groupByCategory(list) {
     }
   });
 
-  // 对 chars/scenes/props 进行主体分组，其他保持原样
+  // 对 chars/scenes/props 进行主体分组，对 storyboard_img/storyboard_video 按编号分组
   const SUBJECT_CATEGORIES = new Set(['chars', 'scenes', 'props']);
+  const STORYBOARD_CATEGORIES = new Set(['storyboard_img', 'storyboard_video']);
 
   Object.entries(byCategory).forEach(([tab, items]) => {
     if (SUBJECT_CATEGORIES.has(tab)) {
       // 主体分组逻辑
+      const normalized = items.map(normalizeAsset);
+      grouped[tab] = groupBySubject(normalized);
+    } else if (STORYBOARD_CATEGORIES.has(tab)) {
+      // 分镜分组逻辑：按 name（分镜编号）分组
       const normalized = items.map(normalizeAsset);
       grouped[tab] = groupBySubject(normalized);
     } else {

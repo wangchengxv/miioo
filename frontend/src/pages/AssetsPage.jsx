@@ -1055,16 +1055,20 @@ function AssetDetailModal({ onClose, onDownload, name, description, prompt, mode
 }
 
 // Props: shotNumber, prompt, model, resolution, images (array of {id, src, finalized})
-function ShotDetailModal({ onClose, onDownload, shotNumber, prompt, model, resolution, generatedAt, images }) {
+function ShotDetailModal({ onClose, onDownload, onDelete, shotNumber, prompt, model, resolution, generatedAt, images, refImages }) {
   const imgs = images ?? MOCK_SHOT_DETAIL.images;
   const defaultIdx = imgs.findIndex((img) => img.finalized);
   const [activeImg, setActiveImg] = useState(defaultIdx >= 0 ? defaultIdx : 0);
   const [hovClose, setHovClose] = useState(false);
   const [hovDownload, setHovDownload] = useState(false);
+  const [hovDelete, setHovDelete] = useState(false);
+  const [pressDelete, setPressDelete] = useState(false);
   const [hovThumb, setHovThumb] = useState(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const currentImg = imgs[activeImg];
   const isFinalized = currentImg?.finalized ?? false;
+  const refImgs = refImages ?? [];
 
   return (
     <div
@@ -1211,10 +1215,14 @@ function ShotDetailModal({ onClose, onDownload, shotNumber, prompt, model, resol
                 <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFF99' }}>是否定稿</span>
                 {isFinalized ? (
                   <div style={{
-                    paddingLeft: '8px', paddingRight: '8px', paddingTop: '2px', paddingBottom: '2px',
-                    borderRadius: '4px', boxShadow: '#FFFFFF14 0px 0px 0px 1px inset', backgroundColor: '#7AE5B91A',
+                    paddingLeft: '4px', paddingRight: '4px', paddingTop: '2px', paddingBottom: '2px',
+                    borderRadius: '2px', backgroundColor: '#4AC981',
+                    boxShadow: '#FFFFFF14 0px 0px 0px 1px inset',
+                    height: '18px',
+                    display: 'flex',
+                    alignItems: 'center',
                   }}>
-                    <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: '#7AE5B9' }}>定稿</span>
+                    <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '14px', color: '#0A0A0A', fontWeight: 500 }}>定稿</span>
                   </div>
                 ) : (
                   <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: '#FFFFFF66' }}>否</span>
@@ -1232,16 +1240,67 @@ function ShotDetailModal({ onClose, onDownload, shotNumber, prompt, model, resol
               <div style={{ height: '1px', backgroundColor: '#FFFFFF0A', marginLeft: '20px', marginRight: '20px' }} />
 
               {/* Prompt */}
-              <div style={{ display: 'flex', flexDirection: 'column', paddingTop: '16px', paddingBottom: '16px', paddingLeft: '20px', paddingRight: '20px', gap: '10px' }}>
-                <span style={{ fontFamily: FONT, fontSize: '11px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>提示词</span>
-                <p style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '20px', letterSpacing: '0.01em', color: '#FFFFFFCC', margin: 0 }}>{(currentImg?.prompt || prompt) ?? MOCK_SHOT_DETAIL.prompt}</p>
-              </div>
+              {((currentImg?.prompt || prompt) ?? MOCK_SHOT_DETAIL.prompt) && (
+                <>
+                  <div style={{ display: 'flex', flexDirection: 'column', paddingTop: '16px', paddingBottom: '16px', paddingLeft: '20px', paddingRight: '20px', gap: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                      <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>提示词</span>
+                      <button
+                        type="button"
+                        style={{
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          width: '24px', height: '24px', borderRadius: '4px',
+                          background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+                          opacity: 0.6, transition: 'opacity 0.12s',
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+                        onMouseLeave={(e) => e.currentTarget.style.opacity = '0.6'}
+                        onClick={() => {
+                          navigator.clipboard.writeText((currentImg?.prompt || prompt) ?? MOCK_SHOT_DETAIL.prompt);
+                        }}
+                        title="复制提示词"
+                      >
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+                          <path d="M4.33337 4.14383V2.60413C4.33337 2.08636 4.75311 1.66663 5.27087 1.66663H13.3959C13.9136 1.66663 14.3334 2.08636 14.3334 2.60413V10.7291C14.3334 11.2469 13.9136 11.6666 13.3959 11.6666H11.8388" stroke="white" strokeOpacity="0.6" strokeLinecap="round" strokeLinejoin="round"/>
+                          <path d="M10.7291 4.33337H2.60413C2.08636 4.33337 1.66663 4.75311 1.66663 5.27087V13.3959C1.66663 13.9136 2.08636 14.3334 2.60413 14.3334H10.7291C11.2469 14.3334 11.6666 13.9136 11.6666 13.3959V5.27087C11.6666 4.75311 11.2469 4.33337 10.7291 4.33337Z" stroke="white" strokeOpacity="0.6" strokeLinejoin="round"/>
+                        </svg>
+                      </button>
+                    </div>
+                    <p style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '20px', letterSpacing: '0.01em', color: '#FFFFFFCC', margin: 0 }}>{(currentImg?.prompt || prompt) ?? MOCK_SHOT_DETAIL.prompt}</p>
+                  </div>
+                  <div style={{ height: '1px', backgroundColor: '#FFFFFF0A', marginLeft: '20px', marginRight: '20px' }} />
+                </>
+              )}
 
-              <div style={{ height: '1px', backgroundColor: '#FFFFFF0A', marginLeft: '20px', marginRight: '20px' }} />
+              {/* Ref images */}
+              {refImgs.length > 0 && (
+                <>
+                  <div style={{ display: 'flex', flexDirection: 'column', paddingTop: '16px', paddingBottom: '16px', paddingLeft: '20px', paddingRight: '20px', gap: '10px' }}>
+                    <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>参考图</span>
+                    <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', flex: 1, minWidth: 0 }}>
+                      {refImgs.map((ref, idx) => (
+                        <div
+                          key={idx}
+                          style={{
+                            borderRadius: '4px', overflow: 'hidden',
+                            width: '80px', height: '56px', flexShrink: 0,
+                            backgroundColor: '#FFFFFF14',
+                            border: '1px solid #FFFFFF33',
+                            backgroundImage: `url(${ref.url})`,
+                            backgroundSize: 'cover', backgroundPosition: '50%',
+                          }}
+                          title={ref.title}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                  <div style={{ height: '1px', backgroundColor: '#FFFFFF0A', marginLeft: '20px', marginRight: '20px' }} />
+                </>
+              )}
 
               {/* Generation params */}
               <div style={{ display: 'flex', flexDirection: 'column', paddingTop: '16px', paddingBottom: '16px', paddingLeft: '20px', paddingRight: '20px', gap: '12px' }}>
-                <span style={{ fontFamily: FONT, fontSize: '11px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>生成参数</span>
+                <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>生成参数</span>
                 {[
                   { label: '模型', value: (currentImg?.model || model) ?? MOCK_SHOT_DETAIL.model },
                   { label: '分辨率', value: (currentImg?.resolution || resolution) ?? MOCK_SHOT_DETAIL.resolution },
@@ -1257,18 +1316,44 @@ function ShotDetailModal({ onClose, onDownload, shotNumber, prompt, model, resol
 
               {/* AI generated time */}
               <div style={{ display: 'flex', flexDirection: 'column', paddingTop: '16px', paddingBottom: '16px', paddingLeft: '20px', paddingRight: '20px', gap: '4px' }}>
-                <span style={{ fontFamily: FONT, fontSize: '11px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>AI 生成时间</span>
+                <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>AI 生成时间</span>
                 <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFF66' }}>{(currentImg?.generatedAt || generatedAt) ?? MOCK_SHOT_DETAIL.generatedAt}</span>
               </div>
             </div>
 
-            {/* Sticky download button */}
-            <div style={{ flexShrink: 0, paddingTop: '12px', paddingBottom: '20px', paddingLeft: '20px', paddingRight: '20px', borderTop: '1px solid #FFFFFF0A' }}>
+            {/* Sticky buttons */}
+            <div style={{ flexShrink: 0, paddingTop: '12px', paddingBottom: '20px', paddingLeft: '20px', paddingRight: '20px', borderTop: '1px solid #FFFFFF0A', display: 'flex', gap: '8px' }}>
+              {onDelete && (
+                <button
+                  type="button"
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    flex: 1, height: '40px', borderRadius: '8px', gap: '8px',
+                    backgroundColor: pressDelete ? '#FFFFFF26' : hovDelete ? '#FFFFFF1F' : '#FFFFFF14',
+                    border: '1px solid #FFFFFF1F', cursor: 'pointer', transition: 'background-color 0.12s',
+                    opacity: pressDelete ? 0.8 : 1,
+                  }}
+                  onMouseEnter={() => setHovDelete(true)}
+                  onMouseLeave={() => { setHovDelete(false); setPressDelete(false); }}
+                  onMouseDown={() => setPressDelete(true)}
+                  onMouseUp={() => setPressDelete(false)}
+                  onClick={() => setShowDeleteConfirm(true)}
+                >
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ flexShrink: 0 }}>
+                    <path d="M2.333 3.667V12.333C2.333 12.784 2.716 13.167 3.167 13.167H10.833C11.284 13.167 11.667 12.784 11.667 12.333V3.667" stroke="#FF6B6B" strokeLinejoin="round" />
+                    <path d="M5.333 6V10.667" stroke="#FF6B6B" strokeLinecap="round" />
+                    <path d="M8.667 6V10.667" stroke="#FF6B6B" strokeLinecap="round" />
+                    <path d="M1 3.667H13" stroke="#FF6B6B" strokeLinecap="round" />
+                    <path d="M4.333 3.667L5.15 1.333H8.85L9.667 3.667" stroke="#FF6B6B" strokeLinejoin="round" />
+                  </svg>
+                  <span style={{ fontFamily: FONT, fontSize: '13px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FF6B6B' }}>删除</span>
+                </button>
+              )}
               <button
                 type="button"
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  width: '100%', height: '40px', borderRadius: '8px', gap: '8px',
+                  flex: 1, height: '40px', borderRadius: '8px', gap: '8px',
                   backgroundColor: hovDownload ? '#FFFFFF1F' : '#FFFFFF14',
                   border: '1px solid #FFFFFF1F', cursor: 'pointer', transition: 'background-color 0.12s',
                 }}
@@ -1282,6 +1367,18 @@ function ShotDetailModal({ onClose, onDownload, shotNumber, prompt, model, resol
                 <span style={{ fontFamily: FONT, fontSize: '13px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFF99' }}>下载</span>
               </button>
             </div>
+
+            {/* Delete confirmation */}
+            {showDeleteConfirm && (
+              <ConfirmDialog
+                title="确定要删除吗？"
+                description="删除后，该资产将被清除且不可恢复。"
+                confirmText="删除"
+                onCancel={() => setShowDeleteConfirm(false)}
+                onConfirm={() => { setShowDeleteConfirm(false); onDelete?.(); }}
+                zIndex={300}
+              />
+            )}
           </div>
         </div>
       </div>
@@ -1289,7 +1386,7 @@ function ShotDetailModal({ onClose, onDownload, shotNumber, prompt, model, resol
   );
 }
 
-function ShotVideoDetailModal({ onClose, onDownload, shotNumber, prompt, model, resolution, duration, ratio, generatedAt, frames, videoSrc }) {
+function ShotVideoDetailModal({ onClose, onDownload, onDelete, shotNumber, prompt, model, resolution, duration, ratio, generatedAt, frames, videoSrc, refMode, firstFrame, lastFrame, sound, refImages, refVideos }) {
   const frms = frames ?? MOCK_SHOT_VIDEO_DETAIL.frames;
   const defaultIdx = frms.findIndex((f) => f.finalized);
   const [activeFrame, setActiveFrame] = useState(defaultIdx >= 0 ? defaultIdx : 0);
@@ -1299,7 +1396,10 @@ function ShotVideoDetailModal({ onClose, onDownload, shotNumber, prompt, model, 
   const [volume, setVolume] = useState(0.7);
   const [hovClose, setHovClose] = useState(false);
   const [hovDownload, setHovDownload] = useState(false);
+  const [hovDelete, setHovDelete] = useState(false);
+  const [pressDelete, setPressDelete] = useState(false);
   const [hovThumb, setHovThumb] = useState(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const videoRef = useRef(null);
   const progressBarRef = useRef(null);
   const volumeBarRef = useRef(null);
@@ -1613,8 +1713,15 @@ function ShotVideoDetailModal({ onClose, onDownload, shotNumber, prompt, model, 
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px' }}>
                 <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFF99' }}>是否定稿</span>
                 {isFinalized ? (
-                  <div style={{ paddingLeft: '8px', paddingRight: '8px', paddingTop: '2px', paddingBottom: '2px', borderRadius: '4px', boxShadow: '#FFFFFF14 0px 0px 0px 1px inset', backgroundColor: '#7AE5B91A' }}>
-                    <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: '#7AE5B9' }}>定稿</span>
+                  <div style={{
+                    paddingLeft: '4px', paddingRight: '4px', paddingTop: '2px', paddingBottom: '2px',
+                    borderRadius: '2px', backgroundColor: '#4AC981',
+                    boxShadow: '#FFFFFF14 0px 0px 0px 1px inset',
+                    height: '18px',
+                    display: 'flex',
+                    alignItems: 'center',
+                  }}>
+                    <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '14px', color: '#0A0A0A', fontWeight: 500 }}>定稿</span>
                   </div>
                 ) : (
                   <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: '#FFFFFF66' }}>否</span>
@@ -1629,17 +1736,134 @@ function ShotVideoDetailModal({ onClose, onDownload, shotNumber, prompt, model, 
 
               <div style={{ height: '1px', backgroundColor: '#FFFFFF0A', marginLeft: '20px', marginRight: '20px' }} />
 
-              {/* AI Prompt */}
-              <div style={{ display: 'flex', flexDirection: 'column', paddingTop: '16px', paddingBottom: '16px', paddingLeft: '20px', paddingRight: '20px', gap: '10px' }}>
-                <span style={{ fontFamily: FONT, fontSize: '11px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>AI 提示词</span>
-                <p style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '20px', letterSpacing: '0.01em', color: '#FFFFFFCC', margin: 0 }}>{prompt ?? MOCK_SHOT_VIDEO_DETAIL.prompt}</p>
-              </div>
+              {/* Creation mode — if refMode provided */}
+              {refMode && (
+                <>
+                  <div style={{ display: 'flex', flexDirection: 'column', paddingTop: '16px', paddingBottom: '16px', paddingLeft: '20px', paddingRight: '20px', gap: '10px' }}>
+                    <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>创作模式</span>
+                    <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFFCC' }}>
+                      {refMode === 'full_ref' ? '全能参考' : refMode === 'frame_ref' ? '首尾帧' : refMode}
+                    </span>
+                  </div>
+                  <div style={{ height: '1px', backgroundColor: '#FFFFFF0A', marginLeft: '20px', marginRight: '20px' }} />
+                </>
+              )}
 
-              <div style={{ height: '1px', backgroundColor: '#FFFFFF0A', marginLeft: '20px', marginRight: '20px' }} />
+              {/* Reference items — show based on creation mode */}
+              {refMode === 'full_ref' && (
+                <>
+                  {/* Ref subjects */}
+                  {/* Ref images */}
+                  {(refImages || []).length > 0 && (
+                    <>
+                      <div style={{ display: 'flex', flexDirection: 'column', paddingTop: '16px', paddingBottom: '16px', paddingLeft: '20px', paddingRight: '20px', gap: '10px' }}>
+                        <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>参考图</span>
+                        <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', flex: 1, minWidth: 0 }}>
+                          {refImages.map((ref, idx) => (
+                            <div
+                              key={idx}
+                              style={{
+                                borderRadius: '4px', overflow: 'hidden',
+                                width: '80px', height: '56px', flexShrink: 0,
+                                backgroundColor: '#FFFFFF14',
+                                border: '1px solid #FFFFFF33',
+                                backgroundImage: `url(${ref.url || ref})`,
+                                backgroundSize: 'cover', backgroundPosition: '50%',
+                              }}
+                              title={ref.title}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                      <div style={{ height: '1px', backgroundColor: '#FFFFFF0A', marginLeft: '20px', marginRight: '20px' }} />
+                    </>
+                  )}
+                  {/* Ref videos */}
+                  {(refVideos || []).length > 0 && (
+                    <>
+                      <div style={{ display: 'flex', flexDirection: 'column', paddingTop: '16px', paddingBottom: '16px', paddingLeft: '20px', paddingRight: '20px', gap: '4px' }}>
+                        <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>参考视频</span>
+                        <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFFCC' }}>{(refVideos || []).length} 个</span>
+                      </div>
+                      <div style={{ height: '1px', backgroundColor: '#FFFFFF0A', marginLeft: '20px', marginRight: '20px' }} />
+                    </>
+                  )}
+                </>
+              )}
+
+              {refMode === 'frame_ref' && (firstFrame || lastFrame) && (
+                <>
+                  <div style={{ display: 'flex', flexDirection: 'column', paddingTop: '16px', paddingBottom: '16px', paddingLeft: '20px', paddingRight: '20px', gap: '10px' }}>
+                    <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>关键帧</span>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      {firstFrame && (
+                        <div
+                          style={{
+                            borderRadius: '4px', overflow: 'hidden',
+                            width: '60px', height: '42px', flexShrink: 0,
+                            backgroundColor: '#FFFFFF14',
+                            border: '1px solid #FFFFFF33',
+                            backgroundImage: `url(${firstFrame})`,
+                            backgroundSize: 'cover', backgroundPosition: '50%',
+                          }}
+                          title="首帧"
+                        />
+                      )}
+                      {lastFrame && (
+                        <div
+                          style={{
+                            borderRadius: '4px', overflow: 'hidden',
+                            width: '60px', height: '42px', flexShrink: 0,
+                            backgroundColor: '#FFFFFF14',
+                            border: '1px solid #FFFFFF33',
+                            backgroundImage: `url(${lastFrame})`,
+                            backgroundSize: 'cover', backgroundPosition: '50%',
+                          }}
+                          title="尾帧"
+                        />
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ height: '1px', backgroundColor: '#FFFFFF0A', marginLeft: '20px', marginRight: '20px' }} />
+                </>
+              )}
+
+              {/* AI Prompt */}
+              {(prompt ?? MOCK_SHOT_VIDEO_DETAIL.prompt) && (
+                <>
+                  <div style={{ display: 'flex', flexDirection: 'column', paddingTop: '16px', paddingBottom: '16px', paddingLeft: '20px', paddingRight: '20px', gap: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                      <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>AI 提示词</span>
+                      <button
+                        type="button"
+                        style={{
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          width: '24px', height: '24px', borderRadius: '4px',
+                          background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+                          opacity: 0.6, transition: 'opacity 0.12s',
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+                        onMouseLeave={(e) => e.currentTarget.style.opacity = '0.6'}
+                        onClick={() => {
+                          navigator.clipboard.writeText(prompt ?? MOCK_SHOT_VIDEO_DETAIL.prompt);
+                        }}
+                        title="复制提示词"
+                      >
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+                          <path d="M4.33337 4.14383V2.60413C4.33337 2.08636 4.75311 1.66663 5.27087 1.66663H13.3959C13.9136 1.66663 14.3334 2.08636 14.3334 2.60413V10.7291C14.3334 11.2469 13.9136 11.6666 13.3959 11.6666H11.8388" stroke="white" strokeOpacity="0.6" strokeLinecap="round" strokeLinejoin="round"/>
+                          <path d="M10.7291 4.33337H2.60413C2.08636 4.33337 1.66663 4.75311 1.66663 5.27087V13.3959C1.66663 13.9136 2.08636 14.3334 2.60413 14.3334H10.7291C11.2469 14.3334 11.6666 13.9136 11.6666 13.3959V5.27087C11.6666 4.75311 11.2469 4.33337 10.7291 4.33337Z" stroke="white" strokeOpacity="0.6" strokeLinejoin="round"/>
+                        </svg>
+                      </button>
+                    </div>
+                    <p style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '20px', letterSpacing: '0.01em', color: '#FFFFFFCC', margin: 0 }}>{prompt ?? MOCK_SHOT_VIDEO_DETAIL.prompt}</p>
+                  </div>
+                  <div style={{ height: '1px', backgroundColor: '#FFFFFF0A', marginLeft: '20px', marginRight: '20px' }} />
+                </>
+              )}
 
               {/* Generation params */}
               <div style={{ display: 'flex', flexDirection: 'column', paddingTop: '16px', paddingBottom: '16px', paddingLeft: '20px', paddingRight: '20px', gap: '12px' }}>
-                <span style={{ fontFamily: FONT, fontSize: '11px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>生成参数</span>
+                <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>生成参数</span>
                 {[
                   { label: '模型', value: model ?? MOCK_SHOT_VIDEO_DETAIL.model },
                   { label: '分辨率', value: resolution ?? MOCK_SHOT_VIDEO_DETAIL.resolution },
@@ -1657,20 +1881,44 @@ function ShotVideoDetailModal({ onClose, onDownload, shotNumber, prompt, model, 
 
               {/* AI generated time */}
               <div style={{ display: 'flex', flexDirection: 'column', paddingTop: '16px', paddingBottom: '16px', paddingLeft: '20px', paddingRight: '20px', gap: '4px' }}>
-                <span style={{ fontFamily: FONT, fontSize: '11px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>AI 生成时间</span>
+                <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>AI 生成时间</span>
                 <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFF66' }}>{generatedAt ?? MOCK_SHOT_VIDEO_DETAIL.generatedAt}</span>
               </div>
-
-              <div style={{ flexGrow: 1 }} />
             </div>
 
-            {/* Sticky download button */}
-            <div style={{ flexShrink: 0, paddingTop: '16px', paddingBottom: '20px', paddingLeft: '20px', paddingRight: '20px' }}>
+            {/* Sticky buttons */}
+            <div style={{ flexShrink: 0, paddingTop: '12px', paddingBottom: '20px', paddingLeft: '20px', paddingRight: '20px', borderTop: '1px solid #FFFFFF0A', display: 'flex', gap: '8px' }}>
+              {onDelete && (
+                <button
+                  type="button"
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    flex: 1, height: '40px', borderRadius: '8px', gap: '8px',
+                    backgroundColor: pressDelete ? '#FFFFFF26' : hovDelete ? '#FFFFFF1F' : '#FFFFFF14',
+                    border: '1px solid #FFFFFF1F', cursor: 'pointer', transition: 'background-color 0.12s',
+                    opacity: pressDelete ? 0.8 : 1,
+                  }}
+                  onMouseEnter={() => setHovDelete(true)}
+                  onMouseLeave={() => { setHovDelete(false); setPressDelete(false); }}
+                  onMouseDown={() => setPressDelete(true)}
+                  onMouseUp={() => setPressDelete(false)}
+                  onClick={() => setShowDeleteConfirm(true)}
+                >
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ flexShrink: 0 }}>
+                    <path d="M2.333 3.667V12.333C2.333 12.784 2.716 13.167 3.167 13.167H10.833C11.284 13.167 11.667 12.784 11.667 12.333V3.667" stroke="#FF6B6B" strokeLinejoin="round" />
+                    <path d="M5.333 6V10.667" stroke="#FF6B6B" strokeLinecap="round" />
+                    <path d="M8.667 6V10.667" stroke="#FF6B6B" strokeLinecap="round" />
+                    <path d="M1 3.667H13" stroke="#FF6B6B" strokeLinecap="round" />
+                    <path d="M4.333 3.667L5.15 1.333H8.85L9.667 3.667" stroke="#FF6B6B" strokeLinejoin="round" />
+                  </svg>
+                  <span style={{ fontFamily: FONT, fontSize: '13px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FF6B6B' }}>删除</span>
+                </button>
+              )}
               <button
                 type="button"
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  width: '100%', height: '40px', borderRadius: '8px', gap: '8px',
+                  flex: 1, height: '40px', borderRadius: '8px', gap: '8px',
                   backgroundColor: hovDownload ? '#FFFFFF1F' : '#FFFFFF14',
                   border: '1px solid #FFFFFF1F', cursor: 'pointer', transition: 'background-color 0.12s',
                 }}
@@ -1681,9 +1929,21 @@ function ShotVideoDetailModal({ onClose, onDownload, shotNumber, prompt, model, 
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ flexShrink: 0 }}>
                   <path d="M7 2V9M7 9L4 6.5M7 9L10 6.5M2 11H12" stroke="#FFFFFF99" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
-                <span style={{ fontFamily: FONT, fontSize: '13px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFF99' }}>下载视频</span>
+                <span style={{ fontFamily: FONT, fontSize: '13px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFF99' }}>下载</span>
               </button>
             </div>
+
+            {/* Delete confirmation */}
+            {showDeleteConfirm && (
+              <ConfirmDialog
+                title="确定要删除吗？"
+                description="删除后，该资产将被清除且不可恢复。"
+                confirmText="删除"
+                onCancel={() => setShowDeleteConfirm(false)}
+                onConfirm={() => { setShowDeleteConfirm(false); onDelete?.(); }}
+                zIndex={300}
+              />
+            )}
           </div>
         </div>
       </div>
@@ -1808,16 +2068,19 @@ function AssetCard({ name, bgColor = '#252525', url = null, starred = false, sel
       </div>
     </div>
     {detailOpen && assetType === 'shot_video' && (
-      <ShotVideoDetailModal onClose={() => setDetailOpen(false)} onDownload={onDownload}
+      <ShotVideoDetailModal onClose={() => setDetailOpen(false)} onDownload={onDownload} onDelete={() => { setDetailOpen(false); onDelete?.(); }}
         shotNumber={detailData?.shotNumber} prompt={detailData?.prompt} model={detailData?.model}
         resolution={detailData?.resolution} duration={detailData?.duration} ratio={detailData?.ratio}
         generatedAt={detailData?.generatedAt} frames={detailData?.frames} videoSrc={detailData?.videoSrc}
+        refMode={detailData?.refMode} firstFrame={detailData?.firstFrame} lastFrame={detailData?.lastFrame}
+        sound={detailData?.sound} refImages={detailData?.refImages} refVideos={detailData?.refVideos}
       />
     )}
     {detailOpen && assetType === 'shot' && (
-      <ShotDetailModal onClose={() => setDetailOpen(false)} onDownload={onDownload}
+      <ShotDetailModal onClose={() => setDetailOpen(false)} onDownload={onDownload} onDelete={() => { setDetailOpen(false); onDelete?.(); }}
         shotNumber={detailData?.shotNumber} prompt={detailData?.prompt} model={detailData?.model}
         resolution={detailData?.resolution} generatedAt={detailData?.generatedAt} images={detailData?.images}
+        refImages={detailData?.refImages}
       />
     )}
     {detailOpen && asset.type === 'video' && (
