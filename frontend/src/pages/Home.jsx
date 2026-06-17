@@ -9,6 +9,8 @@ import { apiGetCurrentUser, apiGetNotifications } from '../api/user';
 import { apiGetSubjects, apiGetEpisodes, apiGetScriptWorkspace, apiFinalizeScriptWorkspace, apiExtractSubjectsFromScript } from '../api/subject';
 import { apiGetStoryboards, apiGenerateStoryboardsFromFinalScript } from '../api/storyboard';
 import { normalizeImageUrl } from '../utils/imageUrl';
+import { subscribe } from '../utils/cache';
+import { K } from '../utils/cacheKeys';
 import wechatQR from '../assets/wechat.jpg';
 import PrimaryNav from '../components/PrimaryNav';
 import LoginModal from '../components/LoginModal';
@@ -1085,6 +1087,22 @@ export default function Home({ onProjectCreated }) {
       doAuth(); // 启动鉴权流程
   }, []);
 
+  // 订阅项目列表后台更新
+  useEffect(() => {
+    const unsubscribe = subscribe(K.projects(), (data) => {
+      if (Array.isArray(data)) {
+        const normalized = data.map((p) => ({ ...p, cover: p.cover ?? p.cover_url }));
+        const sorted = [...normalized].sort((a, b) => {
+          const timeA = new Date(a.created_at || 0).getTime();
+          const timeB = new Date(b.created_at || 0).getTime();
+          return timeB - timeA;
+        });
+        setProjects(sorted);
+      }
+    });
+    return unsubscribe;
+  }, []);
+
   useEffect(() => {
     const handleForceLogout = () => {
       if (!localStorage.getItem('token')) return;
@@ -1102,15 +1120,34 @@ export default function Home({ onProjectCreated }) {
       setServerReachable(true);
     };
 
+    const handleProjectAssetsDeleted = (event) => {
+      const projectId = event?.detail?.projectId;
+      if (!projectId || projectId !== activeProject?.id) return;
+
+      Promise.all([
+        apiGetSubjects(projectId, { type: 'character' }).catch(() => []),
+        apiGetSubjects(projectId, { type: 'scene' }).catch(() => []),
+        apiGetSubjects(projectId, { type: 'prop' }).catch(() => []),
+      ]).then(([charsData, scenesData, propsData]) => {
+        setSharedChars(normalizeSubjects(charsData));
+        setSharedScenes(normalizeSubjects(scenesData));
+        setSharedProps(normalizeSubjects(propsData));
+      }).catch((err) => {
+        console.error('资产删除后刷新主体数据失败:', err);
+      });
+    };
+
     window.addEventListener('auth:logout', handleForceLogout);
     window.addEventListener('backend:unreachable', handleBackendUnreachable);
     window.addEventListener('backend:reachable', handleBackendReachable);
+    window.addEventListener('project-assets:deleted', handleProjectAssetsDeleted);
     return () => {
       window.removeEventListener('auth:logout', handleForceLogout);
       window.removeEventListener('backend:unreachable', handleBackendUnreachable);
       window.removeEventListener('backend:reachable', handleBackendReachable);
+      window.removeEventListener('project-assets:deleted', handleProjectAssetsDeleted);
     };
-  }, []);
+  }, [activeProject?.id]);
 
   const handleUnlockStep = (stepKey) => {
     setUnlockedSteps((prev) => {

@@ -8,11 +8,13 @@ import { apiCreateSubject, apiUpdateSubject, apiDeleteSubject, apiGenerateSubjec
 import { apiGetProjects } from '../api/project';
 import { apiGetAssets } from '../api/assets';
 import { apiListModels } from '../api/config';
-import { apiGetVoices } from '../api/voices';
+import { apiGetVoices, apiGetVoiceLibrary } from '../api/voices';
 import placeholderImg from '../assets/placeholder-img.webp';
 import scenePlaceholderImg from '../assets/Mountain landscape.avif';
 import propPlaceholderImg from '../assets/Tool box silhouette.avif';
 import { normalizeImageUrl } from '../utils/imageUrl';
+import { subscribe } from '../utils/cache';
+import { K } from '../utils/cacheKeys';
 import ConfirmDialog from '../components/ConfirmDialog';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
@@ -484,21 +486,24 @@ function VoiceCard({ label, active, onClick, previewUrl }) {
   );
 }
 
-function VoiceSelectModal({ open, onClose, onConfirm, currentVoice, onVoicesLoaded }) {
+function VoiceSelectModal({ open, onClose, onConfirm, currentVoice, onVoicesLoaded, preloadedVoices }) {
   const [voices, setVoices] = useState([]);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState(currentVoice || '');
   const [gender, setGender] = useState('不限');
   const [age, setAge] = useState('不限');
 
+  const fetchedRef = useRef(false);
   useEffect(() => {
-    if (!open) return;
+    if (!open) { fetchedRef.current = false; return; }
+    if (fetchedRef.current && voices.length > 0) return;
     setLoading(true);
-    apiGetVoices({ tab: 'all' })
+    apiGetVoiceLibrary({ provider: 'miioo', skipCache: true })
       .then((data) => {
         const list = Array.isArray(data) ? data : data?.items ?? data?.voices ?? [];
         setVoices(list);
         onVoicesLoaded?.(list);
+        fetchedRef.current = true;
       })
       .catch(() => setVoices([]))
       .finally(() => setLoading(false));
@@ -509,7 +514,7 @@ function VoiceSelectModal({ open, onClose, onConfirm, currentVoice, onVoicesLoad
     return voices.filter((v) => {
       if (gender !== '不限' && v.gender !== gender) return false;
       if (age !== '不限' && v.age_group !== age) return false;
-      if (v.language !== '中文') return false;
+      if (v.language !== '中文' && v.language !== 'zh') return false;
       return true;
     });
   }, [voices, gender, age]);
@@ -583,7 +588,7 @@ function VoiceSelectModal({ open, onClose, onConfirm, currentVoice, onVoicesLoad
           {!loading && rows.map((row, ri) => (
             <div key={ri} style={{ display: 'flex', gap: '14px' }}>
               {row.map((v) => (
-                <VoiceCard key={v.voice_id} label={`${v.name}-${v.style}`} active={selected === v.voice_id} onClick={() => setSelected(v.voice_id)} previewUrl={v.preview_url} />
+                <VoiceCard key={v.voice_id} label={v.name} active={selected === v.voice_id} onClick={() => setSelected(v.voice_id)} previewUrl={v.preview_url} />
               ))}
             </div>
           ))}
@@ -860,7 +865,7 @@ function CharCard({ name, desc, imageUrl, voice, voiceName, voicePreviewUrl, onV
               title={!voice ? '请先选择音色' : '试听'}
               disabled={!voice}
               onClick={handleVoicePlay}
-              style={{ background: 'transparent', border: 'none', padding: 0, cursor: voice ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', opacity: voice ? 1 : 0.3 }}
+              style={{ background: 'transparent', border: 'none', padding: 0, cursor: voice ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', }}
             >
               {voicePlaying
               ? <PlayingWaveIcon color="#2DC3E1" size={16} />
@@ -2512,6 +2517,41 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 订阅主体数据后台更新（角色、场景、道具）
+  useEffect(() => {
+    if (!projectId) return;
+
+    const unsubscribers = [];
+
+    // 订阅角色缓存
+    unsubscribers.push(subscribe(K.subjects(projectId, 'character'), (data) => {
+      if (Array.isArray(data)) {
+        const normalized = normalizeSubjectList(data);
+        setChars(normalized);
+      }
+    }));
+
+    // 订阅场景缓存
+    unsubscribers.push(subscribe(K.subjects(projectId, 'scene'), (data) => {
+      if (Array.isArray(data)) {
+        const normalized = normalizeSubjectList(data);
+        setScenes(normalized);
+      }
+    }));
+
+    // 订阅道具缓存
+    unsubscribers.push(subscribe(K.subjects(projectId, 'prop'), (data) => {
+      if (Array.isArray(data)) {
+        const normalized = normalizeSubjectList(data);
+        setProps(normalized);
+      }
+    }));
+
+    return () => {
+      unsubscribers.forEach(unsub => unsub());
+    };
+  }, [projectId]);
+
   const counts = {
     char: chars.length,
     scene: scenes.length,
@@ -2697,7 +2737,7 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
             desc={char.desc}
             imageUrl={char.imageUrl}
             voice={charVoices[char.id]}
-            voiceName={(() => { const v = voiceList.find(x => x.voice_id === charVoices[char.id]); return v ? `${v.name}-${v.style}` : undefined; })()}
+            voiceName={(() => { const v = voiceList.find(x => x.voice_id === charVoices[char.id]); return v ? v.name : undefined; })()}
             voicePreviewUrl={voiceList.find((v) => v.voice_id === charVoices[char.id])?.preview_url}
             onVoiceClick={() => setVoiceModalChar(char)}
             onClick={() => setSelectedChar(char)}
@@ -2802,15 +2842,23 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
 
       {/* voice select modal */}
       {voiceModalChar && (
-        <VoiceSelectModal
+        <VoiceSelectModal preloadedVoices={voiceList}
           open
           currentVoice={charVoices[voiceModalChar.id]}
           onClose={() => setVoiceModalChar(null)}
           onVoicesLoaded={setVoiceList}
-          onConfirm={(voiceId) => {
-            setCharVoices((prev) => ({ ...prev, [voiceModalChar.id]: voiceId }));
-            apiUpdateSubject(projectId, voiceModalChar.id, { voice_id: voiceId });
-            setVoiceModalChar(null);
+          onConfirm={async (voiceId) => {
+            const normalizedVoiceId = voiceId || null;
+            console.log('[VoiceSelect] 确认音色:', { projectId, subjectId: voiceModalChar?.id, voiceId, normalizedVoiceId });
+            try {
+              await apiUpdateSubject(projectId, voiceModalChar.id, { voice_id: normalizedVoiceId });
+              setCharVoices((prev) => ({ ...prev, [voiceModalChar.id]: normalizedVoiceId }));
+              setVoiceModalChar(null);
+              showBatchToast('音色保存成功', 'success');
+            } catch (err) {
+              console.error('[SubjectPage] 更新主体音色失败:', err);
+              showBatchToast(err?.message || '音色保存失败，请重试', 'error');
+            }
           }}
         />
       )}

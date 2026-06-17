@@ -2,6 +2,17 @@ const BASE = import.meta.env.VITE_API_BASE_URL;
 
 import { authFetch } from './request.js';
 import { normalizeImageUrl } from '../utils/imageUrl.js';
+import { apiGetStoryboards } from './storyboard.js';
+import { cached, invalidate } from '../utils/cache.js';
+import { K, TTL, MEDIUM } from '../utils/cacheKeys.js';
+
+function invalidateProjectAssetDependents(projectId) {
+  if (!projectId) return;
+  invalidate(K.subjectsPrefix(projectId));
+  invalidate(K.storyboardsPrefix(projectId));
+  invalidate(K.projectOverview(projectId));
+  invalidate(K.projectAssets(projectId), MEDIUM.CONTENT);
+}
 
 /**
  * 资产列表（支持多维过滤）
@@ -43,16 +54,18 @@ export async function apiUpdateAsset(assetId, updates) {
   return res.json();
 }
 
-export async function apiDeleteAsset(assetId) {
+export async function apiDeleteAsset(assetId, { projectId } = {}) {
   await authFetch(`${BASE}/api/assets/${assetId}`, { method: 'DELETE' });
+  invalidateProjectAssetDependents(projectId);
 }
 
-export async function apiBatchDeleteAssets(asset_ids) {
+export async function apiBatchDeleteAssets(asset_ids, { projectId } = {}) {
   await authFetch(`${BASE}/api/assets/batch-delete`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ asset_ids }),
   });
+  invalidateProjectAssetDependents(projectId);
 }
 
 export async function apiBatchRestoreAssets(asset_ids) {
@@ -100,22 +113,31 @@ const CATEGORY_TO_TAB = {
 };
 
 function normalizeAsset(item) {
+  const meta = (item.metadata_json) || {};
   return {
     id: item.id,
     name: item.name,
-    url: normalizeImageUrl(item.thumbnail_url || item.file_url) || null,
+    // 视频资产：url 只用缩略图，不 fallback 到视频地址（避免图片标签加载视频）
+    url: item.asset_type === 'video'
+      ? (normalizeImageUrl(item.thumbnail_url || meta.thumbnail_url) || null)
+      : (normalizeImageUrl(item.thumbnail_url || item.file_url) || null),
     fileUrl: normalizeImageUrl(item.file_url) || null,
-    videoUrl: item.asset_type === 'video' ? (item.file_url || null) : null,
+    videoUrl: item.asset_type === 'video' ? (normalizeImageUrl(item.file_url) || null) : null,
     starred: item.is_starred ?? false,
     description: item.description ?? '',
     prompt: item.prompt ?? '',
     model: item.model ?? '',
-    ratio: item.ratio ?? '',
-    resolution: item.resolution ?? item.size ?? '',
+    ratio: item.ratio || meta.ratio || '',
+    resolution: item.resolution ?? meta.resolution ?? item.size ?? '',
     size: item.size ?? '',
     created_at: item.created_at ?? '',
     is_primary: item.is_primary ?? false,
     subject_id: item.subject_id ?? null,
+    // 分镜专用字段
+    shot_number: meta.shot_number ?? null,
+    storyboard_id: meta.storyboard_id ?? null,
+    episode_number: meta.episode_number ?? null,
+    duration: meta.duration ?? item.duration ?? null,
     refImages: (Array.isArray(item.ref_images) ? item.ref_images : []).map(img => ({
       url: normalizeImageUrl(img.url || img.file_url || ''),
       title: img.title || img.name || '',
@@ -125,48 +147,94 @@ function normalizeAsset(item) {
 
 /**
  * 按主体(subject_id 或 name)分组，生成聚合卡片
- * @param {Array} normalized - normalizeAsset 后的资产数组
- * @returns {Array} 主体卡片数组，每张是 { id, name, description, url, images, imageCount, ...firstImage }
  */
 function groupBySubject(normalized) {
   const subjectMap = {};
 
   normalized.forEach((asset) => {
-    // 按 subject_id 或 name 分组（无 subject_id 时用 name）
     const key = asset.subject_id || asset.name;
-    if (!subjectMap[key]) {
-      subjectMap[key] = [];
-    }
+    if (!subjectMap[key]) subjectMap[key] = [];
     subjectMap[key].push(asset);
   });
 
-  // 转换为主体卡片数组
   return Object.entries(subjectMap).map(([key, images]) => {
-    // 找到定稿图（is_primary=true），未找到则用第一张
     const primaryIdx = images.findIndex((img) => img.is_primary);
     const primaryImage = primaryIdx >= 0 ? images[primaryIdx] : images[0];
-
-    // 排序：定稿图优先
     const sorted = [
       ...images.filter((img) => img.is_primary),
       ...images.filter((img) => !img.is_primary),
     ];
 
     return {
-      id: primaryImage.id, // 卡片 id 取定稿图的 id
+      id: primaryImage.id,
       name: primaryImage.name,
       description: primaryImage.description,
       url: primaryImage.url,
       fileUrl: primaryImage.fileUrl,
-      images: sorted, // 所有图片，定稿图排第一
+      videoUrl: primaryImage.videoUrl ?? null,
+      images: sorted,
       imageCount: images.length,
-      // 其他字段供详情弹窗使用
       prompt: primaryImage.prompt,
       model: primaryImage.model,
       ratio: primaryImage.ratio,
       resolution: primaryImage.resolution,
       created_at: primaryImage.created_at,
     };
+  });
+}
+
+/**
+ * 按分镜编号(shot_number + storyboard_id)分组，用于分镜图/视频
+ */
+function groupByShot(normalized) {
+  const shotMap = {};
+
+  normalized.forEach((asset) => {
+    // 优先用 shot_number+storyboard_id 作为 key，保证同一镜头多个版本归一组
+    // 无 shot_number 时退回 name（用户自定义上传）
+    const key = asset.shot_number != null
+      ? `${asset.storyboard_id ?? 'local'}_shot_${asset.shot_number}`
+      : asset.name;
+    if (!shotMap[key]) shotMap[key] = [];
+    shotMap[key].push(asset);
+  });
+
+  return Object.entries(shotMap).map(([key, images]) => {
+    const primaryIdx = images.findIndex((img) => img.is_primary);
+    const primaryImage = primaryIdx >= 0 ? images[primaryIdx] : images[0];
+    const sorted = [
+      ...images.filter((img) => img.is_primary),
+      ...images.filter((img) => !img.is_primary),
+    ];
+
+    // 显示名称：有 shot_number 则用"分镜-N"，否则用原 name
+    const displayName = primaryImage.shot_number != null
+      ? `分镜-${primaryImage.shot_number}`
+      : primaryImage.name;
+
+    return {
+      id: primaryImage.id,
+      name: displayName,
+      description: primaryImage.description,
+      url: primaryImage.url,
+      fileUrl: primaryImage.fileUrl,
+      videoUrl: primaryImage.videoUrl ?? null,
+      images: sorted,
+      imageCount: images.length,
+      prompt: primaryImage.prompt,
+      model: primaryImage.model,
+      ratio: primaryImage.ratio || sorted.find(i => i.ratio)?.ratio || '',
+      resolution: primaryImage.resolution,
+      duration: primaryImage.duration,
+      created_at: primaryImage.created_at,
+      shot_number: primaryImage.shot_number,
+      storyboard_id: primaryImage.storyboard_id,
+    };
+  }).sort((a, b) => {
+    // 按 shot_number 排序，无编号的排最后
+    if (a.shot_number == null) return 1;
+    if (b.shot_number == null) return -1;
+    return a.shot_number - b.shot_number;
   });
 }
 
@@ -189,7 +257,7 @@ function groupByCategory(list) {
     }
   });
 
-  // 对 chars/scenes/props 进行主体分组，对 storyboard_img/storyboard_video 按编号分组
+  // 对 chars/scenes/props 进行主体分组，对 storyboard_img/storyboard_video 按镜头编号分组
   const SUBJECT_CATEGORIES = new Set(['chars', 'scenes', 'props']);
   const STORYBOARD_CATEGORIES = new Set(['storyboard_img', 'storyboard_video']);
 
@@ -199,9 +267,9 @@ function groupByCategory(list) {
       const normalized = items.map(normalizeAsset);
       grouped[tab] = groupBySubject(normalized);
     } else if (STORYBOARD_CATEGORIES.has(tab)) {
-      // 分镜分组逻辑：按 name（分镜编号）分组
+      // 分镜分组逻辑：按 shot_number 分组
       const normalized = items.map(normalizeAsset);
-      grouped[tab] = groupBySubject(normalized);
+      grouped[tab] = groupByShot(normalized);
     } else {
       // 其他分类直接 normalize
       grouped[tab] = items.map(normalizeAsset);
@@ -212,8 +280,44 @@ function groupByCategory(list) {
 }
 
 export async function apiGetProjectAssets(projectId) {
-  const data = await apiGetAssets({ project_id: projectId, scope: 'project' });
-  return groupByCategory(Array.isArray(data) ? data : []);
+  return cached(
+    K.projectAssets(projectId),
+    async () => {
+      // 并行拉取资产列表和分镜列表
+      const [data, storyboardsRaw] = await Promise.all([
+        apiGetAssets({ project_id: projectId, scope: 'project' }),
+        apiGetStoryboards(projectId).catch(() => []),
+      ]);
+
+      const storyboards = Array.isArray(storyboardsRaw) ? storyboardsRaw : [];
+
+      const primaryImageUrls = new Set();
+      const primaryVideoAssetIds = new Set();
+      const primaryVideoUrls = new Set();
+
+      storyboards.forEach((sb) => {
+        if (sb.image_url) primaryImageUrls.add(normalizeImageUrl(sb.image_url));
+        if (sb.video_asset_id) primaryVideoAssetIds.add(sb.video_asset_id);
+        else if (sb.video_url) primaryVideoUrls.add(normalizeImageUrl(sb.video_url));
+      });
+
+      const assets = (Array.isArray(data) ? data : []).map((item) => {
+        if (item.category !== 'storyboard') return item;
+        let is_primary = item.is_primary ?? false;
+        if (item.asset_type === 'video') {
+          is_primary = primaryVideoAssetIds.has(item.id)
+            || primaryVideoUrls.has(normalizeImageUrl(item.file_url));
+        } else {
+          is_primary = primaryImageUrls.has(normalizeImageUrl(item.file_url))
+            || primaryImageUrls.has(normalizeImageUrl(item.thumbnail_url));
+        }
+        return { ...item, is_primary };
+      });
+
+      return groupByCategory(assets);
+    },
+    { medium: MEDIUM.CONTENT, ttl: TTL.CONTENT },
+  );
 }
 
 export async function apiGetShotDetail(shotId) {

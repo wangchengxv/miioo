@@ -1,16 +1,53 @@
 const BASE = import.meta.env.VITE_API_BASE_URL;
 
 import { authFetch, authFetchForm } from './request.js';
+import { cached, invalidate } from '../utils/cache.js';
+import { K, TTL, MEDIUM } from '../utils/cacheKeys.js';
+
+// 分镜写操作后统一失效该项目的分镜缓存 + 概览（概览含分镜进度）
+function invalidateStoryboards(projectId) {
+  invalidate(K.storyboardsPrefix(projectId));
+  invalidate(K.projectOverview(projectId));
+}
+
+function normalizeStoryboardImageSize(value) {
+  if (typeof value !== 'string') return value;
+
+  const trimmed = value.trim();
+  if (!trimmed) return value;
+
+  if (/^\d+x\d+$/i.test(trimmed)) return trimmed.toLowerCase();
+  if (/^[234]k$/i.test(trimmed)) return trimmed.toLowerCase();
+
+  const aliasMap = {
+    '1024': '1024x1024',
+    '1536': '1536x1536',
+    '2048': '2k',
+    '3072': '3k',
+    '4096': '4k',
+    '2K': '2k',
+    '3K': '3k',
+    '4K': '4k',
+  };
+
+  return aliasMap[trimmed] || trimmed;
+}
 
 export async function apiGetStoryboards(projectId, { episode_id } = {}) {
-  const params = new URLSearchParams();
-  if (episode_id) params.append('episode_id', episode_id);
-  const query = params.toString();
-  const url = query
-    ? `${BASE}/api/projects/${projectId}/storyboards?${query}`
-    : `${BASE}/api/projects/${projectId}/storyboards`;
-  const res = await authFetch(url, { headers: { 'Content-Type': 'application/json' } });
-  return res.json();
+  return cached(
+    K.storyboards(projectId, episode_id),
+    async () => {
+      const params = new URLSearchParams();
+      if (episode_id) params.append('episode_id', episode_id);
+      const query = params.toString();
+      const url = query
+        ? `${BASE}/api/projects/${projectId}/storyboards?${query}`
+        : `${BASE}/api/projects/${projectId}/storyboards`;
+      const res = await authFetch(url, { headers: { 'Content-Type': 'application/json' } });
+      return res.json();
+    },
+    { medium: MEDIUM.CONTENT, ttl: TTL.CONTENT },
+  );
 }
 
 export async function apiCreateStoryboard(projectId, data) {
@@ -19,6 +56,7 @@ export async function apiCreateStoryboard(projectId, data) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
+  invalidateStoryboards(projectId);
   return res.json();
 }
 
@@ -28,6 +66,7 @@ export async function apiUpdateStoryboard(projectId, storyboardId, data) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
+  invalidateStoryboards(projectId);
   return res.json();
 }
 
@@ -36,6 +75,7 @@ export async function apiDeleteStoryboard(projectId, storyboardId) {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
   });
+  invalidateStoryboards(projectId);
 }
 
 export async function apiReorderStoryboards(projectId, ordered_ids) {
@@ -44,6 +84,7 @@ export async function apiReorderStoryboards(projectId, ordered_ids) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ ordered_ids }),
   });
+  invalidateStoryboards(projectId);
 }
 
 // ── 分镜生成 ──────────────────────────────────────────────────────────────────
@@ -54,6 +95,7 @@ export async function apiGenerateStoryboardsFromEpisode(projectId, { episode_id,
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ episode_id, model }),
   });
+  invalidateStoryboards(projectId);
   return res.json();
 }
 
@@ -74,18 +116,26 @@ export async function apiGenerateStoryboardsFromFinalScript(projectId) {
     err.status = res.status;
     throw err;
   }
+  invalidateStoryboards(projectId);
   return res.json();
 }
 
 // ── 分镜图片/视频生成 ─────────────────────────────────────────────────────────
 
 export async function apiGenerateStoryboardImage(projectId, storyboardId, params) {
+  const normalizedSize = normalizeStoryboardImageSize(params?.size || params?.resolution);
+  const payload = {
+    ...params,
+    size: normalizedSize,
+    resolution: normalizedSize,
+  };
+
   const res = await authFetch(
     `${BASE}/api/projects/${projectId}/storyboards/${storyboardId}/generate-image`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(params),
+      body: JSON.stringify(payload),
     }
   );
   if (!res.ok) {
@@ -134,6 +184,7 @@ export async function apiUploadStoryboardImage(projectId, storyboardId, file) {
     `${BASE}/api/projects/${projectId}/storyboards/${storyboardId}/upload-image`,
     { method: 'POST', body: form }
   );
+  invalidateStoryboards(projectId);
   return res.json();
 }
 
@@ -144,6 +195,7 @@ export async function apiUploadStoryboardVideo(projectId, storyboardId, file) {
     `${BASE}/api/projects/${projectId}/storyboards/${storyboardId}/upload-video`,
     { method: 'POST', body: form }
   );
+  invalidateStoryboards(projectId);
   return res.json();
 }
 

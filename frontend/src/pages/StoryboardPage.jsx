@@ -11,6 +11,8 @@ import { apiGetEpisodes } from '../api/subject';
 import { getImageModelParams, getVideoModelParams, getVideoModelCapabilities } from '../config';
 import { normalizeImageUrl } from '../utils/imageUrl';
 import ConfirmDialog from '../components/ConfirmDialog';
+import { subscribe, peekCache } from '../utils/cache';
+import { K, MEDIUM } from '../utils/cacheKeys';
 
 // ─── 后端/前端数据模型双向映射 ───────────────────────────────────────────────
 
@@ -2115,6 +2117,9 @@ function GenerateImagePanel({ shot, projectId, chars = [], scenes = [], props = 
       onSetGeneratedImages((prev) => prev.filter((item) => item.id !== placeholder));
       const status = err?.status;
       const msg = err?.message || '';
+      if (msg) {
+        console.error('[GenerateImagePanel] 图片生成错误详情:', { status, msg, err });
+      }
       if (status === 502 || status === 504 || msg.includes('fetch') || msg.includes('Network')) {
         onShowToast?.('生成服务暂时不可用，请稍后重试', 'error');
       } else if (status === 429) {
@@ -2122,11 +2127,11 @@ function GenerateImagePanel({ shot, projectId, chars = [], scenes = [], props = 
       } else if (status === 401 || status === 403) {
         onShowToast?.('登录已过期，请重新登录', 'error');
       } else if (status === 422) {
-        onShowToast?.('生成参数有误，请检查后重试', 'error');
+        onShowToast?.(msg || '生成参数有误，请检查后重试', 'error');
       } else if (status) {
-        onShowToast?.(`生成失败（${status}），请稍后重试`, 'error');
+        onShowToast?.(msg || `生成失败（${status}），请稍后重试`, 'error');
       } else {
-        onShowToast?.('生成失败，请检查网络连接后重试', 'error');
+        onShowToast?.(msg || '生成失败，请检查网络连接后重试', 'error');
       }
     } finally {
       setLoading(false);
@@ -2758,7 +2763,7 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
                 try {
                   const result = await apiUploadStoryboardVideo(projectId, shot.id, file);
                   const videoUrl = result.video_url || result.videoUrl;
-                  if (videoUrl) { const nu = normalizeImageUrl(videoUrl); onSetGeneratedVideos?.((prev) => [{ url: nu, settled: true, id: result.id || nu }, ...prev]); onSettleVideo?.(nu); }
+                  if (videoUrl) { const nu = normalizeImageUrl(videoUrl); onSetGeneratedVideos?.((prev) => [{ url: nu, settled: false, id: result.id || nu }, ...prev]); onSettleVideo?.(nu, null); }
                 } catch {
                   onShowToast?.('视频上传失败，请重试', 'error');
                 }
@@ -2766,7 +2771,7 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
               onAssetSelect={(assets) => {
                 const newItems = assets.map(a => {
                   const url = normalizeImageUrl(a.thumbnailUrl || a.thumbnail_url || a.originalUrl || a.original_url || a.file_url || a.url);
-                  return url ? { url, settled: true, id: a.id || a.asset_id || url } : null;
+                  return url ? { url, settled: false, id: a.id || a.asset_id || url } : null;
                 }).filter(Boolean);
                 onSetGeneratedVideos?.(prev => [...newItems, ...prev]);
                 if (newItems.length > 0) onSettleVideo?.(newItems[0].url);
@@ -5323,7 +5328,16 @@ export default function StoryboardPage({ serverReachable, projectId, projectName
   }
 
   const activeEpisodes = episodes.length > 0 ? episodes : EPISODES;
-  const [shots, setShots] = useState([]);
+  // 用 peekCache 同步读取缓存，第一次渲染直接呈现旧数据，避免空状态闪烁
+  const [shots, setShots] = useState(() => {
+    const initialEpisode = activeEpisodes[0] ?? '第一集';
+    if (typeof initialEpisode === 'string') return [];
+    const episodeId = initialEpisode?.id ?? '';
+    if (!episodeId || !projectId) return [];
+    const cached = peekCache(K.storyboards(projectId, episodeId), MEDIUM.CONTENT);
+    if (!cached || !Array.isArray(cached)) return [];
+    return cached.map(be => enrichMainRefs(normalizeStoryboard(be), chars));
+  });
   const [globalVoiceParams, setGlobalVoiceParams] = useState({});
   const [episode, setEpisode] = useState(() => activeEpisodes[0] ?? '第一集');
   const [dragId, setDragId] = useState(null);
@@ -5372,17 +5386,35 @@ export default function StoryboardPage({ serverReachable, projectId, projectName
 
     const episodeId = getEpisodeId(episode);
     if (!episodeId) return;
+
+    const cacheKey = K.storyboards(projectId, episodeId);
+
+    // normalize 函数（稳定引用，不依赖 chars 变化）
+    const normalizeShots = (data) => {
+      if (!Array.isArray(data)) return [];
+      return data.map(be => enrichMainRefs(normalizeStoryboard(be), chars));
+    };
+
     apiGetStoryboards(projectId, { episode_id: episodeId })
       .then((data) => {
         if (data !== null && data !== undefined) {
-          setShots((Array.isArray(data) ? data : []).map(be => enrichMainRefs(normalizeStoryboard(be), chars)));
+          setShots(normalizeShots(data));
         }
       })
       .catch((err) => {
         console.error('[StoryboardPage] 加载剧本失败:', err);
         // 请求失败时不清空现有数据
       });
-  }, [projectId, episode]);
+
+    // 订阅后台缓存更新：当分镜数据有变化时自动刷新 UI
+    const unsubscribe = subscribe(cacheKey, (data) => {
+      if (data !== null && data !== undefined) {
+        setShots(normalizeShots(data));
+      }
+    });
+
+    return unsubscribe;
+  }, [projectId, episode?.id, chars]);
 
   useEffect(() => {
     if (activeEpisodes.length > 0 && !activeEpisodes.some(ep => getEpisodeId(ep) === getEpisodeId(episode))) {
@@ -5448,6 +5480,33 @@ export default function StoryboardPage({ serverReachable, projectId, projectName
     return null;
   }
 
+  // 从轮询响应中归一化提取图片 URL（兼容 result / results / images）
+  function extractImageUrlFromTask(t) {
+    if (t.result && typeof t.result === 'object') {
+      const url = t.result.image_url || t.result.imageUrl || t.result.url || t.result.original_url || t.result.originalUrl;
+      if (url) return url;
+    }
+    if (Array.isArray(t.results)) {
+      for (const result of t.results) {
+        if (!result) continue;
+        const url = result.image_url || result.imageUrl || result.url || result.original_url || result.originalUrl;
+        if (url) return url;
+      }
+    }
+    if (Array.isArray(t.images)) {
+      for (const image of t.images) {
+        if (!image) continue;
+        const url = image.original_url || image.originalUrl || image.image_url || image.imageUrl || image.url || image.thumbnail_url || image.thumbnailUrl;
+        if (url) return url;
+      }
+    }
+    return null;
+  }
+
+  function hasImageTaskResult(t) {
+    return extractImageUrlFromTask(t) !== null;
+  }
+
   // 视频任务终态判定：有可播放视频即视为成功
   function hasVideoTaskResult(t) {
     return extractVideoUrlFromTask(t) !== null;
@@ -5469,9 +5528,9 @@ export default function StoryboardPage({ serverReachable, projectId, projectName
           prompt: params.prompt,
           reference_images: (params.refImages || []).map(r => typeof r === 'string' ? r : r.url).filter(Boolean),
         });
-        const task = await pollTask(taskResp.id);
-        if ((task.status === 'completed' || task.status === 'partial') && task.results?.length > 0) {
-          const imageUrl = task.results[0]?.image_url;
+        const task = await pollTask(taskResp.id, hasImageTaskResult);
+        if (task.status === 'completed' || task.status === 'partial' || hasImageTaskResult(task)) {
+          const imageUrl = extractImageUrlFromTask(task);
           if (imageUrl) {
             const normalizedUrl = normalizeImageUrl(imageUrl);
             setShots((prev) => prev.map((s) => s.id === shot.id
@@ -6127,9 +6186,9 @@ export default function StoryboardPage({ serverReachable, projectId, projectName
          const shot = imagePanel.shot;
          try {
            const taskResp = await apiGenerateStoryboardImage(projectId, shot.id, { model: params.model, resolution: params.resolution, prompt: params.prompt, reference_images: (params.refImages || []).map(r => typeof r === 'string' ? r : r.url) });
-           const task = await pollTask(taskResp.id);
-           if ((task.status === 'completed' || task.status === 'partial') && task.results?.length > 0) {
-             const imageUrl = task.results[0]?.image_url;
+           const task = await pollTask(taskResp.id, hasImageTaskResult);
+           if (task.status === 'completed' || task.status === 'partial' || hasImageTaskResult(task)) {
+             const imageUrl = extractImageUrlFromTask(task);
              if (imageUrl) {
                const normalizedUrl = normalizeImageUrl(imageUrl);
                setShots((prev) => prev.map((s) => s.id === shot.id && !s.storyboardImage

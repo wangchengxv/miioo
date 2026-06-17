@@ -4,6 +4,8 @@ import { apiDeleteCreationImage, apiDeleteCreationVideo, apiBatchDeleteImages, a
 import { useCreationStore } from '../stores/creationStore';
 import { generationsToDays } from '../utils/creativeDaysAdapter';
 import { apiGetProjects, apiGetProjectOverview, apiDeleteProject, apiUpdateProject, apiDownloadProjectAssets } from '../api/project';
+import { subscribe, peekCache } from '../utils/cache';
+import { K, MEDIUM } from '../utils/cacheKeys';
 import ImageDetailModal from '../components/ImageDetailModal';
 import CreationVideoDetailModal from '../components/CreationVideoDetailModal';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -1174,6 +1176,18 @@ function ShotDetailModal({ onClose, onDownload, onDelete, shotNumber, prompt, mo
                         backgroundImage: `url(${img.src ?? 'https://app.paper.design/static/flowers.webp'})`,
                         backgroundSize: 'cover', backgroundPosition: '50%',
                       }} />
+                      {/* 定稿标签 */}
+                      {img.finalized && (
+                        <div style={{
+                          position: 'absolute', top: '4px', left: '4px',
+                          paddingLeft: '4px', paddingRight: '4px',
+                          borderRadius: '2px', backgroundColor: '#4AC981',
+                          boxShadow: '#FFFFFF14 0px 0px 0px 1px inset',
+                          height: '18px', display: 'flex', alignItems: 'center',
+                        }}>
+                          <span style={{ fontFamily: FONT, fontSize: '10px', lineHeight: '14px', color: '#0A0A0A', fontWeight: 500 }}>定稿</span>
+                        </div>
+                      )}
                       {isHov && (
                         <div style={{
                           position: 'absolute', bottom: 0, left: 0, right: 0,
@@ -1386,6 +1400,77 @@ function ShotDetailModal({ onClose, onDownload, onDelete, shotNumber, prompt, mo
   );
 }
 
+function VideoFrameThumbnail({ frame, isActive, isHov, onSelect, onMouseEnter, onMouseLeave }) {
+  return (
+    <div
+      style={{
+        borderRadius: '6px', overflow: 'hidden',
+        width: '120px', height: '84px', flexShrink: 0,
+        boxShadow: isActive ? '#2DC3E166 0px 0px 10px 1px' : 'none',
+        backgroundColor: '#1A1A1A',
+        border: isActive ? '1px solid #2DC3E1' : '1px solid #FFFFFF33',
+        cursor: 'pointer', position: 'relative',
+        transition: 'border-color 0.15s, box-shadow 0.15s',
+      }}
+      onClick={onSelect}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+    >
+      {frame.src ? (
+        <video
+          src={frame.src}
+          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+          preload="metadata"
+          muted
+          playsInline
+        />
+      ) : (
+        <div style={{
+          width: '100%', height: '100%',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'linear-gradient(135deg, #2A2A2A 0%, #1F1F1F 100%)',
+        }}>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+            <rect x="2" y="2" width="20" height="20" rx="3" stroke="#FFFFFF33" strokeLinejoin="round" />
+            <path d="M9 8L16 12L9 16V8Z" fill="#FFFFFF33" />
+          </svg>
+        </div>
+      )}
+
+      {/* 定稿标签 */}
+      {frame.finalized && (
+        <div style={{
+          position: 'absolute', top: '4px', left: '4px',
+          paddingLeft: '4px', paddingRight: '4px',
+          borderRadius: '2px', backgroundColor: '#4AC981',
+          boxShadow: '#FFFFFF14 0px 0px 0px 1px inset',
+          height: '18px', display: 'flex', alignItems: 'center',
+        }}>
+          <span style={{ fontFamily: FONT, fontSize: '10px', lineHeight: '14px', color: '#0A0A0A', fontWeight: 500 }}>定稿</span>
+        </div>
+      )}
+
+      {isHov && (
+        <div style={{
+          position: 'absolute', bottom: 0, left: 0, right: 0,
+          paddingTop: '8px', paddingBottom: '4px', paddingLeft: '4px', paddingRight: '4px',
+          display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px',
+          backgroundImage: 'linear-gradient(in oklab 180deg, oklab(0% 0 0 / 0%) 0%, oklab(0% 0 0 / 80%) 100%)',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', padding: '2px', cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); onSelect(); }} title="放大查看">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
+              <path d="M5.333 2H2.667C2.298 2 2 2.298 2 2.667V5.333" stroke="#FFFFFF" strokeLinejoin="round" />
+              <path d="M5.333 14H2.667C2.298 14 2 13.701 2 13.333V10.667" stroke="#FFFFFF" strokeLinejoin="round" />
+              <path d="M10.667 14H13.333C13.701 14 14 13.701 14 13.333V10.667" stroke="#FFFFFF" strokeLinejoin="round" />
+              <path d="M10.667 2H13.333C13.701 2 14 2.298 14 2.667V5.333" stroke="#FFFFFF" strokeLinejoin="round" />
+            </svg>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 function ShotVideoDetailModal({ onClose, onDownload, onDelete, shotNumber, prompt, model, resolution, duration, ratio, generatedAt, frames, videoSrc, refMode, firstFrame, lastFrame, sound, refImages, refVideos }) {
   const frms = frames ?? MOCK_SHOT_VIDEO_DETAIL.frames;
   const defaultIdx = frms.findIndex((f) => f.finalized);
@@ -1408,7 +1493,18 @@ function ShotVideoDetailModal({ onClose, onDownload, onDelete, shotNumber, promp
   const currentFrame = frms[activeFrame];
   const isFinalized = currentFrame?.finalized ?? false;
   const sn = shotNumber ?? MOCK_SHOT_VIDEO_DETAIL.shotNumber;
-  const src = videoSrc ?? MOCK_SHOT_VIDEO_DETAIL.videoSrc;
+  // src 优先取当前缩略图对应的视频，无则 fallback 到主视频
+  const src = currentFrame?.src || videoSrc || MOCK_SHOT_VIDEO_DETAIL.videoSrc;
+
+  // 切换缩略图时重置播放状态并加载新视频
+  useEffect(() => {
+    const vid = videoRef.current;
+    if (!vid) return;
+    vid.pause();
+    setIsPlaying(false);
+    setCurrentTime(0);
+    vid.load();
+  }, [src]);
 
   function fmtTime(secs) {
     if (!isFinite(secs) || secs < 0) return '0:00';
@@ -1651,51 +1747,15 @@ function ShotVideoDetailModal({ onClose, onDownload, onDelete, shotNumber, promp
                   const isActive = activeFrame === idx;
                   const isHov = hovThumb === idx;
                   return (
-                    <div
+                    <VideoFrameThumbnail
                       key={frm.id}
-                      style={{
-                        borderRadius: '6px', overflow: 'hidden',
-                        width: '120px', height: '84px', flexShrink: 0,
-                        boxShadow: isActive ? '#2DC3E166 0px 0px 10px 1px' : 'none',
-                        backgroundColor: '#FFFFFF14',
-                        border: isActive ? '1px solid #2DC3E1' : '1px solid #FFFFFF33',
-                        cursor: 'pointer', position: 'relative',
-                        transition: 'border-color 0.15s, box-shadow 0.15s',
-                      }}
-                      onClick={() => setActiveFrame(idx)}
+                      frame={frm}
+                      isActive={isActive}
+                      isHov={isHov}
+                      onSelect={() => setActiveFrame(idx)}
                       onMouseEnter={() => setHovThumb(idx)}
                       onMouseLeave={() => setHovThumb(null)}
-                    >
-                      <div style={{
-                        width: '100%', height: '100%',
-                        backgroundImage: `url(${frm.src ?? 'https://app.paper.design/static/flowers.webp'})`,
-                        backgroundSize: 'cover', backgroundPosition: '50%',
-                      }} />
-                      {isHov && (
-                        <div style={{
-                          position: 'absolute', bottom: 0, left: 0, right: 0,
-                          paddingTop: '8px', paddingBottom: '4px', paddingLeft: '4px', paddingRight: '4px',
-                          display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px',
-                          backgroundImage: 'linear-gradient(in oklab 180deg, oklab(0% 0 0 / 0%) 0%, oklab(0% 0 0 / 80%) 100%)',
-                        }}>
-                          <div style={{ display: 'flex', alignItems: 'center', padding: '2px', cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); setActiveFrame(idx); }} title="放大查看">
-                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
-                              <path d="M5.333 2H2.667C2.298 2 2 2.298 2 2.667V5.333" stroke="#FFFFFF" strokeLinejoin="round" />
-                              <path d="M5.333 14H2.667C2.298 14 2 13.701 2 13.333V10.667" stroke="#FFFFFF" strokeLinejoin="round" />
-                              <path d="M10.667 14H13.333C13.701 14 14 13.701 14 13.333V10.667" stroke="#FFFFFF" strokeLinejoin="round" />
-                              <path d="M10.667 2H13.333C13.701 2 14 2.298 14 2.667V5.333" stroke="#FFFFFF" strokeLinejoin="round" />
-                            </svg>
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'center', padding: '2px', cursor: 'pointer' }} title="下载">
-                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ width: '16px', height: '16px', rotate: '180deg', flexShrink: 0, transformOrigin: '50% 50%' }}>
-                              <path d="M8.003 4.7V14" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
-                              <path d="M4 8.667L8 4.667L12 8.667" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
-                              <path d="M4 2H12" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
-                            </svg>
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                    />
                   );
                 })}
               </div>
@@ -2147,14 +2207,48 @@ function AssetCard({ name, bgColor = '#252525', url = null, starred = false, sel
   );
 }
 
-const SUBJECT_CARD_CATEGORIES = new Set(['chars', 'scenes', 'props']);
+const SUBJECT_CARD_CATEGORIES = new Set(['chars', 'scenes', 'props', 'storyboard_img', 'storyboard_video']);
 
-function ProjectAssetCard({ name, desc, url, selected, batchMode, onDownload, onDelete, onSelect, asset = {} }) {
+function ProjectAssetCard({ name, desc, url, selected, batchMode, onDownload, onDelete, onSelect, asset = {}, category = '' }) {
   const [hov, setHov] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
 
   const images = asset.images ?? [];
   const imageCount = asset.imageCount ?? 1;
+  const isVideo = category === 'storyboard_video';
+  const videoRef = useRef(null);
+
+  // 只有分镜资产根据 ratio 动态调整尺寸，角色/场景/道具保持固定尺寸
+  const isStoryboard = category === 'storyboard_img' || category === 'storyboard_video';
+  let cardWidth = 200, cardHeight = 246;
+  if (isStoryboard) {
+    const ratio = asset.ratio || '16:9';
+    if (ratio === '16:9') {
+      cardWidth = 284;
+      cardHeight = 196;
+    } else if (ratio === '9:16') {
+      cardWidth = 160;
+      cardHeight = 280;
+    } else if (ratio === '1:1') {
+      cardWidth = 220;
+      cardHeight = 220;
+    } else {
+      cardWidth = 284;
+      cardHeight = 196;
+    }
+  }
+
+  // 视频悬停播放
+  useEffect(() => {
+    const vid = videoRef.current;
+    if (!vid) return;
+    if (hov && isVideo) {
+      vid.currentTime = 0;
+      vid.play().catch(() => {});
+    } else {
+      vid.pause();
+    }
+  }, [hov, isVideo]);
 
   function handleClick() {
     if (batchMode) { onSelect?.(); return; }
@@ -2165,8 +2259,8 @@ function ProjectAssetCard({ name, desc, url, selected, batchMode, onDownload, on
     <>
       <div
         style={{
-          width: '200px',
-          height: '246px',
+          width: `${cardWidth}px`,
+          height: `${cardHeight}px`,
           borderRadius: '12px',
           overflow: 'hidden',
           flexShrink: 0,
@@ -2183,24 +2277,39 @@ function ProjectAssetCard({ name, desc, url, selected, batchMode, onDownload, on
         onMouseLeave={() => setHov(false)}
         onClick={handleClick}
       >
-        {/* image area */}
+        {/* image/video area */}
         <div
           style={{
             flex: 1,
-            minHeight: '148px',
             position: 'relative',
-            backgroundImage: url
-              ? `url(${url})`
-              : 'linear-gradient(145deg, oklab(27.6% -0.014 -0.012) 0%, oklab(23.8% -0.010 -0.019) 100%)',
-            backgroundSize: 'cover',
-            backgroundPosition: '50%',
             backgroundColor: '#252525',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
+            overflow: 'hidden',
           }}
         >
-          {!url && (
+          {isVideo && asset.videoUrl ? (
+            <video
+              ref={videoRef}
+              src={asset.videoUrl}
+              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+              muted
+              playsInline
+              loop
+              preload="metadata"
+            />
+          ) : url ? (
+            <div
+              style={{
+                width: '100%',
+                height: '100%',
+                backgroundImage: `url(${url})`,
+                backgroundSize: 'cover',
+                backgroundPosition: '50%',
+              }}
+            />
+          ) : (
             <svg width="40" height="40" viewBox="0 0 40 40" fill="none" style={{ flexShrink: 0 }}>
               <circle cx="20" cy="20" r="20" fill="#FFFFFF0A" />
               <path d="M20 12C16.69 12 14 14.69 14 18C14 20.48 15.43 22.63 17.5 23.65V26C17.5 26.55 17.95 27 18.5 27H21.5C22.05 27 22.5 26.55 22.5 26V23.65C24.57 22.63 26 20.48 26 18C26 14.69 23.31 12 20 12Z" fill="#FFFFFF26" />
@@ -2272,20 +2381,56 @@ function ProjectAssetCard({ name, desc, url, selected, batchMode, onDownload, on
         </div>
       </div>
 
-      {/* 多图聚合详情弹窗 */}
-      {detailOpen && images.length > 0 && (
+      {/* 分镜图详情弹窗 */}
+      {detailOpen && category === 'storyboard_img' && (
+        <ShotDetailModal
+          onClose={() => setDetailOpen(false)}
+          onDownload={() => onDownload?.()}
+          onDelete={() => { setDetailOpen(false); onDelete?.(); }}
+          shotNumber={name}
+          prompt={asset.prompt}
+          model={asset.model}
+          resolution={asset.resolution}
+          generatedAt={asset.created_at}
+          images={images.map(img => ({ ...img, src: img.fileUrl ?? img.url, finalized: img.is_primary }))}
+          refImages={asset.refImages}
+        />
+      )}
+
+      {/* 分镜视频详情弹窗 */}
+      {detailOpen && category === 'storyboard_video' && (
+        <ShotVideoDetailModal
+          onClose={() => setDetailOpen(false)}
+          onDownload={() => onDownload?.()}
+          onDelete={() => { setDetailOpen(false); onDelete?.(); }}
+          shotNumber={name}
+          prompt={asset.prompt}
+          model={asset.model}
+          resolution={asset.resolution}
+          ratio={asset.ratio}
+          generatedAt={asset.created_at}
+          videoSrc={asset.videoUrl}
+          frames={images.map(img => ({ ...img, src: img.fileUrl ?? img.url, finalized: img.is_primary }))}
+          refMode={asset.refMode}
+          firstFrame={asset.firstFrame}
+          lastFrame={asset.lastFrame}
+          refImages={asset.refImages}
+          refVideos={asset.refVideos}
+        />
+      )}
+
+      {/* 主体资产多图聚合详情弹窗（角色/场景/道具） */}
+      {detailOpen && category !== 'storyboard_img' && category !== 'storyboard_video' && images.length > 0 && (
         <SubjectAssetDetailModal
           onClose={() => setDetailOpen(false)}
           name={name}
           description={desc}
           images={images}
           onDownload={(imageId, fileUrl) => {
-            // 下载单张图
             const img = images.find(i => i.id === imageId);
             if (img?.fileUrl || fileUrl) {
-              const url = fileUrl || img.fileUrl;
               const a = document.createElement('a');
-              a.href = url;
+              a.href = fileUrl || img.fileUrl;
               a.download = `${name}_${imageId}`;
               document.body.appendChild(a);
               a.click();
@@ -2293,12 +2438,9 @@ function ProjectAssetCard({ name, desc, url, selected, batchMode, onDownload, on
             }
           }}
           onDeleteImage={(imageId) => {
-            // 删除单张图
             if (images.length === 1) {
-              // 只有一张图，等同删除整个主体
               onDelete?.();
             } else {
-              // 删除该图
               onDelete?.(imageId);
             }
             setDetailOpen(false);
@@ -2307,7 +2449,7 @@ function ProjectAssetCard({ name, desc, url, selected, batchMode, onDownload, on
       )}
 
       {/* 兼容旧逻辑：若无 images 则用原 ImageDetailModal */}
-      {detailOpen && (!images || images.length === 0) && (
+      {detailOpen && category !== 'storyboard_img' && category !== 'storyboard_video' && (!images || images.length === 0) && (
         <ImageDetailModal
           card={{
             imageUrl: asset.fileUrl || asset.url || url,
@@ -2759,6 +2901,11 @@ function EmptyCreativeAssets({ type }) {
   return <EmptyAssetState mediaType={mediaType} />;
 }
 
+function notifyProjectAssetsDeleted(projectId) {
+  if (!projectId) return;
+  window.dispatchEvent(new CustomEvent('project-assets:deleted', { detail: { projectId } }));
+}
+
 function ProjectAssetsPanel() {
   const [projects, setProjects] = useState([]);
   const [activeProject, setActiveProject] = useState(null);
@@ -2796,7 +2943,16 @@ function ProjectAssetsPanel() {
 
   useEffect(() => {
     if (activeProject == null) return;
+    // 同步预填充缓存（秒开）
+    const cachedAssets = peekCache(K.projectAssets(activeProject), MEDIUM.CONTENT);
+    if (cachedAssets) setAssetsMap(cachedAssets);
+    // 异步拉最新
     apiGetProjectAssets(activeProject).then(setAssetsMap);
+    // 订阅后台更新
+    const unsubscribe = subscribe(K.projectAssets(activeProject), (data) => {
+      if (data) setAssetsMap(data);
+    });
+    return unsubscribe;
   }, [activeProject]);
 
   const categoryAssets = assetsMap[activeCategory] || [];
@@ -2812,71 +2968,75 @@ function ProjectAssetsPanel() {
     }));
   }
 
-  function deleteAsset(id, singleImageId = null) {
+  async function deleteAsset(id, singleImageId = null) {
     // singleImageId 存在时表示删除单张图，否则删除整个主体
-    if (singleImageId) {
-      // 删除单张图：在该主体下移除这张图
-      apiDeleteAsset(singleImageId).catch(console.error);
-      setAssetsMap((prev) => ({
-        ...prev,
-        [activeCategory]: prev[activeCategory].map((asset) => {
-          if (asset.id === id && asset.images) {
-            const filtered = asset.images.filter((img) => img.id !== singleImageId);
-            if (filtered.length === 0) {
-              // 如果删完了该主体的所有图，则删除这个主体卡片
-              return null;
+    try {
+      if (singleImageId) {
+        await apiDeleteAsset(singleImageId, { projectId: activeProject });
+        setAssetsMap((prev) => ({
+          ...prev,
+          [activeCategory]: prev[activeCategory].map((asset) => {
+            if (asset.id === id && asset.images) {
+              const filtered = asset.images.filter((img) => img.id !== singleImageId);
+              if (filtered.length === 0) {
+                return null;
+              }
+              return {
+                ...asset,
+                images: filtered,
+                imageCount: filtered.length,
+                url: filtered[0]?.url || asset.url,
+              };
             }
-            // 否则更新主体卡片的 images 和 imageCount
-            return {
-              ...asset,
-              images: filtered,
-              imageCount: filtered.length,
-              // 如果被删除的是定稿图，重新取第一张作为卡片封面
-              url: filtered[0]?.url || asset.url,
-            };
-          }
-          return asset;
-        }).filter(Boolean),
-      }));
-    } else {
-      // 删除整个主体：删除 images 中所有图片
-      const asset = assetsMap[activeCategory]?.find((a) => a.id === id);
-      if (asset && asset.images) {
-        apiBatchDeleteAssets(asset.images.map((img) => img.id)).catch(console.error);
+            return asset;
+          }).filter(Boolean),
+        }));
       } else {
-        apiDeleteAsset(id).catch(console.error);
+        const asset = assetsMap[activeCategory]?.find((a) => a.id === id);
+        if (asset && asset.images) {
+          await apiBatchDeleteAssets(asset.images.map((img) => img.id), { projectId: activeProject });
+        } else {
+          await apiDeleteAsset(id, { projectId: activeProject });
+        }
+        setAssetsMap((prev) => ({
+          ...prev,
+          [activeCategory]: prev[activeCategory].filter((a) => a.id !== id),
+        }));
       }
-      setAssetsMap((prev) => ({
-        ...prev,
-        [activeCategory]: prev[activeCategory].filter((a) => a.id !== id),
-      }));
+      notifyProjectAssetsDeleted(activeProject);
+    } catch (err) {
+      console.error('删除资产失败', err);
     }
   }
 
-  function deleteSelected() {
+  async function deleteSelected() {
     const ids = [...selected];
+    try {
+      // 对于主体卡片（chars/scenes/props），需要删除该主体下的所有图片
+      if (SUBJECT_CARD_CATEGORIES.has(activeCategory)) {
+        const allImageIds = [];
+        ids.forEach((cardId) => {
+          const card = assetsMap[activeCategory]?.find((a) => a.id === cardId);
+          if (card && card.images) {
+            allImageIds.push(...card.images.map((img) => img.id));
+          } else {
+            allImageIds.push(cardId);
+          }
+        });
+        await apiBatchDeleteAssets(allImageIds, { projectId: activeProject });
+      } else {
+        await apiBatchDeleteAssets(ids, { projectId: activeProject });
+      }
 
-    // 对于主体卡片（chars/scenes/props），需要删除该主体下的所有图片
-    if (SUBJECT_CARD_CATEGORIES.has(activeCategory)) {
-      const allImageIds = [];
-      ids.forEach((cardId) => {
-        const card = assetsMap[activeCategory]?.find((a) => a.id === cardId);
-        if (card && card.images) {
-          allImageIds.push(...card.images.map((img) => img.id));
-        } else {
-          allImageIds.push(cardId);
-        }
-      });
-      apiBatchDeleteAssets(allImageIds).catch(console.error);
-    } else {
-      apiBatchDeleteAssets(ids).catch(console.error);
+      setAssetsMap((prev) => ({
+        ...prev,
+        [activeCategory]: prev[activeCategory].filter((a) => !selected.has(a.id)),
+      }));
+      setSelected(new Set());
+      notifyProjectAssetsDeleted(activeProject);
+    } catch (err) {
+      console.error('批量删除资产失败', err);
     }
-
-    setAssetsMap((prev) => ({
-      ...prev,
-      [activeCategory]: prev[activeCategory].filter((a) => !selected.has(a.id)),
-    }));
-    setSelected(new Set());
   }
 
   function toggleSelect(id) {
@@ -2947,6 +3107,42 @@ function ProjectAssetsPanel() {
     }
   }
 
+  function getSelectedDownloadItems() {
+    const selectedIds = [...selected];
+    const items = [];
+
+    selectedIds.forEach((cardId) => {
+      const card = assetsMap[activeCategory]?.find((asset) => asset.id === cardId);
+      if (!card) return;
+
+      if (Array.isArray(card.images) && card.images.length > 0) {
+        card.images.forEach((image, index) => {
+          items.push({
+            id: image.id,
+            name: card.images.length > 1 ? `${card.name || 'asset'}-${index + 1}` : (card.name || 'asset'),
+          });
+        });
+        return;
+      }
+
+      items.push({
+        id: card.id,
+        name: card.name || 'asset',
+      });
+    });
+
+    return items;
+  }
+
+  async function downloadSelected() {
+    const items = getSelectedDownloadItems();
+    if (items.length === 0) return;
+
+    for (const item of items) {
+      await downloadAsset(item.id, item.name);
+    }
+  }
+
   return (
     <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
       <div style={{
@@ -2995,7 +3191,7 @@ function ProjectAssetsPanel() {
                   </svg>
                   <span style={{ fontFamily: FONT, fontSize: '14px', color: '#FFFFFF', whiteSpace: 'nowrap' }}>全选</span>
                 </GhostBtn>
-                <GhostBtn onClick={() => {}}>
+                <GhostBtn onClick={downloadSelected}>
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, rotate: '180deg', transformOrigin: '50% 50%' }}>
                     <path d="M8.003 4.7V14" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
                     <path d="M4 8.667L8 4.667L12 8.667" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
@@ -3069,6 +3265,7 @@ function ProjectAssetsPanel() {
                 onDownload={() => downloadAsset(asset.id, asset.name)}
                 onDelete={(imageId) => deleteAsset(asset.id, imageId)}
                 asset={asset}
+                category={activeCategory}
               />
             ) : (
               <AssetCard

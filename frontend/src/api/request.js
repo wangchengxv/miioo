@@ -1,5 +1,7 @@
 const BASE = import.meta.env.VITE_API_BASE_URL;
 
+import { clearAllCache } from '../utils/cache.js';
+
 export function getToken() {
   return localStorage.getItem('token');
 }
@@ -16,6 +18,7 @@ export function setTokens(accessToken, refreshToken) {
 export function clearTokens() {
   localStorage.removeItem('token');
   localStorage.removeItem('refresh_token');
+  clearAllCache(); // 任何登出路径都清空业务缓存，防止跨用户数据残留
 }
 
 function withAuth(options = {}) {

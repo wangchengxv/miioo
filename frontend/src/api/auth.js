@@ -49,7 +49,7 @@ export async function apiLogout() {
   try {
     await authFetch(`${BASE}/api/auth/logout`, { method: 'POST' });
   } catch {}
-  _clearTokens();
+  _clearTokens(); // clearTokens 内部已清空业务缓存
 }
 
 export async function apiGetCurrentUser() {
