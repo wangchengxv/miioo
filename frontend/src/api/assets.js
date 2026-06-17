@@ -167,6 +167,7 @@ function groupBySubject(normalized) {
 
     return {
       id: primaryImage.id,
+      subject_id: primaryImage.subject_id ?? (key !== primaryImage.name ? key : null),
       name: primaryImage.name,
       description: primaryImage.description,
       url: primaryImage.url,
@@ -294,24 +295,40 @@ export async function apiGetProjectAssets(projectId) {
       const primaryImageUrls = new Set();
       const primaryVideoAssetIds = new Set();
       const primaryVideoUrls = new Set();
+      // ratio 补全：storyboard → 资产，用于视频/图片资产 ratio 字段缺失时回填
+      const videoAssetIdRatio = {};   // asset_id → ratio
+      const videoUrlRatio = {};       // normalized url → ratio
+      const imageUrlRatio = {};       // normalized url → ratio
 
       storyboards.forEach((sb) => {
-        if (sb.image_url) primaryImageUrls.add(normalizeImageUrl(sb.image_url));
-        if (sb.video_asset_id) primaryVideoAssetIds.add(sb.video_asset_id);
-        else if (sb.video_url) primaryVideoUrls.add(normalizeImageUrl(sb.video_url));
+        const ratio = sb.ratio || sb.aspect_ratio || '';
+        if (sb.image_url) {
+          primaryImageUrls.add(normalizeImageUrl(sb.image_url));
+          if (ratio) imageUrlRatio[normalizeImageUrl(sb.image_url)] = ratio;
+        }
+        if (sb.video_asset_id) {
+          primaryVideoAssetIds.add(sb.video_asset_id);
+          if (ratio) videoAssetIdRatio[sb.video_asset_id] = ratio;
+        } else if (sb.video_url) {
+          primaryVideoUrls.add(normalizeImageUrl(sb.video_url));
+          if (ratio) videoUrlRatio[normalizeImageUrl(sb.video_url)] = ratio;
+        }
       });
 
       const assets = (Array.isArray(data) ? data : []).map((item) => {
         if (item.category !== 'storyboard') return item;
         let is_primary = item.is_primary ?? false;
+        let ratio = item.ratio || '';
         if (item.asset_type === 'video') {
           is_primary = primaryVideoAssetIds.has(item.id)
             || primaryVideoUrls.has(normalizeImageUrl(item.file_url));
+          if (!ratio) ratio = videoAssetIdRatio[item.id] || videoUrlRatio[normalizeImageUrl(item.file_url)] || '';
         } else {
           is_primary = primaryImageUrls.has(normalizeImageUrl(item.file_url))
             || primaryImageUrls.has(normalizeImageUrl(item.thumbnail_url));
+          if (!ratio) ratio = imageUrlRatio[normalizeImageUrl(item.file_url)] || imageUrlRatio[normalizeImageUrl(item.thumbnail_url)] || '';
         }
-        return { ...item, is_primary };
+        return { ...item, is_primary, ...(ratio ? { ratio } : {}) };
       });
 
       return groupByCategory(assets);

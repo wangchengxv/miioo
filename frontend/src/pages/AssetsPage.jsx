@@ -2,7 +2,7 @@ import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import placeholderFlowers from '../assets/placeholder-flowers.webp';
 import { apiGetAssetDetail, apiGetShotDetail, apiGetShotVideoDetail, apiGetProjectAssets, apiDeleteAsset, apiBatchDeleteAssets, apiUpdateAsset, apiDownloadAsset } from '../api/assets';
-import { apiGetSubjects } from '../api/subject';
+import { apiGetSubjects, apiDeleteSubject } from '../api/subject';
 import { apiDeleteCreationImage, apiDeleteCreationVideo, apiBatchDeleteImages, apiBatchDeleteVideos, apiToggleImageFavorite, apiToggleVideoFavorite } from '../api/creation';
 import { useCreationStore } from '../stores/creationStore';
 import { generationsToDays } from '../utils/creativeDaysAdapter';
@@ -553,8 +553,9 @@ function SubjectAssetDetailModal({ onClose, onDownload, onDeleteImage, onShowToa
                 position: 'absolute',
                 inset: '35px',
                 backgroundImage: `url(${currentImg?.fileUrl ?? currentImg?.url ?? placeholderFlowers})`,
-                backgroundSize: 'cover',
+                backgroundSize: 'contain',
                 backgroundPosition: '50%',
+                backgroundRepeat: 'no-repeat',
                 transition: 'background-image 0.15s',
               }} />
             </div>
@@ -936,8 +937,9 @@ function AssetDetailModal({ onClose, onDownload, name, description, prompt, mode
                 position: 'absolute',
                 top: '35px', bottom: '35px', left: 0, right: 0,
                 backgroundImage: `url(${currentImg?.src ?? placeholderFlowers})`,
-                backgroundSize: 'cover',
+                backgroundSize: 'contain',
                 backgroundPosition: '50%',
+                backgroundRepeat: 'no-repeat',
                 transition: 'background-image 0.15s',
               }} />
             </div>
@@ -1191,8 +1193,9 @@ function ShotDetailModal({ onClose, onDownload, onDelete, onShowToast, shotNumbe
                 position: 'absolute',
                 top: '35px', bottom: '35px', left: 0, right: 0,
                 backgroundImage: `url(${currentImg?.src ?? placeholderFlowers})`,
-                backgroundSize: 'cover',
+                backgroundSize: 'contain',
                 backgroundPosition: '50%',
+                backgroundRepeat: 'no-repeat',
                 transition: 'background-image 0.15s',
               }} />
             </div>
@@ -2296,24 +2299,11 @@ function ProjectAssetCard({ name, desc, url, selected, batchMode, onDownload, on
   const isVideo = category === 'storyboard_video';
   const videoRef = useRef(null);
 
-  // 只有分镜资产根据 ratio 动态调整尺寸，角色/场景/道具保持固定尺寸
   const isStoryboard = category === 'storyboard_img' || category === 'storyboard_video';
   let cardWidth = 200, cardHeight = 246;
   if (isStoryboard) {
-    const ratio = asset.ratio || '16:9';
-    if (ratio === '16:9') {
-      cardWidth = 284;
-      cardHeight = 196;
-    } else if (ratio === '9:16') {
-      cardWidth = 160;
-      cardHeight = 280;
-    } else if (ratio === '1:1') {
-      cardWidth = 220;
-      cardHeight = 220;
-    } else {
-      cardWidth = 284;
-      cardHeight = 196;
-    }
+    cardWidth = 320;
+    cardHeight = 180;
   }
 
   // 视频悬停播放
@@ -2394,21 +2384,6 @@ function ProjectAssetCard({ name, desc, url, selected, batchMode, onDownload, on
             </svg>
           )}
 
-          {/* Image count badge — if > 1 */}
-          {imageCount > 1 && (
-            <div style={{
-              position: 'absolute', bottom: '8px', right: '8px',
-              paddingLeft: '6px', paddingRight: '6px', paddingTop: '3px', paddingBottom: '3px',
-              borderRadius: '4px', backgroundColor: '#00000080',
-              display: 'flex', alignItems: 'center', gap: '4px',
-            }}>
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ flexShrink: 0 }}>
-                <path d="M2 1H9C9.55228 1 10 1.44772 10 2V8C10 8.55228 9.55228 9 9 9H2C1.44772 9 1 8.55228 1 8V2C1 1.44772 1.44772 1 2 1Z" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" strokeWidth="0.8" />
-                <path d="M2 4H9C9.55228 4 10 4.44772 10 5V11C10 11.5523 9.55228 12 9 12H2C1.44772 12 1 11.5523 1 11V5C1 4.44772 1.44772 4 2 4Z" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" strokeWidth="0.8" />
-              </svg>
-              <span style={{ fontFamily: FONT, fontSize: '11px', lineHeight: '14px', color: '#FFFFFF' }}>{imageCount}</span>
-            </div>
-          )}
 
           {/* top-right: batch checkbox or more menu */}
           {batchMode ? (
@@ -3058,9 +3033,16 @@ function ProjectAssetsPanel() {
   async function deleteAsset(id, singleImageId = null) {
     // singleImageId 存在时表示删除单张图，否则删除整个主体
     const SUBJECT_TYPE_MAP = { chars: 'character', scenes: 'scene', props: 'prop' };
+    const isSubjectCategory = !!SUBJECT_TYPE_MAP[activeCategory];
     try {
       if (singleImageId) {
         await apiDeleteAsset(singleImageId, { projectId: activeProject });
+        const targetAsset = assetsMap[activeCategory]?.find((a) => a.id === id);
+        const remainingImages = (targetAsset?.images || []).filter((img) => img.id !== singleImageId);
+        if (isSubjectCategory && remainingImages.length === 0 && targetAsset?.subject_id) {
+          // 最后一张图删掉 → 删除主体实体本身
+          await apiDeleteSubject(activeProject, targetAsset.subject_id).catch(() => {});
+        }
         setAssetsMap((prev) => ({
           ...prev,
           [activeCategory]: prev[activeCategory].map((asset) => {
@@ -3091,6 +3073,10 @@ function ProjectAssetsPanel() {
         } else {
           await apiDeleteAsset(id, { projectId: activeProject });
         }
+        // 删除全部图片后，同步删除主体实体
+        if (isSubjectCategory && asset?.subject_id) {
+          await apiDeleteSubject(activeProject, asset.subject_id).catch(() => {});
+        }
         setAssetsMap((prev) => ({
           ...prev,
           [activeCategory]: prev[activeCategory].filter((a) => a.id !== id),
@@ -3109,10 +3095,13 @@ function ProjectAssetsPanel() {
 
   async function deleteSelected() {
     const ids = [...selected];
+    const SUBJECT_TYPE_MAP = { chars: 'character', scenes: 'scene', props: 'prop' };
+    const isSubjectCategory = !!SUBJECT_TYPE_MAP[activeCategory];
     try {
       // 对于主体卡片（chars/scenes/props），需要删除该主体下的所有图片
       if (SUBJECT_CARD_CATEGORIES.has(activeCategory)) {
         const allImageIds = [];
+        const subjectIds = [];
         ids.forEach((cardId) => {
           const card = assetsMap[activeCategory]?.find((a) => a.id === cardId);
           if (card && card.images) {
@@ -3120,8 +3109,17 @@ function ProjectAssetsPanel() {
           } else {
             allImageIds.push(cardId);
           }
+          if (isSubjectCategory && card?.subject_id) subjectIds.push(card.subject_id);
         });
         await apiBatchDeleteAssets(allImageIds, { projectId: activeProject });
+        // 同步删除主体实体
+        for (const subjectId of subjectIds) {
+          await apiDeleteSubject(activeProject, subjectId).catch(() => {});
+        }
+        const subjectType = SUBJECT_TYPE_MAP[activeCategory];
+        if (subjectType && activeProject) {
+          apiGetSubjects(activeProject, { type: subjectType }).catch(() => {});
+        }
       } else {
         await apiBatchDeleteAssets(ids, { projectId: activeProject });
       }
