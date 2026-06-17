@@ -1,5 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
+import { createPortal } from 'react-dom';
+import placeholderFlowers from '../assets/placeholder-flowers.webp';
 import { apiGetAssetDetail, apiGetShotDetail, apiGetShotVideoDetail, apiGetProjectAssets, apiDeleteAsset, apiBatchDeleteAssets, apiUpdateAsset, apiDownloadAsset } from '../api/assets';
+import { apiGetSubjects } from '../api/subject';
 import { apiDeleteCreationImage, apiDeleteCreationVideo, apiBatchDeleteImages, apiBatchDeleteVideos, apiToggleImageFavorite, apiToggleVideoFavorite } from '../api/creation';
 import { useCreationStore } from '../stores/creationStore';
 import { generationsToDays } from '../utils/creativeDaysAdapter';
@@ -423,9 +426,9 @@ const MOCK_DETAIL = {
   generatedAt: '2026-04-21 15:30:09',
   // index 0 is the finalized image
   images: [
-    { id: 'i1', src: 'https://app.paper.design/static/flowers.webp', finalized: true },
-    { id: 'i2', src: 'https://app.paper.design/static/flowers.webp', finalized: false },
-    { id: 'i3', src: 'https://app.paper.design/static/flowers.webp', finalized: false },
+    { id: 'i1', src: placeholderFlowers, finalized: true },
+    { id: 'i2', src: placeholderFlowers, finalized: false },
+    { id: 'i3', src: placeholderFlowers, finalized: false },
   ],
 };
 
@@ -436,9 +439,9 @@ const MOCK_SHOT_DETAIL = {
   resolution: '1920 × 1080',
   generatedAt: '2026-04-21 15:30:09',
   images: [
-    { id: 's1', src: 'https://app.paper.design/static/flowers.webp', finalized: true },
-    { id: 's2', src: 'https://app.paper.design/static/flowers.webp', finalized: false },
-    { id: 's3', src: 'https://app.paper.design/static/flowers.webp', finalized: false },
+    { id: 's1', src: placeholderFlowers, finalized: true },
+    { id: 's2', src: placeholderFlowers, finalized: false },
+    { id: 's3', src: placeholderFlowers, finalized: false },
   ],
 };
 
@@ -452,14 +455,14 @@ const MOCK_SHOT_VIDEO_DETAIL = {
   generatedAt: '2026-04-21 15:30:09',
   videoSrc: 'https://www.w3schools.com/html/mov_bbb.mp4',
   frames: [
-    { id: 'v1', src: 'https://app.paper.design/static/flowers.webp', finalized: true },
-    { id: 'v2', src: 'https://app.paper.design/static/flowers.webp', finalized: false },
-    { id: 'v3', src: 'https://app.paper.design/static/flowers.webp', finalized: false },
+    { id: 'v1', src: placeholderFlowers, finalized: true },
+    { id: 'v2', src: placeholderFlowers, finalized: false },
+    { id: 'v3', src: placeholderFlowers, finalized: false },
   ],
 };
 
 // 主体资产详情弹窗 — 图片列表（角色/场景/道具的多张图聚合）
-function SubjectAssetDetailModal({ onClose, onDownload, onDeleteImage, name, description, images }) {
+function SubjectAssetDetailModal({ onClose, onDownload, onDeleteImage, onShowToast, name, description, images }) {
   const imgs = images ?? [];
   const defaultIdx = imgs.findIndex((img) => img.is_primary);
   const [activeImg, setActiveImg] = useState(defaultIdx >= 0 ? defaultIdx : 0);
@@ -469,6 +472,13 @@ function SubjectAssetDetailModal({ onClose, onDownload, onDeleteImage, name, des
   const [pressDelete, setPressDelete] = useState(false);
   const [hovThumb, setHovThumb] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [copyToast, setCopyToast] = useState(false);
+  const copyToastTimer = useRef(null);
+  function showCopyToast() {
+    clearTimeout(copyToastTimer.current);
+    setCopyToast(true);
+    copyToastTimer.current = setTimeout(() => setCopyToast(false), 2000);
+  }
 
   const currentImg = imgs[activeImg];
   const isPrimary = currentImg?.is_primary ?? false;
@@ -542,7 +552,7 @@ function SubjectAssetDetailModal({ onClose, onDownload, onDeleteImage, name, des
               <div style={{
                 position: 'absolute',
                 inset: '35px',
-                backgroundImage: `url(${currentImg?.fileUrl ?? currentImg?.url ?? 'https://app.paper.design/static/flowers.webp'})`,
+                backgroundImage: `url(${currentImg?.fileUrl ?? currentImg?.url ?? placeholderFlowers})`,
                 backgroundSize: 'cover',
                 backgroundPosition: '50%',
                 transition: 'background-image 0.15s',
@@ -608,7 +618,7 @@ function SubjectAssetDetailModal({ onClose, onDownload, onDeleteImage, name, des
                     >
                       <div style={{
                         width: '100%', height: '100%',
-                        backgroundImage: `url(${img.url ?? 'https://app.paper.design/static/flowers.webp'})`,
+                        backgroundImage: `url(${img.url ?? placeholderFlowers})`,
                         backgroundSize: 'cover', backgroundPosition: '50%',
                       }} />
                       {/* Primary badge */}
@@ -706,6 +716,7 @@ function SubjectAssetDetailModal({ onClose, onDownload, onDeleteImage, name, des
                         onMouseLeave={(e) => e.currentTarget.style.opacity = '0.6'}
                         onClick={() => {
                           navigator.clipboard.writeText(currentImg.prompt);
+                          showCopyToast();
                         }}
                         title="复制提示词"
                       >
@@ -811,10 +822,20 @@ function SubjectAssetDetailModal({ onClose, onDownload, onDeleteImage, name, des
           onCancel={() => setShowDeleteConfirm(false)}
           onConfirm={() => {
             setShowDeleteConfirm(false);
+            onShowToast?.('删除成功', 'success');
             onDeleteImage?.(currentImg.id);
           }}
           zIndex={300}
         />
+      )}
+      {copyToast && createPortal(
+        <div style={{ position: 'fixed', top: '25vh', left: '50%', transform: 'translateX(-50%)', zIndex: 9999, pointerEvents: 'none' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '8px', background: 'rgba(30,30,30,0.92)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.1)', whiteSpace: 'nowrap' }}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}><path d="M8 14.667C11.682 14.667 14.667 11.682 14.667 8C14.667 4.318 11.682 1.333 8 1.333C4.318 1.333 1.333 4.318 1.333 8C1.333 11.682 4.318 14.667 8 14.667Z" fill="#52BF92" stroke="#52BF92" strokeWidth="1.333" strokeLinejoin="round"/><path d="M5.333 8L7.333 10L11.333 6" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            <span style={{ fontSize: '14px', color: '#FFFFFF', fontFamily: "'AlibabaPuHuiTi_2_55_Regular','Alibaba PuHuiTi 2.0',system-ui,sans-serif" }}>提示词复制成功</span>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );
@@ -829,6 +850,13 @@ function AssetDetailModal({ onClose, onDownload, name, description, prompt, mode
   const [hovClose, setHovClose] = useState(false);
   const [hovDownload, setHovDownload] = useState(false);
   const [hovThumb, setHovThumb] = useState(null);
+  const [copyToast, setCopyToast] = useState(false);
+  const copyToastTimer = useRef(null);
+  function showCopyToast() {
+    clearTimeout(copyToastTimer.current);
+    setCopyToast(true);
+    copyToastTimer.current = setTimeout(() => setCopyToast(false), 2000);
+  }
 
   const currentImg = imgs[activeImg];
   const isFinalized = currentImg?.finalized ?? false;
@@ -900,7 +928,7 @@ function AssetDetailModal({ onClose, onDownload, name, description, prompt, mode
               <div style={{
                 position: 'absolute',
                 top: '35px', bottom: '35px', left: 0, right: 0,
-                backgroundImage: `url(${currentImg?.src ?? 'https://app.paper.design/static/flowers.webp'})`,
+                backgroundImage: `url(${currentImg?.src ?? placeholderFlowers})`,
                 backgroundSize: 'cover',
                 backgroundPosition: '50%',
                 transition: 'background-image 0.15s',
@@ -934,7 +962,7 @@ function AssetDetailModal({ onClose, onDownload, name, description, prompt, mode
                     >
                       <div style={{
                         width: '100%', height: '100%',
-                        backgroundImage: `url(${img.src ?? 'https://app.paper.design/static/flowers.webp'})`,
+                        backgroundImage: `url(${img.src ?? placeholderFlowers})`,
                         backgroundSize: 'cover', backgroundPosition: '50%',
                       }} />
                       {/* Hover overlay: show "放大查看" icon in bottom-right */}
@@ -1052,12 +1080,21 @@ function AssetDetailModal({ onClose, onDownload, name, description, prompt, mode
           </div>
         </div>
       </div>
+      {copyToast && createPortal(
+        <div style={{ position: 'fixed', top: '25vh', left: '50%', transform: 'translateX(-50%)', zIndex: 9999, pointerEvents: 'none' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '8px', background: 'rgba(30,30,30,0.92)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.1)', whiteSpace: 'nowrap' }}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}><path d="M8 14.667C11.682 14.667 14.667 11.682 14.667 8C14.667 4.318 11.682 1.333 8 1.333C4.318 1.333 1.333 4.318 1.333 8C1.333 11.682 4.318 14.667 8 14.667Z" fill="#52BF92" stroke="#52BF92" strokeWidth="1.333" strokeLinejoin="round"/><path d="M5.333 8L7.333 10L11.333 6" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            <span style={{ fontSize: '14px', color: '#FFFFFF', fontFamily: "'AlibabaPuHuiTi_2_55_Regular','Alibaba PuHuiTi 2.0',system-ui,sans-serif" }}>提示词复制成功</span>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
 
 // Props: shotNumber, prompt, model, resolution, images (array of {id, src, finalized})
-function ShotDetailModal({ onClose, onDownload, onDelete, shotNumber, prompt, model, resolution, generatedAt, images, refImages }) {
+function ShotDetailModal({ onClose, onDownload, onDelete, onShowToast, shotNumber, prompt, model, resolution, generatedAt, images, refImages }) {
   const imgs = images ?? MOCK_SHOT_DETAIL.images;
   const defaultIdx = imgs.findIndex((img) => img.finalized);
   const [activeImg, setActiveImg] = useState(defaultIdx >= 0 ? defaultIdx : 0);
@@ -1067,6 +1104,13 @@ function ShotDetailModal({ onClose, onDownload, onDelete, shotNumber, prompt, mo
   const [pressDelete, setPressDelete] = useState(false);
   const [hovThumb, setHovThumb] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [copyToast, setCopyToast] = useState(false);
+  const copyToastTimer = useRef(null);
+  function showCopyToast() {
+    clearTimeout(copyToastTimer.current);
+    setCopyToast(true);
+    copyToastTimer.current = setTimeout(() => setCopyToast(false), 2000);
+  }
 
   const currentImg = imgs[activeImg];
   const isFinalized = currentImg?.finalized ?? false;
@@ -1139,7 +1183,7 @@ function ShotDetailModal({ onClose, onDownload, onDelete, shotNumber, prompt, mo
               <div style={{
                 position: 'absolute',
                 top: '35px', bottom: '35px', left: 0, right: 0,
-                backgroundImage: `url(${currentImg?.src ?? 'https://app.paper.design/static/flowers.webp'})`,
+                backgroundImage: `url(${currentImg?.src ?? placeholderFlowers})`,
                 backgroundSize: 'cover',
                 backgroundPosition: '50%',
                 transition: 'background-image 0.15s',
@@ -1173,7 +1217,7 @@ function ShotDetailModal({ onClose, onDownload, onDelete, shotNumber, prompt, mo
                     >
                       <div style={{
                         width: '100%', height: '100%',
-                        backgroundImage: `url(${img.src ?? 'https://app.paper.design/static/flowers.webp'})`,
+                        backgroundImage: `url(${img.src ?? placeholderFlowers})`,
                         backgroundSize: 'cover', backgroundPosition: '50%',
                       }} />
                       {/* 定稿标签 */}
@@ -1271,6 +1315,7 @@ function ShotDetailModal({ onClose, onDownload, onDelete, shotNumber, prompt, mo
                         onMouseLeave={(e) => e.currentTarget.style.opacity = '0.6'}
                         onClick={() => {
                           navigator.clipboard.writeText((currentImg?.prompt || prompt) ?? MOCK_SHOT_DETAIL.prompt);
+                          showCopyToast();
                         }}
                         title="复制提示词"
                       >
@@ -1389,7 +1434,7 @@ function ShotDetailModal({ onClose, onDownload, onDelete, shotNumber, prompt, mo
                 description="删除后，该资产将被清除且不可恢复。"
                 confirmText="删除"
                 onCancel={() => setShowDeleteConfirm(false)}
-                onConfirm={() => { setShowDeleteConfirm(false); onDelete?.(); }}
+                onConfirm={() => { setShowDeleteConfirm(false); onShowToast?.('删除成功', 'success'); onDelete?.(); }}
                 zIndex={300}
               />
             )}
@@ -1467,11 +1512,20 @@ function VideoFrameThumbnail({ frame, isActive, isHov, onSelect, onMouseEnter, o
           </div>
         </div>
       )}
+      {copyToast && createPortal(
+        <div style={{ position: 'fixed', top: '25vh', left: '50%', transform: 'translateX(-50%)', zIndex: 9999, pointerEvents: 'none' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '8px', background: 'rgba(30,30,30,0.92)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.1)', whiteSpace: 'nowrap' }}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}><path d="M8 14.667C11.682 14.667 14.667 11.682 14.667 8C14.667 4.318 11.682 1.333 8 1.333C4.318 1.333 1.333 4.318 1.333 8C1.333 11.682 4.318 14.667 8 14.667Z" fill="#52BF92" stroke="#52BF92" strokeWidth="1.333" strokeLinejoin="round"/><path d="M5.333 8L7.333 10L11.333 6" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            <span style={{ fontSize: '14px', color: '#FFFFFF', fontFamily: "'AlibabaPuHuiTi_2_55_Regular','Alibaba PuHuiTi 2.0',system-ui,sans-serif" }}>提示词复制成功</span>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
 
-function ShotVideoDetailModal({ onClose, onDownload, onDelete, shotNumber, prompt, model, resolution, duration, ratio, generatedAt, frames, videoSrc, refMode, firstFrame, lastFrame, sound, refImages, refVideos }) {
+function ShotVideoDetailModal({ onClose, onDownload, onDelete, onShowToast, shotNumber, prompt, model, resolution, duration, ratio, generatedAt, frames, videoSrc, refMode, firstFrame, lastFrame, sound, refImages, refVideos }) {
   const frms = frames ?? MOCK_SHOT_VIDEO_DETAIL.frames;
   const defaultIdx = frms.findIndex((f) => f.finalized);
   const [activeFrame, setActiveFrame] = useState(defaultIdx >= 0 ? defaultIdx : 0);
@@ -1485,6 +1539,13 @@ function ShotVideoDetailModal({ onClose, onDownload, onDelete, shotNumber, promp
   const [pressDelete, setPressDelete] = useState(false);
   const [hovThumb, setHovThumb] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [copyToast, setCopyToast] = useState(false);
+  const copyToastTimer = useRef(null);
+  function showCopyToast() {
+    clearTimeout(copyToastTimer.current);
+    setCopyToast(true);
+    copyToastTimer.current = setTimeout(() => setCopyToast(false), 2000);
+  }
   const videoRef = useRef(null);
   const progressBarRef = useRef(null);
   const volumeBarRef = useRef(null);
@@ -1906,6 +1967,7 @@ function ShotVideoDetailModal({ onClose, onDownload, onDelete, shotNumber, promp
                         onMouseLeave={(e) => e.currentTarget.style.opacity = '0.6'}
                         onClick={() => {
                           navigator.clipboard.writeText(prompt ?? MOCK_SHOT_VIDEO_DETAIL.prompt);
+                          showCopyToast();
                         }}
                         title="复制提示词"
                       >
@@ -2000,13 +2062,22 @@ function ShotVideoDetailModal({ onClose, onDownload, onDelete, shotNumber, promp
                 description="删除后，该资产将被清除且不可恢复。"
                 confirmText="删除"
                 onCancel={() => setShowDeleteConfirm(false)}
-                onConfirm={() => { setShowDeleteConfirm(false); onDelete?.(); }}
+                onConfirm={() => { setShowDeleteConfirm(false); onShowToast?.('删除成功', 'success'); onDelete?.(); }}
                 zIndex={300}
               />
             )}
           </div>
         </div>
       </div>
+      {copyToast && createPortal(
+        <div style={{ position: 'fixed', top: '25vh', left: '50%', transform: 'translateX(-50%)', zIndex: 9999, pointerEvents: 'none' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '8px', background: 'rgba(30,30,30,0.92)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.1)', whiteSpace: 'nowrap' }}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}><path d="M8 14.667C11.682 14.667 14.667 11.682 14.667 8C14.667 4.318 11.682 1.333 8 1.333C4.318 1.333 1.333 4.318 1.333 8C1.333 11.682 4.318 14.667 8 14.667Z" fill="#52BF92" stroke="#52BF92" strokeWidth="1.333" strokeLinejoin="round"/><path d="M5.333 8L7.333 10L11.333 6" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            <span style={{ fontSize: '14px', color: '#FFFFFF', fontFamily: "'AlibabaPuHuiTi_2_55_Regular','Alibaba PuHuiTi 2.0',system-ui,sans-serif" }}>提示词复制成功</span>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
@@ -2209,7 +2280,7 @@ function AssetCard({ name, bgColor = '#252525', url = null, starred = false, sel
 
 const SUBJECT_CARD_CATEGORIES = new Set(['chars', 'scenes', 'props', 'storyboard_img', 'storyboard_video']);
 
-function ProjectAssetCard({ name, desc, url, selected, batchMode, onDownload, onDelete, onSelect, asset = {}, category = '' }) {
+function ProjectAssetCard({ name, desc, url, selected, batchMode, onDownload, onDelete, onSelect, onShowToast, asset = {}, category = '' }) {
   const [hov, setHov] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
 
@@ -2386,7 +2457,8 @@ function ProjectAssetCard({ name, desc, url, selected, batchMode, onDownload, on
         <ShotDetailModal
           onClose={() => setDetailOpen(false)}
           onDownload={() => onDownload?.()}
-          onDelete={() => { setDetailOpen(false); onDelete?.(); }}
+          onDelete={() => { onDelete?.(); }}
+          onShowToast={onShowToast}
           shotNumber={name}
           prompt={asset.prompt}
           model={asset.model}
@@ -2402,7 +2474,8 @@ function ProjectAssetCard({ name, desc, url, selected, batchMode, onDownload, on
         <ShotVideoDetailModal
           onClose={() => setDetailOpen(false)}
           onDownload={() => onDownload?.()}
-          onDelete={() => { setDetailOpen(false); onDelete?.(); }}
+          onDelete={() => { onDelete?.(); }}
+          onShowToast={onShowToast}
           shotNumber={name}
           prompt={asset.prompt}
           model={asset.model}
@@ -2426,6 +2499,7 @@ function ProjectAssetCard({ name, desc, url, selected, batchMode, onDownload, on
           name={name}
           description={desc}
           images={images}
+          onShowToast={onShowToast}
           onDownload={(imageId, fileUrl) => {
             const img = images.find(i => i.id === imageId);
             if (img?.fileUrl || fileUrl) {
@@ -2443,7 +2517,6 @@ function ProjectAssetCard({ name, desc, url, selected, batchMode, onDownload, on
             } else {
               onDelete?.(imageId);
             }
-            setDetailOpen(false);
           }}
         />
       )}
@@ -2918,6 +2991,12 @@ function ProjectAssetsPanel() {
   const [renameValue, setRenameValue] = useState('');
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [batchDeleteConfirm, setBatchDeleteConfirm] = useState(false);
+  const [toast, setToast] = useState(null);
+
+  function showToast(msg, type = 'success') {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 2500);
+  }
 
   useEffect(() => {
     apiGetProjects().then(async (list) => {
@@ -2970,6 +3049,7 @@ function ProjectAssetsPanel() {
 
   async function deleteAsset(id, singleImageId = null) {
     // singleImageId 存在时表示删除单张图，否则删除整个主体
+    const SUBJECT_TYPE_MAP = { chars: 'character', scenes: 'scene', props: 'prop' };
     try {
       if (singleImageId) {
         await apiDeleteAsset(singleImageId, { projectId: activeProject });
@@ -2991,6 +3071,11 @@ function ProjectAssetsPanel() {
             return asset;
           }).filter(Boolean),
         }));
+        // 触发主体页面更新：删除图后重新拉取该类型主体，notify 会推给 SubjectPage 的 subscribe
+        const subjectType = SUBJECT_TYPE_MAP[activeCategory];
+        if (subjectType && activeProject) {
+          apiGetSubjects(activeProject, { type: subjectType }).catch(() => {});
+        }
       } else {
         const asset = assetsMap[activeCategory]?.find((a) => a.id === id);
         if (asset && asset.images) {
@@ -3002,6 +3087,11 @@ function ProjectAssetsPanel() {
           ...prev,
           [activeCategory]: prev[activeCategory].filter((a) => a.id !== id),
         }));
+        // 整个主体删除也同步更新
+        const subjectType = SUBJECT_TYPE_MAP[activeCategory];
+        if (subjectType && activeProject) {
+          apiGetSubjects(activeProject, { type: subjectType }).catch(() => {});
+        }
       }
       notifyProjectAssetsDeleted(activeProject);
     } catch (err) {
@@ -3264,6 +3354,7 @@ function ProjectAssetsPanel() {
                 onSelect={() => toggleSelect(asset.id)}
                 onDownload={() => downloadAsset(asset.id, asset.name)}
                 onDelete={(imageId) => deleteAsset(asset.id, imageId)}
+                onShowToast={showToast}
                 asset={asset}
                 category={activeCategory}
               />
@@ -3583,6 +3674,24 @@ function ProjectAssetsPanel() {
           }}
           zIndex={100}
         />
+      )}
+      {toast && createPortal(
+        <div style={{
+          position: 'fixed', top: '25vh', left: '50%', transform: 'translateX(-50%)',
+          zIndex: 9999, pointerEvents: 'none',
+          animation: 'slideUpBounce 250ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '8px', background: 'rgba(30,30,30,0.92)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.1)', whiteSpace: 'nowrap' }}>
+            {toast.type === 'success' && (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}><path d="M8 14.667C11.682 14.667 14.667 11.682 14.667 8C14.667 4.318 11.682 1.333 8 1.333C4.318 1.333 1.333 4.318 1.333 8C1.333 11.682 4.318 14.667 8 14.667Z" fill="#52BF92" stroke="#52BF92" strokeWidth="1.333" strokeLinejoin="round"/><path d="M5.333 8L7.333 10L11.333 6" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            )}
+            {toast.type === 'error' && (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}><path d="M8 14.667C11.682 14.667 14.667 11.682 14.667 8C14.667 4.318 11.682 1.333 8 1.333C4.318 1.333 1.333 4.318 1.333 8C1.333 11.682 4.318 14.667 8 14.667Z" fill="#F75F5F" stroke="#F75F5F" strokeWidth="1.333" strokeLinejoin="round"/><path d="M5.333 5.333L10.667 10.667M10.667 5.333L5.333 10.667" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round"/></svg>
+            )}
+            <span style={{ fontSize: '14px', color: '#FFFFFF', fontFamily: FONT }}>{toast.msg}</span>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );

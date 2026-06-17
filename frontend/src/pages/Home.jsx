@@ -9,8 +9,8 @@ import { apiGetCurrentUser, apiGetNotifications } from '../api/user';
 import { apiGetSubjects, apiGetEpisodes, apiGetScriptWorkspace, apiFinalizeScriptWorkspace, apiExtractSubjectsFromScript } from '../api/subject';
 import { apiGetStoryboards, apiGenerateStoryboardsFromFinalScript } from '../api/storyboard';
 import { normalizeImageUrl } from '../utils/imageUrl';
-import { subscribe } from '../utils/cache';
-import { K } from '../utils/cacheKeys';
+import { subscribe, peekCache } from '../utils/cache';
+import { K, MEDIUM } from '../utils/cacheKeys';
 import wechatQR from '../assets/wechat.jpg';
 import PrimaryNav from '../components/PrimaryNav';
 import LoginModal from '../components/LoginModal';
@@ -28,6 +28,7 @@ import StoryboardPage from './StoryboardPage';
 import DotsLoading from '../components/DotsLoading';
 import AssetsPage from './AssetsPage';
 import CreationPage from './CreationPage';
+import bizQrCodeImg from '../assets/biz-qr-code.png';
 
 const ICON_STYLE = { flexShrink: '0' };
 
@@ -115,7 +116,7 @@ function MenuPopupItem({ label, onClick }) {
 }
 
 const COMMUNITY_QR_CODE_URL = wechatQR;
-const BIZ_QR_CODE_URL = 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KT856M9JGFA1FF8DBG9699ZM.png';
+const BIZ_QR_CODE_URL = bizQrCodeImg;
 
 const CREATION_MANUAL_URL = 'https://gcn0je6sgrhe.feishu.cn/wiki/QaKLwOx0ii2qWakn4cXcybbMnrf?from=from_copylink';
 
@@ -904,6 +905,40 @@ export default function Home({ onProjectCreated }) {
         setGenerateErrorProjectId(null);
       }
       setSubjectInitialTab('char');
+
+      // ── 缓存快速路径：如果核心数据都有缓存，立即填充并关掉 loading ──────────
+      const cachedProject = peekCache(K.project(projectId), MEDIUM.CONTENT);
+      const cachedEpisodes = peekCache(K.episodes(projectId), MEDIUM.CONTENT);
+      const cachedScript = peekCache(K.script(projectId), MEDIUM.CONTENT);
+      const cachedChars = peekCache(K.subjects(projectId, 'character'), MEDIUM.CONTENT);
+      const cachedScenes = peekCache(K.subjects(projectId, 'scene'), MEDIUM.CONTENT);
+      const cachedProps = peekCache(K.subjects(projectId, 'prop'), MEDIUM.CONTENT);
+
+      if (cachedProject && cachedEpisodes) {
+        // 从缓存填充状态，立即关掉 loading → StoryboardPage 秒挂载
+        setActiveProject(cachedProject);
+        setScriptEpisodes(cachedEpisodes);
+        if (cachedScript) {
+          const scriptContent = cachedScript.script?.content || cachedScript.content || '';
+          setScriptContent(scriptContent);
+          setScriptPhase(scriptContent ? 'view' : 'initial');
+          setScriptHasStarted(!!scriptContent);
+        }
+        if (cachedChars) setSharedChars(normalizeSubjects(cachedChars));
+        if (cachedScenes) setSharedScenes(normalizeSubjects(cachedScenes));
+        if (cachedProps) setSharedProps(normalizeSubjects(cachedProps));
+        // 恢复步骤
+        const savedStep = localStorage.getItem(`miioo_active_step_${projectId}`);
+        setActiveStep(savedStep || 'script');
+        const savedUnlocked = localStorage.getItem(`miioo_unlocked_steps_${projectId}`);
+        if (savedUnlocked) setUnlockedSteps(new Set(JSON.parse(savedUnlocked)));
+        const savedFinalized = localStorage.getItem(`miioo_finalized_since_extraction_${projectId}`);
+        setScriptFinalizedSinceExtraction(savedFinalized === 'true');
+        // 立即关掉 loading，让 StoryboardPage 先渲染缓存数据
+        setIsLoadingProject(false);
+        // 后台继续刷新（不阻塞 UI）
+      }
+      // ── 结束缓存快速路径 ────────────────────────────────────────────────────
       // 1. 加载项目基本信息
       const projectData = await apiGetProject(projectId);
       setActiveProject(projectData);

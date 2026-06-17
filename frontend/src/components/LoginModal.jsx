@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
 import { sendVerificationCode, loginWithPhone, apiGetWechatQrCode, apiPollWechatQrCodeStatus, apiBindMobileWithBindToken } from '../api/auth';
+import qrCodeImg from '../assets/qr-code.png';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
-const QR_CODE_URL = 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KR8EAVS6CW9V257SBVP40T1A.png';
+const QR_CODE_URL = qrCodeImg;
 
 function BrandLogo() {
   return (

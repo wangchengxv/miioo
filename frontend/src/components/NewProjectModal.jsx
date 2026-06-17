@@ -1,6 +1,17 @@
 import { useRef, useState } from 'react';
 import { apiCreateProject, apiUploadProjectCover } from '../api/project.js';
 import { apiCreateUserStyle } from '../api/user-styles.js';
+import styleXianxia from '../assets/styles/xianxia-3d.png';
+import styleSuspenseAnime from '../assets/styles/suspense-anime-2d.png';
+import styleCyberpunk from '../assets/styles/cyberpunk-3d.png';
+import stylePixar from '../assets/styles/pixar-style.png';
+import styleWuxia from '../assets/styles/wuxia-cg.png';
+import styleGhibli from '../assets/styles/ghibli-style.png';
+import styleShinkai from '../assets/styles/shinkai-style.png';
+import styleAncientChinese from '../assets/styles/ancient-chinese.png';
+import styleUrbanWorkplace from '../assets/styles/urban-workplace.png';
+import stylePostApocalyptic from '../assets/styles/post-apocalyptic.png';
+import styleLiveActionSuspense from '../assets/styles/live-action-suspense.png';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
@@ -16,67 +27,67 @@ const VISUAL_STYLES = [
   {
     value: 'xianxia-3d',
     label: '3D东方仙侠',
-    coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF1YMA3KDCVA9GNPRN1912B.png',
+    coverImg: styleXianxia,
     gradient: 'linear-gradient(in oklab 135deg, oklab(34.8% 0 0) 0%, oklab(21.8% 0 0) 100%)',
   },
   {
     value: 'suspense-anime-2d',
     label: '2D悬疑动漫',
-    coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF1ZTAX3W6NZKYMH0PYVYH7.png',
+    coverImg: styleSuspenseAnime,
     gradient: 'linear-gradient(in oklab 135deg, oklab(34.4% -0.009 -0.032) 0%, oklab(24.6% -0.001 -0.032) 100%)',
   },
   {
     value: 'cyberpunk-3d',
     label: '3D赛博朋克',
-    coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF212REFTJS0T5TX853C6PV.png',
+    coverImg: styleCyberpunk,
     gradient: 'linear-gradient(in oklab 135deg, oklab(26.4% 0 0) 0%, oklab(17.8% 0 0) 100%)',
   },
   {
     value: 'pixar-style',
     label: '皮克斯风格',
-    coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF21N68B569JWD37XGXMJHY.png',
+    coverImg: stylePixar,
     gradient: 'linear-gradient(in oklab 135deg, oklab(22.8% 0.009 -0.037) 0%, oklab(16.6% 0.006 -0.026) 100%)',
   },
   {
     value: 'wuxia-cg',
     label: 'CG武侠',
-    coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF261TC70JTZ75NHHN40S7B.png',
+    coverImg: styleWuxia,
     gradient: 'linear-gradient(in oklab 135deg, oklab(22.8% 0.009 -0.037) 0%, oklab(16.6% 0.006 -0.026) 100%)',
   },
   {
     value: 'ghibli-style',
     label: '宫崎骏风格',
-    coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF26SR6DGWH3J83QYYG7YQ2.png',
+    coverImg: styleGhibli,
     gradient: 'linear-gradient(in oklab 135deg, oklab(22.8% 0.009 -0.037) 0%, oklab(16.6% 0.006 -0.026) 100%)',
   },
   {
     value: 'shinkai-style',
     label: '新海诚风格',
-    coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/79F37XWHB4KFX7387QRVPJRGW2.png',
+    coverImg: styleShinkai,
     gradient: 'linear-gradient(in oklab 135deg, oklab(26.8% 0.007 0.027) 0%, oklab(18.9% 0.007 0.022) 100%)',
   },
   {
     value: 'ancient-chinese-live-action',
     label: '真人古风写实',
-    coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF2JXQECN3C3V6A1RSK2NAQ.png',
+    coverImg: styleAncientChinese,
     gradient: 'linear-gradient(in oklab 135deg, oklab(22.8% 0.009 -0.037) 0%, oklab(16.6% 0.006 -0.026) 100%)',
   },
   {
     value: 'urban-workplace',
     label: '都市职场',
-    coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/2PWDW8VRNFGH4RWESGMQD6FQ11.png',
+    coverImg: styleUrbanWorkplace,
     gradient: 'linear-gradient(in oklab 135deg, oklab(26.8% 0.007 0.027) 0%, oklab(18.9% 0.007 0.022) 100%)',
   },
   {
     value: 'post-apocalyptic-modern',
     label: '末日废土',
-    coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF2K6XQRPBT11ZHQ9E7GT2Q.png',
+    coverImg: stylePostApocalyptic,
     gradient: 'linear-gradient(in oklab 135deg, oklab(26.8% 0.007 0.027) 0%, oklab(18.9% 0.007 0.022) 100%)',
   },
   {
     value: 'live-action-suspense',
     label: '真人悬疑',
-    coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF2KG4DMWE4165JR2K270R7.png',
+    coverImg: styleLiveActionSuspense,
     gradient: 'linear-gradient(in oklab 135deg, oklab(22.8% 0.009 -0.037) 0%, oklab(16.6% 0.006 -0.026) 100%)',
   },
 ];

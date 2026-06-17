@@ -2,6 +2,7 @@ import { forwardRef, useCallback, useEffect, useLayoutEffect, useMemo, useRef, u
 import Toggle from './Toggle';
 import ConfirmDialog from './ConfirmDialog';
 import { apiOneClickSetup, apiCreateModel, apiListModels, apiUpdateModel, apiGetBanner, apiListProviders, apiTestConnection, apiUpdateProvider, apiGetCardVisibility } from '../api/config';
+import bizQrCodeImg from '../assets/biz-qr-code.png';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
@@ -649,7 +650,7 @@ function MainModal({
                   >
                     <div
                       className="w-[120px] h-[120px] shrink-0 bg-cover bg-center"
-                      style={{ backgroundImage: 'url(https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KT856M9JGFA1FF8DBG9699ZM.png)' }}
+                      style={{ backgroundImage: `url(${bizQrCodeImg})` }}
                     />
                     <div className="text-xs/4 text-[#FFFFFFCC]" style={{ fontFamily: FONT }}>
                       扫码添加工作人员

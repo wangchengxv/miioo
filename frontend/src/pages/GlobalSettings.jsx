@@ -2,6 +2,17 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import ScriptPage from './ScriptPage';
 import { apiUpdateProject, apiUploadProjectCover } from '../api/project';
 import { normalizeImageUrl } from '../utils/imageUrl';
+import styleXianxia from '../assets/styles/xianxia-3d.png';
+import styleSuspenseAnime from '../assets/styles/suspense-anime-2d.png';
+import styleCyberpunk from '../assets/styles/cyberpunk-3d.png';
+import stylePixar from '../assets/styles/pixar-style.png';
+import styleWuxia from '../assets/styles/wuxia-cg.png';
+import styleGhibli from '../assets/styles/ghibli-style.png';
+import styleShinkai from '../assets/styles/shinkai-style.png';
+import styleAncientChinese from '../assets/styles/ancient-chinese.png';
+import styleUrbanWorkplace from '../assets/styles/urban-workplace.png';
+import stylePostApocalyptic from '../assets/styles/post-apocalyptic.png';
+import styleLiveActionSuspense from '../assets/styles/live-action-suspense.png';
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -11,17 +22,17 @@ const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-u
 // 视觉风格映射
 const VISUAL_STYLES = {
   custom: { label: '自定义', coverImg: null },
-  'xianxia-3d': { label: '3D东方仙侠', coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF1YMA3KDCVA9GNPRN1912B.png' },
-  'suspense-anime-2d': { label: '2D悬疑动漫', coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF1ZTAX3W6NZKYMH0PYVYH7.png' },
-  'cyberpunk-3d': { label: '3D赛博朋克', coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF212REFTJS0T5TX853C6PV.png' },
-  'pixar-style': { label: '皮克斯风格', coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF21N68B569JWD37XGXMJHY.png' },
-  'wuxia-cg': { label: 'CG武侠', coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF261TC70JTZ75NHHN40S7B.png' },
-  'ghibli-style': { label: '宫崎骏风格', coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF26SR6DGWH3J83QYYG7YQ2.png' },
-  'shinkai-style': { label: '新海诚风格', coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/79F37XWHB4KFX7387QRVPJRGW2.png' },
-  'ancient-chinese-live-action': { label: '真人古风写实', coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF2JXQECN3C3V6A1RSK2NAQ.png' },
-  'urban-workplace': { label: '都市职场', coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/2PWDW8VRNFGH4RWESGMQD6FQ11.png' },
-  'post-apocalyptic-modern': { label: '末日废土', coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF2K6XQRPBT11ZHQ9E7GT2Q.png' },
-  'live-action-suspense': { label: '真人悬疑', coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF2KG4DMWE4165JR2K270R7.png' },
+  'xianxia-3d': { label: '3D东方仙侠', coverImg: styleXianxia },
+  'suspense-anime-2d': { label: '2D悬疑动漫', coverImg: styleSuspenseAnime },
+  'cyberpunk-3d': { label: '3D赛博朋克', coverImg: styleCyberpunk },
+  'pixar-style': { label: '皮克斯风格', coverImg: stylePixar },
+  'wuxia-cg': { label: 'CG武侠', coverImg: styleWuxia },
+  'ghibli-style': { label: '宫崎骏风格', coverImg: styleGhibli },
+  'shinkai-style': { label: '新海诚风格', coverImg: styleShinkai },
+  'ancient-chinese-live-action': { label: '真人古风写实', coverImg: styleAncientChinese },
+  'urban-workplace': { label: '都市职场', coverImg: styleUrbanWorkplace },
+  'post-apocalyptic-modern': { label: '末日废土', coverImg: stylePostApocalyptic },
+  'live-action-suspense': { label: '真人悬疑', coverImg: styleLiveActionSuspense },
 };
 
 // ── Stat card ──────────────────────────────────────────────────────────────
