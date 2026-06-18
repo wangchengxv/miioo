@@ -152,6 +152,10 @@ export default function AssetPickerModal({
   creativeAssets: creativeAssetsProp = null,
   // preSelectedIds: string[]  已存在的资产ID，打开时默认选中且不可取消
   preSelectedIds = [],
+  // preSelectedUrls: string[]  已存在资产的图片URL，打开时默认选中且不可取消（用于跨ID来源匹配，如主体参考图）
+  preSelectedUrls = [],
+  // preSelectedSubjectIds: string[]  已存在资产对应的主体ID，打开时默认选中且不可取消（最可靠的跨来源匹配键）
+  preSelectedSubjectIds = [],
 }) {
   const generationsByTab = useCreationStore((s) => s.generationsByTab);
   const favorites = useCreationStore((s) => s.favorites);
@@ -187,6 +191,36 @@ export default function AssetPickerModal({
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState(new Set());
   const preSelectedSet = useMemo(() => new Set(preSelectedIds ?? []), [preSelectedIds]);
+  // 主体ID集合（最可靠的跨来源匹配键：主体参考图与资产库为不同记录ID，但同属一个 subject_id）
+  const preSelectedSubjectSet = useMemo(
+    () => new Set((preSelectedSubjectIds ?? []).filter(Boolean)),
+    [preSelectedSubjectIds]
+  );
+  // 预选URL → 文件名集合（兜底匹配：缩略图/原图协议或host不同，但文件名一致）
+  const urlKey = (u) => {
+    const n = normalizeImageUrl(u);
+    if (!n) return null;
+    // 取 path 最后一段（去掉 query），归一化协议/host/缩略图前缀差异
+    const noQuery = n.split('?')[0].split('#')[0];
+    const seg = noQuery.split('/').filter(Boolean).pop() || null;
+    return seg;
+  };
+  const preSelectedUrlSet = useMemo(
+    () => new Set((preSelectedUrls ?? []).map(urlKey).filter(Boolean)),
+    [preSelectedUrls]
+  );
+
+  // 判断某张资产卡片是否为预选（不可取消）：subject_id 命中 / ID 命中 / URL文件名 命中
+  const isPreSelected = (asset) => {
+    if (!asset) return false;
+    if (preSelectedSet.has(asset.id)) return true;
+    if (asset.subject_id && preSelectedSubjectSet.has(asset.subject_id)) return true;
+    const k1 = urlKey(asset.url);
+    if (k1 && preSelectedUrlSet.has(k1)) return true;
+    const k2 = urlKey(asset.fileUrl);
+    if (k2 && preSelectedUrlSet.has(k2)) return true;
+    return false;
+  };
 
   // 每次弹窗打开时用 preSelectedIds 初始化选中状态，关闭时清空
   useEffect(() => {
@@ -245,6 +279,8 @@ export default function AssetPickerModal({
           id: a.id,
           name: a.name || '未命名',
           url: normalizeImageUrl(a.thumbnail_url || a.file_url) || null,
+          fileUrl: normalizeImageUrl(a.file_url) || null,
+          subject_id: a.subject_id ?? null,
           starred: a.is_starred ?? false,
           bgColor: '#252525',
           category: a.category,
@@ -305,11 +341,11 @@ export default function AssetPickerModal({
 
   const activeProjectName = projects.find(p => p.id === activeProjectId)?.name ?? '选择项目';
 
-  const toggle = (id) => {
-    if (preSelectedSet.has(id)) return; // 预选项不可取消
+  const toggle = (asset) => {
+    if (isPreSelected(asset)) return; // 预选项不可取消
     setSelected((prev) => {
       const next = new Set(prev);
-      next.has(id) ? next.delete(id) : next.add(id);
+      next.has(asset.id) ? next.delete(asset.id) : next.add(asset.id);
       return next;
     });
   };
@@ -554,19 +590,22 @@ export default function AssetPickerModal({
             <EmptyState />
           ) : (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', paddingTop: '8px', paddingBottom: '8px', alignContent: 'flex-start' }}>
-              {filteredAssets.map((asset) => (
+              {filteredAssets.map((asset) => {
+                const disabled = isPreSelected(asset);
+                return (
                 <AssetCard
                   key={asset.id}
                   asset={asset}
-                  isSelected={selected.has(asset.id)}
+                  isSelected={selected.has(asset.id) || disabled}
                   isHovered={hoveredCard === asset.id}
-                  isDisabled={preSelectedSet.has(asset.id)}
+                  isDisabled={disabled}
                   onMouseEnter={() => setHoveredCard(asset.id)}
                   onMouseLeave={() => setHoveredCard(null)}
-                  onClick={() => toggle(asset.id)}
+                  onClick={() => toggle(asset)}
                   compact={isCompactCard}
                 />
-              ))}
+                );
+              })}
             </div>
           )}
         </div>

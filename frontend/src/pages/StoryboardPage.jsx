@@ -1400,6 +1400,7 @@ function PanelUploadSlot({ label, onUpload, media, onRemove, accept = 'image/*',
         onClose={() => setAssetPickerOpen(false)}
         projectId={projectId}
         preSelectedIds={isMultiMode ? (mediaList || []).map(m => m.assetId || m.id).filter(id => id && !id.startsWith('blob:')) : (media?.assetId || (!media?.id?.startsWith('blob:') ? media?.id : null)) ? [media.assetId || media.id] : []}
+        preSelectedUrls={isMultiMode ? (mediaList || []).map(m => m.url).filter(Boolean) : (media?.url ? [media.url] : [])}
         onConfirm={(assets) => { onAssetConfirm?.(assets); setAssetPickerOpen(false); }}
       />
       {previewMedia && createPortal(
@@ -2324,7 +2325,7 @@ function GenerateImagePanel({ shot, projectId, chars = [], scenes = [], props = 
                 )}
               </div>
             </div>
-            <AssetPickerModal accept="image" open={refImgPickerOpen} onClose={() => setRefImgPickerOpen(false)} projectId={projectId} preSelectedIds={refImages.map(img => img.assetId).filter(Boolean)} onConfirm={handleRefImageAssetConfirm} />
+            <AssetPickerModal accept="image" open={refImgPickerOpen} onClose={() => setRefImgPickerOpen(false)} projectId={projectId} preSelectedIds={refImages.map(img => img.assetId).filter(Boolean)} preSelectedUrls={refImages.map(img => img.url).filter(Boolean)} onConfirm={handleRefImageAssetConfirm} />
 
             <PanelSelect label="分辨率" value={resolution} options={availableResolutions} onChange={setResolution} />
 
@@ -4430,6 +4431,8 @@ function MainRefCol({ shot, onChange, chars, projectId }) {
         projectId={projectId}
         onClose={() => setAssetPickerOpen(false)}
         preSelectedIds={shot.mainRefs.map(r => r.assetId).filter(Boolean)}
+        preSelectedUrls={shot.mainRefs.map(r => r.url).filter(Boolean)}
+        preSelectedSubjectIds={shot.mainRefs.map(r => r.id).filter(Boolean)}
         onConfirm={handleAssetConfirm}
       />
       {dropdownOpen && (
@@ -4606,6 +4609,8 @@ function MainRefModal({ shot, onChange, onClose }) {
         open={assetPickerOpen}
         onClose={() => setAssetPickerOpen(false)}
         preSelectedIds={shot.mainRefs.map(r => r.assetId).filter(Boolean)}
+        preSelectedUrls={shot.mainRefs.map(r => r.url).filter(Boolean)}
+        preSelectedSubjectIds={shot.mainRefs.map(r => r.id).filter(Boolean)}
         onConfirm={handleAssetConfirm}
       />
       <div

@@ -1405,6 +1405,7 @@ function RefImageField({ maxImages = 3, projectId, subjectId, refImageIds = [], 
         onConfirm={handleAssetConfirm}
         projectId={projectId}
         preSelectedIds={refImages.map(img => img.assetId).filter(Boolean)}
+        preSelectedUrls={refImages.map(img => img.url).filter(Boolean)}
       />
       <input
         ref={fileInputRef}
