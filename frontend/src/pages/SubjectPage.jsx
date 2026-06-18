@@ -1020,7 +1020,7 @@ function ImageItemUpload({ onUpload, projectId }) {
           type="file"
           accept="image/*"
           style={{ display: 'none' }}
-          onChange={(e) => { const file = e.target.files?.[0]; if (file) { if (file.size > 5 * 1024 * 1024) { alert('抱歉，平台暂不支持上传5M以上的图片资源！'); e.target.value = ''; return; } onUpload?.(file); } e.target.value = ''; }}
+          onChange={(e) => { const file = e.target.files?.[0]; if (file) { if (file.size > 20 * 1024 * 1024) { alert('抱歉，平台暂不支持上传20M以上的图片资源！'); e.target.value = ''; return; } onUpload?.(file); } e.target.value = ''; }}
         />
         <UploadBtn label="本地上传" onClick={() => fileInputRef.current?.click()} />
         <UploadBtn label="从资产库选择" onClick={() => setAssetPickerOpen(true)} />
@@ -1233,7 +1233,7 @@ function RefImageItem({ url, onRemove }) {
         <img src={url} alt="参考图" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
         {hovered && (
           <div
-            onClick={(e) => { e.stopPropagation(); onRemove(); }}
+            onClick={(e) => { e.stopPropagation(); clearTimeout(hoverTimerRef.current); setPreviewPos(null); onRemove(); }}
             style={{ position: 'absolute', top: '4px', right: '4px', width: '18px', height: '18px', borderRadius: '4px', backgroundColor: 'rgba(0,0,0,0.70)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
           >
             <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 2L8 8M8 2L2 8" stroke="#FFFFFF" strokeWidth="1.2" strokeLinecap="round"/></svg>
@@ -1357,8 +1357,8 @@ function RefImageField({ maxImages = 3, projectId, subjectId, refImageIds = [], 
   const canAddMore = refImages.length < maxImages;
 
   const handleFile = (file) => {
-    if (file.size > 5 * 1024 * 1024) {
-      alert('抱歉，平台暂不支持上传5M以上的图片资源！');
+    if (file.size > 20 * 1024 * 1024) {
+      alert('抱歉，平台暂不支持上传20M以上的图片资源！');
       return;
     }
     const url = URL.createObjectURL(file);
@@ -1375,7 +1375,7 @@ function RefImageField({ maxImages = 3, projectId, subjectId, refImageIds = [], 
     const assetIds = selectedAssets.map(a => a.id);
     const newList = [
       ...refImages,
-      ...selectedAssets.map(a => ({ url: normalizeImageUrl(a.thumbnailUrl || a.thumbnail_url || a.originalUrl || a.original_url || a.url || a.file_url), id: a.id })),
+      ...selectedAssets.map(a => ({ url: normalizeImageUrl(a.thumbnailUrl || a.thumbnail_url || a.originalUrl || a.original_url || a.url || a.file_url), id: a.id, assetId: a.id })),
     ].slice(0, maxImages);
     setRefImages(newList);
     setAssetPickerOpen(false);
@@ -1404,6 +1404,7 @@ function RefImageField({ maxImages = 3, projectId, subjectId, refImageIds = [], 
         onClose={() => setAssetPickerOpen(false)}
         onConfirm={handleAssetConfirm}
         projectId={projectId}
+        preSelectedIds={refImages.map(img => img.assetId).filter(Boolean)}
       />
       <input
         ref={fileInputRef}
@@ -2206,6 +2207,7 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', projectRatio, 
             const placeholder = `generated-${Date.now()}`;
             // 写入模块级缓存，跨弹窗打开/关闭保持
             pendingGenerations.set(char.id, { placeholderId: placeholder, status: 'pending' });
+            setBatchLoadingSubjects((prev) => ({ ...prev, [char.id]: true }));
             setGeneratedImages((prev) => [{ url: null, settled: false, id: placeholder }, ...prev]);
 
             const genParams = {
@@ -2239,6 +2241,11 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', projectRatio, 
                     );
                     return updated;
                   });
+                  setBatchLoadingSubjects((prev) => {
+                    const next = { ...prev };
+                    delete next[char.id];
+                    return next;
+                  });
                   showToast('图片生成成功', 'success');
                   pendingGenerations.delete(char.id);
                 } else {
@@ -2255,6 +2262,11 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', projectRatio, 
               .catch((err) => {
                 console.error('[SubjectPage] 生成图片失败:', err);
                 pendingGenerations.delete(char.id);
+                setBatchLoadingSubjects((prev) => {
+                  const next = { ...prev };
+                  delete next[char.id];
+                  return next;
+                });
                 if (isMountedRef.current) {
                   setGeneratedImages((prev) => prev.filter((img) => img.id !== placeholder));
                 }

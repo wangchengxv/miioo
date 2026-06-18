@@ -1767,6 +1767,7 @@ export default function Home({ onProjectCreated }) {
                 serverReachable={serverReachable}
                 projectId={activeProject.id}
                 projectName={activeProject.name}
+                projectRatio={activeProject.aspect_ratio || activeProject.ratio}
                 chars={sharedChars ?? []}
                 scenes={sharedScenes ?? []}
                 props={sharedProps ?? []}

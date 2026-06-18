@@ -312,9 +312,9 @@ function UploadPlaceholder({ onFileSelect, onAssetPick, onDirectClick, disabled 
       e.target.value = '';
       return;
     }
-    const oversizedImg = selected.find((file) => isImageFile(file) && file.size > 5 * 1024 * 1024);
+    const oversizedImg = selected.find((file) => isImageFile(file) && file.size > 20 * 1024 * 1024);
     if (oversizedImg) {
-      alert('抱歉，平台暂不支持上传5M以上的图片资源！');
+      alert('抱歉，平台暂不支持上传20M以上的图片资源！');
       e.target.value = '';
       return;
     }
@@ -434,8 +434,8 @@ function FrameUploader({ firstFile, lastFile, onFirstChange, onLastChange, onSwa
       e.target.value = '';
       return;
     }
-    if (file.size > 5 * 1024 * 1024) {
-      alert('抱歉，平台暂不支持上传5M以上的图片资源！');
+    if (file.size > 20 * 1024 * 1024) {
+      alert('抱歉，平台暂不支持上传20M以上的图片资源！');
       e.target.value = '';
       return;
     }
@@ -700,6 +700,7 @@ const IMAGE_EXTS_SET = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp'
 const VIDEO_EXTS_SET = new Set(['.mp4', '.mov', '.avi', '.webm', '.mkv', '.wmv', '.flv']);
 
 function isImageFile(file) {
+  if (file.type && file.type.startsWith('image/')) return true;
   if (file.isAsset && file.url) {
     if (/\.(jpg|jpeg|png|webp|gif|bmp|tiff?|heic|heif)$/i.test(file.url)) return true;
     // URL has no extension (e.g. picsum.photos) — fall through to check file.name
@@ -709,6 +710,7 @@ function isImageFile(file) {
 }
 
 function isVideoFile(file) {
+  if (file.type && file.type.startsWith('video/')) return true;
   if (file.isAsset && file.url) {
     if (/\.(mp4|mov|avi|webm|mkv|wmv|flv)$/i.test(file.url)) return true;
   }
@@ -2092,9 +2094,9 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
   const uploadAcceptAttr = uploadAllowedExts.join(',');
 
   const handleFileSelect = (newFiles) => {
-    const oversized = newFiles.filter((f) => isImageFile(f) && f.size > 5 * 1024 * 1024);
+    const oversized = newFiles.filter((f) => isImageFile(f) && f.size > 20 * 1024 * 1024);
     if (oversized.length > 0) {
-      alert('抱歉，平台暂不支持上传5M以上的图片资源！');
+      alert('抱歉，平台暂不支持上传20M以上的图片资源！');
       return;
     }
     const enriched = newFiles.map((f) => {
@@ -2134,9 +2136,11 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
     const assetFiles = selectedAssets.map((asset) => ({
       name: asset.name || asset.id,
       size: 0,
-      url: asset.url,
+      url: asset.thumbnailUrl || asset.thumbnail_url || asset.url,
+      previewUrl: asset.thumbnailUrl || asset.thumbnail_url || asset.url,
       assetId: asset.id || asset.asset_id || undefined,
       isAsset: true,
+      type: asset.type === 'video' ? 'video/mp4' : asset.type === 'audio' ? 'audio/mpeg' : 'image/jpeg',
     }));
     setFiles((prev) => [...prev, ...assetFiles]);
   };
@@ -2259,6 +2263,7 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
   const handleSend = async () => {
     if (!canSend) return;
     const currentText = editorRef.current?.innerText?.trim() ?? '';
+    const savedFiles = files;
     // 立即清空输入框和附件
     if (editorRef.current) editorRef.current.innerHTML = '';
     setHasContent(false);
@@ -2288,10 +2293,13 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
       ...(genType === 'dubbing' ? { speed: dubbingSpeed, emotion: dubbingEmotion, voiceId: selectedVoiceId, voiceName: selectedVoiceName } : {}),
       files,
       onFail: (fallbackPrompt) => {
-        // 失败时回退文本到输入框
+        // 失败时回退文本和附件到输入框
         if (editorRef.current && fallbackPrompt) {
           editorRef.current.innerText = fallbackPrompt;
           setHasContent(true);
+        }
+        if (savedFiles.length > 0) {
+          setFiles(savedFiles);
         }
       },
     });

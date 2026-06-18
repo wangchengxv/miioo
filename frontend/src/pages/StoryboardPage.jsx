@@ -5,7 +5,7 @@ import ShotViewerModal from '../components/ShotViewerModal';
 import Toggle from '../components/Toggle';
 import AssetPickerModal from '../components/AssetPickerModal';
 import { apiUploadFile, apiUploadImage, apiUploadStoryboardVideo, apiGenerateStoryboardImage, apiGenerateStoryboardVideo, apiCreateStoryboard, apiUpdateStoryboard, apiDeleteStoryboard, apiReorderStoryboards, apiGetStoryboards, apiBatchDownloadStoryboardImages, apiBatchDownloadStoryboardVideos, apiGetTask } from '../api/storyboard';
-import { apiUploadCreationImage } from '../api/creation';
+import { apiUploadCreationImage, apiUploadCreationVideo, apiUploadCreationAudio } from '../api/creation';
 import { apiListModels } from '../api/config';
 import DotsLoading from '../components/DotsLoading';
 import { apiGetEpisodes } from '../api/subject';
@@ -876,7 +876,7 @@ function ImgUploadCard({ onUpload, projectId, onAssetSelect }) {
           type="file"
           accept="image/*"
           style={{ display: 'none' }}
-          onChange={(e) => { const file = e.target.files?.[0]; if (file) { if (file.size > 5 * 1024 * 1024) { alert('抱歉，平台暂不支持上传5M以上的图片资源！'); e.target.value = ''; return; } onUpload?.(file); } e.target.value = ''; }}
+          onChange={(e) => { const file = e.target.files?.[0]; if (file) { if (file.size > 20 * 1024 * 1024) { alert('抱歉，平台暂不支持上传20M以上的图片资源！'); e.target.value = ''; return; } onUpload?.(file); } e.target.value = ''; }}
         />
         <ImgUploadBtn label="本地上传" onClick={() => fileInputRef.current?.click()} />
         <ImgUploadBtn label="从资产库选择" onClick={() => setAssetPickerOpen(true)} />
@@ -1008,11 +1008,30 @@ function FrameUploadSlot({ label, media, onUpload, onRemove, shortcutLabel, shor
   const [btn3Hov, setBtn3Hov] = useState(false);
   const [btn3Pressed, setBtn3Pressed] = useState(false);
   const [assetPickerOpen, setAssetPickerOpen] = useState(false);
+  const [previewPos, setPreviewPos] = useState(null);
+  const hoverTimerRef = useRef(null);
+
+  function handleMediaMouseEnter(e) {
+    const { clientX, clientY } = e;
+    clearTimeout(hoverTimerRef.current);
+    hoverTimerRef.current = setTimeout(() => {
+      if (media?.url) setPreviewPos({ x: clientX, y: clientY });
+    }, 500);
+  }
+
+  function handleMediaMouseMove(e) {
+    setPreviewPos(p => p ? { x: e.clientX, y: e.clientY } : p);
+  }
+
+  function handleMediaMouseLeave() {
+    clearTimeout(hoverTimerRef.current);
+    setPreviewPos(null);
+  }
 
   function handleFile(e) {
     const file = e.target.files[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) { alert('抱歉，平台暂不支持上传5M以上的图片资源！'); e.target.value = ''; return; }
+    if (file.size > 20 * 1024 * 1024) { alert('抱歉，平台暂不支持上传20M以上的图片资源！'); e.target.value = ''; return; }
     const url = URL.createObjectURL(file);
     onUpload?.({ id: url, url, name: file.name, type: file.type });
     e.target.value = '';
@@ -1030,10 +1049,14 @@ function FrameUploadSlot({ label, media, onUpload, onRemove, shortcutLabel, shor
         <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
           <input ref={fileRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handleFile} />
           {media ? (
-            <div style={{ position: 'relative', width: '120px', height: '120px', borderRadius: '6px', overflow: 'hidden', flexShrink: 0, border: '1px solid rgba(255,255,255,0.12)' }}>
+            <div
+              onMouseEnter={handleMediaMouseEnter}
+              onMouseMove={handleMediaMouseMove}
+              onMouseLeave={handleMediaMouseLeave}
+              style={{ position: 'relative', width: '120px', height: '120px', borderRadius: '6px', overflow: 'hidden', flexShrink: 0, border: '1px solid rgba(255,255,255,0.12)' }}>
               <img src={media.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
               <div
-                onClick={onRemove}
+                onClick={() => { clearTimeout(hoverTimerRef.current); setPreviewPos(null); onRemove?.(); }}
                 style={{ position: 'absolute', top: '4px', right: '4px', width: '18px', height: '18px', borderRadius: '4px', backgroundColor: 'rgba(0,0,0,0.70)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
               >
                 <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 2L8 8M8 2L2 8" stroke="#FFFFFF" strokeWidth="1.2" strokeLinecap="round"/></svg>
@@ -1145,14 +1168,24 @@ function FrameUploadSlot({ label, media, onUpload, onRemove, shortcutLabel, shor
           )}
         </div>
       </div>
-      <AssetPickerModal accept="image" open={assetPickerOpen} onClose={() => setAssetPickerOpen(false)} projectId={projectId} onConfirm={() => {}} />
+      <AssetPickerModal accept="image" open={assetPickerOpen} onClose={() => setAssetPickerOpen(false)} projectId={projectId} onConfirm={(assets) => {
+        if (assets?.length) {
+          const a = assets[0];
+          onUpload?.({ id: a.id, url: a.thumbnailUrl || a.thumbnail_url || a.originalUrl || a.original_url || a.url || a.file_url || '', name: a.name || a.filename || '' });
+        }
+        setAssetPickerOpen(false);
+      }} />
+      {previewPos && media?.url && createPortal(
+        <MediaHoverPreview url={media.url} isVideo={false} mouseX={previewPos.x} mouseY={previewPos.y} />,
+        document.body
+      )}
     </>
   );
 }
 
 // ─── 面板上传区（虚线框）────────────────────────────────────────────────────────
 
-function PanelUploadSlot({ label, onUpload, media, onRemove, accept = 'image/*', projectId, countLabel, mediaList, canAddMore = true, onRemoveItem }) {
+function PanelUploadSlot({ label, onUpload, media, onRemove, accept = 'image/*', projectId, countLabel, mediaList, canAddMore = true, onRemoveItem, onAssetConfirm }) {
   const fileRef = useRef(null);
   const [hov, setHov] = useState(false);
   const [addHov, setAddHov] = useState(false);
@@ -1189,7 +1222,7 @@ function PanelUploadSlot({ label, onUpload, media, onRemove, accept = 'image/*',
   function handleFile(e) {
     const file = e.target.files[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) { alert('抱歉，平台暂不支持上传5M以上的图片资源！'); e.target.value = ''; return; }
+    if (file.size > 20 * 1024 * 1024) { alert('抱歉，平台暂不支持上传20M以上的图片资源！'); e.target.value = ''; return; }
     const url = URL.createObjectURL(file);
     onUpload?.({ id: url, url, name: file.name, type: file.type });
     e.target.value = '';
@@ -1221,16 +1254,16 @@ function PanelUploadSlot({ label, onUpload, media, onRemove, accept = 'image/*',
                 onMouseLeave={stopPreview}
                 style={{ position: 'relative', width: `${THUMB}px`, height: `${THUMB}px`, borderRadius: '6px', overflow: 'hidden', flexShrink: 0, border: '1px solid rgba(255,255,255,0.12)' }}>
                 {item.type?.startsWith('video') ? (
-                  <video src={item.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted playsInline />
+                  <video src={item.url || null} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted playsInline />
                 ) : item.type?.startsWith('audio') ? (
                   <div style={{ width: '100%', height: '100%', backgroundColor: '#1D1E1E', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M9 18V5l12-2v13" stroke="rgba(255,255,255,0.50)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><circle cx="6" cy="18" r="3" stroke="rgba(255,255,255,0.50)" strokeWidth="1.5"/><circle cx="18" cy="16" r="3" stroke="rgba(255,255,255,0.50)" strokeWidth="1.5"/></svg>
                   </div>
                 ) : (
-                  <img src={item.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <img src={item.url || null} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 )}
                 <div
-                  onClick={() => onRemoveItem ? onRemoveItem(idx) : onRemove?.()}
+                  onClick={() => { stopPreview(); onRemoveItem ? onRemoveItem(idx) : onRemove?.(); }}
                   style={{ position: 'absolute', top: '4px', right: '4px', width: '18px', height: '18px', borderRadius: '4px', backgroundColor: 'rgba(0,0,0,0.70)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
                 >
                   <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 2L8 8M8 2L2 8" stroke="#FFFFFF" strokeWidth="1.2" strokeLinecap="round"/></svg>
@@ -1296,17 +1329,17 @@ function PanelUploadSlot({ label, onUpload, media, onRemove, accept = 'image/*',
                 onMouseLeave={stopPreview}
                 style={{ position: 'relative', width: '120px', height: '120px', borderRadius: '6px', overflow: 'hidden', flexShrink: 0, border: '1px solid rgba(255,255,255,0.12)' }}>
                 {media.type?.startsWith('video') ? (
-                  <video src={media.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted playsInline />
+                  <video src={media.url || null} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted playsInline />
                 ) : media.type?.startsWith('audio') ? (
                   <div style={{ width: '100%', height: '100%', backgroundColor: '#1D1E1E', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: '6px' }}>
                     <svg width="24" height="24" viewBox="0 0 24 24" fill="none"><path d="M9 18V5l12-2v13" stroke="rgba(255,255,255,0.50)" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/><circle cx="6" cy="18" r="3" stroke="rgba(255,255,255,0.50)" strokeWidth="1.5"/><circle cx="18" cy="16" r="3" stroke="rgba(255,255,255,0.50)" strokeWidth="1.5"/></svg>
                     <span style={{ fontSize: '11px', color: 'rgba(255,255,255,0.40)', fontFamily: FONT, maxWidth: '100px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', paddingInline: '4px' }}>{media.name}</span>
                   </div>
                 ) : (
-                  <img src={media.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                  <img src={media.url || null} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                 )}
                 <div
-                  onClick={onRemove}
+                  onClick={() => { stopPreview(); onRemove?.(); }}
                   style={{ position: 'absolute', top: '4px', right: '4px', width: '18px', height: '18px', borderRadius: '4px', backgroundColor: 'rgba(0,0,0,0.70)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
                 >
                   <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 2L8 8M8 2L2 8" stroke="#FFFFFF" strokeWidth="1.2" strokeLinecap="round"/></svg>
@@ -1361,7 +1394,14 @@ function PanelUploadSlot({ label, onUpload, media, onRemove, accept = 'image/*',
           </div>
         )}
       </div>
-      <AssetPickerModal accept={accept.startsWith('video') ? 'video' : accept.startsWith('image') ? 'image' : accept.startsWith('audio') ? 'audio' : 'all'} open={assetPickerOpen} onClose={() => setAssetPickerOpen(false)} projectId={projectId} onConfirm={() => {}} />
+      <AssetPickerModal
+        accept={accept.startsWith('video') ? 'video' : accept.startsWith('image') ? 'image' : accept.startsWith('audio') ? 'audio' : 'all'}
+        open={assetPickerOpen}
+        onClose={() => setAssetPickerOpen(false)}
+        projectId={projectId}
+        preSelectedIds={isMultiMode ? (mediaList || []).map(m => m.assetId || m.id).filter(id => id && !id.startsWith('blob:')) : (media?.assetId || (!media?.id?.startsWith('blob:') ? media?.id : null)) ? [media.assetId || media.id] : []}
+        onConfirm={(assets) => { onAssetConfirm?.(assets); setAssetPickerOpen(false); }}
+      />
       {previewMedia && createPortal(
         <MediaHoverPreview url={previewMedia.url} isVideo={previewMedia.isVideo} mouseX={mousePos.x} mouseY={mousePos.y} />,
         document.body
@@ -2123,6 +2163,7 @@ function GenerateImagePanel({ shot, projectId, chars = [], scenes = [], props = 
     if (!selectedAssets || selectedAssets.length === 0) return;
     const newItems = selectedAssets.map(a => ({
       id: a.id,
+      assetId: a.id, // 标记来自资产库，用于 preSelectedIds 匹配
       url: normalizeImageUrl(a.thumbnailUrl || a.thumbnail_url || a.originalUrl || a.original_url || a.url || a.file_url),
       name: a.name || a.filename || '',
     }));
@@ -2138,7 +2179,7 @@ function GenerateImagePanel({ shot, projectId, chars = [], scenes = [], props = 
     if (!files.length) return;
 
     for (const file of files) {
-      if (file.size > 5 * 1024 * 1024) { onShowToast?.('抱歉，平台暂不支持上传5M以上的图片资源！', 'error'); continue; }
+      if (file.size > 20 * 1024 * 1024) { onShowToast?.('抱歉，平台暂不支持上传20M以上的图片资源！', 'error'); continue; }
       try {
         await handleRefImageUpload(file);
       } catch (error) {
@@ -2259,7 +2300,7 @@ function GenerateImagePanel({ shot, projectId, chars = [], scenes = [], props = 
                     style={{ position: 'relative', width: '120px', height: '120px', borderRadius: '6px', overflow: 'hidden', flexShrink: 0, border: '1px solid rgba(255,255,255,0.12)' }}>
                     <img src={img.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     <div
-                      onClick={() => removeRefImage(img.id)}
+                      onClick={() => { clearTimeout(refImgHoverTimer.current); setRefImgPreview(null); removeRefImage(img.id); }}
                       style={{ position: 'absolute', top: '4px', right: '4px', width: '18px', height: '18px', borderRadius: '4px', backgroundColor: 'rgba(0,0,0,0.70)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
                     >
                       <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 2L8 8M8 2L2 8" stroke="#FFFFFF" strokeWidth="1.2" strokeLinecap="round"/></svg>
@@ -2283,7 +2324,7 @@ function GenerateImagePanel({ shot, projectId, chars = [], scenes = [], props = 
                 )}
               </div>
             </div>
-            <AssetPickerModal accept="image" open={refImgPickerOpen} onClose={() => setRefImgPickerOpen(false)} projectId={projectId} onConfirm={handleRefImageAssetConfirm} />
+            <AssetPickerModal accept="image" open={refImgPickerOpen} onClose={() => setRefImgPickerOpen(false)} projectId={projectId} preSelectedIds={refImages.map(img => img.assetId).filter(Boolean)} onConfirm={handleRefImageAssetConfirm} />
 
             <PanelSelect label="分辨率" value={resolution} options={availableResolutions} onChange={setResolution} />
 
@@ -2562,7 +2603,10 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
 
   async function handleRefMediaUpload(file, type = 'image') {
     try {
-      const result = await apiUploadCreationImage({
+      const uploadFn = type === 'audio' ? apiUploadCreationAudio
+                     : type === 'video' ? apiUploadCreationVideo
+                     : apiUploadCreationImage;
+      const result = await uploadFn({
         file,
         category: 'reference',
         project_id: projectId,
@@ -2737,7 +2781,19 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
                   } else {
                     setRefSubjects(prev => [...prev, media]);
                   }
-                }} onRemove={() => setRefSubjects([])} onRemoveItem={(idx) => setRefSubjects(prev => prev.filter((_, i) => i !== idx))} />}
+                }} onRemove={() => setRefSubjects([])} onRemoveItem={(idx) => setRefSubjects(prev => prev.filter((_, i) => i !== idx))} onAssetConfirm={(selectedAssets) => {
+                  if (!selectedAssets?.length) return;
+                  const newItems = selectedAssets.map(a => ({
+                    id: a.id,
+                    assetId: a.id,
+                    url: normalizeImageUrl(a.thumbnailUrl || a.thumbnail_url || a.originalUrl || a.original_url || a.url || a.file_url),
+                    name: a.name || a.filename || '',
+                  }));
+                  setRefSubjects(prev => {
+                    const merged = [...prev, ...newItems];
+                    return maxRefImages != null ? merged.slice(0, maxRefImages) : merged;
+                  });
+                }} />}
                 {showRefImages && <PanelUploadSlot projectId={projectId} label="参考图" countLabel={imageCountLabel} accept="image/*" mediaList={refImages} canAddMore={canAddImage} onUpload={async (media) => {
                   if (media.id?.startsWith('blob:')) {
                     try {
@@ -2752,9 +2808,21 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
                   } else {
                     setRefImages(prev => [...prev, media]);
                   }
-                }} onRemove={() => setRefImages([])} onRemoveItem={(idx) => setRefImages(prev => prev.filter((_, i) => i !== idx))} />}
+                }} onRemove={() => setRefImages([])} onRemoveItem={(idx) => setRefImages(prev => prev.filter((_, i) => i !== idx))} onAssetConfirm={(selectedAssets) => {
+                  if (!selectedAssets?.length) return;
+                  const newItems = selectedAssets.map(a => ({
+                    id: a.id,
+                    assetId: a.id,
+                    url: normalizeImageUrl(a.thumbnailUrl || a.thumbnail_url || a.originalUrl || a.original_url || a.url || a.file_url),
+                    name: a.name || a.filename || '',
+                  }));
+                  setRefImages(prev => {
+                    const merged = [...prev, ...newItems];
+                    return maxRefImages != null ? merged.slice(0, maxRefImages) : merged;
+                  });
+                }} />}
                 {showRefVideo && (
-                <PanelUploadSlot projectId={projectId} label="参考视频" countLabel={videoCountLabel} accept="video/*" media={refVideo} onUpload={async (media) => {
+                <PanelUploadSlot projectId={projectId} label="参考视频" countLabel={videoCountLabel} accept="video/mp4,video/quicktime" media={refVideo} onUpload={async (media) => {
                   if (media.id?.startsWith('blob:')) {
                     try {
                       const response = await fetch(media.url);
@@ -2771,7 +2839,7 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
                 }} onRemove={() => setRefVideo(null)} />
                 )}
                 {showRefAudio && (
-                <PanelUploadSlot projectId={projectId} label="参考音频" countLabel={audioCountLabel} accept="audio/*" media={refAudio} onUpload={async (media) => {
+                <PanelUploadSlot projectId={projectId} label="参考音频" countLabel={audioCountLabel} accept="audio/mpeg,audio/wav" media={refAudio} onUpload={async (media) => {
                   if (media.id?.startsWith('blob:')) {
                     try {
                       const response = await fetch(media.url);
@@ -4309,13 +4377,15 @@ function MainRefCol({ shot, onChange, chars, projectId }) {
   }
 
   function handleDelete(idx) {
+    clearTimeout(hoverTimerRef.current);
+    setPreviewImg(null);
     onChange({ ...shot, mainRefs: shot.mainRefs.filter((_, i) => i !== idx) });
   }
 
   async function handleFileSelect(e) {
     const file = e.target.files[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) { alert('抱歉，平台暂不支持上传5M以上的图片资源！'); e.target.value = ''; return; }
+    if (file.size > 20 * 1024 * 1024) { alert('抱歉，平台暂不支持上传20M以上的图片资源！'); e.target.value = ''; return; }
 
     // 先创建本地预览 URL
     const localUrl = URL.createObjectURL(file);
@@ -4348,7 +4418,7 @@ function MainRefCol({ shot, onChange, chars, projectId }) {
   }
 
   function handleAssetConfirm(assets) {
-    const newRefs = assets.map(a => ({ id: a.id, url: a.url ?? null, name: a.name, type: a.type ?? 'image' }));
+    const newRefs = assets.map(a => ({ id: a.id, assetId: a.id, url: a.url ?? null, name: a.name, type: a.type ?? 'image' }));
     onChange({ ...shot, mainRefs: [...shot.mainRefs, ...newRefs] });
   }
 
@@ -4359,6 +4429,7 @@ function MainRefCol({ shot, onChange, chars, projectId }) {
         open={assetPickerOpen}
         projectId={projectId}
         onClose={() => setAssetPickerOpen(false)}
+        preSelectedIds={shot.mainRefs.map(r => r.assetId).filter(Boolean)}
         onConfirm={handleAssetConfirm}
       />
       {dropdownOpen && (
@@ -4519,7 +4590,7 @@ function MainRefModal({ shot, onChange, onClose }) {
   const [assetPickerOpen, setAssetPickerOpen] = useState(false);
 
   function handleAssetConfirm(assets) {
-    const newRefs = assets.map(a => ({ id: a.id, url: a.url ?? null, name: a.name, type: a.type ?? 'image' }));
+    const newRefs = assets.map(a => ({ id: a.id, assetId: a.id, url: a.url ?? null, name: a.name, type: a.type ?? 'image' }));
     onChange({ ...shot, mainRefs: [...shot.mainRefs, ...newRefs] });
   }
 
@@ -4534,6 +4605,7 @@ function MainRefModal({ shot, onChange, onClose }) {
         projectId={projectId}
         open={assetPickerOpen}
         onClose={() => setAssetPickerOpen(false)}
+        preSelectedIds={shot.mainRefs.map(r => r.assetId).filter(Boolean)}
         onConfirm={handleAssetConfirm}
       />
       <div
@@ -4634,24 +4706,6 @@ function MainRefModal({ shot, onChange, onClose }) {
             >
               从资产库添加
             </div>
-            <div
-              onClick={onClose}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                height: '36px',
-                paddingInline: '16px',
-                borderRadius: '8px',
-                backgroundColor: '#2DC3E1',
-                border: '1px solid #FFFFFF33',
-                cursor: 'pointer',
-                fontSize: '14px',
-                color: '#090909',
-                fontFamily: '"Alibaba PuHuiTi 2.0", system-ui, sans-serif',
-              }}
-            >
-              完成
-            </div>
           </div>
         </div>
       </div>
@@ -4663,8 +4717,6 @@ function MainRefModal({ shot, onChange, onClose }) {
 
 function MediaViewModal({ url, onClose }) {
   const [closeHov, setCloseHov] = useState(false);
-  const [doneHov, setDoneHov] = useState(false);
-  const [donePressed, setDonePressed] = useState(false);
   const [downloadHov, setDownloadHov] = useState(false);
   const [downloadPressed, setDownloadPressed] = useState(false);
 
@@ -4707,18 +4759,6 @@ function MediaViewModal({ url, onClose }) {
         </div>
         {/* footer */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', background: '#161616', borderRadius: '0 0 16px 16px', padding: '16px 24px', flexShrink: 0, gap: '12px' }}>
-          <div
-            style={{ display: 'flex', flexDirection: 'column', height: '36px', flexShrink: 0, borderRadius: '8px', padding: '1px', backgroundImage: doneHov ? 'linear-gradient(in oklab 148.76deg, oklab(94.7% -0.078 -0.022 / 45%) 3.64%, oklab(75.5% -0.102 -0.072 / 0%) 42.81%), linear-gradient(in oklab 180deg, #FFFFFF1E, #FFFFFF1E)' : 'linear-gradient(in oklab 148.76deg, oklab(94.7% -0.078 -0.022 / 30%) 3.64%, oklab(75.5% -0.102 -0.072 / 0%) 42.81%), linear-gradient(in oklab 180deg, #FFFFFF14, #FFFFFF14)', boxShadow: '#00000066 3px 3px 8px', outline: '1px solid #00000080', cursor: 'pointer', transition: 'background-image 0.15s' }}
-            onClick={onClose}
-            onMouseEnter={() => setDoneHov(true)}
-            onMouseLeave={() => { setDoneHov(false); setDonePressed(false); }}
-            onMouseDown={() => setDonePressed(true)}
-            onMouseUp={() => setDonePressed(false)}
-          >
-            <div style={{ display: 'flex', alignItems: 'center', flex: 1, alignSelf: 'stretch', borderRadius: '7px', gap: '4px', paddingInline: '15px', backgroundColor: donePressed ? '#222222' : doneHov ? '#1C1C1C' : '#161616', transition: 'background-color 0.1s' }}>
-              <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF' }}>完成</span>
-            </div>
-          </div>
           <div
             style={{ display: 'flex', flexDirection: 'column', height: '36px', flexShrink: 0, borderRadius: '8px', padding: '1px', backgroundImage: downloadHov ? 'linear-gradient(in oklab 148.76deg, oklab(94.7% -0.078 -0.022 / 45%) 3.64%, oklab(75.5% -0.102 -0.072 / 0%) 42.81%), linear-gradient(in oklab 180deg, #FFFFFF1E, #FFFFFF1E)' : 'linear-gradient(in oklab 148.76deg, oklab(94.7% -0.078 -0.022 / 30%) 3.64%, oklab(75.5% -0.102 -0.072 / 0%) 42.81%), linear-gradient(in oklab 180deg, #FFFFFF14, #FFFFFF14)', boxShadow: '#00000066 3px 3px 8px', outline: '1px solid #00000080', cursor: 'pointer', transition: 'background-image 0.15s' }}
             onClick={() => downloadImage(url)}
@@ -4775,7 +4815,7 @@ function MediaCol({ media, onUpload, accept, isVideo, label, onAIGenerate, shotM
   function handleFileSelect(e) {
     const file = e.target.files[0];
     if (!file) return;
-    if (!isVideo && file.size > 5 * 1024 * 1024) { alert('抱歉，平台暂不支持上传5M以上的图片资源！'); e.target.value = ''; return; }
+    if (!isVideo && file.size > 20 * 1024 * 1024) { alert('抱歉，平台暂不支持上传20M以上的图片资源！'); e.target.value = ''; return; }
     const url = URL.createObjectURL(file);
     onUpload({ id: url, url, name: file.name, type: file.type, file });
     e.target.value = '';
@@ -5436,7 +5476,7 @@ const INITIAL_SHOTS = [
 
 const EPISODES = ['第一集', '第二集'];
 
-export default function StoryboardPage({ serverReachable, projectId, projectName = '两只老虎的奇遇', chars = [], scenes = [], props = [], episodes = EPISODES, onUnlockStep, onVideoGenerated, onGenerateStoryboards, generateError = null, isGenerating: homeIsGenerating = false }) {
+export default function StoryboardPage({ serverReachable, projectId, projectName = '两只老虎的奇遇', projectRatio, chars = [], scenes = [], props = [], episodes = EPISODES, onUnlockStep, onVideoGenerated, onGenerateStoryboards, generateError = null, isGenerating: homeIsGenerating = false }) {
 
   if (serverReachable === false) {
     return (
@@ -5665,6 +5705,7 @@ export default function StoryboardPage({ serverReachable, projectId, projectName
           model: params.model,
           resolution: params.resolution,
           prompt: params.prompt,
+          ratio: projectRatio,
           reference_images: (params.refImages || []).map(r => typeof r === 'string' ? r : r.url).filter(Boolean),
         });
         const task = await pollTask(taskResp.id, hasImageTaskResult);
@@ -5723,6 +5764,7 @@ export default function StoryboardPage({ serverReachable, projectId, projectName
           duration: durationValue,
           sound_effect: params.sound,
           prompt: params.prompt,
+          ratio: projectRatio,
           reference_images: (params.refImages || []).map(r => typeof r === 'string' ? r : r.url).filter(Boolean),
         });
         const task = await pollTask(taskResp.id, hasVideoTaskResult);
@@ -6343,7 +6385,7 @@ export default function StoryboardPage({ serverReachable, projectId, projectName
        onGenerate={async (params) => {
          const shot = imagePanel.shot;
          try {
-           const taskResp = await apiGenerateStoryboardImage(projectId, shot.id, { model: params.model, resolution: params.resolution, prompt: params.prompt, reference_images: (params.refImages || []).map(r => typeof r === 'string' ? r : r.url) });
+           const taskResp = await apiGenerateStoryboardImage(projectId, shot.id, { model: params.model, resolution: params.resolution, prompt: params.prompt, ratio: projectRatio, reference_images: (params.refImages || []).map(r => typeof r === 'string' ? r : r.url) });
            const task = await pollTask(taskResp.id, hasImageTaskResult);
            if (task.status === 'completed' || task.status === 'partial' || hasImageTaskResult(task)) {
              const imageUrl = extractImageUrlFromTask(task);
@@ -6408,6 +6450,7 @@ export default function StoryboardPage({ serverReachable, projectId, projectName
                 duration: durationValue,
                 sound_effect: params.sound,
                 prompt: params.prompt,
+                ratio: projectRatio,
                 reference_images: params.reference_images || (params.refImages || []).map(r => typeof r === 'string' ? r : r.url).filter(Boolean),
                 first_frame_url: params.first_frame_url,
                 last_frame_url: params.last_frame_url,

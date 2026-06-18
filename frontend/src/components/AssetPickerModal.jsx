@@ -34,28 +34,29 @@ const SUB_TAB_KEY_MAP = {
   '配音': 'dubbing',
 };
 
-function Checkbox({ checked, hovered }) {
+function Checkbox({ checked, hovered, disabled }) {
   return (
     <div style={{
       position: 'relative', width: '14px', height: '14px', borderRadius: '3px', flexShrink: 0,
-      border: `1px solid ${hovered ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.2)'}`,
+      border: `1px solid ${disabled ? 'rgba(255,255,255,0.12)' : hovered ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.2)'}`,
       outline: '1px solid #00000080',
-      background: checked ? '#2DC3E1' : '#090909',
+      background: checked ? (disabled ? '#1A8FA3' : '#2DC3E1') : '#090909',
       transition: 'background 100ms, border-color 100ms',
+      cursor: disabled ? 'not-allowed' : 'default',
     }}>
       {checked && (
         <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{ position: 'absolute', left: '50%', top: '50%', translate: '-50% -50%' }}>
-          <path d="M3.333 8L6.667 11.333L13.333 4.667" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M3.333 8L6.667 11.333L13.333 4.667" stroke={disabled ? 'rgba(255,255,255,0.5)' : '#FFFFFF'} strokeLinecap="round" strokeLinejoin="round" />
         </svg>
       )}
     </div>
   );
 }
 
-function AssetCard({ asset, isSelected, isHovered, onMouseEnter, onMouseLeave, onClick, compact = false }) {
+function AssetCard({ asset, isSelected, isHovered, isDisabled, onMouseEnter, onMouseLeave, onClick, compact = false }) {
   return (
     <div
-      onClick={onClick}
+      onClick={isDisabled ? undefined : onClick}
       onMouseEnter={onMouseEnter}
       onMouseLeave={onMouseLeave}
       style={{
@@ -65,7 +66,9 @@ function AssetCard({ asset, isSelected, isHovered, onMouseEnter, onMouseLeave, o
         flexShrink: 0, display: 'flex', flexDirection: 'column',
         background: '#1C1C1C',
         border: `1px solid ${isSelected ? '#FFFFFF33' : isHovered ? 'rgba(255,255,255,0.2)' : '#FFFFFF0F'}`,
-        cursor: 'pointer', transition: 'border-color 100ms',
+        cursor: isDisabled ? 'not-allowed' : 'pointer',
+        transition: 'border-color 100ms',
+        opacity: isDisabled ? 0.6 : 1,
       }}
     >
       {/* 图片区 */}
@@ -98,7 +101,7 @@ function AssetCard({ asset, isSelected, isHovered, onMouseEnter, onMouseLeave, o
         )}
         {/* 复选框 */}
         <div style={{ position: 'absolute', top: '8px', left: '8px' }}>
-          <Checkbox checked={isSelected} hovered={isHovered} />
+          <Checkbox checked={isSelected} hovered={isHovered} disabled={isDisabled} />
         </div>
         {/* 收藏图标（仅创作资产有 starred 字段时显示） */}
         {asset.starred && (
@@ -147,6 +150,8 @@ export default function AssetPickerModal({
   projectId = null,
   // creativeAssets: { images: [], videos: [], dubbing: [] }  创作资产；未传时从 store 读取
   creativeAssets: creativeAssetsProp = null,
+  // preSelectedIds: string[]  已存在的资产ID，打开时默认选中且不可取消
+  preSelectedIds = [],
 }) {
   const generationsByTab = useCreationStore((s) => s.generationsByTab);
   const favorites = useCreationStore((s) => s.favorites);
@@ -181,10 +186,12 @@ export default function AssetPickerModal({
   const [favOnly, setFavOnly] = useState(false);
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState(new Set());
+  const preSelectedSet = useMemo(() => new Set(preSelectedIds ?? []), [preSelectedIds]);
 
-  // 每次弹窗关闭时清空选中状态，下次打开时从零开始
+  // 每次弹窗打开时用 preSelectedIds 初始化选中状态，关闭时清空
   useEffect(() => {
-    if (!open) setSelected(new Set());
+    if (open) setSelected(new Set(preSelectedIds ?? []));
+    else setSelected(new Set());
   }, [open]);
   const [searchFocused, setSearchFocused] = useState(false);
   const [hoveredCard, setHoveredCard] = useState(null);
@@ -298,11 +305,14 @@ export default function AssetPickerModal({
 
   const activeProjectName = projects.find(p => p.id === activeProjectId)?.name ?? '选择项目';
 
-  const toggle = (id) => setSelected((prev) => {
-    const next = new Set(prev);
-    next.has(id) ? next.delete(id) : next.add(id);
-    return next;
-  });
+  const toggle = (id) => {
+    if (preSelectedSet.has(id)) return; // 预选项不可取消
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(id) ? next.delete(id) : next.add(id);
+      return next;
+    });
+  };
 
   const handleConfirm = () => {
     // 构建全量 id→asset map，供按 ID 查完整对象
@@ -550,6 +560,7 @@ export default function AssetPickerModal({
                   asset={asset}
                   isSelected={selected.has(asset.id)}
                   isHovered={hoveredCard === asset.id}
+                  isDisabled={preSelectedSet.has(asset.id)}
                   onMouseEnter={() => setHoveredCard(asset.id)}
                   onMouseLeave={() => setHoveredCard(null)}
                   onClick={() => toggle(asset.id)}

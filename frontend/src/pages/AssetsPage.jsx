@@ -3708,6 +3708,7 @@ function CreativeAssetsPanel() {
   const [batchMode, setBatchMode] = useState(false);
   const [selected, setSelected] = useState(new Set());
 
+  const [batchDeleteConfirm, setBatchDeleteConfirm] = useState(false);
   const generationsByTab = useCreationStore((s) => s.generationsByTab);
   const favorites = useCreationStore((s) => s.favorites);
   const storeDeleteCard = useCreationStore((s) => s.deleteCard);
@@ -3781,7 +3782,7 @@ function CreativeAssetsPanel() {
                 </svg>
                 <span style={{ fontFamily: FONT, fontSize: '14px', color: '#FFFFFF', whiteSpace: 'nowrap' }}>下载</span>
               </GhostBtn>
-              <PlainBtn onClick={deleteSelected} danger>
+              <PlainBtn onClick={() => setBatchDeleteConfirm(true)} danger>
                 <TrashIcon color="#F75F5F" />
                 <span style={{ fontFamily: FONT, fontSize: '14px', color: '#F75F5F', whiteSpace: 'nowrap' }}>删除</span>
               </PlainBtn>
@@ -3862,6 +3863,21 @@ function CreativeAssetsPanel() {
           </div>
         ))}
       </div>
+      {/* 批量删除二次确认 */}
+      {batchDeleteConfirm && (
+        <ConfirmDialog
+          title="确定要删除吗？"
+          description={`将删除已选中的 ${selected.size} 项创作资产，删除后无法恢复。`}
+          confirmText="删除"
+          onCancel={() => setBatchDeleteConfirm(false)}
+          onConfirm={() => {
+            setBatchDeleteConfirm(false);
+            deleteSelected();
+            exitBatch();
+          }}
+          zIndex={100}
+        />
+      )}
     </div>
   );
 }

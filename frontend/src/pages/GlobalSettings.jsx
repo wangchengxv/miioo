@@ -367,7 +367,7 @@ function CoverUpload({ coverUrl, onUpload, isSaving }) {
   const handleChange = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) { alert('抱歉，平台暂不支持上传5M以上的图片资源！'); e.target.value = ''; return; }
+    if (file.size > 20 * 1024 * 1024) { alert('抱歉，平台暂不支持上传20M以上的图片资源！'); e.target.value = ''; return; }
     e.target.value = '';
 
     setIsUploading(true);
