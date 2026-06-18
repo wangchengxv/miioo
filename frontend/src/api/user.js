@@ -34,7 +34,11 @@ export async function apiGetNotifications({ is_read, type } = {}) {
   const res = await authFetch(url, {
     headers: { 'Content-Type': 'application/json' },
   });
-  return res.json();
+  const data = await res.json();
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.items)) return data.items;
+  if (Array.isArray(data?.list)) return data.list;
+  return [];
 }
 
 export async function apiGetUnreadCount() {

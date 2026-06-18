@@ -6,6 +6,42 @@ export const useCreationStore = create(
     (set) => ({
       generationsByTab: { image: [], video: [], dubbing: [] },
       favorites: new Set(),
+      // 每个 tab 的历史分页状态（不持久化，每次启动重新拉）
+      historyMeta: {
+        image:   { page: 0, hasMore: true, loading: false, initialized: false },
+        video:   { page: 0, hasMore: true, loading: false, initialized: false },
+        dubbing: { page: 0, hasMore: true, loading: false, initialized: false },
+      },
+
+      // 合并历史数据（按卡片后端ID去重，避免重复）
+      // store 约定：数组越靠后 = 越新（display 时 reverse 展示最新在前）
+      // 历史数据后端返回最新在前，插入时需反转后前置，保证 reverse 后新内容仍排第一
+      mergeHistoryGenerations: (tab, newGenerations) =>
+        set((state) => {
+          const existing = state.generationsByTab[tab] ?? [];
+          const existingCardIds = new Set(
+            existing.flatMap((g) => g.cards.map((c) => c.id).filter(Boolean))
+          );
+          const toAdd = newGenerations.filter((g) =>
+            g.cards.every((c) => !c.id || !existingCardIds.has(c.id))
+          );
+          if (toAdd.length === 0) return {};
+          // 后端返回最新在前，反转后放到数组头部（老的在前），reverse 展示时新内容仍排第一
+          return {
+            generationsByTab: {
+              ...state.generationsByTab,
+              [tab]: [...toAdd.reverse(), ...existing],
+            },
+          };
+        }),
+
+      updateHistoryMeta: (tab, patch) =>
+        set((state) => ({
+          historyMeta: {
+            ...state.historyMeta,
+            [tab]: { ...state.historyMeta[tab], ...patch },
+          },
+        })),
 
       addGeneration: (tab, generation) =>
         set((state) => ({
@@ -45,6 +81,14 @@ export const useCreationStore = create(
                   : { ...gen, cards: gen.cards.filter((_, i) => i !== cardIdx) }
               )
               .filter((gen) => gen.cards.length > 0),
+          },
+        })),
+
+      deleteGeneration: (tab, genId) =>
+        set((state) => ({
+          generationsByTab: {
+            ...state.generationsByTab,
+            [tab]: state.generationsByTab[tab].filter((gen) => gen.id !== genId),
           },
         })),
 
@@ -110,7 +154,7 @@ export const useCreationStore = create(
         removeItem: (name) => localStorage.removeItem(name),
       },
       partialize: (state) => ({
-        generationsByTab: state.generationsByTab,
+        // generationsByTab 不再持久化：现在由后端历史接口提供数据，localStorage 缓存会导致重复展示
         favorites: state.favorites,
       }),
       version: 1,

@@ -427,6 +427,8 @@ export async function apiGenerateCreation(params) {
       const pollData = await pollRes.json();
       const status = pollData.status;
       if (status === 'done' || status === 'completed' || status === 'success') {
+        // partial=true 表示部分图片完成，继续轮询直到全部完成
+        if (pollData.partial === true) continue;
         return extractFn(pollData);
       }
       if (status === 'failed' || status === 'error') {
@@ -584,21 +586,34 @@ export async function apiGenerateCreation(params) {
       project_id: uploadContext.project_id,
     };
     const genData = await apiGenerateCreationImages(body);
-    const taskId = genData.task_id || genData.id;
-    if (!taskId) throw new Error('No task_id returned');
 
-    const pollResult = await pollTask(
-      `${BASE}/api/creation/tasks/${taskId}`,
-      (pollData) => {
-        const imgs = pollData.images || [];
-        return {
-          images: imgs.map((img) => img.original_url || img.originalUrl || img.thumbnail_url || img.thumbnailUrl),
-          cardIds: imgs.map((img) => img.id),
-          referenceImages: pollData.reference_images || pollData.referenceImages || [],
-        };
-      },
+    // 后端可能返回单个 task_id 或多个 task_ids（count > 1 时）
+    const taskIds = Array.isArray(genData.task_ids) && genData.task_ids.length > 0
+      ? genData.task_ids
+      : [genData.task_id || genData.id].filter(Boolean);
+    if (taskIds.length === 0) throw new Error('No task_id returned');
+
+    // 并行轮询所有任务，合并结果
+    const pollResults = await Promise.all(
+      taskIds.map((tid) =>
+        pollTask(
+          `${BASE}/api/creation/tasks/${tid}`,
+          (pollData) => {
+            const imgs = pollData.images || [];
+            return {
+              images: imgs.map((img) => img.original_url || img.originalUrl || img.thumbnail_url || img.thumbnailUrl),
+              cardIds: imgs.map((img) => img.id),
+              referenceImages: pollData.reference_images || pollData.referenceImages || [],
+            };
+          },
+        )
+      )
     );
-    return { taskId, images: pollResult.images, cardIds: pollResult.cardIds, referenceImages: pollResult.referenceImages };
+
+    const allImages = pollResults.flatMap((r) => r.images);
+    const allCardIds = pollResults.flatMap((r) => r.cardIds);
+    const referenceImages = pollResults[0]?.referenceImages ?? [];
+    return { taskId: taskIds[0], images: allImages, cardIds: allCardIds, referenceImages };
   }
 
   // ── 视频生成 ────────────────────────────────────────────────────────────

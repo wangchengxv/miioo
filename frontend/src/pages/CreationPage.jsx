@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { PulsingBorder } from '@paper-design/shaders-react';
-import { apiGenerateCreation, apiGetVideoLastFrame, apiDeleteCreationImage, apiDeleteCreationVideo, apiToggleImageFavorite, apiToggleVideoFavorite, apiBatchDeleteImages, apiBatchDeleteVideos, apiCreateSession, apiGetSession, apiListShots, apiCreateShot, apiUpdateShot } from '../api/creation';
+import { apiGenerateCreation, apiGetVideoLastFrame, apiDeleteCreationImage, apiDeleteCreationVideo, apiToggleImageFavorite, apiToggleVideoFavorite, apiBatchDeleteImages, apiBatchDeleteVideos, apiCreateSession, apiGetSession, apiListShots, apiCreateShot, apiUpdateShot, apiListCreationImages, apiListCreationVideos, apiListCreationAudios } from '../api/creation';
 import { useCreationStore } from '../stores/creationStore';
 import { apiListModels } from '../api/config';
 import { adaptModels, getModelParams } from '../utils/modelAdapter';
@@ -3665,8 +3665,9 @@ function AudioResultCard({ status, audioUrl, prompt, model, createdAt, onDelete,
   );
 }
 
-function CreationResultState({ generations, onGenerate, genType, onGenTypeChange, model, onModelChange, modelOptions, creationParams, onDeleteCard, batchMode = false, selected, onToggleSelect, onSwitchToFrameMode, onVideoCardClick, favorites, toggleFavorite, showToast, onBeforeModelOpen, isGenerating = false }) {
+function CreationResultState({ generations, onGenerate, genType, onGenTypeChange, model, onModelChange, modelOptions, creationParams, onDeleteCard, batchMode = false, selected, onToggleSelect, onSwitchToFrameMode, onVideoCardClick, favorites, toggleFavorite, showToast, onBeforeModelOpen, isGenerating = false, historyLoading = false, historyHasMore = false, onLoadMore }) {
   const scrollRef = useRef(null);
+  const sentinelRef = useRef(null);
   const [prefillVersion, setPrefillVersion] = useState(0);
   const [prefillData, setPrefillData] = useState(null);
 
@@ -3691,7 +3692,36 @@ function CreationResultState({ generations, onGenerate, genType, onGenTypeChange
     if (scrollRef.current) {
       scrollRef.current.scrollTop = 0;
     }
-  }, [generations.length]);
+  }, [genType]); // tab 切换时重置，历史追加不重置
+
+  // ── 滚动到底加载更多（IntersectionObserver） ─────────────────────────────────
+  useEffect(() => {
+    if (!sentinelRef.current || !onLoadMore) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && historyHasMore && !historyLoading) {
+          onLoadMore();
+        }
+      },
+      { root: scrollRef.current, rootMargin: '120px', threshold: 0 }
+    );
+    observer.observe(sentinelRef.current);
+    return () => observer.disconnect();
+  }, [historyHasMore, historyLoading, onLoadMore]);
+
+  // ── 视口未满时自动加载下一页 ─────────────────────────────────────────────────
+  useEffect(() => {
+    if (!historyHasMore || historyLoading || !onLoadMore) return;
+    const container = scrollRef.current;
+    if (!container) return;
+    // 等 DOM 更新后再检测
+    const raf = requestAnimationFrame(() => {
+      if (container.scrollHeight <= container.clientHeight + 1) {
+        onLoadMore();
+      }
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [generations.length, historyHasMore, historyLoading, onLoadMore]);
 
   const isAudio = genType === 'dubbing';
 
@@ -3856,6 +3886,14 @@ function CreationResultState({ generations, onGenerate, genType, onGenTypeChange
             );
           })}
         </div>
+        {/* 底部 sentinel：滚动到底时触发加载更多 */}
+        <div ref={sentinelRef} style={{ height: '1px', flexShrink: 0 }} />
+        {historyLoading && (
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '24px 0', gap: '8px' }}>
+            <div style={{ width: '16px', height: '16px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.1)', borderTopColor: '#2DC3E1', animation: 'spin 1s linear infinite', flexShrink: 0 }} />
+            <span style={{ fontFamily: "'AlibabaPuHuiTi_2_55_Regular',system-ui,sans-serif", fontSize: '13px', color: 'rgba(255,255,255,0.4)' }}>加载中…</span>
+          </div>
+        )}
       </div>
 
       {/* Gradient fade: bridges images and InputCard, does not intercept clicks */}
@@ -4175,6 +4213,7 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
   const {
     generationsByTab, addGeneration, deleteCard: storeDeleteCard, deleteGeneration: storeDeleteGeneration, deleteSelectedCards,
     favorites, toggleFavorite: storeToggleFavorite,
+    historyMeta, mergeHistoryGenerations, updateHistoryMeta,
   } = useCreationStore();
   const generations = generationsByTab[activeTab] ?? [];
 
@@ -4193,6 +4232,76 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
   const sessionInitRef = useRef(false);
   // Prevent duplicate restored shots on re-mount
   const restoredShotIdsRef = useRef(new Set());
+
+  // ── 历史数据加载 ──────────────────────────────────────────────────────────────
+  // 将后端返回的 image/video/audio 列表项转换为 generation 格式
+  function normalizeHistoryItem(item, type) {
+    const id = `history-${item.id}`;
+    const url = item.original_url || item.file_url || item.url || '';
+    return {
+      id,
+      backendId: item.id,
+      ratio: item.ratio || item.aspect_ratio || '16:9',
+      resolution: item.resolution || item.size || '',
+      duration: item.duration || undefined,
+      model: item.model || '',
+      prompt: item.prompt || '',
+      refImages: [],
+      createdAt: item.created_at || new Date().toISOString(),
+      cards: [{
+        id: item.id,
+        type,
+        status: 'done',
+        imageUrl: type === 'image' ? url : null,
+        videoUrl: type === 'video' ? url : null,
+        audioUrl: type === 'audio' ? url : null,
+        isFavorite: item.is_favorite ?? false,
+      }],
+    };
+  }
+
+  // 拉取一页历史数据，自动填满视口逻辑由 CreationResultState 触发
+  const loadHistoryPage = useCallback(async (tab) => {
+    if (!isLoggedIn) return;
+    const meta = useCreationStore.getState().historyMeta[tab];
+    if (meta.loading || !meta.hasMore) return;
+
+    updateHistoryMeta(tab, { loading: true });
+    const nextPage = meta.page + 1;
+    const PAGE_SIZE = 18; // 比默认9大，保证大屏填满
+
+    try {
+      let resp;
+      if (tab === 'image') {
+        resp = await apiListCreationImages({ page: nextPage, page_size: PAGE_SIZE });
+      } else if (tab === 'video') {
+        resp = await apiListCreationVideos({ page: nextPage, page_size: PAGE_SIZE });
+      } else {
+        resp = await apiListCreationAudios({ page: nextPage, page_size: PAGE_SIZE });
+      }
+
+      const type = tab === 'dubbing' ? 'audio' : tab;
+      const list = Array.isArray(resp) ? resp : (resp?.list ?? resp?.items ?? resp?.data ?? []);
+      const hasMore = list.length >= PAGE_SIZE;
+
+      const normalized = list.map((item) => normalizeHistoryItem(item, type));
+      mergeHistoryGenerations(tab, normalized);
+      updateHistoryMeta(tab, { page: nextPage, hasMore, loading: false, initialized: true });
+    } catch (err) {
+      console.error('[CreationPage] 历史数据加载失败:', err);
+      updateHistoryMeta(tab, { loading: false, initialized: true });
+    }
+  }, [isLoggedIn, mergeHistoryGenerations, updateHistoryMeta]);
+
+  // 登录后 / 切换 tab 时，若当前 tab 未初始化则拉第一页
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    const meta = historyMeta[activeTab];
+    if (!meta.initialized && !meta.loading) {
+      loadHistoryPage(activeTab);
+    }
+  }, [isLoggedIn, activeTab]);
+
   // Video detail modal state
 
   // Session init: create or resume backend session when logged in
@@ -4709,7 +4818,7 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
         >
           {isLoggedIn === false ? (
             <CreationLoginEmptyState onLoginClick={onLoginClick} />
-          ) : generations.length > 0 ? (
+          ) : generations.length > 0 || historyMeta[activeTab]?.loading ? (
             <CreationResultState
               generations={generations}
               onGenerate={handleGenerate}
@@ -4728,6 +4837,9 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
               favorites={favorites}
               toggleFavorite={handleToggleFavorite}
               showToast={showToast}
+              historyLoading={historyMeta[activeTab]?.loading}
+              historyHasMore={historyMeta[activeTab]?.hasMore}
+              onLoadMore={() => loadHistoryPage(activeTab)}
               onBeforeModelOpen={() => {
                 if (!apiConfigured) { onShowNoModelNotice?.(); return false; }
               }}
