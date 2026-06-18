@@ -371,6 +371,121 @@ function LoginButton({ onClick }) {
 
 const SECONDARY_TEXT = 'rgba(255, 255, 255, 0.60)';
 
+// ── HomeSloganText: soft-blur-in per-character (animate-text / soft-blur-in) ──
+const SLOGAN_LINES = ['无订阅费用', '一键配置API，开启漫剧创作之旅'];
+const SOFT_BLUR_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)';
+const SOFT_BLUR_DURATION = 900;
+const SOFT_BLUR_STAGGER = 25;
+const SOFT_BLUR_LINE_DELAY = 400;
+
+function HomeSloganText() {
+  const ref0 = useRef(null);
+  const ref1 = useRef(null);
+
+  useEffect(() => {
+    const refs = [ref0, ref1];
+    refs.forEach((ref, lineIdx) => {
+      const container = ref.current;
+      if (!container) return;
+      const units = Array.from(container.querySelectorAll('[data-char]'));
+      const lineStart = lineIdx * SOFT_BLUR_LINE_DELAY;
+      units.forEach((span, i) => {
+        span.animate(
+          [
+            { opacity: 0, transform: 'translateY(16px)', filter: 'blur(12px)' },
+            { opacity: 1, transform: 'translateY(0px)',  filter: 'blur(0px)'  },
+          ],
+          {
+            duration: SOFT_BLUR_DURATION,
+            delay: lineStart + i * SOFT_BLUR_STAGGER,
+            easing: SOFT_BLUR_EASING,
+            fill: 'both',
+          }
+        );
+      });
+    });
+  }, []);
+
+  const outerCharStyle = {
+    display: 'inline-block',
+    willChange: 'transform, opacity, filter',
+  };
+
+  const lineStyles = [
+    {
+      // 第一行
+      opacity: 0.7,
+      fontFamily: '"Source Sans 3",system-ui,sans-serif',
+      fontWeight: 200,
+      fontSize: '52px',
+      lineHeight: '64px',
+      whiteSpace: 'nowrap',
+    },
+    {
+      // 第二行
+      opacity: 0.7,
+      fontFamily: '"Source Sans 3",system-ui,sans-serif',
+      fontWeight: 200,
+      fontSize: '52px',
+      lineHeight: '64px',
+      whiteSpace: 'nowrap',
+    },
+  ];
+
+  const innerCharStyles = [
+    {
+      display: 'inline-block',
+      backgroundImage: 'linear-gradient(in oklab 180deg, oklab(100% 0 0) 50%, oklab(70.1% 0.003 -0.043 / 10%) 115.99%)',
+      WebkitBackgroundClip: 'text',
+      backgroundClip: 'text',
+      WebkitTextFillColor: 'transparent',
+      WebkitTextStroke: '1px #FFFFFF80',
+    },
+    {
+      display: 'inline-block',
+      backgroundImage: 'linear-gradient(in oklab 180deg, oklab(100% 0 0) 50%, oklab(70.1% 0.003 -0.043 / 20%) 115.99%)',
+      WebkitBackgroundClip: 'text',
+      backgroundClip: 'text',
+      WebkitTextFillColor: 'transparent',
+      WebkitTextStroke: '1px #FFFFFF80',
+    },
+  ];
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        left: '50%',
+        top: '33.333%',
+        transform: 'translate(-50%, -50%)',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: '16px',
+        pointerEvents: 'none',
+        zIndex: 1,
+        whiteSpace: 'nowrap',
+        overflow: 'visible',
+      }}
+    >
+      <div ref={ref0} style={lineStyles[0]}>
+        {Array.from(SLOGAN_LINES[0]).map((char, i) => (
+          <span key={i} data-char style={outerCharStyle}>
+            <span style={innerCharStyles[0]}>{char}</span>
+          </span>
+        ))}
+      </div>
+      <div ref={ref1} style={lineStyles[1]}>
+        {Array.from(SLOGAN_LINES[1]).map((char, i) => (
+          <span key={i} data-char style={outerCharStyle}>
+            <span style={innerCharStyles[1]}>{char}</span>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 function StartCreationButton({ onClick }) {
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
@@ -739,7 +854,7 @@ function normalizeSubjects(items) {
   return list;
 }
 
-const BG_VIDEOS = ["/video/bg-video-01.mp4", "/video/bg-video-02.mp4", "/video/bg-video-03.mp4"];
+const BG_VIDEOS = ["/video/bg-video-01.mp4", "/video/bg-video-02.mp4", "/video/bg-video-03.mp4", "/video/bg-video-04.mp4", "/video/bg-video-05.mp4", "/video/bg-video-06.mp4", "/video/bg-video-07.mp4", "/video/bg-video-08.mp4"];
 const BG_VIDEO_POSTER = "/video/bg-video-poster.png";
 
 export default function Home({ onProjectCreated }) {
@@ -813,10 +928,18 @@ export default function Home({ onProjectCreated }) {
 
   // 背景视频循环：播完当前视频后切换到下一个
   const handleVideoEnded = () => {
-    setVideoReady(false);
-
+    // 不重置 videoReady，保持当前帧可见直到新视频可以播放
     setCurrentVideoIndex((prev) => (prev + 1) % BG_VIDEOS.length);
   };
+
+  // index 变化时手动切换 src，避免 key 重建导致首帧闪烁
+  useEffect(() => {
+    const video = bgVideoRef.current;
+    if (!video) return;
+    video.src = BG_VIDEOS[currentVideoIndex];
+    video.load();
+    video.play().catch(() => {});
+  }, [currentVideoIndex]);
 
   // 统一的退出登录处理函数
   const handleLogout = async () => {
@@ -1520,8 +1643,7 @@ export default function Home({ onProjectCreated }) {
           />
           <video
             ref={bgVideoRef}
-            key={currentVideoIndex}
-            src={BG_VIDEOS[currentVideoIndex]}
+            src={BG_VIDEOS[0]}
             autoPlay
             muted
             playsInline
@@ -1532,7 +1654,7 @@ export default function Home({ onProjectCreated }) {
           />
           <div
             className="absolute inset-0 pointer-events-none"
-            style={{ backgroundImage: 'linear-gradient(in oklab 180deg, oklab(0% 0 0 / 0%) 81.58%, oklab(0% 0 0) 100%), linear-gradient(in oklab 90deg, oklab(0% 0 0 / 60%) 0%, oklab(0% 0 0 / 0%) 9.99%)' }}
+            style={{ backgroundImage: 'radial-gradient(ellipse 52.305% 69.61% at 50% 44.45% in oklab, oklab(0% 0 0 / 0%) 0%, 24.46%, oklab(0% 0 0 / 10%) 43.6%, 77.4%, oklab(0% 0 0 / 60%) 100%)' }}
           />
         </>
       )}
@@ -1639,10 +1761,13 @@ export default function Home({ onProjectCreated }) {
               </div>
             )}
             {activeKey === 'home' && (
-              <StartCreationButton onClick={() => {
-                if (!isLoggedIn) { setLoginOpen(true); return; }
-                setNewProjectOpen(true);
-              }} />
+              <>
+                <HomeSloganText />
+                <StartCreationButton onClick={() => {
+                  if (!isLoggedIn) { setLoginOpen(true); return; }
+                  setNewProjectOpen(true);
+                }} />
+              </>
             )}
             {activeKey === 'project' && isLoadingProject && (
               <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
