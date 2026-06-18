@@ -34,7 +34,7 @@ function normalizeStoryboardImageSize(value) {
 }
 
 export async function apiGetStoryboards(projectId, { episode_id } = {}) {
-  return cached(
+  const raw = await cached(
     K.storyboards(projectId, episode_id),
     async () => {
       const params = new URLSearchParams();
@@ -44,10 +44,20 @@ export async function apiGetStoryboards(projectId, { episode_id } = {}) {
         ? `${BASE}/api/projects/${projectId}/storyboards?${query}`
         : `${BASE}/api/projects/${projectId}/storyboards`;
       const res = await authFetch(url, { headers: { 'Content-Type': 'application/json' } });
-      return res.json();
+      const data = await res.json();
+      // API 文档确认返回直接数组，兼容未来可能改为分页对象的情况
+      if (Array.isArray(data)) return data;
+      if (Array.isArray(data?.list)) return data.list;
+      if (Array.isArray(data?.items)) return data.items;
+      return [];
     },
     { medium: MEDIUM.CONTENT, ttl: TTL.CONTENT },
   );
+  // 兼容旧缓存可能存的非数组格式
+  if (Array.isArray(raw)) return raw;
+  if (Array.isArray(raw?.list)) return raw.list;
+  if (Array.isArray(raw?.items)) return raw.items;
+  return [];
 }
 
 export async function apiCreateStoryboard(projectId, data) {

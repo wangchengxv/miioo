@@ -16,7 +16,8 @@ function invalidateProjectAssetDependents(projectId) {
 
 /**
  * 资产列表（支持多维过滤）
- * @param {object} filters - { project_id, scope, asset_type, category, is_starred, is_primary, search, include_deleted, deleted_only }
+ * @param {object} filters - { project_id, scope, asset_type, category, is_starred, is_primary, search, include_deleted, deleted_only, limit, offset, cursor }
+ * @returns {Promise<Array>} 资产数组
  */
 export async function apiGetAssets(filters = {}) {
   const params = new URLSearchParams();
@@ -26,7 +27,14 @@ export async function apiGetAssets(filters = {}) {
   const query = params.toString();
   const url = query ? `${BASE}/api/assets?${query}` : `${BASE}/api/assets`;
   const res = await authFetch(url, { headers: { 'Content-Type': 'application/json' } });
-  return res.json();
+  const data = await res.json();
+  // 后端返回 AssetListResponse: { list: [...], total, has_more, limit, offset, next_cursor }
+  // 统一提取 list 字段，兼容旧版直接返回数组的情况
+  if (Array.isArray(data)) return data;
+  if (Array.isArray(data?.list)) return data.list;
+  if (Array.isArray(data?.items)) return data.items;
+  if (Array.isArray(data?.data)) return data.data;
+  return [];
 }
 
 export async function apiGetAssetDetail(assetId) {

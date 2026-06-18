@@ -11,7 +11,7 @@ function invalidateSubjects(projectId) {
 }
 
 export async function apiGetSubjects(projectId, { type, episode_id } = {}) {
-  return cached(
+  const raw = await cached(
     K.subjects(projectId, type, episode_id),
     async () => {
       const params = new URLSearchParams();
@@ -20,10 +20,23 @@ export async function apiGetSubjects(projectId, { type, episode_id } = {}) {
       const query = params.toString();
       const url = query ? `${BASE}/api/projects/${projectId}/subjects?${query}` : `${BASE}/api/projects/${projectId}/subjects`;
       const res = await authFetch(url, { headers: { 'Content-Type': 'application/json' } });
-      return res.json();
+      const data = await res.json();
+      // 后端返回 SubjectListResponse: { list: [...], total, limit, offset, has_more }
+      // 在存入缓存前就提取数组，确保缓存始终存数组
+      if (Array.isArray(data)) return data;
+      if (Array.isArray(data?.list)) return data.list;
+      if (Array.isArray(data?.items)) return data.items;
+      if (Array.isArray(data?.data)) return data.data;
+      return [];
     },
     { medium: MEDIUM.CONTENT, ttl: TTL.CONTENT },
   );
+  // 兼容旧缓存：SWR 命中时直接返回旧缓存值，可能还是 SubjectListResponse 对象
+  if (Array.isArray(raw)) return raw;
+  if (Array.isArray(raw?.list)) return raw.list;
+  if (Array.isArray(raw?.items)) return raw.items;
+  if (Array.isArray(raw?.data)) return raw.data;
+  return [];
 }
 
 export async function apiGetSubjectDetail(projectId, subjectId) {

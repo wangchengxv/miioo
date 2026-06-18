@@ -924,8 +924,8 @@ export default function Home({ onProjectCreated }) {
           setScriptPhase(scriptContent ? 'view' : 'initial');
           setScriptHasStarted(!!scriptContent);
         }
-        // 确保缓存数据是数组
-        const ensureArray = (data) => Array.isArray(data) ? data : (data?.items || data?.data || []);
+        // 确保缓存数据是数组（兼容旧缓存存的 SubjectListResponse 对象）
+        const ensureArray = (data) => Array.isArray(data) ? data : (data?.list || data?.items || data?.data || []);
         if (cachedChars) setSharedChars(normalizeSubjects(ensureArray(cachedChars)));
         if (cachedScenes) setSharedScenes(normalizeSubjects(ensureArray(cachedScenes)));
         if (cachedProps) setSharedProps(normalizeSubjects(ensureArray(cachedProps)));
@@ -999,11 +999,10 @@ export default function Home({ onProjectCreated }) {
       setScriptHasStarted(!!scriptContent);
 
       // 归一化：后端 API 返回 snake_case -> 前端 camelCase/shorthand
-      // 确保数据是数组（后端可能返回对象格式）
-      const ensureArray = (data) => Array.isArray(data) ? data : (data?.items || data?.data || []);
-      setSharedChars(normalizeSubjects(ensureArray(charsData)));
-      setSharedScenes(normalizeSubjects(ensureArray(scenesData)));
-      setSharedProps(normalizeSubjects(ensureArray(propsData)));
+      // apiGetSubjects 已在 API 层统一提取 list 字段，此处直接使用
+      setSharedChars(normalizeSubjects(charsData));
+      setSharedScenes(normalizeSubjects(scenesData));
+      setSharedProps(normalizeSubjects(propsData));
 
       // 从后端数据中提取剧集状态，优先用 overview 的 episode_progress（状态更精准）
       // 只接受 edited / generated / pending，其他值统一回退为 pending

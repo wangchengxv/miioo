@@ -2305,7 +2305,7 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
     return () => clearInterval(timer);
   }, [isExtracting]);
 
-  const [batchGenerating, setBatchGenerating] = useState(false);
+  const [batchGeneratingByTab, setBatchGeneratingByTab] = useState({});
   const [batchToast, setBatchToast] = useState(null);
   const batchToastTimerRef = useRef(null);
   // 批量生成加载状态：{ [subjectId]: true }
@@ -2374,7 +2374,7 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
     subjectIds.forEach(id => { loadingMap[id] = true; });
     setBatchLoadingSubjects(loadingMap);
 
-    setBatchGenerating(true);
+    setBatchGeneratingByTab(prev => ({ ...prev, [captureTab]: true }));
 
     // 创建 AbortController，用于组件卸载时取消
     const controller = new AbortController();
@@ -2459,7 +2459,7 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
     } finally {
       // 清空所有 loading 状态
       setBatchLoadingSubjects({});
-      setBatchGenerating(false);
+      setBatchGeneratingByTab(prev => { const next = { ...prev }; delete next[captureTab]; return next; });
       batchAbortRef.current = null;
     }
   };
@@ -2943,9 +2943,9 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
       <BatchGenerateModal
         projectRatio={projectRatio}
         open={batchGenOpen}
-        onClose={() => { if (!batchGenerating) setBatchGenOpen(false); }}
+        onClose={() => { if (!batchGeneratingByTab[activeTab]) setBatchGenOpen(false); }}
         onConfirm={handleBatchGenerate}
-        generating={batchGenerating}
+        generating={!!batchGeneratingByTab[activeTab]}
         activeTab={activeTab}
       />
 
