@@ -4389,6 +4389,12 @@ function CreationLoginEmptyState({ onLoginClick }) {
   );
 }
 
+// 模块级常量和 ref：组件卸载重挂载不重置，避免 session 重复恢复导致数据叠加
+const SESSION_KEY = 'miioo_creation_session_id';
+const _sessionIdRef = { current: localStorage.getItem(SESSION_KEY) };
+const _sessionInitRef = { current: false };
+const _restoredShotIdsRef = { current: new Set() };
+
 export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick, apiConfigured = true, onShowNoModelNotice }) {
   if (serverReachable === false) {
     return (
@@ -4425,10 +4431,10 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
 
   // Session state for backend persistence
   const SESSION_KEY = 'miioo_creation_session_id';
-  const sessionIdRef = useRef(localStorage.getItem(SESSION_KEY));
-  const sessionInitRef = useRef(false);
+  const sessionIdRef = _sessionIdRef;
+  const sessionInitRef = _sessionInitRef;
   // Prevent duplicate restored shots on re-mount
-  const restoredShotIdsRef = useRef(new Set());
+  const restoredShotIdsRef = _restoredShotIdsRef;
 
   // ── 历史数据加载 ──────────────────────────────────────────────────────────────
   // 将后端返回的 image/video/audio 列表项转换为 generation 格式
@@ -4503,6 +4509,7 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
   // Video detail modal state
 
   // Session init: create or resume backend session when logged in
+  // 注意：shot 历史数据现在由 apiListCreationImages/Videos/Audios 提供，不再从 apiListShots 恢复
   useEffect(() => {
     if (!isLoggedIn || sessionInitRef.current) return;
     sessionInitRef.current = true;
@@ -4524,38 +4531,6 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
         } else if (sid !== sessionIdRef.current) {
           sessionIdRef.current = sid;
           localStorage.setItem(SESSION_KEY, sid);
-        }
-
-        // Restore shots from backend
-        const shotList = await apiListShots(sid);
-        const shots = Array.isArray(shotList) ? shotList : (shotList.shots || shotList.list || []);
-        for (const shot of shots) {
-          if (restoredShotIdsRef.current.has(shot.id)) continue;
-          const hasImage = shot.image_url;
-          const hasVideo = shot.video_url;
-          if (!hasImage && !hasVideo) continue;
-          restoredShotIdsRef.current.add(shot.id);
-          const tab = hasVideo ? 'video' : 'image';
-          const genId = `shot-${shot.id}`;
-          const meta = shot.metadata_json || {};
-          addGeneration(tab, {
-            id: genId,
-            shot_id: shot.id,
-            ratio: meta.ratio || shot.aspect_ratio || '16:9',
-            resolution: meta.resolution || '',
-            duration: shot.duration,
-            model: meta.model || '',
-            prompt: shot.prompt || '',
-            refImages: [],
-            createdAt: shot.created_at || new Date().toISOString(),
-            cards: [{
-              id: shot.id,
-              type: hasVideo ? 'video' : 'image',
-              status: 'done',
-              imageUrl: hasImage ? shot.image_url : null,
-              videoUrl: hasVideo ? shot.video_url : null,
-            }],
-          });
         }
       } catch { /* session init fails silently; local-only mode */ }
     };
