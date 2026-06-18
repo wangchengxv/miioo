@@ -1032,8 +1032,6 @@ function ImageItemUpload({ onUpload, projectId }) {
 // Modal for viewing an uploaded image full-size
 function ImageViewModal({ open, imageUrl, imageId, projectId, subjectId, onClose }) {
   const [closeHovered, setCloseHovered] = useState(false);
-  const [doneHovered, setDoneHovered] = useState(false);
-  const [donePressed, setDonePressed] = useState(false);
   const [downloadHovered, setDownloadHovered] = useState(false);
   const [downloadPressed, setDownloadPressed] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -1083,20 +1081,6 @@ function ImageViewModal({ open, imageUrl, imageId, projectId, subjectId, onClose
         </div>
         {/* footer */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px', justifyContent: 'flex-end', background: '#161616', borderRadius: '0 0 16px 16px', padding: '16px 24px', flexShrink: 0 }}>
-          <div
-            className="flex flex-col shrink-0 rounded-[8px] cursor-pointer"
-            style={{ height: '36px', padding: '1px', backgroundImage: doneHovered ? 'linear-gradient(in oklab 148.76deg, oklab(94.7% -0.078 -0.022 / 45%) 3.64%, oklab(75.5% -0.102 -0.072 / 0%) 42.81%), linear-gradient(in oklab 180deg, #FFFFFF1E, #FFFFFF1E)' : 'linear-gradient(in oklab 148.76deg, oklab(94.7% -0.078 -0.022 / 30%) 3.64%, oklab(75.5% -0.102 -0.072 / 0%) 42.81%), linear-gradient(in oklab 180deg, #FFFFFF14, #FFFFFF14)', boxShadow: '#00000066 3px 3px 8px', outline: '1px solid #00000080', transition: 'background-image 0.15s' }}
-            onClick={onClose}
-            onMouseEnter={() => setDoneHovered(true)}
-            onMouseLeave={() => { setDoneHovered(false); setDonePressed(false); }}
-            onMouseDown={() => setDonePressed(true)}
-            onMouseUp={() => setDonePressed(false)}
-          >
-            <div className="flex items-center flex-1 self-stretch rounded-[7px] gap-[4px] px-[15px]" style={{ backgroundColor: donePressed ? '#222222' : doneHovered ? '#1C1C1C' : '#161616', transition: 'background-color 0.1s' }}>
-              <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF' }}>完成</span>
-            </div>
-          </div>
-
           {/* 下载按钮 */}
           <div
             className="flex flex-col shrink-0 rounded-[8px] cursor-pointer"
