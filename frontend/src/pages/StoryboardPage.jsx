@@ -4225,9 +4225,29 @@ function MainRefCol({ shot, onChange, chars, projectId }) {
   const [modalOpen, setModalOpen] = useState(false);
   const [assetPickerOpen, setAssetPickerOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [previewImg, setPreviewImg] = useState(null);
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+  const hoverTimerRef = useRef(null);
   const addBtnRef = useRef(null);
   const fileInputRef = useRef(null);
   const videoRef = useRef(null);
+
+  function handleImgMouseEnter(e, img) {
+    const { clientX, clientY } = e;
+    setMousePos({ x: clientX, y: clientY });
+    hoverTimerRef.current = setTimeout(() => {
+      if (img?.url) setPreviewImg(img.url);
+    }, 500);
+  }
+
+  function handleImgMouseMove(e) {
+    setMousePos({ x: e.clientX, y: e.clientY });
+  }
+
+  function handleImgMouseLeave() {
+    clearTimeout(hoverTimerRef.current);
+    setPreviewImg(null);
+  }
 
   function handleDelete(idx) {
     onChange({ ...shot, mainRefs: shot.mainRefs.filter((_, i) => i !== idx) });
@@ -4335,8 +4355,9 @@ function MainRefCol({ shot, onChange, chars, projectId }) {
                 return (
                   <div
                     key={idx}
-                    onMouseEnter={() => setHoveredIdx(idx)}
-                    onMouseLeave={() => setHoveredIdx(null)}
+                    onMouseEnter={(e) => { setHoveredIdx(idx); handleImgMouseEnter(e, img); }}
+                    onMouseLeave={() => { setHoveredIdx(null); handleImgMouseLeave(); }}
+                    onMouseMove={handleImgMouseMove}
                     style={{
                       width: '44px',
                       height: '44px',
@@ -4398,6 +4419,81 @@ function MainRefCol({ shot, onChange, chars, projectId }) {
           onClose={() => setModalOpen(false)}
         />
       )}
+
+      {previewImg && createPortal(
+        <MainRefHoverPreview url={previewImg} mouseX={mousePos.x} mouseY={mousePos.y} />,
+        document.body
+      )}
+    </div>
+  );
+}
+
+// ─── 主体参考悬浮预览 ─────────────────────────────────────────────────────────
+function MainRefHoverPreview({ url, mouseX, mouseY }) {
+  const [imgSize, setImgSize] = useState(null);
+  const GAP = 16; // 距鼠标偏移
+
+  useEffect(() => {
+    const img = new Image();
+    img.onload = () => setImgSize({ w: img.naturalWidth, h: img.naturalHeight });
+    img.src = url;
+  }, [url]);
+
+  if (!imgSize) return null;
+
+  // 屏幕 35% 作为最大边
+  const maxW = window.innerWidth * 0.35;
+  const maxH = window.innerHeight * 0.35;
+  const ratio = imgSize.w / imgSize.h;
+
+  let previewW, previewH;
+  if (ratio >= 1) {
+    // 横向图：宽度为屏幕50%
+    previewW = maxW;
+    previewH = previewW / ratio;
+    if (previewH > maxH) { previewH = maxH; previewW = previewH * ratio; }
+  } else {
+    // 竖向图：高度为屏幕50%
+    previewH = maxH;
+    previewW = previewH * ratio;
+    if (previewW > maxW) { previewW = maxW; previewH = previewW / ratio; }
+  }
+
+  // 默认跟随鼠标右下方，检测边界后自动翻转
+  let left = mouseX + GAP;
+  let top = mouseY + GAP;
+
+  if (left + previewW > window.innerWidth - GAP) {
+    left = mouseX - previewW - GAP;
+  }
+  if (top + previewH > window.innerHeight - GAP) {
+    top = mouseY - previewH - GAP;
+  }
+  // 确保不超出左/上边界
+  left = Math.max(GAP, left);
+  top = Math.max(GAP, top);
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        left,
+        top,
+        width: previewW,
+        height: previewH,
+        zIndex: 99999,
+        pointerEvents: 'none',
+        borderRadius: '8px',
+        overflow: 'hidden',
+        boxShadow: '0 8px 32px rgba(0,0,0,0.7)',
+        border: '1px solid rgba(255,255,255,0.12)',
+      }}
+    >
+      <img
+        src={url}
+        alt=""
+        style={{ width: '100%', height: '100%', objectFit: 'contain', backgroundColor: '#111' }}
+      />
     </div>
   );
 }

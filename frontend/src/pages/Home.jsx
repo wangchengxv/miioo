@@ -924,9 +924,11 @@ export default function Home({ onProjectCreated }) {
           setScriptPhase(scriptContent ? 'view' : 'initial');
           setScriptHasStarted(!!scriptContent);
         }
-        if (cachedChars) setSharedChars(normalizeSubjects(cachedChars));
-        if (cachedScenes) setSharedScenes(normalizeSubjects(cachedScenes));
-        if (cachedProps) setSharedProps(normalizeSubjects(cachedProps));
+        // 确保缓存数据是数组
+        const ensureArray = (data) => Array.isArray(data) ? data : (data?.items || data?.data || []);
+        if (cachedChars) setSharedChars(normalizeSubjects(ensureArray(cachedChars)));
+        if (cachedScenes) setSharedScenes(normalizeSubjects(ensureArray(cachedScenes)));
+        if (cachedProps) setSharedProps(normalizeSubjects(ensureArray(cachedProps)));
         // 恢复步骤
         const savedStep = localStorage.getItem(`miioo_active_step_${projectId}`);
         setActiveStep(savedStep || 'script');
@@ -997,9 +999,11 @@ export default function Home({ onProjectCreated }) {
       setScriptHasStarted(!!scriptContent);
 
       // 归一化：后端 API 返回 snake_case -> 前端 camelCase/shorthand
-      setSharedChars(normalizeSubjects(charsData));
-      setSharedScenes(normalizeSubjects(scenesData));
-      setSharedProps(normalizeSubjects(propsData));
+      // 确保数据是数组（后端可能返回对象格式）
+      const ensureArray = (data) => Array.isArray(data) ? data : (data?.items || data?.data || []);
+      setSharedChars(normalizeSubjects(ensureArray(charsData)));
+      setSharedScenes(normalizeSubjects(ensureArray(scenesData)));
+      setSharedProps(normalizeSubjects(ensureArray(propsData)));
 
       // 从后端数据中提取剧集状态，优先用 overview 的 episode_progress（状态更精准）
       // 只接受 edited / generated / pending，其他值统一回退为 pending
