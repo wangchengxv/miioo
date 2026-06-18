@@ -1197,36 +1197,105 @@ function RadioOption({ label, checked, onChange }) {
 
 function RefImageItem({ url, onRemove }) {
   const [hovered, setHovered] = useState(false);
+  const [previewPos, setPreviewPos] = useState(null);
+  const hoverTimerRef = useRef(null);
+
+  function handleMouseEnter(e) {
+    setHovered(true);
+    const { clientX, clientY } = e;
+    hoverTimerRef.current = setTimeout(() => {
+      setPreviewPos({ x: clientX, y: clientY });
+    }, 500);
+  }
+
+  function handleMouseMove(e) {
+    setPreviewPos(pos => pos ? { x: e.clientX, y: e.clientY } : pos);
+  }
+
+  function handleMouseLeave() {
+    setHovered(false);
+    clearTimeout(hoverTimerRef.current);
+    setPreviewPos(null);
+  }
+
+  return (
+    <>
+      <div
+        onMouseEnter={handleMouseEnter}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
+        style={{
+          width: '120px', height: '120px', borderRadius: '8px', overflow: 'hidden', position: 'relative', flexShrink: 0,
+          border: `1px solid ${hovered ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.08)'}`,
+          transition: 'border-color 120ms', cursor: 'pointer',
+        }}
+      >
+        <img src={url} alt="参考图" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        {hovered && (
+          <div
+            onClick={(e) => { e.stopPropagation(); onRemove(); }}
+            style={{ position: 'absolute', top: '4px', right: '4px', width: '18px', height: '18px', borderRadius: '4px', backgroundColor: 'rgba(0,0,0,0.70)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+          >
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 2L8 8M8 2L2 8" stroke="#FFFFFF" strokeWidth="1.2" strokeLinecap="round"/></svg>
+          </div>
+        )}
+      </div>
+      {previewPos && url && createPortal(
+        <SubjectRefHoverPreview url={url} mouseX={previewPos.x} mouseY={previewPos.y} />,
+        document.body
+      )}
+    </>
+  );
+}
+
+function SubjectRefHoverPreview({ url, mouseX, mouseY }) {
+  const [size, setSize] = useState(null);
+  const GAP = 16;
+
+  useEffect(() => {
+    setSize(null);
+    const img = new Image();
+    img.onload = () => setSize({ w: img.naturalWidth, h: img.naturalHeight });
+    img.src = url;
+  }, [url]);
+
+  if (!size) return null;
+
+  const maxW = window.innerWidth * 0.35;
+  const maxH = window.innerHeight * 0.35;
+  const ratio = size.w / size.h;
+
+  let previewW, previewH;
+  if (ratio >= 1) {
+    previewW = maxW;
+    previewH = previewW / ratio;
+    if (previewH > maxH) { previewH = maxH; previewW = previewH * ratio; }
+  } else {
+    previewH = maxH;
+    previewW = previewH * ratio;
+    if (previewW > maxW) { previewW = maxW; previewH = previewW / ratio; }
+  }
+
+  let left = mouseX + GAP;
+  let top = mouseY + GAP;
+  if (left + previewW > window.innerWidth - GAP) left = mouseX - previewW - GAP;
+  if (top + previewH > window.innerHeight - GAP) top = mouseY - previewH - GAP;
+  left = Math.max(GAP, left);
+  top = Math.max(GAP, top);
+
   return (
     <div
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
       style={{
-        width: '120px', height: '120px', borderRadius: '8px', overflow: 'visible', position: 'relative', flexShrink: 0,
-        border: `1px solid ${hovered ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.08)'}`,
-        transition: 'border-color 120ms', cursor: 'pointer',
+        position: 'fixed', left, top,
+        width: previewW, height: previewH,
+        zIndex: 99999, pointerEvents: 'none',
+        borderRadius: '8px', overflow: 'hidden',
+        boxShadow: '0 8px 32px rgba(0,0,0,0.7)',
+        border: '1px solid rgba(255,255,255,0.12)',
+        backgroundColor: '#111',
       }}
     >
-      <div style={{ width: '100%', height: '100%', borderRadius: '8px', overflow: 'hidden' }}>
-        <img src={url} alt="参考图" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-      </div>
-      {hovered && (
-        <button
-          type="button"
-          onClick={(e) => { e.stopPropagation(); onRemove(); }}
-          style={{
-            position: 'absolute', top: '-8px', right: '-8px',
-            width: '20px', height: '20px', borderRadius: '50%',
-            background: '#F75F5F', border: '1.5px solid #161616',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            cursor: 'pointer', padding: 0, zIndex: 1,
-          }}
-        >
-          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg">
-            <path d="M2 2L8 8M8 2L2 8" stroke="#FFFFFF" strokeWidth="1.5" strokeLinecap="round" />
-          </svg>
-        </button>
-      )}
+      <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
     </div>
   );
 }
