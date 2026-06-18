@@ -79,6 +79,8 @@ export async function authFetch(url, options = {}) {
   try {
     res = await fetch(url, withAuth(options));
   } catch (networkErr) {
+    // AbortError 是用户主动取消，直接透传，不触发 backend:unreachable
+    if (networkErr.name === 'AbortError') throw networkErr;
     window.dispatchEvent(new CustomEvent('backend:unreachable'));
     const err = new Error(networkErr.message || 'Network request failed');
     err.isNetworkError = true;
@@ -145,6 +147,8 @@ export async function authFetchStream(url, options = {}) {
   try {
     res = await fetch(url, withAuth(options));
   } catch (networkErr) {
+    // AbortError 是用户主动取消，直接透传，不触发 backend:unreachable 也不包装为网络错误
+    if (networkErr.name === 'AbortError') throw networkErr;
     // 网络层错误（DNS 失败、连接被拒等）→ 包装为可识别的错误
     window.dispatchEvent(new CustomEvent('backend:unreachable'));
     const err = new Error(networkErr.message || 'Network request failed');

@@ -101,6 +101,13 @@ function Toast({ toasts }) {
               <path d="M8 4V9.333" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           )}
+          {t.type === 'info' && (
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+              <path d="M8 14.667C9.841 14.667 11.508 13.921 12.714 12.714C13.921 11.508 14.667 9.841 14.667 8C14.667 6.159 13.921 4.492 12.714 3.286C11.508 2.08 9.841 1.333 8 1.333C6.159 1.333 4.492 2.08 3.286 3.286C2.08 4.492 1.333 6.159 1.333 8C1.333 9.841 2.08 11.508 3.286 12.714C4.492 13.921 6.159 14.667 8 14.667Z" fill="#2DC3E1" stroke="#2DC3E1" strokeWidth="1.333" strokeLinejoin="round" />
+              <path d="M8 7.333V11.333" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" />
+              <circle cx="8" cy="5" r="0.667" fill="#FFFFFF" />
+            </svg>
+          )}
           {t.type === 'error' && (
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
               <path d="M8 14.667C9.841 14.667 11.508 13.921 12.714 12.714C13.921 11.508 14.667 9.841 14.667 8C14.667 6.159 13.921 4.492 12.714 3.286C11.508 2.08 9.841 1.333 8 1.333C6.159 1.333 4.492 2.08 3.286 3.286C2.08 4.492 1.333 6.159 1.333 8C1.333 9.841 2.08 11.508 3.286 12.714C4.492 13.921 6.159 14.667 8 14.667Z" fill="#F75F5F" stroke="#F75F5F" strokeWidth="1.333" strokeLinejoin="round" />
@@ -1685,6 +1692,7 @@ export default function ScriptPage({ projectId, onGoToSubject, onScriptFinalized
   const [toasts, setToasts] = useState([]);
   const [isSaving, setIsSaving] = useState(false);
   const [streamingPaused, setStreamingPaused] = useState(false);
+  const stopReasonRef = useRef(null); // 'user-thinking' | 'user-streaming' | null
   const renderedContentRef = useRef(null);
   const editorContentRef = useRef(null);
   const abortControllerRef = useRef(null); // 用于取消进行中的流式请求
@@ -1738,10 +1746,12 @@ export default function ScriptPage({ projectId, onGoToSubject, onScriptFinalized
 
   const episodeRailLoading = hasStarted && (phase === "thinking" || phase === "streaming");
   const handleStop = useCallback(() => {
-    // streaming 阶段：先暂停打字动画，由 onStreamingPause 回调决定后续状态
-    // thinking 阶段：直接 abort，AbortError handler 会恢复输入框
+    // 用 ref 记录停止原因，避免 handleSend 闭包里 phase 是旧快照的问题
     if (phase === 'streaming') {
+      stopReasonRef.current = 'user-streaming';
       setStreamingPaused(true);
+    } else {
+      stopReasonRef.current = 'user-thinking';
     }
     abortControllerRef.current?.abort();
   }, [phase]);
@@ -1889,16 +1899,19 @@ export default function ScriptPage({ projectId, onGoToSubject, onScriptFinalized
         if (isClientTimeout) {
           // 客户端兜底超时触发
           handleTimeout();
-        } else if (phase === 'streaming') {
-          // streaming 阶段：暂停已由 handleStop 设置，等 onStreamingPause 回调处理
-          // 此处不额外操作，避免覆盖打字动画当前位置
+        } else if (stopReasonRef.current === 'user-streaming') {
+          // streaming 阶段用户主动暂停：交给 onStreamingPause 回调处理，此处只提示
+          stopReasonRef.current = null;
+          showToast('剧本创作已暂停', 'info');
         } else {
-          // thinking 阶段：尚未收到任何内容，恢复输入框
+          // thinking 阶段用户主动暂停：尚未收到任何内容，恢复输入框
+          stopReasonRef.current = null;
           setInputRestoreText(text);
           setInputRestoreFiles(files);
           setScriptContent(prevContent);
           setPhase(prevContent ? 'view' : 'initial');
           setHasStarted(!!prevContent);
+          showToast('剧本创作已暂停', 'info');
         }
         return;
       }
