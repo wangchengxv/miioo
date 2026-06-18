@@ -646,7 +646,7 @@ function UploadMenuItem({ label, icon, onClick }) {
 }
 
 // ─── Image view modal ─────────────────────────────────────────────────────────
-function ImageViewModal({ imageUrl, onClose }) {
+function ImageViewModal({ imageUrl, onClose, isVideo = false }) {
   const [closeHovered, setCloseHovered] = useState(false);
   const [doneHovered, setDoneHovered] = useState(false);
   const [donePressed, setDonePressed] = useState(false);
@@ -673,7 +673,9 @@ function ImageViewModal({ imageUrl, onClose }) {
           </div>
         </div>
         <div style={{ flex: 1, display: 'flex', padding: '8px 24px', overflow: 'hidden', gap: '12px', flexDirection: 'column', background: '#161616', minHeight: 0 }}>
-          <img src={imageUrl} alt="" style={{ width: '100%', flex: 1, borderRadius: '8px', objectFit: 'contain', minHeight: 0 }} />
+          {isVideo
+            ? <video src={imageUrl} controls autoPlay muted style={{ width: '100%', flex: 1, borderRadius: '8px', objectFit: 'contain', minHeight: 0 }} />
+            : <img src={imageUrl} alt="" style={{ width: '100%', flex: 1, borderRadius: '8px', objectFit: 'contain', minHeight: 0 }} />}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px', justifyContent: 'flex-end', background: '#161616', borderRadius: '0 0 16px 16px', padding: '16px 24px', flexShrink: 0 }}>
           <div
@@ -722,6 +724,7 @@ function FileCard({ file, onRemove, disabled = false }) {
   const [hovered, setHovered] = useState(false);
   const [viewOpen, setViewOpen] = useState(false);
   const [previewUrl, setPreviewUrl] = useState(null);
+  const [videoSrc, setVideoSrc] = useState(null);
   const isImage = isImageFile(file);
   const isVideo = isVideoFile(file);
 
@@ -737,39 +740,34 @@ function FileCard({ file, onRemove, disabled = false }) {
     }
 
     if (isVideo) {
-      // 提取视频首帧作为缩略图
+      // 保留 src 供 hover 时内联播放
+      let objectUrl = null;
+      if (file.isAsset && file.url) {
+        setVideoSrc(file.url);
+      } else {
+        objectUrl = URL.createObjectURL(file);
+        setVideoSrc(objectUrl);
+      }
+      // 提取首帧作为缩略图
       const video = document.createElement('video');
       video.preload = 'metadata';
       video.muted = true;
-
-      const handleLoadedData = () => {
-        video.currentTime = 0.1; // 跳到 0.1 秒处获取首帧
-      };
-
+      const handleLoadedData = () => { video.currentTime = 0.1; };
       const handleSeeked = () => {
         const canvas = document.createElement('canvas');
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const thumbnail = canvas.toDataURL('image/jpeg', 0.8);
-        setPreviewUrl(thumbnail);
-        URL.revokeObjectURL(video.src);
+        setPreviewUrl(canvas.toDataURL('image/jpeg', 0.8));
       };
-
       video.addEventListener('loadeddata', handleLoadedData);
       video.addEventListener('seeked', handleSeeked);
-
-      if (file.isAsset && file.url) {
-        video.src = file.url;
-      } else {
-        video.src = URL.createObjectURL(file);
-      }
-
+      video.src = file.isAsset && file.url ? file.url : objectUrl;
       return () => {
         video.removeEventListener('loadeddata', handleLoadedData);
         video.removeEventListener('seeked', handleSeeked);
-        if (video.src) URL.revokeObjectURL(video.src);
+        if (objectUrl) URL.revokeObjectURL(objectUrl);
       };
     }
   }, [file, isImage, isVideo]);
@@ -791,29 +789,42 @@ function FileCard({ file, onRemove, disabled = false }) {
             position: 'relative',
             background: '#1D1E1E',
             border: '1px solid #FFFFFF14',
-            overflow: 'visible',
+            overflow: 'hidden',
             opacity: disabled ? 0.45 : 1,
             cursor: disabled ? 'default' : 'pointer',
           }}
           onMouseEnter={() => !disabled && setHovered(true)}
           onMouseLeave={() => setHovered(false)}
-          onClick={() => { if (!disabled && previewUrl) setViewOpen(true); }}
+          onClick={() => { if (!disabled && (previewUrl || videoSrc)) setViewOpen(true); }}
         >
-          <div
-            style={{
-              flex: 1,
-              borderRadius: '7px',
-              alignSelf: 'stretch',
-              ...(previewUrl
-                ? { backgroundImage: `url(${previewUrl})`, backgroundSize: 'cover', backgroundPosition: '50%' }
-                : { background: '#FFFFFF14' }),
-            }}
-          />
+          {/* 视频 hover 时切换为内联播放 */}
+          {isVideo && hovered && videoSrc ? (
+            <video
+              src={videoSrc}
+              autoPlay
+              muted
+              loop
+              playsInline
+              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+              onClick={(e) => e.stopPropagation()}
+            />
+          ) : (
+            <div
+              style={{
+                flex: 1,
+                borderRadius: '7px',
+                alignSelf: 'stretch',
+                ...(previewUrl
+                  ? { backgroundImage: `url(${previewUrl})`, backgroundSize: 'cover', backgroundPosition: '50%' }
+                  : { background: '#FFFFFF14' }),
+              }}
+            />
+          )}
           {hovered && !disabled && (
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); onRemove(); }}
-              style={{ position: 'absolute', display: 'flex', alignItems: 'center', justifyContent: 'center', top: '-7px', right: '-7px', width: '16px', height: '16px', borderRadius: '9999px', background: '#505151', border: 'none', cursor: 'pointer', padding: 0 }}
+              style={{ position: 'absolute', display: 'flex', alignItems: 'center', justifyContent: 'center', top: '4px', right: '4px', width: '16px', height: '16px', borderRadius: '9999px', background: '#505151', border: 'none', cursor: 'pointer', padding: 0, zIndex: 1 }}
             >
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                 <path d="M4.667 4.667L11.333 11.333" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
@@ -822,8 +833,10 @@ function FileCard({ file, onRemove, disabled = false }) {
             </button>
           )}
         </div>
-        {viewOpen && previewUrl && createPortal(
-          <ImageViewModal imageUrl={previewUrl} onClose={() => setViewOpen(false)} />,
+        {viewOpen && (previewUrl || videoSrc) && createPortal(
+          isVideo
+            ? <ImageViewModal imageUrl={videoSrc || previewUrl} onClose={() => setViewOpen(false)} isVideo />
+            : <ImageViewModal imageUrl={previewUrl} onClose={() => setViewOpen(false)} />,
           document.body
         )}
       </>
@@ -1958,7 +1971,7 @@ function DubbingAdjust({ speed, emotion, onSpeedChange, onEmotionChange, emotion
 }
 
 function InputCard({ onGenerate, width = '800px', disabled = false, genType, onGenTypeChange,
-  model, onModelChange, modelOptions = [], creationParams, prefillVersion = 0, prefillData = null, onBeforeModelOpen }) {
+  model, onModelChange, modelOptions = [], creationParams, prefillVersion = 0, prefillData = null, onBeforeModelOpen, showToast }) {
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const [hasContent, setHasContent] = useState(false);
@@ -2003,6 +2016,18 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
 
   // Video: sync model when refMode changes
   const handleRefModeChange = useCallback((newRefMode) => {
+    // 切换到首尾帧：将 files 中的图片迁移到帧槽位，其余丢弃
+    if (newRefMode === 'frame') {
+      const imageFiles = files.filter(f => isImageFile(f));
+      setFirstFrameFile(imageFiles[0] || null);
+      setLastFrameFile(imageFiles[1] || null);
+      setFiles([]);
+    }
+    // 离开首尾帧：将帧槽位的图片合并回 files 作为普通参考图
+    if (refMode === 'frame' && newRefMode !== 'frame') {
+      const carried = [firstFrameFile, lastFrameFile].filter(Boolean);
+      if (carried.length > 0) setFiles(carried);
+    }
     setRefMode(newRefMode);
     const filtered = newRefMode === 'frame'
       ? modelOptions.filter(m => m.hasFrame)
@@ -2011,7 +2036,7 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
     if (!inList && filtered.length > 0) {
       onModelChange(filtered[0].value);
     }
-  }, [modelOptions, model, onModelChange]);
+  }, [files, refMode, firstFrameFile, lastFrameFile, modelOptions, model, onModelChange]);
   // Reset param selections when creationParams changes (model or genType changed)
   useEffect(() => {
     if (!creationParams) return;
@@ -2108,6 +2133,39 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
     });
     setFiles((prev) => [...prev, ...enriched]);
   };
+
+  const handlePaste = useCallback((e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const imageFiles = [];
+    const mediaFiles = []; // video/audio
+    for (const item of items) {
+      if (item.kind !== 'file') continue;
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) imageFiles.push(file);
+      } else if (item.type.startsWith('video/') || item.type.startsWith('audio/')) {
+        const file = item.getAsFile();
+        if (file) mediaFiles.push(file);
+      }
+    }
+    // 有图片时阻止浏览器把 <img> 插入 contentEditable
+    if (imageFiles.length > 0) {
+      e.preventDefault();
+      handleFileSelect(imageFiles);
+      return;
+    }
+    // 视频/音频粘贴
+    if (mediaFiles.length > 0) {
+      e.preventDefault();
+      if (genType === 'image') {
+        showToast?.('error', '不支持的文件格式！');
+      } else {
+        handleFileSelect(mediaFiles);
+      }
+    }
+  }, [genType, showToast]);
+
   const handleRemoveFile = (index) => {
     setFiles((prev) => {
       const file = prev[index];
@@ -2510,6 +2568,7 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
               }}
               onInput={handleInput}
               onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
               onFocus={() => setFocused(true)}
               onBlur={() => {
                 setFocused(false);
@@ -3832,7 +3891,7 @@ function CreationResultState({ generations, onGenerate, genType, onGenTypeChange
         <div style={{ width: 'min(800px, 100%)' }}>
           <InputCard onGenerate={onGenerate} width="100%" genType={genType} onGenTypeChange={onGenTypeChange}
             model={model} onModelChange={onModelChange} modelOptions={modelOptions} creationParams={creationParams}
-            prefillVersion={prefillVersion} prefillData={prefillData} onBeforeModelOpen={onBeforeModelOpen} />
+            prefillVersion={prefillVersion} prefillData={prefillData} onBeforeModelOpen={onBeforeModelOpen} showToast={showToast} />
         </div>
       </div>
     </div>
@@ -3840,7 +3899,7 @@ function CreationResultState({ generations, onGenerate, genType, onGenTypeChange
 }
 
 // ─── Empty state ──────────────────────────────────────────────────────────────
-function CreationEmptyState({ onGenerate, genType, onGenTypeChange, model, onModelChange, modelOptions, creationParams, onBeforeModelOpen }) {
+function CreationEmptyState({ onGenerate, genType, onGenTypeChange, model, onModelChange, modelOptions, creationParams, onBeforeModelOpen, showToast }) {
   const EmptyIcon = EMPTY_ICON_MAP[genType] ?? CreationEmptyIconImage;
   return (
     <div
@@ -3876,7 +3935,7 @@ function CreationEmptyState({ onGenerate, genType, onGenTypeChange, model, onMod
       {/* InputCard: absolute, centered horizontally, 16px from bottom */}
       <div style={{ position: 'absolute', left: '50%', bottom: '16px', translate: '-50% 0', width: 'min(800px, 100%)' }}>
         <InputCard onGenerate={onGenerate} width="100%" genType={genType} onGenTypeChange={onGenTypeChange}
-          model={model} onModelChange={onModelChange} modelOptions={modelOptions} creationParams={creationParams} onBeforeModelOpen={onBeforeModelOpen} />
+          model={model} onModelChange={onModelChange} modelOptions={modelOptions} creationParams={creationParams} onBeforeModelOpen={onBeforeModelOpen} showToast={showToast} />
       </div>
     </div>
   );
@@ -4114,7 +4173,7 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
   const [genType, setGenType] = useState('image');
   const [generating, setGenerating] = useState(false);
   const {
-    generationsByTab, addGeneration, deleteCard: storeDeleteCard, deleteSelectedCards,
+    generationsByTab, addGeneration, deleteCard: storeDeleteCard, deleteGeneration: storeDeleteGeneration, deleteSelectedCards,
     favorites, toggleFavorite: storeToggleFavorite,
   } = useCreationStore();
   const generations = generationsByTab[activeTab] ?? [];
@@ -4403,7 +4462,7 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
     const isVideoGen = params.genType === 'video';
     const isDubbingGen = params.genType === 'dubbing';
 
-    // 立即添加 loading 占位卡片
+    // 立即添加 loading 占位卡片（按数量生成）
     const placeholderCardId = `placeholder-${Date.now()}`;
     addGeneration(currentTab, {
       id: genId,
@@ -4415,15 +4474,15 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
       prompt: params.prompt || '',
       refImages: [],
       createdAt: new Date().toISOString(),
-      cards: [{
+      cards: Array.from({ length: isVideoGen || isDubbingGen ? 1 : countNum }, (_, i) => ({
         id: null,
         type: isVideoGen ? 'video' : isDubbingGen ? 'audio' : 'image',
         status: 'loading',
         imageUrl: null,
         videoUrl: null,
         audioUrl: null,
-        placeholderId: placeholderCardId,
-      }],
+        placeholderId: `${placeholderCardId}-${i}`,
+      })),
     });
 
     try {
@@ -4434,7 +4493,7 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
       if (!mediaUrls || mediaUrls.length === 0) {
         showToast('error', '生成失败，请稍后重试');
         // 删除刚添加的占位卡片
-        storeDeleteCard(currentTab, genId, 0);
+        storeDeleteGeneration(currentTab, genId);
         // 通知 InputCard 回退文本
         params.onFail?.(params.prompt);
         setGenerating(false);
@@ -4453,7 +4512,7 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
 
       // 更新占位卡片为实际结果（替换而不是新增）
       // 先删除占位卡片
-      storeDeleteCard(currentTab, genId, 0);
+      storeDeleteGeneration(currentTab, genId);
       // 再添加实际结果卡片
       addGeneration(currentTab, {
         id: genId,
@@ -4499,7 +4558,7 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
     } catch (error) {
       showToast('error', '生成失败，请稍后重试');
       // 删除占位卡片
-      storeDeleteCard(currentTab, genId, 0);
+      storeDeleteGeneration(currentTab, genId);
       // 通知 InputCard 回退文本
       params.onFail?.(params.prompt);
       return { success: false };
@@ -4674,7 +4733,7 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
               }}
             />
           ) : (
-            <CreationEmptyState onGenerate={handleGenerate} genType={genType} onGenTypeChange={handleGenTypeChange}
+            <CreationEmptyState onGenerate={handleGenerate} genType={genType} onGenTypeChange={handleGenTypeChange} showToast={showToast}
               model={model} onModelChange={setModel} modelOptions={modelOptions} creationParams={creationParams}
               onBeforeModelOpen={() => {
                 if (!apiConfigured) { onShowNoModelNotice?.(); return false; }
