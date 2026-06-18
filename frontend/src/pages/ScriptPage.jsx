@@ -1177,7 +1177,7 @@ const CHAR_INTERVAL = 15;
 // 流式内容渲染组件：逐字打字动画 + 自动滚动到底部
 // content 由 SSE 实时推送逐步增长，组件负责以打字机效果逐字展示
 // 当浏览器标签页切到后台时，跳过打字动画直接展示全部内容，避免 setTimeout 被浏览器节流导致卡顿
-function AiStreamingContent({ content, onDone }) {
+function AiStreamingContent({ content, onDone, paused = false, onPause }) {
   const allChars = useMemo(() => [...content], [content]);
   const [renderIndex, setRenderIndex] = useState(0);
   const [pageVisible, setPageVisible] = useState(true);
@@ -1185,6 +1185,10 @@ function AiStreamingContent({ content, onDone }) {
   const shouldStickToBottomRef = useRef(true);
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
+  const onPauseRef = useRef(onPause);
+  onPauseRef.current = onPause;
+  // 防止 onPause 重复触发
+  const hasFiredPauseRef = useRef(false);
 
   // 监听标签页可见性
   useEffect(() => {
@@ -1200,9 +1204,21 @@ function AiStreamingContent({ content, onDone }) {
     }
   }, [pageVisible, allChars.length, renderIndex]);
 
-  // 逐字渲染定时器 —— 仅在标签页可见时运行
+  // 暂停时：停止 timer，回调当前已渲染文字
   useEffect(() => {
-    if (!pageVisible) return undefined;
+    if (paused && !hasFiredPauseRef.current) {
+      hasFiredPauseRef.current = true;
+      const displayed = allChars.slice(0, renderIndex).join('');
+      onPauseRef.current?.(displayed);
+    }
+    if (!paused) {
+      hasFiredPauseRef.current = false;
+    }
+  }, [paused, allChars, renderIndex]);
+
+  // 逐字渲染定时器 —— 仅在标签页可见且未暂停时运行
+  useEffect(() => {
+    if (!pageVisible || paused) return undefined;
 
     if (renderIndex >= allChars.length) {
       if (allChars.length > 0) {
@@ -1216,7 +1232,7 @@ function AiStreamingContent({ content, onDone }) {
     }, CHAR_INTERVAL);
 
     return () => window.clearTimeout(timer);
-  }, [pageVisible, allChars.length, renderIndex]);
+  }, [pageVisible, paused, allChars.length, renderIndex]);
 
   // 自动滚动到底部
   useEffect(() => {
@@ -1530,6 +1546,8 @@ function ScriptPanel({
   isExtractingSubjects,
   isSubjectUnlocked,
   onStreamingDone,
+  onStreamingPause,
+  streamingPaused,
   onActiveIndexChange,
   renderedContentRef,
   editorContentRef,
@@ -1571,7 +1589,7 @@ function ScriptPanel({
             <AiThinkingMessage />
           </div>
         ) : isStreaming ? (
-          <AiStreamingContent content={scriptContent} onDone={onStreamingDone} />
+          <AiStreamingContent content={scriptContent} onDone={onStreamingDone} paused={streamingPaused} onPause={onStreamingPause} />
         ) : isEditing ? (
           <ScriptEditor initialContent={draftContent} onContentChange={onDraftChange} containerRef={editorContentRef} />
         ) : (
@@ -1666,6 +1684,7 @@ export default function ScriptPage({ projectId, onGoToSubject, onScriptFinalized
   const [backendEpisodes, setBackendEpisodes] = useState(null);
   const [toasts, setToasts] = useState([]);
   const [isSaving, setIsSaving] = useState(false);
+  const [streamingPaused, setStreamingPaused] = useState(false);
   const renderedContentRef = useRef(null);
   const editorContentRef = useRef(null);
   const abortControllerRef = useRef(null); // 用于取消进行中的流式请求
@@ -1719,9 +1738,13 @@ export default function ScriptPage({ projectId, onGoToSubject, onScriptFinalized
 
   const episodeRailLoading = hasStarted && (phase === "thinking" || phase === "streaming");
   const handleStop = useCallback(() => {
-    // 中止流式请求，后续状态由 handleSend 的 catch(AbortError) 分支处理
+    // streaming 阶段：先暂停打字动画，由 onStreamingPause 回调决定后续状态
+    // thinking 阶段：直接 abort，AbortError handler 会恢复输入框
+    if (phase === 'streaming') {
+      setStreamingPaused(true);
+    }
     abortControllerRef.current?.abort();
-  }, []);
+  }, [phase]);
 
   useEffect(() => {
     const onKeyDown = (e) => {
@@ -1742,6 +1765,7 @@ export default function ScriptPage({ projectId, onGoToSubject, onScriptFinalized
     // 每次发送前清除上次的恢复内容（成功时不恢复）
     setInputRestoreText('');
     setInputRestoreFiles([]);
+    setStreamingPaused(false);
 
     // 取消上一次未完成的请求
     abortControllerRef.current?.abort();
@@ -1865,17 +1889,16 @@ export default function ScriptPage({ projectId, onGoToSubject, onScriptFinalized
         if (isClientTimeout) {
           // 客户端兜底超时触发
           handleTimeout();
+        } else if (phase === 'streaming') {
+          // streaming 阶段：暂停已由 handleStop 设置，等 onStreamingPause 回调处理
+          // 此处不额外操作，避免覆盖打字动画当前位置
         } else {
-          // 用户主动点击停止
-          if (receivedContent) {
-            setScriptContent(receivedContent);
-            setPhase('view');
-        } else {
+          // thinking 阶段：尚未收到任何内容，恢复输入框
           setInputRestoreText(text);
           setInputRestoreFiles(files);
-          setPhase('initial');
-          setHasStarted(false);
-        }
+          setScriptContent(prevContent);
+          setPhase(prevContent ? 'view' : 'initial');
+          setHasStarted(!!prevContent);
         }
         return;
       }
@@ -1909,8 +1932,23 @@ export default function ScriptPage({ projectId, onGoToSubject, onScriptFinalized
   };
 
   const handleStreamingDone = useCallback(() => {
+    setStreamingPaused(false);
     setPhase('view');
   }, []);
+
+  // 打字动画暂停回调：用已渲染的文字作为最终内容，切到 view 阶段
+  const handleStreamingPause = useCallback((displayedText) => {
+    setStreamingPaused(false);
+    if (displayedText) {
+      setScriptContent(displayedText);
+      setPhase('view');
+    } else {
+      // 动画还没开始播放，退回到发送前的状态
+      setScriptContent('');
+      setPhase('initial');
+      setHasStarted(false);
+    }
+  }, [setScriptContent, setPhase, setHasStarted]);
 
   const handleEdit = () => {
     setDraftContent(scriptContent);
@@ -2075,8 +2113,9 @@ export default function ScriptPage({ projectId, onGoToSubject, onScriptFinalized
                   onSave={handleSave}
                   onCancelEdit={handleCancelEdit}
                   onExtractRequest={handleExtractRequest}
-
                   onStreamingDone={handleStreamingDone}
+                  onStreamingPause={handleStreamingPause}
+                  streamingPaused={streamingPaused}
                   onActiveIndexChange={setSelectedEpisode}
                   renderedContentRef={renderedContentRef}
                   editorContentRef={editorContentRef}
