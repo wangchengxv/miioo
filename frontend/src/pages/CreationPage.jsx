@@ -5,6 +5,7 @@ import { apiGenerateCreation, apiGetVideoLastFrame, apiDeleteCreationImage, apiD
 import { useCreationStore } from '../stores/creationStore';
 import { apiListModels } from '../api/config';
 import { adaptModels, getModelParams } from '../utils/modelAdapter';
+import { normalizeImageUrl } from '../utils/imageUrl';
 import AssetPickerModal from '../components/AssetPickerModal';
 import DubbingVoiceModal, { DubbingVoiceFileCard } from './DubbingVoiceModal';
 import CreationVideoDetailModal from '../components/CreationVideoDetailModal';
@@ -697,6 +698,48 @@ function ImageViewModal({ imageUrl, onClose, isVideo = false }) {
   );
 }
 
+// ─── File preview tooltip (hover) ───────────────────────────────────────────
+function FilePreviewTooltip({ isVideo, previewUrl, videoSrc, cardRect }) {
+  if (!cardRect) return null;
+  const maxW = Math.round(window.innerWidth * 0.35);
+  const gap = 12;
+  // Prefer right side, fallback to left
+  const rightSpace = window.innerWidth - cardRect.right - gap;
+  const leftSpace = cardRect.left - gap;
+  let left, right;
+  if (rightSpace >= maxW) {
+    left = cardRect.right + gap;
+  } else if (leftSpace >= maxW) {
+    right = window.innerWidth - cardRect.left + gap;
+    left = undefined;
+  } else {
+    left = Math.max(8, Math.min(window.innerWidth - maxW - 8, cardRect.right + gap));
+  }
+  // Vertical: align top to card top, clamp to viewport
+  let top = cardRect.top;
+  const estH = maxW; // guess square for now; browser will handle
+  if (top + estH > window.innerHeight - 8) top = Math.max(8, window.innerHeight - estH - 8);
+  return (
+    <div style={{
+      position: 'fixed',
+      zIndex: 9998,
+      top,
+      ...(left !== undefined ? { left } : { right }),
+      maxWidth: maxW,
+      borderRadius: '10px',
+      overflow: 'hidden',
+      boxShadow: '0 8px 32px #00000099',
+      pointerEvents: 'none',
+      background: '#1D1E1E',
+    }}>
+      {isVideo && videoSrc
+        ? <video src={videoSrc} autoPlay muted loop playsInline style={{ display: 'block', maxWidth: maxW, maxHeight: maxW }} />
+        : previewUrl && <img src={previewUrl} alt="" style={{ display: 'block', maxWidth: maxW, maxHeight: maxW, objectFit: 'contain' }} />
+      }
+    </div>
+  );
+}
+
 // ─── File card ────────────────────────────────────────────────────────────────
 const IMAGE_EXTS_SET = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff', '.tif', '.heic', '.heif']);
 const VIDEO_EXTS_SET = new Set(['.mp4', '.mov', '.avi', '.webm', '.mkv', '.wmv', '.flv']);
@@ -720,11 +763,15 @@ function isVideoFile(file) {
   return VIDEO_EXTS_SET.has(ext);
 }
 
-function FileCard({ file, onRemove, disabled = false }) {
+function FileCard({ file, onRemove, disabled = false, onInsert }) {
   const [hovered, setHovered] = useState(false);
   const [viewOpen, setViewOpen] = useState(false);
   const [previewUrl, setPreviewUrl] = useState(null);
   const [videoSrc, setVideoSrc] = useState(null);
+  const [previewVisible, setPreviewVisible] = useState(false);
+  const [cardRect, setCardRect] = useState(null);
+  const hoverTimerRef = useRef(null);
+  const cardRef = useRef(null);
   const isImage = isImageFile(file);
   const isVideo = isVideoFile(file);
 
@@ -793,9 +840,26 @@ function FileCard({ file, onRemove, disabled = false }) {
             opacity: disabled ? 0.45 : 1,
             cursor: disabled ? 'default' : 'pointer',
           }}
-          onMouseEnter={() => !disabled && setHovered(true)}
-          onMouseLeave={() => setHovered(false)}
-          onClick={() => { if (!disabled && (previewUrl || videoSrc)) setViewOpen(true); }}
+ref={cardRef}
+          onMouseEnter={() => {
+            if (!disabled) {
+              setHovered(true);
+              hoverTimerRef.current = setTimeout(() => {
+                if (cardRef.current) setCardRect(cardRef.current.getBoundingClientRect());
+                setPreviewVisible(true);
+              }, 500);
+            }
+          }}
+          onMouseLeave={() => {
+            setHovered(false);
+            clearTimeout(hoverTimerRef.current);
+            setPreviewVisible(false);
+          }}
+          onClick={() => {
+            if (!disabled) {
+              if (onInsert) { onInsert(); }
+            }
+          }}
         >
           {/* 视频 hover 时切换为内联播放 */}
           {isVideo && hovered && videoSrc ? (
@@ -833,10 +897,13 @@ function FileCard({ file, onRemove, disabled = false }) {
             </button>
           )}
         </div>
-        {viewOpen && (previewUrl || videoSrc) && createPortal(
-          isVideo
-            ? <ImageViewModal imageUrl={videoSrc || previewUrl} onClose={() => setViewOpen(false)} isVideo />
-            : <ImageViewModal imageUrl={previewUrl} onClose={() => setViewOpen(false)} />,
+        {previewVisible && (previewUrl || videoSrc) && createPortal(
+          <FilePreviewTooltip
+            isVideo={isVideo}
+            previewUrl={previewUrl}
+            videoSrc={videoSrc}
+            cardRect={cardRect}
+          />,
           document.body
         )}
       </>
@@ -1775,13 +1842,50 @@ function SoundToggle({ enabled, onChange, disabled }) {
 }
 
 // ─── Send button ──────────────────────────────────────────────────────────────
-function SendButton({ onClick, disabled = false, loading = false }) {
+function SendButton({ onClick, disabled = false, loading = false, disabledTooltip = '' }) {
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
   const [focused, setFocused] = useState(false);
+  const [tooltipRect, setTooltipRect] = useState(null);
+  const wrapRef = useRef(null);
   const scale = pressed ? 'scale(0.9)' : hovered ? 'scale(1.1)' : 'scale(1)';
 
   return (
+    <div ref={wrapRef} style={{ position: 'relative', flexShrink: 0, display: 'inline-flex' }}
+      onMouseEnter={() => {
+        setHovered(true);
+        if (disabled && disabledTooltip && wrapRef.current) {
+          setTooltipRect(wrapRef.current.getBoundingClientRect());
+        }
+      }}
+      onMouseLeave={() => { setHovered(false); setPressed(false); setTooltipRect(null); }}
+    >
+      {disabled && hovered && disabledTooltip && tooltipRect && createPortal(
+        <div style={{
+          position: 'fixed',
+          zIndex: 9999,
+          background: '#2A2B2B',
+          border: '1px solid #FFFFFF14',
+          borderRadius: '8px',
+          padding: '8px 12px',
+          maxWidth: '180px',
+          fontFamily: FONT,
+          fontSize: '12px',
+          lineHeight: '18px',
+          color: '#FFFFFFCC',
+          pointerEvents: 'none',
+          boxShadow: '0 4px 16px #00000066',
+          // position above the button, centered
+          left: Math.min(
+            Math.max(8, tooltipRect.left + tooltipRect.width / 2 - 90),
+            window.innerWidth - 8 - 180
+          ),
+          bottom: window.innerHeight - tooltipRect.top + 8,
+        }}>
+          {disabledTooltip}
+        </div>,
+        document.body
+      )}
     <button
       type="button"
       disabled={disabled}
@@ -1849,6 +1953,7 @@ function SendButton({ onClick, disabled = false, loading = false }) {
         </svg>
       )}
     </button>
+    </div>
   );
 }
 
@@ -1971,7 +2076,7 @@ function DubbingAdjust({ speed, emotion, onSpeedChange, onEmotionChange, emotion
 }
 
 function InputCard({ onGenerate, width = '800px', disabled = false, genType, onGenTypeChange,
-  model, onModelChange, modelOptions = [], creationParams, prefillVersion = 0, prefillData = null, onBeforeModelOpen, showToast }) {
+  model, onModelChange, modelOptions = [], creationParams, prefillVersion = 0, prefillData = null, onBeforeModelOpen, showToast, activeCount = 0 }) {
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const [hasContent, setHasContent] = useState(false);
@@ -1997,6 +2102,7 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
   const [mentionQuery, setMentionQuery] = useState('');
   const [mentionPos, setMentionPos] = useState({ top: 0, left: 0 });
   const [mentionAnchorRange, setMentionAnchorRange] = useState(null);
+  const [mentionIndex, setMentionIndex] = useState(0);
   const editorRef = useRef(null);
   const mentionFromTagRef = useRef(false);
 
@@ -2084,7 +2190,26 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
       }
       setHasContent((prefillData.prompt || '').trim().length > 0);
     }
-    if (prefillData.files !== undefined) setFiles(prefillData.files);
+    if (prefillData.files !== undefined) {
+      // 替换模式（onReEdit 等场景）
+      setFiles(prefillData.files);
+    } else if (prefillData.appendFiles !== undefined) {
+      // 追加模式（onUseAsRef 场景）：追加到已有列表，按 url 去重，最多20个
+      setFiles((prev) => {
+        if (prev.length >= MAX_FILES) {
+          showToast('error', '您添加的文件太多了，最多支持20个参考文件');
+          return prev;
+        }
+        const existingUrls = new Set((prev ?? []).map((f) => f.url).filter(Boolean));
+        const toAdd = prefillData.appendFiles.filter((f) => !f.url || !existingUrls.has(f.url));
+        const merged = [...(prev ?? []), ...toAdd];
+        if (merged.length > MAX_FILES) {
+          showToast('error', '您添加的文件太多了，最多支持20个参考文件');
+          return merged.slice(0, MAX_FILES);
+        }
+        return merged;
+      });
+    }
     if (prefillData.ratio !== undefined) setRatio(prefillData.ratio);
     if (prefillData.resolution !== undefined) setResolution(prefillData.resolution);
     if (prefillData.count !== undefined) setCount(prefillData.count);
@@ -2118,20 +2243,33 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
     : ALLOWED_EXTS;
   const uploadAcceptAttr = uploadAllowedExts.join(',');
 
+  const MAX_FILES = 20;
+
   const handleFileSelect = (newFiles) => {
     const oversized = newFiles.filter((f) => isImageFile(f) && f.size > 20 * 1024 * 1024);
     if (oversized.length > 0) {
       alert('抱歉，平台暂不支持上传20M以上的图片资源！');
       return;
     }
-    const enriched = newFiles.map((f) => {
-      if (isImageFile(f)) {
-        const previewUrl = URL.createObjectURL(f);
-        Object.defineProperty(f, 'previewUrl', { value: previewUrl, writable: true });
+    setFiles((prev) => {
+      if (prev.length >= MAX_FILES) {
+        showToast('error', '您添加的文件太多了，最多支持20个参考文件');
+        return prev;
       }
-      return f;
+      const enriched = newFiles.map((f) => {
+        if (isImageFile(f)) {
+          const previewUrl = URL.createObjectURL(f);
+          Object.defineProperty(f, 'previewUrl', { value: previewUrl, writable: true });
+        }
+        return f;
+      });
+      const merged = [...prev, ...enriched];
+      if (merged.length > MAX_FILES) {
+        showToast('error', '您添加的文件太多了，最多支持20个参考文件');
+        return merged.slice(0, MAX_FILES);
+      }
+      return merged;
     });
-    setFiles((prev) => [...prev, ...enriched]);
   };
 
   const handlePaste = useCallback((e) => {
@@ -2238,6 +2376,36 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
     return tag;
   };
 
+
+  // 点击 FileCard 直接插入 @ 标签（无需 @ 触发，插到光标位置或末尾）
+  const insertFromCard = (file) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+    editor.focus();
+    const sel = window.getSelection();
+    let range;
+    if (sel && sel.rangeCount > 0 && editor.contains(sel.getRangeAt(0).startContainer)) {
+      range = sel.getRangeAt(0);
+    } else {
+      // No cursor in editor — append to end
+      range = document.createRange();
+      range.selectNodeContents(editor);
+      range.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+    const tag = buildTagElement(file);
+    tag.addEventListener('click', (e) => handleTagClick(e, tag));
+    range.deleteContents();
+    range.insertNode(tag);
+    const afterRange = document.createRange();
+    afterRange.setStartAfter(tag);
+    afterRange.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(afterRange);
+    setHasContent(true);
+  };
+
   const insertMention = (file) => {
     setMentionOpen(false);
     const targetTag = mentionTargetTag;
@@ -2305,6 +2473,7 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
       const query = textBefore.slice(atIdx + 1);
       if (!query.includes(' ') && !query.includes('\n')) {
         setMentionQuery(query);
+        setMentionIndex(0);
         setMentionOpen(true);
         const rect = range.getBoundingClientRect();
         const editorRect = editorRef.current.getBoundingClientRect();
@@ -2316,7 +2485,8 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
     setMentionOpen(false);
   };
 
-  const canSend = !disabled && (hasContent || files.length > 0 || firstFrameFile || lastFrameFile || (genType === 'dubbing' && selectedVoiceId));
+  const atConcurrentLimit = activeCount >= 5;
+  const canSend = !disabled && !atConcurrentLimit && (hasContent || files.length > 0 || firstFrameFile || lastFrameFile || (genType === 'dubbing' && selectedVoiceId));
 
   const handleSend = async () => {
     if (!canSend) return;
@@ -2364,10 +2534,30 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
   };
 
   const handleKeyDown = (e) => {
-    if (mentionOpen && e.key === 'Escape') {
-      e.preventDefault();
-      setMentionOpen(false);
-      return;
+    if (mentionOpen) {
+      const mentionFiles = files.filter(f =>
+        mentionQuery === '' || f.name.toLowerCase().includes(mentionQuery.toLowerCase())
+      );
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setMentionOpen(false);
+        return;
+      }
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setMentionIndex(i => mentionFiles.length ? (i + 1) % mentionFiles.length : 0);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setMentionIndex(i => mentionFiles.length ? (i - 1 + mentionFiles.length) % mentionFiles.length : 0);
+        return;
+      }
+      if (e.key === 'Enter' && mentionFiles.length > 0) {
+        e.preventDefault();
+        insertMention(mentionFiles[mentionIndex] || mentionFiles[0]);
+        return;
+      }
     }
     if (e.key === 'Backspace' || e.key === 'Delete') {
       const sel = window.getSelection();
@@ -2472,9 +2662,9 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
           }}
         >
           {files.length > 0 && (
-            <div style={{ position: 'absolute', left: 0, display: 'flex', alignItems: 'flex-start', gap: '8px', bottom: 'calc(100% + 24px)' }}>
+            <div style={{ position: 'absolute', left: 0, right: 0, display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', gap: '8px', bottom: 'calc(100% + 24px)' }}>
               {files.map((file, index) => (
-                <FileCard key={index} file={file} onRemove={() => handleRemoveFile(index)} disabled={disabled} />
+                <FileCard key={index} file={file} onRemove={() => handleRemoveFile(index)} disabled={disabled} onInsert={() => insertFromCard(file)} />
               ))}
             </div>
           )}
@@ -2602,13 +2792,14 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
                     <div
                       key={i}
                       onMouseDown={(e) => { e.preventDefault(); insertMention(file); }}
+                      onMouseEnter={() => setMentionIndex(i)}
                       style={{
                         display: 'flex',
                         alignItems: 'center',
                         gap: '8px',
                         padding: '8px 12px',
                         borderRadius: '6px',
-                        background: i === 0 ? '#FFFFFF0D' : 'transparent',
+                        background: i === mentionIndex ? '#FFFFFF0D' : 'transparent',
                         cursor: 'pointer',
                       }}
                     >
@@ -2627,7 +2818,7 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
                         fontFamily: FONT,
                         fontSize: '14px',
                         lineHeight: '18px',
-                        color: i === 0 ? '#FFFFFF' : '#FFFFFF99',
+                        color: i === mentionIndex ? '#FFFFFF' : '#FFFFFF99',
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap',
@@ -2691,7 +2882,7 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
               </>
             )}
           </div>
-          <SendButton onClick={handleSend} disabled={!canSend} loading={disabled} />
+          <SendButton onClick={handleSend} disabled={!canSend} loading={disabled} disabledTooltip={atConcurrentLimit ? '当前有5个任务进行中，为了保证成功率，请稍等一会儿再发送创作请求' : ''} />
         </div>
       </div>
     </div>
@@ -3665,7 +3856,7 @@ function AudioResultCard({ status, audioUrl, prompt, model, createdAt, onDelete,
   );
 }
 
-function CreationResultState({ generations, onGenerate, genType, onGenTypeChange, model, onModelChange, modelOptions, creationParams, onDeleteCard, batchMode = false, selected, onToggleSelect, onSwitchToFrameMode, onVideoCardClick, favorites, toggleFavorite, showToast, onBeforeModelOpen, isGenerating = false, historyLoading = false, historyHasMore = false, onLoadMore }) {
+function CreationResultState({ generations, onGenerate, genType, onGenTypeChange, model, onModelChange, modelOptions, creationParams, onDeleteCard, batchMode = false, selected, onToggleSelect, onSwitchToFrameMode, onVideoCardClick, favorites, toggleFavorite, showToast, onBeforeModelOpen, isGenerating = false, historyLoading = false, historyHasMore = false, onLoadMore, activeCount = 0 }) {
   const scrollRef = useRef(null);
   const sentinelRef = useRef(null);
   const [prefillVersion, setPrefillVersion] = useState(0);
@@ -3876,9 +4067,12 @@ function CreationResultState({ generations, onGenerate, genType, onGenTypeChange
                   setPrefillVersion((v) => v + 1);
                 }}
                 onUseAsRef={() => {
-                  setPrefillData({
-                    files: [{ name: 'creation.png', url: card.imageUrl, previewUrl: card.imageUrl, assetId: card.assetId || card.id || undefined, isAsset: true, size: 0 }],
-                  });
+                  const newFile = { name: 'creation.png', url: card.imageUrl, previewUrl: card.imageUrl, assetId: card.assetId || card.id || undefined, isAsset: true, size: 0 };
+                  setPrefillData((prev) => ({
+                    ...prev,
+                    appendFiles: [newFile],
+                    files: undefined, // 追加模式不走覆盖逻辑
+                  }));
                   setPrefillVersion((v) => v + 1);
                 }}
                 onDelete={() => onDeleteCard?.(card.genId, card.cardIndex)}
@@ -3929,7 +4123,7 @@ function CreationResultState({ generations, onGenerate, genType, onGenTypeChange
         <div style={{ width: 'min(800px, 100%)' }}>
           <InputCard onGenerate={onGenerate} width="100%" genType={genType} onGenTypeChange={onGenTypeChange}
             model={model} onModelChange={onModelChange} modelOptions={modelOptions} creationParams={creationParams}
-            prefillVersion={prefillVersion} prefillData={prefillData} onBeforeModelOpen={onBeforeModelOpen} showToast={showToast} />
+            prefillVersion={prefillVersion} prefillData={prefillData} onBeforeModelOpen={onBeforeModelOpen} showToast={showToast} activeCount={activeCount} />
         </div>
       </div>
     </div>
@@ -3937,7 +4131,7 @@ function CreationResultState({ generations, onGenerate, genType, onGenTypeChange
 }
 
 // ─── Empty state ──────────────────────────────────────────────────────────────
-function CreationEmptyState({ onGenerate, genType, onGenTypeChange, model, onModelChange, modelOptions, creationParams, onBeforeModelOpen, showToast }) {
+function CreationEmptyState({ onGenerate, genType, onGenTypeChange, model, onModelChange, modelOptions, creationParams, onBeforeModelOpen, showToast, activeCount = 0 }) {
   const EmptyIcon = EMPTY_ICON_MAP[genType] ?? CreationEmptyIconImage;
   return (
     <div
@@ -3973,7 +4167,7 @@ function CreationEmptyState({ onGenerate, genType, onGenTypeChange, model, onMod
       {/* InputCard: absolute, centered horizontally, 16px from bottom */}
       <div style={{ position: 'absolute', left: '50%', bottom: '16px', translate: '-50% 0', width: 'min(800px, 100%)' }}>
         <InputCard onGenerate={onGenerate} width="100%" genType={genType} onGenTypeChange={onGenTypeChange}
-          model={model} onModelChange={onModelChange} modelOptions={modelOptions} creationParams={creationParams} onBeforeModelOpen={onBeforeModelOpen} showToast={showToast} />
+          model={model} onModelChange={onModelChange} modelOptions={modelOptions} creationParams={creationParams} onBeforeModelOpen={onBeforeModelOpen} showToast={showToast} activeCount={activeCount} />
       </div>
     </div>
   );
@@ -4209,7 +4403,10 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
 
   const [activeTab, setActiveTab] = useState('image');
   const [genType, setGenType] = useState('image');
-  const [generating, setGenerating] = useState(false);
+  const [generating, setGenerating] = useState(false); // kept for isGenerating prop (skeleton)
+  const [activeCountByTab, setActiveCountByTab] = useState({ image: 0, video: 0, dubbing: 0 });
+  const incrementActive = (tab) => setActiveCountByTab(prev => ({ ...prev, [tab]: (prev[tab] || 0) + 1 }));
+  const decrementActive = (tab) => setActiveCountByTab(prev => ({ ...prev, [tab]: Math.max(0, (prev[tab] || 0) - 1) }));
   const {
     generationsByTab, addGeneration, deleteCard: storeDeleteCard, deleteGeneration: storeDeleteGeneration, deleteSelectedCards,
     favorites, toggleFavorite: storeToggleFavorite,
@@ -4237,7 +4434,8 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
   // 将后端返回的 image/video/audio 列表项转换为 generation 格式
   function normalizeHistoryItem(item, type) {
     const id = `history-${item.id}`;
-    const url = item.original_url || item.file_url || item.url || '';
+    const rawUrl = item.original_url || item.file_url || item.url || '';
+    const url = normalizeImageUrl(rawUrl) || '';
     return {
       id,
       backendId: item.id,
@@ -4546,6 +4744,7 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
 
   const handleGenerate = async (params) => {
     setGenerating(true);
+    incrementActive(params.genType === 'video' ? 'video' : params.genType === 'dubbing' ? 'dubbing' : 'image');
     // Parse count: '2张' → 2, fallback to 1
     const countNum = parseInt(params.count) || 1;
     let shotId = null;
@@ -4606,6 +4805,7 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
         // 通知 InputCard 回退文本
         params.onFail?.(params.prompt);
         setGenerating(false);
+        decrementActive(params.genType === 'video' ? 'video' : params.genType === 'dubbing' ? 'dubbing' : 'image');
         return { success: false };
       }
 
@@ -4673,6 +4873,7 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
       return { success: false };
     } finally {
       setGenerating(false);
+      decrementActive(params.genType === 'video' ? 'video' : params.genType === 'dubbing' ? 'dubbing' : 'image');
     }
   };
 
@@ -4840,12 +5041,13 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
               historyLoading={historyMeta[activeTab]?.loading}
               historyHasMore={historyMeta[activeTab]?.hasMore}
               onLoadMore={() => loadHistoryPage(activeTab)}
+              activeCount={activeCountByTab[genType] ?? 0}
               onBeforeModelOpen={() => {
                 if (!apiConfigured) { onShowNoModelNotice?.(); return false; }
               }}
             />
           ) : (
-            <CreationEmptyState onGenerate={handleGenerate} genType={genType} onGenTypeChange={handleGenTypeChange} showToast={showToast}
+            <CreationEmptyState onGenerate={handleGenerate} genType={genType} onGenTypeChange={handleGenTypeChange} showToast={showToast} activeCount={activeCountByTab[genType] ?? 0}
               model={model} onModelChange={setModel} modelOptions={modelOptions} creationParams={creationParams}
               onBeforeModelOpen={() => {
                 if (!apiConfigured) { onShowNoModelNotice?.(); return false; }

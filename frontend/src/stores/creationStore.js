@@ -157,7 +157,7 @@ export const useCreationStore = create(
         // generationsByTab 不再持久化：现在由后端历史接口提供数据，localStorage 缓存会导致重复展示
         favorites: state.favorites,
       }),
-      version: 1,
+      version: 2, // 升版本清除旧 localStorage 缓存（旧版持久化了 generationsByTab 导致数据叠加）
     }
   )
 );

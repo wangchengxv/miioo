@@ -475,7 +475,7 @@ function HomeSloganText() {
           </span>
         ))}
       </div>
-      <div ref={ref1} style={lineStyles[1]}>
+      <div ref={ref1} style={{ ...lineStyles[1], marginLeft: '-38px' }}>
         {Array.from(SLOGAN_LINES[1]).map((char, i) => (
           <span key={i} data-char style={outerCharStyle}>
             <span style={innerCharStyles[1]}>{char}</span>
@@ -914,11 +914,8 @@ export default function Home({ onProjectCreated }) {
   // 跨项目异步操作的 pending 结果暂存
   const pendingExtractionsRef = useRef({}); // { projectId: { chars, scenes, props } }
   const currentProjectIdRef = useRef(null);  // 同步跟踪当前项目
-  const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
   const bgVideoRef = useRef(null);
-  const [videoReady, setVideoReady] = useState(false);
-
-
+  const currentVideoIndexRef = useRef(0);
 
   const showToast = (msg, type = 'warning') => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -926,20 +923,16 @@ export default function Home({ onProjectCreated }) {
     toastTimerRef.current = setTimeout(() => setToast(null), 2500);
   };
 
-  // 背景视频循环：播完当前视频后切换到下一个
+  // 背景视频循环：播完当前视频后切换到下一个（纯 ref 操作，不触发 React 重渲染）
   const handleVideoEnded = () => {
-    // 不重置 videoReady，保持当前帧可见直到新视频可以播放
-    setCurrentVideoIndex((prev) => (prev + 1) % BG_VIDEOS.length);
-  };
-
-  // index 变化时手动切换 src，避免 key 重建导致首帧闪烁
-  useEffect(() => {
+    const next = (currentVideoIndexRef.current + 1) % BG_VIDEOS.length;
+    currentVideoIndexRef.current = next;
     const video = bgVideoRef.current;
     if (!video) return;
-    video.src = BG_VIDEOS[currentVideoIndex];
+    video.src = BG_VIDEOS[next];
     video.load();
     video.play().catch(() => {});
-  }, [currentVideoIndex]);
+  };
 
   // 统一的退出登录处理函数
   const handleLogout = async () => {
@@ -1635,22 +1628,15 @@ export default function Home({ onProjectCreated }) {
       {/* background — only visible on home page */}
       {activeKey === 'home' && (
         <>
-          <img
-            src={BG_VIDEO_POSTER}
-            alt=""
-            className="absolute inset-0 object-cover"
-            style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center center' }}
-          />
           <video
             ref={bgVideoRef}
             src={BG_VIDEOS[0]}
             autoPlay
             muted
             playsInline
-            onCanPlay={() => setVideoReady(true)}
             onEnded={handleVideoEnded}
             className="absolute inset-0 object-cover"
-            style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center center', opacity: videoReady ? 1 : 0, transition: 'opacity 500ms ease' }}
+            style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center center' }}
           />
           <div
             className="absolute inset-0 pointer-events-none"
