@@ -883,6 +883,9 @@ export default function Home({ onProjectCreated }) {
   // 统一的项目数据加载函数
   const loadProjectDetails = async (projectId) => {
     setIsLoadingProject(true);
+    // 每次进入项目时主动失效 episodes 缓存，确保拿到后端最新的 episode ID
+    // （智能分镜可能已重新创建 episodes，旧缓存会导致分镜请求用错 ID）
+    invalidate(K.episodes(projectId));
     try {
       // 0. 切换项目前先清空旧项目所有数据状态，避免闪现旧数据
       setActiveProject(null);
@@ -1023,8 +1026,10 @@ export default function Home({ onProjectCreated }) {
         setEpisodeStatuses(statusMap);
       }
 
-      // 5. 加载分镜数据（需要剧集 ID）
+      // 5. 加载分镜数据（需要剧集 ID）并用最新 episodesData 的 ID 写入缓存
       if (episodesData.length > 0) {
+        // 先清空所有旧的分镜缓存（包含旧 episode ID 的 key），避免 StoryboardPage 用错 ID
+        invalidate(K.storyboardsPrefix(projectId));
         const storyboardsData = await apiGetStoryboards(projectId, {
           episode_id: episodesData[0].id
         }).catch(() => []);
@@ -1345,8 +1350,16 @@ export default function Home({ onProjectCreated }) {
         throw new Error(msg);
       }
 
-      // 3. 任务完成，对所有集做兜底刷新（补漏没有通过 completed_episode_numbers 通知到的集）
-      freshEpisodes.forEach(ep => {
+      // 3. 任务完成，重新拉取最新 episodes（后端可能已创建新 UUID）
+      const latestEpisodes = await apiGetEpisodes(activeProject.id).catch(() => freshEpisodes);
+      if (Array.isArray(latestEpisodes) && latestEpisodes.length > 0) {
+        setScriptEpisodes(latestEpisodes);
+      }
+
+      // 4. 用最新 episodes 做兜底刷新分镜（确保用正确的 episode ID）
+      const finalEpisodes = (Array.isArray(latestEpisodes) && latestEpisodes.length > 0)
+        ? latestEpisodes : freshEpisodes;
+      finalEpisodes.forEach(ep => {
         if (!ep.id) return;
         invalidate(K.storyboards(activeProject.id, ep.id));
         apiGetStoryboards(activeProject.id, { episode_id: ep.id }).catch(() => {});

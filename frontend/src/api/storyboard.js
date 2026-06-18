@@ -126,6 +126,8 @@ export async function apiGenerateStoryboardsFromFinalScript(projectId) {
     err.status = res.status;
     throw err;
   }
+  // 失效 episodes 缓存：后端可能在此过程中重新创建 episodes（新 UUID）
+  invalidate(K.episodes(projectId));
   invalidateStoryboards(projectId);
   return res.json();
 }

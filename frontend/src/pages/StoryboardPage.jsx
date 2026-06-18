@@ -5,6 +5,7 @@ import ShotViewerModal from '../components/ShotViewerModal';
 import Toggle from '../components/Toggle';
 import AssetPickerModal from '../components/AssetPickerModal';
 import { apiUploadFile, apiUploadImage, apiUploadStoryboardVideo, apiGenerateStoryboardImage, apiGenerateStoryboardVideo, apiCreateStoryboard, apiUpdateStoryboard, apiDeleteStoryboard, apiReorderStoryboards, apiGetStoryboards, apiBatchDownloadStoryboardImages, apiBatchDownloadStoryboardVideos, apiGetTask } from '../api/storyboard';
+import { apiUploadCreationImage } from '../api/creation';
 import { apiListModels } from '../api/config';
 import DotsLoading from '../components/DotsLoading';
 import { apiGetEpisodes } from '../api/subject';
@@ -2062,6 +2063,8 @@ function GenerateImagePanel({ shot, projectId, chars = [], scenes = [], props = 
   const [btnHov, setBtnHov] = useState(false);
   const [btnPressed, setBtnPressed] = useState(false);
   const [viewImageUrl, setViewImageUrl] = useState(null);
+  const [refImgPreview, setRefImgPreview] = useState(null); // { url, x, y }
+  const refImgHoverTimer = useRef(null);
   const refFileRef = useRef(null);
 
   // 获取当前模型支持的分辨率（从后端 capabilities 派生）
@@ -2090,18 +2093,22 @@ function GenerateImagePanel({ shot, projectId, chars = [], scenes = [], props = 
 
   async function handleRefImageUpload(file) {
     try {
-      // apiUploadFile 内部会自行构建 FormData，这里直接传原始 file。
-      const result = await apiUploadFile(file);
+      const result = await apiUploadCreationImage({
+        file,
+        category: 'reference',
+        project_id: projectId,
+      });
+      const uploadedUrl = result.uploaded_url || result.uploadedUrl || result.url || result.file_url || '';
 
       // 在提示词末尾添加参考图标签
-      const refTag = `[参考图:${result.url}]`;
+      const refTag = `[参考图:${uploadedUrl}]`;
       setPrompt(prev => {
         const newPrompt = prev ? `${prev} ${refTag}` : refTag;
         return newPrompt.slice(0, MAX_PROMPT_LEN);
       });
 
       // 同时添加到参考图列表
-      setRefImages(prev => [...prev, { id: result.id || result.url, url: result.url, name: file.name }]);
+      setRefImages(prev => [...prev, { id: result.id || result.asset_id || uploadedUrl, url: uploadedUrl, name: file.name }]);
 
       return result;
     } catch (error) {
@@ -2238,7 +2245,18 @@ function GenerateImagePanel({ shot, projectId, chars = [], scenes = [], props = 
               {canAddRef && <input ref={refFileRef} type="file" accept="image/*" multiple style={{ display: "none" }} onChange={handleRefFileChange} />}
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
                 {refImages.map((img) => (
-                  <div key={img.id} style={{ position: 'relative', width: '120px', height: '120px', borderRadius: '6px', overflow: 'hidden', flexShrink: 0, border: '1px solid rgba(255,255,255,0.12)' }}>
+                  <div
+                    key={img.id}
+                    onMouseEnter={(e) => {
+                      const { clientX, clientY } = e;
+                      clearTimeout(refImgHoverTimer.current);
+                      refImgHoverTimer.current = setTimeout(() => {
+                        if (img.url) setRefImgPreview({ url: img.url, x: clientX, y: clientY });
+                      }, 500);
+                    }}
+                    onMouseMove={(e) => setRefImgPreview(p => p ? { ...p, x: e.clientX, y: e.clientY } : p)}
+                    onMouseLeave={() => { clearTimeout(refImgHoverTimer.current); setRefImgPreview(null); }}
+                    style={{ position: 'relative', width: '120px', height: '120px', borderRadius: '6px', overflow: 'hidden', flexShrink: 0, border: '1px solid rgba(255,255,255,0.12)' }}>
                     <img src={img.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
                     <div
                       onClick={() => removeRefImage(img.id)}
@@ -2277,9 +2295,10 @@ function GenerateImagePanel({ shot, projectId, chars = [], scenes = [], props = 
               projectId={projectId}
               onUpload={async (file) => {
                 try {
-                  const result = await apiUploadFile(file);
-                  onSetGeneratedImages((prev) => [{ url: result.url, settled: false, id: result.url || result.id }, ...prev]);
-                  onSettleImage?.(result.url);
+                  const result = await apiUploadCreationImage({ file, category: 'reference', project_id: projectId });
+                  const uploadedUrl = result.uploaded_url || result.uploadedUrl || result.url || result.file_url || '';
+                  onSetGeneratedImages((prev) => [{ url: uploadedUrl, settled: false, id: result.asset_id || result.id || uploadedUrl }, ...prev]);
+                  onSettleImage?.(uploadedUrl);
                 } catch {
                   onShowToast?.('上传失败，请重试', 'error');
                 }
@@ -2358,6 +2377,10 @@ function GenerateImagePanel({ shot, projectId, chars = [], scenes = [], props = 
         </div>
       </div>
       {viewImageUrl && <MediaViewModal url={viewImageUrl} onClose={() => setViewImageUrl(null)} />}
+      {refImgPreview && createPortal(
+        <MediaHoverPreview url={refImgPreview.url} isVideo={false} mouseX={refImgPreview.x} mouseY={refImgPreview.y} />,
+        document.body
+      )}
     </>,
     document.body
   );
@@ -2539,22 +2562,26 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
 
   async function handleRefMediaUpload(file, type = 'image') {
     try {
-      // apiUploadFile 内部会自行构建 FormData，这里直接传原始 file。
-      const result = await apiUploadFile(file);
+      const result = await apiUploadCreationImage({
+        file,
+        category: 'reference',
+        project_id: projectId,
+      });
+      const uploadedUrl = result.uploaded_url || result.uploadedUrl || result.url || result.file_url || '';
 
       // 只有图片类型才在提示词末尾添加参考图标签
       if (type === 'image') {
-        const refTag = `[参考图:${result.url}]`;
+        const refTag = `[参考图:${uploadedUrl}]`;
         setPrompt(prev => {
           const newPrompt = prev ? `${prev} ${refTag}` : refTag;
           return newPrompt.slice(0, MAX_PROMPT_LEN);
         });
       }
 
-      return { id: result.id || result.url, url: result.url, name: file.name, type: file.type };
+      return { id: result.id || result.asset_id || uploadedUrl, url: uploadedUrl, name: file.name, type: file.type };
     } catch (error) {
-      console.error('主体图上传失败:', error);
-      onShowToast?.('主体图上传失败', 'error');
+      console.error('参考媒体上传失败:', error);
+      onShowToast?.('参考图上传失败', 'error');
       throw error;
     }
   }
@@ -4299,12 +4326,13 @@ function MainRefCol({ shot, onChange, chars, projectId }) {
 
     // 立即上传到后端
     try {
-      const result = await apiUploadImage(file);
+      const result = await apiUploadCreationImage({ file, category: 'reference', project_id: projectId });
+      const uploadedUrl = result.uploaded_url || result.uploadedUrl || result.url || result.file_url || '';
 
       // 更新 mainRefs：替换临时 URL 为后端 URL
       const updatedRefs = newRefs.map(ref =>
         ref.id === localUrl
-          ? { id: result.url, url: result.url, name: file.name, type: file.type, uploaded: true }
+          ? { id: result.asset_id || result.id || uploadedUrl, url: uploadedUrl, name: file.name, type: file.type, uploaded: true }
           : ref
       );
 
