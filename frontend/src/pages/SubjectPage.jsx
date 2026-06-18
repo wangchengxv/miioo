@@ -1202,29 +1202,30 @@ function RefImageItem({ url, onRemove }) {
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
-        width: '120px', height: '120px', borderRadius: '8px', overflow: 'hidden', position: 'relative', flexShrink: 0,
+        width: '120px', height: '120px', borderRadius: '8px', overflow: 'visible', position: 'relative', flexShrink: 0,
         border: `1px solid ${hovered ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.08)'}`,
         transition: 'border-color 120ms', cursor: 'pointer',
       }}
     >
-      <img src={url} alt="参考图" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+      <div style={{ width: '100%', height: '100%', borderRadius: '8px', overflow: 'hidden' }}>
+        <img src={url} alt="参考图" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+      </div>
       {hovered && (
-        <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); onRemove(); }}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '4px', height: '24px', borderRadius: '6px', padding: '0 8px',
-              background: 'rgba(247,95,95,0.15)', border: '1px solid rgba(247,95,95,0.3)',
-              outline: '1px solid #00000080', cursor: 'pointer',
-              fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: '#F75F5F',
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(247,95,95,0.25)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(247,95,95,0.15)'; }}
-          >
-            移除
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={(e) => { e.stopPropagation(); onRemove(); }}
+          style={{
+            position: 'absolute', top: '-8px', right: '-8px',
+            width: '20px', height: '20px', borderRadius: '50%',
+            background: '#F75F5F', border: '1.5px solid #161616',
+            display: 'flex', alignItems: 'center', justifyContent: 'center',
+            cursor: 'pointer', padding: 0, zIndex: 1,
+          }}
+        >
+          <svg width="10" height="10" viewBox="0 0 10 10" fill="none" xmlns="http://www.w3.org/2000/svg">
+            <path d="M2 2L8 8M8 2L2 8" stroke="#FFFFFF" strokeWidth="1.5" strokeLinecap="round" />
+          </svg>
+        </button>
       )}
     </div>
   );

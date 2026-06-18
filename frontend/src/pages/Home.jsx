@@ -7,7 +7,8 @@ import { clearTokens, apiLogout } from '../api/auth';
 import { apiListProviders } from '../api/config';
 import { apiGetCurrentUser, apiGetNotifications } from '../api/user';
 import { apiGetSubjects, apiGetEpisodes, apiGetScriptWorkspace, apiFinalizeScriptWorkspace, apiExtractSubjectsFromScript } from '../api/subject';
-import { apiGetStoryboards, apiGenerateStoryboardsFromFinalScript } from '../api/storyboard';
+import { apiGetStoryboards, apiGenerateStoryboardsFromFinalScript, apiGetTask } from '../api/storyboard';
+import { invalidate } from '../utils/cache';
 import { normalizeImageUrl } from '../utils/imageUrl';
 import { subscribe, peekCache } from '../utils/cache';
 import { K, MEDIUM } from '../utils/cacheKeys';
@@ -1280,7 +1281,79 @@ export default function Home({ onProjectCreated }) {
           setScriptEpisodes(freshEpisodes);
         }
       }
-      await apiGenerateStoryboardsFromFinalScript(activeProject.id);
+
+      // episode_number → episode_id 映射，用于按集失效缓存
+      const episodeNumberToId = {};
+      freshEpisodes.forEach(ep => {
+        if (ep.episode_number != null && ep.id) {
+          episodeNumberToId[ep.episode_number] = ep.id;
+        }
+      });
+
+      // 1. 启动任务，拿到 taskId
+      const taskResp = await apiGenerateStoryboardsFromFinalScript(activeProject.id);
+      const taskId = taskResp?.id;
+      if (!taskId) throw new Error('未获取到任务 ID');
+
+      // 2. 轮询任务，每完成一集立即失效对应缓存，让 StoryboardPage 实时看到结果
+      const MAX_POLLS = 200;  // 最多等 200 × 3s = 10 分钟
+      const INTERVAL = 3000;
+      let finalTask = null;
+      const notifiedEpisodeNumbers = new Set(); // 已通知过的分集，避免重复失效
+      let prevCurrentEpisodeNumber = null; // 上次轮询时的 current_episode_number
+
+      const flushEpisode = (num) => {
+        if (notifiedEpisodeNumbers.has(num)) return;
+        notifiedEpisodeNumbers.add(num);
+        const epId = episodeNumberToId[num];
+        if (!epId) return;
+        invalidate(K.storyboards(activeProject.id, epId));
+        invalidate(K.storyboards(activeProject.id));
+        apiGetStoryboards(activeProject.id, { episode_id: epId }).catch(() => {});
+      };
+
+      for (let i = 0; i < MAX_POLLS; i++) {
+        await new Promise(r => setTimeout(r, INTERVAL));
+        const t = await apiGetTask(taskId).catch(() => null);
+        if (!t) continue;
+        console.log('[poll] task status:', t.status, 'params:', JSON.stringify(t.params));
+
+        // 路径1：completed_episode_numbers 字段（后端明确告知哪些集已完成）
+        const completedNums = t.params?.completed_episode_numbers;
+        if (Array.isArray(completedNums)) {
+          completedNums.forEach(num => flushEpisode(num));
+        }
+
+        // 路径2：current_episode_number 变化 → 说明上一集已完成
+        const currentNum = t.params?.current_episode_number;
+        if (currentNum != null && prevCurrentEpisodeNumber != null && currentNum !== prevCurrentEpisodeNumber) {
+          flushEpisode(prevCurrentEpisodeNumber);
+        }
+        if (currentNum != null) prevCurrentEpisodeNumber = currentNum;
+
+        // 终态判断
+        const status = t.status;
+        if (status !== 'pending' && status !== 'running') {
+          finalTask = t;
+          break;
+        }
+      }
+
+      if (!finalTask) throw new Error('任务超时，请重试');
+      if (finalTask.status === 'failed') {
+        const msg = finalTask.params?.status_message || finalTask.params?.error || '分镜生成失败';
+        throw new Error(msg);
+      }
+
+      // 3. 任务完成，对所有集做兜底刷新（补漏没有通过 completed_episode_numbers 通知到的集）
+      freshEpisodes.forEach(ep => {
+        if (!ep.id) return;
+        invalidate(K.storyboards(activeProject.id, ep.id));
+        apiGetStoryboards(activeProject.id, { episode_id: ep.id }).catch(() => {});
+      });
+      invalidate(K.storyboards(activeProject.id));
+      apiGetStoryboards(activeProject.id).catch(() => {});
+
     } catch (err) {
       console.error('智能分镜生成失败:', err);
       const status = err?.status;

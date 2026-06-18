@@ -1160,6 +1160,27 @@ function PanelUploadSlot({ label, onUpload, media, onRemove, accept = 'image/*',
   const [btn2Hov, setBtn2Hov] = useState(false);
   const [btn2Pressed, setBtn2Pressed] = useState(false);
   const [assetPickerOpen, setAssetPickerOpen] = useState(false);
+  const [previewMedia, setPreviewMedia] = useState(null); // { url, isVideo }
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+  const hoverTimerRef = useRef(null);
+
+  function startPreview(e, item) {
+    const { clientX, clientY } = e;
+    setMousePos({ x: clientX, y: clientY });
+    clearTimeout(hoverTimerRef.current);
+    hoverTimerRef.current = setTimeout(() => {
+      if (item?.url) setPreviewMedia({ url: item.url, isVideo: !!item.type?.startsWith('video') });
+    }, 500);
+  }
+
+  function movePreview(e) {
+    setMousePos({ x: e.clientX, y: e.clientY });
+  }
+
+  function stopPreview() {
+    clearTimeout(hoverTimerRef.current);
+    setPreviewMedia(null);
+  }
 
   // 多图模式：mediaList 数组传入时启用
   const isMultiMode = Array.isArray(mediaList);
@@ -1193,7 +1214,11 @@ function PanelUploadSlot({ label, onUpload, media, onRemove, accept = 'image/*',
             <input ref={fileRef} type="file" accept={accept} style={{ display: 'none' }} onChange={handleFile} />
             {/* 已上传的缩略图列表 */}
             {mediaList.map((item, idx) => (
-              <div key={item.id || idx} style={{ position: 'relative', width: `${THUMB}px`, height: `${THUMB}px`, borderRadius: '6px', overflow: 'hidden', flexShrink: 0, border: '1px solid rgba(255,255,255,0.12)' }}>
+              <div key={item.id || idx}
+                onMouseEnter={(e) => startPreview(e, item)}
+                onMouseMove={movePreview}
+                onMouseLeave={stopPreview}
+                style={{ position: 'relative', width: `${THUMB}px`, height: `${THUMB}px`, borderRadius: '6px', overflow: 'hidden', flexShrink: 0, border: '1px solid rgba(255,255,255,0.12)' }}>
                 {item.type?.startsWith('video') ? (
                   <video src={item.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted playsInline />
                 ) : item.type?.startsWith('audio') ? (
@@ -1264,7 +1289,11 @@ function PanelUploadSlot({ label, onUpload, media, onRemove, accept = 'image/*',
           <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
             <input ref={fileRef} type="file" accept={accept} style={{ display: 'none' }} onChange={handleFile} />
             {media ? (
-              <div style={{ position: 'relative', width: '120px', height: '120px', borderRadius: '6px', overflow: 'hidden', flexShrink: 0, border: '1px solid rgba(255,255,255,0.12)' }}>
+              <div
+                onMouseEnter={(e) => startPreview(e, media)}
+                onMouseMove={movePreview}
+                onMouseLeave={stopPreview}
+                style={{ position: 'relative', width: '120px', height: '120px', borderRadius: '6px', overflow: 'hidden', flexShrink: 0, border: '1px solid rgba(255,255,255,0.12)' }}>
                 {media.type?.startsWith('video') ? (
                   <video src={media.url} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted playsInline />
                 ) : media.type?.startsWith('audio') ? (
@@ -1332,6 +1361,10 @@ function PanelUploadSlot({ label, onUpload, media, onRemove, accept = 'image/*',
         )}
       </div>
       <AssetPickerModal accept={accept.startsWith('video') ? 'video' : accept.startsWith('image') ? 'image' : accept.startsWith('audio') ? 'audio' : 'all'} open={assetPickerOpen} onClose={() => setAssetPickerOpen(false)} projectId={projectId} onConfirm={() => {}} />
+      {previewMedia && createPortal(
+        <MediaHoverPreview url={previewMedia.url} isVideo={previewMedia.isVideo} mouseX={mousePos.x} mouseY={mousePos.y} />,
+        document.body
+      )}
     </>
   );
 }
@@ -4369,7 +4402,7 @@ function MainRefCol({ shot, onChange, chars, projectId }) {
       </div>
 
       {previewImg && createPortal(
-        <MainRefHoverPreview url={previewImg} mouseX={mousePos.x} mouseY={mousePos.y} />,
+        <MediaHoverPreview url={previewImg} isVideo={false} mouseX={mousePos.x} mouseY={mousePos.y} />,
         document.body
       )}
     </div>
@@ -4377,71 +4410,76 @@ function MainRefCol({ shot, onChange, chars, projectId }) {
 }
 
 // ─── 主体参考悬浮预览 ─────────────────────────────────────────────────────────
-function MainRefHoverPreview({ url, mouseX, mouseY }) {
-  const [imgSize, setImgSize] = useState(null);
-  const GAP = 16; // 距鼠标偏移
+// ─── 通用媒体悬浮预览（图片 + 视频） ──────────────────────────────────────────
+// isVideo=true 时直接用 16:9 fallback 尺寸（视频尺寸无法预知），并自动播放
+function MediaHoverPreview({ url, isVideo, mouseX, mouseY }) {
+  const [size, setSize] = useState(null);
+  const GAP = 16;
 
   useEffect(() => {
-    const img = new Image();
-    img.onload = () => setImgSize({ w: img.naturalWidth, h: img.naturalHeight });
-    img.src = url;
-  }, [url]);
+    if (isVideo) {
+      // 视频默认按 16:9 预览，实际尺寸等视频加载后更新
+      setSize({ w: 16, h: 9 });
+    } else {
+      setSize(null);
+      const img = new Image();
+      img.onload = () => setSize({ w: img.naturalWidth, h: img.naturalHeight });
+      img.src = url;
+    }
+  }, [url, isVideo]);
 
-  if (!imgSize) return null;
+  if (!size) return null;
 
-  // 屏幕 35% 作为最大边
   const maxW = window.innerWidth * 0.35;
   const maxH = window.innerHeight * 0.35;
-  const ratio = imgSize.w / imgSize.h;
+  const ratio = size.w / size.h;
 
   let previewW, previewH;
   if (ratio >= 1) {
-    // 横向图：宽度为屏幕50%
     previewW = maxW;
     previewH = previewW / ratio;
     if (previewH > maxH) { previewH = maxH; previewW = previewH * ratio; }
   } else {
-    // 竖向图：高度为屏幕50%
     previewH = maxH;
     previewW = previewH * ratio;
     if (previewW > maxW) { previewW = maxW; previewH = previewW / ratio; }
   }
 
-  // 默认跟随鼠标右下方，检测边界后自动翻转
   let left = mouseX + GAP;
   let top = mouseY + GAP;
-
-  if (left + previewW > window.innerWidth - GAP) {
-    left = mouseX - previewW - GAP;
-  }
-  if (top + previewH > window.innerHeight - GAP) {
-    top = mouseY - previewH - GAP;
-  }
-  // 确保不超出左/上边界
+  if (left + previewW > window.innerWidth - GAP) left = mouseX - previewW - GAP;
+  if (top + previewH > window.innerHeight - GAP) top = mouseY - previewH - GAP;
   left = Math.max(GAP, left);
   top = Math.max(GAP, top);
 
   return (
     <div
       style={{
-        position: 'fixed',
-        left,
-        top,
-        width: previewW,
-        height: previewH,
-        zIndex: 99999,
-        pointerEvents: 'none',
-        borderRadius: '8px',
-        overflow: 'hidden',
+        position: 'fixed', left, top,
+        width: previewW, height: previewH,
+        zIndex: 99999, pointerEvents: 'none',
+        borderRadius: '8px', overflow: 'hidden',
         boxShadow: '0 8px 32px rgba(0,0,0,0.7)',
         border: '1px solid rgba(255,255,255,0.12)',
+        backgroundColor: '#111',
       }}
     >
-      <img
-        src={url}
-        alt=""
-        style={{ width: '100%', height: '100%', objectFit: 'contain', backgroundColor: '#111' }}
-      />
+      {isVideo ? (
+        <video
+          src={url}
+          autoPlay
+          loop
+          muted
+          playsInline
+          onLoadedMetadata={(e) => {
+            const { videoWidth: w, videoHeight: h } = e.target;
+            if (w && h) setSize({ w, h });
+          }}
+          style={{ width: '100%', height: '100%', objectFit: 'contain' }}
+        />
+      ) : (
+        <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+      )}
     </div>
   );
 }
@@ -5482,6 +5520,19 @@ export default function StoryboardPage({ serverReachable, projectId, projectName
     }
   }, [activeEpisodes]);
 
+  // episode 还是字符串（episodes prop 尚未到位）时，订阅 :all key
+  // 一旦有数据写入就尝试把 episode 切换到真实对象
+  useEffect(() => {
+    if (typeof episode !== 'string') return;
+    if (!projectId) return;
+    const unsub = subscribe(K.storyboards(projectId), (data) => {
+      if (activeEpisodes.length > 0) {
+        setEpisode(activeEpisodes[0]);
+      }
+    });
+    return unsub;
+  }, [projectId, episode, activeEpisodes]);
+
   useEffect(() => {
     if (!batchExpanded) return;
     function handleMouseDown(e) {
@@ -5881,8 +5932,9 @@ export default function StoryboardPage({ serverReachable, projectId, projectName
   }
 
   // 判断是否显示 loading / 错误态
-  const showGeneratingLoading = (isGenerating && shots.length === 0) || homeIsGenerating;
-  const showGeneratingError = !!generateError && (shots.length === 0 || homeIsGenerating) && !hasManuallyInteracted.current;
+  // homeIsGenerating 期间如果已有分镜数据，直接展示数据，不再显示全屏 loading
+  const showGeneratingLoading = (isGenerating || homeIsGenerating) && shots.length === 0;
+  const showGeneratingError = !!generateError && shots.length === 0 && !hasManuallyInteracted.current;
 
   if (showGeneratingLoading) {
     return (
@@ -5974,6 +6026,24 @@ export default function StoryboardPage({ serverReachable, projectId, projectName
             <path d="M5.5 3.5L9 7L5.5 10.5" stroke="#FFFFFF40" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
           <EpisodeSelector episodes={activeEpisodes} value={episode} onChange={setEpisode} />
+          {/* 后台分镜生成中提示：有数据时不全屏 loading，改用 inline 状态条 */}
+          {homeIsGenerating && shots.length > 0 && (
+            <div style={{
+              display: 'flex', alignItems: 'center', gap: '6px',
+              height: '28px', padding: '0 10px', borderRadius: '6px',
+              background: 'rgba(45,195,225,0.08)',
+              border: '1px solid rgba(45,195,225,0.2)',
+              flexShrink: 0,
+            }}>
+              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ flexShrink: 0, animation: 'spin 1.2s linear infinite' }}>
+                <circle cx="6" cy="6" r="4.5" stroke="rgba(45,195,225,0.3)" strokeWidth="1.5" />
+                <path d="M6 1.5A4.5 4.5 0 0 1 10.5 6" stroke="#2DC3E1" strokeWidth="1.5" strokeLinecap="round" />
+              </svg>
+              <span style={{ fontFamily: FONT, fontSize: '12px', color: '#2DC3E1', whiteSpace: 'nowrap' }}>
+                {loadingTexts[loadingTextIndex]}
+              </span>
+            </div>
+          )}
         </div>
         <div ref={batchBtnRef} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           {downloadMode ? (
