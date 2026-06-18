@@ -1195,7 +1195,7 @@ export default function Home({ onProjectCreated }) {
         const user = await apiGetCurrentUser();
         setServerReachable(true);
         setIsLoggedIn(true);
-        setCurrentUser(user);
+        setCurrentUser({ ...user, avatar_url: normalizeImageUrl(user.avatar_url) ?? '' });
       } catch (err) {
         if (err.isNetworkError) {
           setServerReachable(false);
@@ -1961,7 +1961,7 @@ export default function Home({ onProjectCreated }) {
         onClose={() => setProfileOpen(false)}
         onLogout={handleLogout}
         currentUser={currentUser}
-        onProfileUpdated={(updated) => setCurrentUser(prev => ({ ...prev, ...updated }))}
+        onProfileUpdated={(updated) => setCurrentUser(prev => ({ ...prev, ...updated, avatar_url: normalizeImageUrl(updated.avatar_url ?? prev.avatar_url) ?? '' }))}
       />
       <NewProjectModal
         open={newProjectOpen}
