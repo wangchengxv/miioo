@@ -419,10 +419,10 @@ export async function apiGenerateCreation(params) {
   const isVideo = params.genType === 'video';
 
   // ── 内部：轮询任务 ──────────────────────────────────────────────────────
-  async function pollTask(pollUrl, extractFn, timeoutMs = 300000) {
+  async function pollTask(pollUrl, extractFn, timeoutMs = 1800000) {
     const start = Date.now();
     while (Date.now() - start < timeoutMs) {
-      await new Promise((r) => setTimeout(r, 2000));
+      await new Promise((r) => setTimeout(r, 3000));
       const pollRes = await authFetch(pollUrl);
       const pollData = await pollRes.json();
       const status = pollData.status;
@@ -612,7 +612,10 @@ export async function apiGenerateCreation(params) {
 
     const allImages = pollResults.flatMap((r) => r.images);
     const allCardIds = pollResults.flatMap((r) => r.cardIds);
-    const referenceImages = pollResults[0]?.referenceImages ?? [];
+    // 优先用后端返回的参考图列表，若为空则以本次实际上传/使用的 refUrls 作为兜底
+    const referenceImages = (pollResults[0]?.referenceImages ?? []).length > 0
+      ? (pollResults[0]?.referenceImages ?? [])
+      : refUrls;
     return { taskId: taskIds[0], images: allImages, cardIds: allCardIds, referenceImages };
   }
 
@@ -655,5 +658,5 @@ export async function apiGenerateCreation(params) {
       };
     },
   );
-  return { taskId, videos, cardIds };
+  return { taskId, videos, cardIds, referenceImages: refUrls };
 }

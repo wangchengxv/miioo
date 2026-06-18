@@ -2185,7 +2185,17 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
     if (!prefillVersion || !prefillData) return;
     if (prefillData.prompt !== undefined && editorRef.current) {
       editorRef.current.innerHTML = '';
-      if (prefillData.prompt) {
+      if (prefillData.promptHTML) {
+        editorRef.current.innerHTML = prefillData.promptHTML;
+        // innerHTML 恢复后事件监听器丢失，需用 buildTagElement 重建每个标签
+        const filesToUse = prefillData.files ?? [];
+        editorRef.current.querySelectorAll('[data-file-ref]').forEach((oldTag) => {
+          const fileName = oldTag.dataset.fileRef;
+          const file = filesToUse.find((f) => f.name === fileName) || { name: fileName, url: '', size: 0 };
+          const newTag = buildTagElement(file);
+          oldTag.parentNode?.replaceChild(newTag, oldTag);
+        });
+      } else if (prefillData.prompt) {
         editorRef.current.textContent = prefillData.prompt;
       }
       setHasContent((prefillData.prompt || '').trim().length > 0);
@@ -2301,6 +2311,13 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
       } else {
         handleFileSelect(mediaFiles);
       }
+      return;
+    }
+    // 无文件：只插入纯文本，剥除富文本样式（粗体、颜色等）
+    e.preventDefault();
+    const text = e.clipboardData.getData('text/plain');
+    if (text) {
+      document.execCommand('insertText', false, text);
     }
   }, [genType, showToast]);
 
@@ -2490,8 +2507,15 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
 
   const handleSend = async () => {
     if (!canSend) return;
-    const currentText = editorRef.current?.innerText?.trim() ?? '';
+    // 提取纯文字 prompt，剔除 @ 标签节点（data-file-ref），避免把 @文件名 混入发给后端的 prompt
+    let currentText = '';
+    if (editorRef.current) {
+      const clone = editorRef.current.cloneNode(true);
+      clone.querySelectorAll('[data-file-ref]').forEach((el) => el.remove());
+      currentText = clone.innerText?.trim() ?? '';
+    }
     const savedFiles = files;
+    const savedHTML = editorRef.current?.innerHTML ?? '';
     // 立即清空输入框和附件
     if (editorRef.current) editorRef.current.innerHTML = '';
     setHasContent(false);
@@ -2514,6 +2538,7 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
     }
     const result = await onGenerate?.({
       prompt: currentText,
+      promptHTML: savedHTML,
       genType,
       model,
       ...(genType === 'image' ? { ratio, resolution, count } : {}),
@@ -2521,10 +2546,15 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
       ...(genType === 'dubbing' ? { speed: dubbingSpeed, emotion: dubbingEmotion, voiceId: selectedVoiceId, voiceName: selectedVoiceName } : {}),
       files,
       onFail: (fallbackPrompt) => {
-        // 失败时回退文本和附件到输入框
-        if (editorRef.current && fallbackPrompt) {
-          editorRef.current.innerText = fallbackPrompt;
-          setHasContent(true);
+        // 失败时回退输入框内容（含标签 HTML）和附件
+        if (editorRef.current) {
+          if (savedHTML) {
+            editorRef.current.innerHTML = savedHTML;
+            setHasContent(true);
+          } else if (fallbackPrompt) {
+            editorRef.current.innerText = fallbackPrompt;
+            setHasContent(true);
+          }
         }
         if (savedFiles.length > 0) {
           setFiles(savedFiles);
@@ -3178,7 +3208,12 @@ function ImageDetailModal({ card, onClose, onDelete, favorited, onToggleFavorite
                       <div style={{ fontFamily: FONT, fontSize: '11px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>提示词</div>
                       <CopyPromptButton text={card.prompt} onCopy={handleCopyPrompt} />
                     </div>
-                    <div style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '20px', letterSpacing: '0.01em', color: '#FFFFFFCC' }}>{card.prompt || '—'}</div>
+                    <div style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '20px', letterSpacing: '0.01em', color: '#FFFFFFCC' }}>
+                      {card.promptHTML
+                        ? <span dangerouslySetInnerHTML={{ __html: card.promptHTML }} />
+                        : (card.prompt || '—')
+                      }
+                    </div>
                   </div>
 
                   {/* 参考图 */}
@@ -3504,7 +3539,7 @@ function VideoResultCard({ status, videoUrl, prompt, model, ratio, resolution, d
   );
 }
 
-function ImageResultCard({ status, imageUrl, prompt, model, ratio, resolution, refImages, createdAt, onReEdit, onUseAsRef, onDelete, onSave, batchMode = false, isSelected = false, onToggleSelect }) {
+function ImageResultCard({ status, imageUrl, prompt, promptHTML, model, ratio, resolution, refImages, createdAt, onReEdit, onUseAsRef, onDelete, onSave, batchMode = false, isSelected = false, onToggleSelect }) {
   const [hovered, setHovered] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const [favorited, setFavorited] = useState(false);
@@ -3661,6 +3696,7 @@ function ImageResultCard({ status, imageUrl, prompt, model, ratio, resolution, r
           card={{
             imageUrl,
             prompt,
+            promptHTML,
             model,
             ratio,
             resolution,
@@ -3870,6 +3906,7 @@ function CreationResultState({ generations, onGenerate, genType, onGenTypeChange
       genId: gen.id,
       cardIndex: i,
       prompt: gen.prompt,
+      promptHTML: gen.promptHTML || '',
       model: gen.model,
       ratio: gen.ratio,
       resolution: gen.resolution,
@@ -3998,6 +4035,7 @@ function CreationResultState({ generations, onGenerate, genType, onGenTypeChange
                   onReEdit={() => {
                     setPrefillData({
                       prompt: card.prompt,
+                      promptHTML: card.promptHTML || '',
                       files: (card.refImages || []).map((img) => ({
                         name: img.name || 'ref.png',
                         url: img.url || img.previewUrl || '',
@@ -4053,6 +4091,7 @@ function CreationResultState({ generations, onGenerate, genType, onGenTypeChange
                 onReEdit={() => {
                   setPrefillData({
                     prompt: card.prompt,
+                    promptHTML: card.promptHTML || '',
                     files: (card.refImages || []).map((img) => ({
                       name: img.name || 'ref.png',
                       url: img.url || img.previewUrl || '',
@@ -4068,11 +4107,9 @@ function CreationResultState({ generations, onGenerate, genType, onGenTypeChange
                 }}
                 onUseAsRef={() => {
                   const newFile = { name: 'creation.png', url: card.imageUrl, previewUrl: card.imageUrl, assetId: card.assetId || card.id || undefined, isAsset: true, size: 0 };
-                  setPrefillData((prev) => ({
-                    ...prev,
+                  setPrefillData({
                     appendFiles: [newFile],
-                    files: undefined, // 追加模式不走覆盖逻辑
-                  }));
+                  });
                   setPrefillVersion((v) => v + 1);
                 }}
                 onDelete={() => onDeleteCard?.(card.genId, card.cardIndex)}
@@ -4450,7 +4487,11 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
       duration: item.duration || undefined,
       model: item.model || '',
       prompt: item.prompt || '',
-      refImages: [],
+      refImages: (item.reference_images || item.referenceImages || []).map((img) => {
+        const imgUrl = typeof img === 'string' ? img : (img?.url || img?.original_url || '');
+        const normalized = normalizeImageUrl(imgUrl) || imgUrl;
+        return { url: normalized, previewUrl: normalized, isAsset: true, name: normalized.split('/').pop() || 'ref.png', size: 0 };
+      }),
       createdAt: item.created_at || new Date().toISOString(),
       cards: [{
         id: item.id,
@@ -4755,6 +4796,7 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
       duration: isVideoGen ? params.videoDuration : undefined,
       model: params.model || '',
       prompt: params.prompt || '',
+      promptHTML: params.promptHTML || '',
       refImages: [],
       createdAt: new Date().toISOString(),
       cards: Array.from({ length: isVideoGen || isDubbingGen ? 1 : countNum }, (_, i) => ({
@@ -4770,7 +4812,8 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
 
     try {
       const result = await apiGenerateCreation(params);
-      const mediaUrls = isVideoGen ? (result.videos ?? []) : isDubbingGen ? (result.audios ?? []) : (result.images ?? []);
+      const rawMediaUrls = isVideoGen ? (result.videos ?? []) : isDubbingGen ? (result.audios ?? []) : (result.images ?? []);
+      const mediaUrls = rawMediaUrls.map((u) => normalizeImageUrl(u) || u);
 
       // 如果生成失败，删除占位卡片并回退文本
       if (!mediaUrls || mediaUrls.length === 0) {
@@ -4806,11 +4849,12 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
         duration: genMeta.duration,
         model: genMeta.model,
         prompt: genMeta.prompt,
+        promptHTML: params.promptHTML || '',
         refImages: (result.referenceImages || []).map((url) => ({
-          url,
-          previewUrl: url,
+          url: normalizeImageUrl(url) || url,
+          previewUrl: normalizeImageUrl(url) || url,
           isAsset: true,
-          name: url.split('/').pop() || 'ref.png',
+          name: (url || '').split('/').pop() || 'ref.png',
           size: 0,
         })),
         createdAt: genMeta.createdAt,
