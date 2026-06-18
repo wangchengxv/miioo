@@ -17,6 +17,9 @@ const MAX_FILE_SIZE = 10 * 1024 * 1024; // 10MB
 const MAX_CHARS = 100000;
 const CHAT_TIMEOUT_MS = 120_000; // 2 分钟客户端超时兜底（后端通常先返回 504）
 
+// 匹配"第X集"字样（阿拉伯数字或中文数字），用于识别无 Markdown 格式的剧集标题
+const EPISODE_LINE_RE = /第(?:\d+|[一二三四五六七八九十百千]+)集/;
+
 function parseScriptOutline(markdown) {
   if (!markdown) return [];
 
@@ -36,6 +39,17 @@ function parseScriptOutline(markdown) {
         level: 2,
         offset,
       });
+    } else if (EPISODE_LINE_RE.test(line)) {
+      // 兼容无 Markdown 格式的剧集标题，如"第一集"、"第1集：xxx"
+      // 去掉可能存在的一级标题标记和加粗符号，保留标题文本
+      const title = line
+        .replace(/^#+\s*/, '')
+        .replace(/\*\*/g, '')
+        .replace(/\*/g, '')
+        .replace(/__/g, '')
+        .replace(/_/g, '')
+        .trim();
+      entries.push({ title, level: 2, offset });
     }
 
     offset += line.length + 1;
@@ -47,11 +61,15 @@ function parseScriptOutline(markdown) {
 /**
  * 将后端返回的"第X集"转换为 Markdown 二级标题 `## 第X集`，
  * 以便 parseScriptOutline 正确识别并生成分集导航。
- * 兼容：纯文本"第X集"、已有一级标题"# 第X集"、无空格"#第X集"。
+ * 兼容：纯文本"第X集"、已有一级标题"# 第X集"、无空格"#第X集"，
+ * 支持阿拉伯数字和中文数字（第一集、第二集…）。
  */
 function formatEpisodeHeaders(content) {
   if (!content) return '';
-  return content.replace(/^(?:#\s*)?第(\d+)集/gm, '## 第$1集');
+  return content.replace(
+    /^(#+\s*)?第((?:\d+|[一二三四五六七八九十百千]+))集/gm,
+    '## 第$2集',
+  );
 }
 
 function formatFileSize(bytes) {
@@ -1691,7 +1709,7 @@ export default function ScriptPage({ projectId, onGoToSubject, onScriptFinalized
       .then((data) => {
         const content = data?.script?.content || data?.content;
         if (content) {
-          setScriptContent(content);
+          setScriptContent(formatEpisodeHeaders(content));
           setPhase('view');
           setHasStarted(true);
         }
