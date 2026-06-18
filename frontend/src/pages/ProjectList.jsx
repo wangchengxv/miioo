@@ -46,10 +46,12 @@ function PencilIcon() {
 
 function TrashIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
-      <path d="M2.333 3.5H11.667" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-      <path d="M5.25 3.5V2.333H8.75V3.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M3.5 3.5L4.083 11.083H9.917L10.5 3.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+      <path d="M3 3.33337V14.6667H13V3.33337H3Z" stroke="currentColor" strokeLinejoin="round"/>
+      <path d="M6.66663 6.66663V11" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M9.33337 6.66663V11" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M1.33337 3.33337H14.6667" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M5.33337 3.33337L6.42971 1.33337H9.59241L10.6667 3.33337H5.33337Z" stroke="currentColor" strokeLinejoin="round"/>
     </svg>
   );
 }
@@ -116,16 +118,16 @@ function MoreMenuItem({ icon, label, danger, onClick }) {
         borderRadius: '6px',
         border: 'none',
         background: hovered
-          ? danger ? 'rgba(247,95,95,0.08)' : 'rgba(255,255,255,0.06)'
+          ? 'rgba(255,255,255,0.05)'
           : 'transparent',
         cursor: 'pointer',
         fontFamily: FONT,
         fontSize: '13px',
         lineHeight: '18px',
         color: danger
-          ? hovered ? 'rgba(247,95,95,1)' : 'rgba(247,95,95,0.8)'
+          ? '#F75F5F'
           : 'rgba(255,255,255,0.8)',
-        transition: 'background 120ms, color 120ms',
+        transition: 'background 120ms',
       }}
     >
       <span style={{ color: 'inherit', display: 'flex', alignItems: 'center' }}>{icon}</span>

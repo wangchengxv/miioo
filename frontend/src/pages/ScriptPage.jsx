@@ -1904,7 +1904,7 @@ export default function ScriptPage({ projectId, onGoToSubject, onScriptFinalized
           stopReasonRef.current = null;
           showToast('剧本创作已暂停', 'info');
         } else {
-          // thinking 阶段用户主动暂停：尚未收到任何内容，恢复输入框
+          // thinking 阶段用户主动暂停：尚未收到任何内容，恢复输入框并清空后端剧本
           stopReasonRef.current = null;
           setInputRestoreText(text);
           setInputRestoreFiles(files);
@@ -1912,6 +1912,8 @@ export default function ScriptPage({ projectId, onGoToSubject, onScriptFinalized
           setPhase(prevContent ? 'view' : 'initial');
           setHasStarted(!!prevContent);
           showToast('剧本创作已暂停', 'info');
+          // 清空后端保存的内容，确保刷新后不显示未完成的剧本
+          apiSaveScriptWorkspace(projectId, { content: prevContent || '' }).catch(() => {});
         }
         return;
       }
@@ -1955,13 +1957,16 @@ export default function ScriptPage({ projectId, onGoToSubject, onScriptFinalized
     if (displayedText) {
       setScriptContent(displayedText);
       setPhase('view');
+      // 把已渲染的部分内容同步到后端，刷新后显示实际播放到的位置
+      apiSaveScriptWorkspace(projectId, { content: displayedText }).catch(() => {});
     } else {
-      // 动画还没开始播放，退回到发送前的状态
+      // 动画还没开始播放，退回到发送前的状态，清空后端内容
       setScriptContent('');
       setPhase('initial');
       setHasStarted(false);
+      apiSaveScriptWorkspace(projectId, { content: '' }).catch(() => {});
     }
-  }, [setScriptContent, setPhase, setHasStarted]);
+  }, [projectId, setScriptContent, setPhase, setHasStarted]);
 
   const handleEdit = () => {
     setDraftContent(scriptContent);
