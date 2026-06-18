@@ -493,7 +493,7 @@ export async function apiGenerateCreation(params) {
       }
       if (!(f instanceof File)) continue;
       try {
-        const result = await apiUploadCreationImage({ file: f, category: 'reference', ...uploadContext });
+        const result = await apiUploadCreationAudio({ file: f, category: 'reference', ...uploadContext });
         const url = result.uploaded_url || result.uploadedUrl || '';
         if (url) referenceAudioUrl = url;
       } catch { /* 单个文件上传失败不阻塞整体 */ }
@@ -509,17 +509,44 @@ export async function apiGenerateCreation(params) {
       shot_id: uploadContext.shot_id,
       project_id: uploadContext.project_id,
     };
+    const TEXT_LENGTH_THRESHOLD = 500;
+    const text = params.prompt || params.text || '';
+
+    if (text.length > TEXT_LENGTH_THRESHOLD) {
+      const asyncRes = await authFetch(`${BASE}/api/creation/audios/generate-async`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(dubbingBody),
+      });
+      const asyncData = await asyncRes.json();
+      const taskId = asyncData.task_id || asyncData.id;
+      if (!taskId) throw new Error('No task_id returned');
+
+      const { audios } = await pollTask(
+        `${BASE}/api/creation/audios/tasks/${taskId}`,
+        (pollData) => {
+          const result = pollData.result;
+          if (!result) return { audios: [] };
+          return {
+            audios: [result.audio_url || result.audioUrl],
+          };
+        },
+      );
+      return { taskId, audios };
+    }
+
     const genData = await apiGenerateCreationAudio(dubbingBody);
     const taskId = genData.task_id || genData.id;
     if (!taskId) throw new Error('No task_id returned');
 
     const { audios } = await pollTask(
-      `/api/creation/audios/tasks/`,
+      `${BASE}/api/creation/audios/tasks/${taskId}`,
       (pollData) => {
         const result = pollData.result;
         if (!result) return { audios: [] };
+        const audioUrl = result.audio_url || result.audioUrl || pollData.audio_url || pollData.audioUrl;
         return {
-          audios: [result.audio_url || result.audioUrl],
+          audios: audioUrl ? [audioUrl] : [],
         };
       },
     );
@@ -604,4 +631,3 @@ export async function apiGenerateCreation(params) {
   );
   return { taskId, videos, cardIds };
 }
-

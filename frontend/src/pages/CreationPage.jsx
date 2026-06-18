@@ -4318,6 +4318,14 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
         const key = `${gen.id}-${i}`;
         if (selected.has(key)) {
           if (card.imageUrl) downloadImage(card.imageUrl);
+          if (card.audioUrl && !card.imageUrl && !card.videoUrl) {
+            const a = document.createElement('a');
+            a.href = card.audioUrl;
+            a.download = 'dubbing.wav';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+          }
           if (card.videoUrl) {
             // 下载视频
             fetch(card.videoUrl)

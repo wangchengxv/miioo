@@ -2002,18 +2002,20 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', projectRatio, 
             onRefImagesChange={(ids) => setRefImageIds(ids)}
           />
 
-          {/* generation mode radio */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF99' }}>生成方式</span>
-            <div style={{ display: 'flex', gap: '24px', alignItems: 'center' }}>
-              {[{ key: 'main', label: '单视图' }, { key: 'three_view', label: '多视图' }].map(({ key, label }) => {
-                const active = genMode === key;
-                return (
-                  <RadioOption key={key} label={label} checked={active} onChange={() => setGenMode(key)} />
-                );
-              })}
+          {/* generation mode radio — 仅角色 Tab 显示 */}
+          {tabLabel === '角色' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF99' }}>生成方式</span>
+              <div style={{ display: 'flex', gap: '24px', alignItems: 'center' }}>
+                {[{ key: 'main', label: '单视图' }, { key: 'three_view', label: '多视图' }].map(({ key, label }) => {
+                  const active = genMode === key;
+                  return (
+                    <RadioOption key={key} label={label} checked={active} onChange={() => setGenMode(key)} />
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* right: image list */}
@@ -2944,6 +2946,7 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
         onClose={() => { if (!batchGenerating) setBatchGenOpen(false); }}
         onConfirm={handleBatchGenerate}
         generating={batchGenerating}
+        activeTab={activeTab}
       />
 
       {confirmStoryboardOpen && (
