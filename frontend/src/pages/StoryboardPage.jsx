@@ -4222,7 +4222,6 @@ function AddSlotDropdown({ anchorRef, onUpload, onAssetPicker, onClose }) {
 
 function MainRefCol({ shot, onChange, chars, projectId }) {
   const [hoveredIdx, setHoveredIdx] = useState(null);
-  const [modalOpen, setModalOpen] = useState(false);
   const [assetPickerOpen, setAssetPickerOpen] = useState(false);
   const [dropdownOpen, setDropdownOpen] = useState(false);
   const [previewImg, setPreviewImg] = useState(null);
@@ -4310,115 +4309,64 @@ function MainRefCol({ shot, onChange, chars, projectId }) {
         />
       )}
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-        {[0, 1].map((row) => (
-          <div key={row} style={{ display: 'flex', gap: '4px' }}>
-            {[0, 1].map((col) => {
-              const idx = row * 2 + col;
-              const img = shot.mainRefs[idx];
-              const isOverflow = shot.mainRefs.length >= 4 && idx === 3;
-
-              if (isOverflow) {
-                return (
-                  <div
-                    key={idx}
-                    onClick={() => setModalOpen(true)}
-                    style={{
-                      width: '44px',
-                      height: '44px',
-                      borderRadius: '4px',
-                      position: 'relative',
-                      overflow: 'hidden',
-                      cursor: 'pointer',
-                      flexShrink: 0,
-                      border: '1px solid rgba(255,255,255,0.06)',
-                    }}
-                  >
-                    {shot.mainRefs[3].url
-                      ? <img src={shot.mainRefs[3].url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                      : <div style={{ width: '100%', height: '100%', backgroundColor: shot.mainRefs[3].bgColor ?? '#252525' }} />
-                    }
-                    <div style={{
-                      position: 'absolute', inset: 0,
-                      backgroundColor: 'rgba(0,0,0,0.50)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    }}>
-                      <span style={{ fontSize: '12px', color: '#FFFFFF', fontWeight: 700, fontFamily: '"Alibaba PuHuiTi 2.0", system-ui, sans-serif' }}>
-                        {shot.mainRefs.length > 4 ? `${shot.mainRefs.length - 3}+` : `${shot.mainRefs.length}+`}
-                      </span>
-                    </div>
-                  </div>
-                );
-              }
-
-              if (img) {
-                return (
-                  <div
-                    key={idx}
-                    onMouseEnter={(e) => { setHoveredIdx(idx); handleImgMouseEnter(e, img); }}
-                    onMouseLeave={() => { setHoveredIdx(null); handleImgMouseLeave(); }}
-                    onMouseMove={handleImgMouseMove}
-                    style={{
-                      width: '44px',
-                      height: '44px',
-                      borderRadius: '4px',
-                      position: 'relative',
-                      overflow: 'hidden',
-                      flexShrink: 0,
-                      border: hoveredIdx === idx ? '1px solid #2DC3E1' : '1px solid rgba(255,255,255,0.06)',
-                      transition: 'border-color 150ms',
-                    }}
-                  >
-                    {img.url
-                      ? <img src={img.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                      : <div style={{ width: '100%', height: '100%', backgroundColor: img.bgColor ?? '#252525', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-                          <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.50)', fontFamily: FONT }}>{(img.name ?? '?')[0]}</span>
-                        </div>
-                    }
-                    {hoveredIdx === idx && (
-                      <div
-                        onClick={() => handleDelete(idx)}
-                        style={{
-                          position: 'absolute', top: '2px', right: '2px',
-                          width: '16px', height: '16px',
-                          backgroundColor: 'rgba(0,0,0,0.70)',
-                          borderRadius: '3px',
-                          display: 'flex', alignItems: 'center', justifyContent: 'center',
-                          cursor: 'pointer',
-                        }}
-                      >
-                        <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
-                          <path d="M2 2L8 8M8 2L2 8" stroke="#FFFFFF" strokeWidth="1.2" strokeLinecap="round"/>
-                        </svg>
-                      </div>
-                    )}
-                  </div>
-                );
-              }
-
-              if (idx === shot.mainRefs.length && shot.mainRefs.length < 4) {
-                return (
-                  <div key={idx} ref={addBtnRef} style={{ display: 'inline-flex', flexShrink: 0 }}>
-                    <AddSlotBtn
-                      onClick={() => setDropdownOpen((v) => !v)}
-                    />
-                  </div>
-                );
-              }
-
-              return null;
-            })}
+      {/* 可滚动的图片网格：2列，超出2行后可上下滚动 */}
+      <div style={{
+        width: '92px',
+        maxHeight: '92px', // 2行(44px) + 1个gap(4px) = 92px
+        overflowY: 'auto',
+        overflowX: 'hidden',
+        display: 'flex',
+        flexWrap: 'wrap',
+        gap: '4px',
+        scrollbarWidth: 'none',
+      }}>
+        {shot.mainRefs.map((img, idx) => (
+          <div
+            key={img.id ?? idx}
+            onMouseEnter={(e) => { setHoveredIdx(idx); handleImgMouseEnter(e, img); }}
+            onMouseLeave={() => { setHoveredIdx(null); handleImgMouseLeave(); }}
+            onMouseMove={handleImgMouseMove}
+            style={{
+              width: '44px',
+              height: '44px',
+              borderRadius: '4px',
+              position: 'relative',
+              overflow: 'hidden',
+              flexShrink: 0,
+              border: hoveredIdx === idx ? '1px solid #2DC3E1' : '1px solid rgba(255,255,255,0.06)',
+              transition: 'border-color 150ms',
+            }}
+          >
+            {img.url
+              ? <img src={img.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+              : <div style={{ width: '100%', height: '100%', backgroundColor: img.bgColor ?? '#252525', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                  <span style={{ fontSize: '12px', color: 'rgba(255,255,255,0.50)', fontFamily: FONT }}>{(img.name ?? '?')[0]}</span>
+                </div>
+            }
+            {hoveredIdx === idx && (
+              <div
+                onClick={() => handleDelete(idx)}
+                style={{
+                  position: 'absolute', top: '2px', right: '2px',
+                  width: '16px', height: '16px',
+                  backgroundColor: 'rgba(0,0,0,0.70)',
+                  borderRadius: '3px',
+                  display: 'flex', alignItems: 'center', justifyContent: 'center',
+                  cursor: 'pointer',
+                }}
+              >
+                <svg width="10" height="10" viewBox="0 0 10 10" fill="none">
+                  <path d="M2 2L8 8M8 2L2 8" stroke="#FFFFFF" strokeWidth="1.2" strokeLinecap="round"/>
+                </svg>
+              </div>
+            )}
           </div>
         ))}
+        {/* 添加按钮始终跟在最后 */}
+        <div ref={addBtnRef} style={{ display: 'inline-flex', flexShrink: 0 }}>
+          <AddSlotBtn onClick={() => setDropdownOpen((v) => !v)} />
+        </div>
       </div>
-
-      {modalOpen && (
-        <MainRefModal
-          shot={shot}
-          onChange={onChange}
-          onClose={() => setModalOpen(false)}
-        />
-      )}
 
       {previewImg && createPortal(
         <MainRefHoverPreview url={previewImg} mouseX={mousePos.x} mouseY={mousePos.y} />,

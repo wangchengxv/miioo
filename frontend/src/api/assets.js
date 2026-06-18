@@ -137,6 +137,8 @@ function normalizeAsset(item) {
     shot_number: meta.shot_number ?? null,
     storyboard_id: meta.storyboard_id ?? null,
     episode_number: meta.episode_number ?? null,
+    // 分集展示字段（用于区分不同集的同编号分镜，避免跨集合并）
+    episodeLabel: item.episode_label ?? item.episodeLabel ?? meta.episode_label ?? null,
     duration: meta.duration ?? item.duration ?? null,
     refImages: (Array.isArray(item.ref_images) ? item.ref_images : []).map(img => ({
       url: normalizeImageUrl(img.url || img.file_url || ''),
@@ -185,16 +187,16 @@ function groupBySubject(normalized) {
 }
 
 /**
- * 按分镜编号(shot_number + storyboard_id)分组，用于分镜图/视频
+ * 按分镜编号(shot_number + storyboard_id + episode_number)分组，用于分镜图/视频
+ * episode_number 纳入 key，确保不同集的同编号分镜不会被合并到同一卡片
  */
 function groupByShot(normalized) {
   const shotMap = {};
 
   normalized.forEach((asset) => {
-    // 优先用 shot_number+storyboard_id 作为 key，保证同一镜头多个版本归一组
-    // 无 shot_number 时退回 name（用户自定义上传）
+    // key 加入 episode_number，避免第一集分镜01和第二集分镜01被合并
     const key = asset.shot_number != null
-      ? `${asset.storyboard_id ?? 'local'}_shot_${asset.shot_number}`
+      ? `ep${asset.episode_number ?? 'x'}_${asset.storyboard_id ?? 'local'}_shot_${asset.shot_number}`
       : asset.name;
     if (!shotMap[key]) shotMap[key] = [];
     shotMap[key].push(asset);
@@ -208,10 +210,14 @@ function groupByShot(normalized) {
       ...images.filter((img) => !img.is_primary),
     ];
 
-    // 显示名称：有 shot_number 则用"分镜-N"，否则用原 name
-    const displayName = primaryImage.shot_number != null
-      ? `分镜-${primaryImage.shot_number}`
-      : primaryImage.name;
+    // 显示名称：有 episodeLabel 时拼上集数前缀，否则用"分镜-N"
+    let displayName;
+    if (primaryImage.shot_number != null) {
+      const prefix = primaryImage.episodeLabel ? `${primaryImage.episodeLabel}-` : '';
+      displayName = `${prefix}分镜-${primaryImage.shot_number}`;
+    } else {
+      displayName = primaryImage.name;
+    }
 
     return {
       id: primaryImage.id,
@@ -230,9 +236,14 @@ function groupByShot(normalized) {
       created_at: primaryImage.created_at,
       shot_number: primaryImage.shot_number,
       storyboard_id: primaryImage.storyboard_id,
+      episode_number: primaryImage.episode_number,
+      episodeLabel: primaryImage.episodeLabel,
     };
   }).sort((a, b) => {
-    // 按 shot_number 排序，无编号的排最后
+    // 先按 episode_number 排序，再按 shot_number 排序，无编号的排最后
+    const epA = a.episode_number ?? Infinity;
+    const epB = b.episode_number ?? Infinity;
+    if (epA !== epB) return epA - epB;
     if (a.shot_number == null) return 1;
     if (b.shot_number == null) return -1;
     return a.shot_number - b.shot_number;

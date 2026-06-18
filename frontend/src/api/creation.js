@@ -511,8 +511,16 @@ export async function apiGenerateCreation(params) {
     };
     const TEXT_LENGTH_THRESHOLD = 500;
     const text = params.prompt || params.text || '';
+    const isMiniMax = (params.model || '').toLowerCase().includes('minimax');
 
     if (text.length > TEXT_LENGTH_THRESHOLD) {
+      if (!isMiniMax) {
+        // 非 MiniMax provider 不支持异步配音，提示用户切换模型或缩短文本
+        const err = new Error('当前模型不支持长文本配音，请切换为 MiniMax 模型或将文本缩短至 500 字以内');
+        err.code = 'DUBBING_TEXT_TOO_LONG';
+        throw err;
+      }
+
       const asyncRes = await authFetch(`${BASE}/api/creation/audios/generate-async`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -568,7 +576,7 @@ export async function apiGenerateCreation(params) {
       reference_images: refUrls.length > 0 ? refUrls : undefined,
       category: params.category || undefined,
       asset_name: params.asset_name || undefined,
-      watercolor: params.watermark || undefined,
+      watermark: params.watermark || undefined,
       save_to_assets: params.save_to_assets ?? true,
       inherit_project_style: params.inherit_project_style ?? false,
       session_id: uploadContext.session_id,
@@ -612,7 +620,10 @@ export async function apiGenerateCreation(params) {
     reference_image_asset_ids: refAssetIds.length > 0 ? refAssetIds : undefined,
     reference_video_url: params.reference_video_url || undefined,
     reference_audio_url: params.reference_audio_url || undefined,
-    watercolor: params.watermark || undefined,
+    watermark: params.watermark || undefined,
+    session_id: uploadContext.session_id,
+    shot_id: uploadContext.shot_id,
+    project_id: uploadContext.project_id,
   };
   const genData = await apiGenerateCreationVideo(body);
   const taskId = genData.task_id || genData.id;
