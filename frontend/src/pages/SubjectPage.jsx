@@ -16,6 +16,7 @@ import { normalizeImageUrl } from '../utils/imageUrl';
 import { subscribe } from '../utils/cache';
 import { K } from '../utils/cacheKeys';
 import ConfirmDialog from '../components/ConfirmDialog';
+import Checkbox from '../components/Checkbox';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
@@ -304,11 +305,11 @@ function TabNav({ activeTab, counts, onChange }) {
                 >
                   <span
                     style={{
-                      fontFamily: isActive ? FONT_MEDIUM : FONT,
-                      fontWeight: isActive ? 500 : 400,
-                      fontSize: '11px',
+                      fontFamily: isActive ? 'AlibabaPuHuiTi_2_65_Medium, "Alibaba PuHuiTi 2.0", system-ui, sans-serif' : 'AlibabaPuHuiTi_2_55_Regular, "Alibaba PuHuiTi 2.0", system-ui, sans-serif',
+                      fontWeight: isActive ? 600 : 400,
+                      fontSize: '12px',
                       lineHeight: '100%',
-                      color: isActive ? '#000000BF' : '#FFFFFF66',
+                      color: isActive ? 'rgba(0, 0, 0, 0.75)' : 'rgba(255, 255, 255, 0.6)',
                     }}
                   >
                     {counts[key] ?? 0}
@@ -853,7 +854,6 @@ function CharCard({ name, desc, imageUrl, voice, voiceName, voicePreviewUrl, onV
               onClick={(e) => { e.stopPropagation(); onVoiceClick?.(); }}
               style={{
                 background: 'transparent', border: 'none', padding: 0, cursor: 'pointer',
-                fontFamily: FONT, fontSize: '12px', lineHeight: '17px', color: (voiceName || voice) ? '#2DC3E1' : '#FFFFFF66',
                 maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
               }}
             >
@@ -918,30 +918,6 @@ const INITIAL_CHARS = [
 ];
 
 const MOCK_PROPS = [];
-
-// ── Edit subject panel ─────────────────────────────────────────────────────
-
-// Checkbox component per design-system spec
-function Checkbox({ checked, onChange }) {
-  const [hovered, setHovered] = useState(false);
-  const bgClass = checked ? 'bg-checkbox-bg-active' : hovered ? 'bg-checkbox-bg-hover' : 'bg-checkbox-bg-normal';
-  const borderClass = checked ? 'border-checkbox-border-active' : 'border-checkbox-border-normal';
-  return (
-    <div
-      className={`flex items-center cursor-pointer ${bgClass} border border-solid ${borderClass} rounded-sm [outline:1px_solid_var(--color-stroke-outline)] outline-offset-0 relative shrink-0`}
-      style={{ width: '14px', height: '14px', padding: '2px', boxSizing: 'border-box' }}
-      onClick={onChange}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-    >
-      {checked && (
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ position: 'absolute', left: '50%', top: '50%', translate: '-50% -50%' }}>
-          <path d="M3.333 8L6.667 11.333L13.333 4.667" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      )}
-    </div>
-  );
-}
 
 // Icon button with hover/press states for image overlays
 function IconBtn({ children, onClick }) {
@@ -1139,7 +1115,7 @@ function ImageItem({ settled, imageUrl, imageId, onView, onSettledChange, onDown
       {/* top overlay: settled checkbox */}
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, padding: '8px 10px', backgroundImage: 'linear-gradient(in oklab 180deg, oklab(0% 0 0 / 60%) 0%, oklab(0% 0 0 / 0%) 100%)', display: 'flex', alignItems: 'center', gap: '4px' }}>
         <Checkbox checked={settled} onChange={(e) => { e.stopPropagation(); onSettledChange?.(!settled); }} />
-        <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: settled ? '#2DC3E1' : '#FFFFFF66' }}>定稿</span>
+        <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '16px', color: '#FFFFFF', fontWeight: settled ? 600 : 500 }}>定稿</span>
       </div>
 
       {/* bottom overlay: fullscreen + download — only on hover */}
@@ -1445,7 +1421,7 @@ function RefImageField({ maxImages = 3, projectId, subjectId, refImageIds = [], 
 // key: subjectId, value: { placeholderId, status: 'pending'|'done', imageUrl?, rawUrl? }
 const pendingGenerations = new Map();
 
-function EditSubjectPanel({ projectId, char, tabLabel = '角色', projectRatio, onClose, onCommit, onCoverChange, refreshToken }) {
+function EditSubjectPanel({ projectId, char, tabLabel = '角色', projectRatio, onClose, onCommit, onCoverChange, refreshToken, setBatchLoadingSubjects }) {
   // ── 从后端拉取模型列表，直接使用后端 capabilities ──────────────
   const [imageModels, setImageModels] = useState([]);
   const [modelsLoading, setModelsLoading] = useState(true);
@@ -1838,7 +1814,6 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', projectRatio, 
                 onBlur={() => { setDescFocused(false); onCommit?.(charName, charDesc); }}
                 style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', resize: 'none', fontFamily: FONT, fontSize: '14px', lineHeight: '150%', color: '#FFFFFF' }}
               />
-              <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '18px', color: charDesc.length > 300 ? '#F75F5F' : '#FFFFFF66', textAlign: 'right' }}>{charDesc.length}/300</span>
             </div>
           </div>
 
@@ -1863,7 +1838,6 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', projectRatio, 
                 onBlur={() => setPromptFocused(false)}
                 style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', resize: 'none', fontFamily: FONT, fontSize: '14px', lineHeight: '150%', color: '#FFFFFF' }}
               />
-              <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '18px', color: promptText.length > 1000 ? '#F75F5F' : '#FFFFFF66', textAlign: 'right' }}>{promptText.length}/1000</span>
             </div>
           </div>
 
@@ -2085,7 +2059,16 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', projectRatio, 
               if (fileOrId && typeof fileOrId === 'object' && fileOrId.id) {
                 const raw = fileOrId.url || fileOrId.file_url || fileOrId.fileUrl;
                 // 从资产库选择的图片，settled 强制为 false，不继承原资产的定稿状态
-                setGeneratedImages((prev) => [{ rawUrl: raw, url: normalizeImageUrl(raw), settled: false, id: fileOrId.id, isReference: true }, ...prev]);
+                setGeneratedImages((prev) => {
+                  const hasSettled = prev.some((img) => img.settled && img.rawUrl);
+                  const newImg = { rawUrl: raw, url: normalizeImageUrl(raw), settled: !hasSettled, id: fileOrId.id, isReference: true };
+                  if (!hasSettled) {
+                    setPrimaryImageUrl(raw);
+                    setPrimaryImageId(fileOrId.id);
+                    onCoverChange?.(raw);
+                  }
+                  return [newImg, ...prev];
+                });
                 // 绑定资产到主体
                 if (projectId && char?.id) {
                   apiBindSubjectReferenceImages(projectId, char.id, { asset_ids: [fileOrId.id] }).catch((err) => {
@@ -2104,11 +2087,20 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', projectRatio, 
                       // res: SubjectReferenceImage
                       const realId = res?.asset_id;
                       const realUrl = res?.file_url;
-                      setGeneratedImages((prev) => prev.map((img) =>
-                        img.id === tempId
-                          ? { ...img, id: realId || tempId, rawUrl: realUrl || blobUrl, url: normalizeImageUrl(realUrl || blobUrl) }
-                          : img
-                      ));
+                      setGeneratedImages((prev) => {
+                        const hasSettled = prev.some((img) => img.settled && img.rawUrl);
+                        const updated = prev.map((img) =>
+                          img.id === tempId
+                            ? { ...img, id: realId || tempId, rawUrl: realUrl || blobUrl, url: normalizeImageUrl(realUrl || blobUrl), settled: !hasSettled }
+                            : img
+                        );
+                        if (!hasSettled && realUrl) {
+                          setPrimaryImageUrl(realUrl);
+                          setPrimaryImageId(realId);
+                          onCoverChange?.(realUrl);
+                        }
+                        return updated;
+                      });
                     })
                     .catch((err) => {
                       console.error('[SubjectPage] 上传参考图失败:', err);
@@ -2226,20 +2218,26 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', projectRatio, 
             apiGenerateSubjectImage(projectId, char.id, genParams)
               .then((result) => {
                 const rawUrl = result.image_url || result.imageUrl || result.url || null;
-                if (rawUrl) {
-                  onCoverChange?.(rawUrl);
-                }
 
                 if (isMountedRef.current) {
                   // 弹窗仍打开：正常更新图片列表
                   const imageUrl = normalizeImageUrl(rawUrl);
                   const realImageId = result.id || result.image_id || null;
                   setGeneratedImages((prev) => {
+                    // ① 占位图替换为真实数据
                     const updated = prev.map((img) =>
                       img.id === placeholder
                         ? { ...img, id: realImageId || placeholder, rawUrl, url: imageUrl, settled: false }
                         : img
                     );
+                    // ② 如果没有任何定稿图，自动将新生成的图设为定稿并更新封面
+                    const hasSettled = updated.some((img) => img.settled && img.rawUrl);
+                    if (!hasSettled && rawUrl) {
+                      updated[0] = { ...updated[0], settled: true };
+                      setPrimaryImageUrl(rawUrl);
+                      setPrimaryImageId(realImageId);
+                      onCoverChange?.(rawUrl);
+                    }
                     return updated;
                   });
                   setBatchLoadingSubjects((prev) => {
@@ -2928,6 +2926,7 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
           char={selectedChar}
           tabLabel="角色"
           refreshToken={subjectDetailRefreshToken}
+          setBatchLoadingSubjects={setBatchLoadingSubjects}
           onClose={() => setSelectedChar(null)}
           onCommit={(name, desc) => {
             setChars((prev) => prev.map((c) => c.id === selectedChar.id ? { ...c, name, desc } : c));
@@ -2950,6 +2949,7 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
           char={selectedScene}
           tabLabel="场景"
           refreshToken={subjectDetailRefreshToken}
+          setBatchLoadingSubjects={setBatchLoadingSubjects}
           onClose={() => setSelectedScene(null)}
           onCommit={(name, desc) => {
             setScenes((prev) => prev.map((s) => s.id === selectedScene.id ? { ...s, name, desc } : s));
@@ -2971,6 +2971,7 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
           char={selectedProp}
           tabLabel="道具"
           refreshToken={subjectDetailRefreshToken}
+          setBatchLoadingSubjects={setBatchLoadingSubjects}
           onClose={() => setSelectedProp(null)}
           onCommit={(name, desc) => {
             setProps((prev) => prev.map((p) => p.id === selectedProp.id ? { ...p, name, desc } : p));

@@ -1620,6 +1620,21 @@ export default function Home({ onProjectCreated }) {
     // 新项目插入到列表最前面，统一字段映射：cover_url -> cover
     const normalized = { ...project, cover: project.cover ?? project.cover_url };
     setProjects((prev) => [normalized, ...prev]);
+    // 清空旧项目的残留状态，避免闪现旧数据
+    setScriptContent('');
+    setScriptEpisodes([]);
+    setScriptPhase('initial');
+    setScriptHasStarted(false);
+    setScriptFinalizedSinceExtraction(false);
+    setSharedChars([]);
+    setSharedScenes([]);
+    setSharedProps([]);
+    setEpisodeStatuses({});
+    setUnlockedSteps(new Set());
+    // 直接用创建接口返回的项目数据，无需再调一次 apiGetProject
+    setActiveProject(normalized);
+    setActiveProjectId(normalized.id);
+    setActiveStep('script');
     setActiveKey('project');
   };
 

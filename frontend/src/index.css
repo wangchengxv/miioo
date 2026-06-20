@@ -1,6 +1,19 @@
 @import "tailwindcss";
 
 /* ============================================================
+   全局隐藏原生滚动条（保留滚动功能）
+   自定义滚动条通过各组件的类选择器覆盖此规则
+   ============================================================ */
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+*::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+}
+
+/* ============================================================
    设计系统 Design Tokens
    影视AI工作流产品 · 深色主题 · Tailwind v4
    ============================================================ */
@@ -237,7 +250,7 @@
   --color-checkbox-bg-hover: #090909;                            /* 悬停背景 → 同 normal */
   --color-checkbox-bg-active: #2DC3E1;                           /* 选中背景 → Brand/Main */
   --color-checkbox-bg-disabled: #090909;                         /* 禁用背景 → 同 normal */
-  --color-checkbox-bg-disabled-active: rgba(45, 195, 225, 0.30); /* 禁用已选中 → Blue-alpha/30 */
+  --color-checkbox-bg-disabled-active: rgba(45, 195, 225, 0.20); /* 禁用已选中 → Blue-alpha/30 */
   --color-checkbox-border-normal: rgba(255, 255, 255, 0.20);     /* 默认描边 → Stroke/Accent */
   --color-checkbox-border-hover: rgba(45, 195, 225, 0.60);       /* 悬停描边 → Stroke/Active */
   --color-checkbox-border-active: rgba(255, 255, 255, 0.20);     /* 选中描边 → Stroke/Accent */

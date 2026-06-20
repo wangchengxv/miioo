@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useCreationStore } from '../stores/creationStore';
+import Checkbox from './Checkbox';
 import { generationsToFlatList } from '../utils/creativeDaysAdapter';
 import { apiGetProjects } from '../api/project';
 import { apiGetAssets } from '../api/assets';
@@ -33,25 +34,6 @@ const SUB_TAB_KEY_MAP = {
   '视频': 'videos',
   '配音': 'dubbing',
 };
-
-function Checkbox({ checked, hovered, disabled }) {
-  return (
-    <div style={{
-      position: 'relative', width: '14px', height: '14px', borderRadius: '3px', flexShrink: 0,
-      border: `1px solid ${disabled ? 'rgba(255,255,255,0.12)' : hovered ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.2)'}`,
-      outline: '1px solid #00000080',
-      background: checked ? (disabled ? '#1A8FA3' : '#2DC3E1') : '#090909',
-      transition: 'background 100ms, border-color 100ms',
-      cursor: disabled ? 'not-allowed' : 'default',
-    }}>
-      {checked && (
-        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{ position: 'absolute', left: '50%', top: '50%', translate: '-50% -50%' }}>
-          <path d="M3.333 8L6.667 11.333L13.333 4.667" stroke={disabled ? 'rgba(255,255,255,0.5)' : '#FFFFFF'} strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      )}
-    </div>
-  );
-}
 
 function AssetCard({ asset, isSelected, isHovered, isDisabled, onMouseEnter, onMouseLeave, onClick, compact = false }) {
   return (

@@ -1278,19 +1278,91 @@ function AiStreamingContent({ content, onDone, paused = false, onPause }) {
 }
 
 function ScriptRendered({ content, contentRef, onActiveIndexChange }) {
-  const handleScroll = useCallback(() => {
+  const paddingRef = useRef(null);
+
+  // 每次内容变化后，重新计算底部 padding，确保最后一集也能滚到顶部
+  useEffect(() => {
+    const container = contentRef?.current;
+    const paddingEl = paddingRef.current;
+    if (!container || !paddingEl) return;
+
+    // 先清零，避免旧 padding 干扰 scrollHeight 的计算
+    paddingEl.style.height = '0px';
+
+    const headings = container.querySelectorAll('h2');
+    if (headings.length === 0) return;
+
+    const lastHeading = headings[headings.length - 1];
+
+    // 用 scrollTop + getBoundingClientRect 算绝对偏移，不依赖 offsetParent 的定位关系
+    const lastHeadingOffset =
+      container.scrollTop +
+      lastHeading.getBoundingClientRect().top -
+      container.getBoundingClientRect().top;
+
+    const clientHeight = container.clientHeight;
+    const scrollHeight = container.scrollHeight; // padding 已清零，值准确
+
+    // 要让最后一集标题能滚到顶部，需要 maxScrollTop >= lastHeadingOffset
+    // maxScrollTop = scrollHeight - clientHeight
+    // 所以补足：lastHeadingOffset - (scrollHeight - clientHeight)
+    const needed = lastHeadingOffset - (scrollHeight - clientHeight);
+    if (needed > 0) {
+      paddingEl.style.height = `${needed}px`;
+    }
+  }, [content, contentRef]);
+
+  const calcActiveIndex = useCallback(() => {
     const container = contentRef?.current;
     if (!container) return;
-    const containerTop = container.getBoundingClientRect().top;
+    const containerRect = container.getBoundingClientRect();
+    const containerTop = containerRect.top;
+    const containerBottom = containerRect.bottom;
+    const containerHeight = containerRect.height;
     const headings = container.querySelectorAll('h2');
+
+    if (headings.length === 0) { onActiveIndexChange?.(0); return; }
+
+    // 阈值：某集标题进入可视区域顶部 30% 以内，直接高亮该集（解决短内容集永远抢不到高亮的问题）
+    const threshold = containerHeight * 0.3;
+
     let activeIndex = 0;
+
+    // 优先判断：从后往前找，第一个标题进入顶部阈值以内的集
+    let foundByThreshold = false;
     for (let i = headings.length - 1; i >= 0; i--) {
-      const rect = headings[i].getBoundingClientRect();
-      if (rect.top - containerTop <= 24) {
+      const headingTop = headings[i].getBoundingClientRect().top - containerTop;
+      if (headingTop >= 0 && headingTop <= threshold) {
         activeIndex = i;
+        foundByThreshold = true;
+        break;
+      }
+      // 标题已滚过顶部（为负），也算进入了该集
+      if (headingTop < 0) {
+        activeIndex = i;
+        foundByThreshold = true;
         break;
       }
     }
+
+    // 兜底：如果阈值法没有命中（比如内容刚加载还没滚动），用占比最大法
+    if (!foundByThreshold) {
+      let maxVisible = -1;
+      for (let i = 0; i < headings.length; i++) {
+        const sectionTop = headings[i].getBoundingClientRect().top;
+        const sectionBottom = i + 1 < headings.length
+          ? headings[i + 1].getBoundingClientRect().top
+          : containerBottom + 99999;
+        const visibleTop = Math.max(sectionTop, containerTop);
+        const visibleBottom = Math.min(sectionBottom, containerBottom);
+        const visibleHeight = Math.max(0, visibleBottom - visibleTop);
+        if (visibleHeight > maxVisible) {
+          maxVisible = visibleHeight;
+          activeIndex = i;
+        }
+      }
+    }
+
     onActiveIndexChange?.(activeIndex);
   }, [contentRef, onActiveIndexChange]);
 
@@ -1299,7 +1371,7 @@ function ScriptRendered({ content, contentRef, onActiveIndexChange }) {
       ref={contentRef}
       className="script-md"
       style={{ alignSelf: 'stretch', flex: 1, minHeight: 0, overflowY: 'auto' }}
-      onScroll={handleScroll}
+      onScroll={calcActiveIndex}
     >
       <ReactMarkdown
         components={{
@@ -1309,6 +1381,8 @@ function ScriptRendered({ content, contentRef, onActiveIndexChange }) {
       >
         {content}
       </ReactMarkdown>
+      {/* 底部占位块：动态高度，确保最后一集内容短时也能滚到顶部 */}
+      <div ref={paddingRef} aria-hidden="true" />
     </div>
   );
 }

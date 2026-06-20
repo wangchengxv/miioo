@@ -3,6 +3,7 @@ import { createPortal } from 'react-dom';
 import BatchDownloadModal from '../components/BatchDownloadModal';
 import ShotViewerModal from '../components/ShotViewerModal';
 import Toggle from '../components/Toggle';
+import Checkbox from '../components/Checkbox';
 import AssetPickerModal from '../components/AssetPickerModal';
 import { apiUploadFile, apiUploadImage, apiUploadStoryboardVideo, apiGenerateStoryboardImage, apiGenerateStoryboardVideo, apiCreateStoryboard, apiUpdateStoryboard, apiDeleteStoryboard, apiReorderStoryboards, apiGetStoryboards, apiBatchDownloadStoryboardImages, apiBatchDownloadStoryboardVideos, apiGetTask } from '../api/storyboard';
 import { apiUploadCreationImage, apiUploadCreationVideo, apiUploadCreationAudio } from '../api/creation';
@@ -789,45 +790,6 @@ function ModalCloseBtn({ onClick }) {
 
 // ─── 图片列表辅助组件 ─────────────────────────────────────────────────────────
 
-function ImgCheckbox({ checked, onChange }) {
-  const [hovered, setHovered] = useState(false);
-  return (
-    <div
-      className={`flex items-center cursor-pointer border border-solid rounded-sm [outline:1px_solid_var(--color-stroke-outline)] outline-offset-0 relative shrink-0 ${checked ? 'bg-checkbox-bg-active border-checkbox-border-active' : hovered ? 'bg-checkbox-bg-hover border-checkbox-border-normal' : 'bg-checkbox-bg-normal border-checkbox-border-normal'}`}
-      style={{ width: '14px', height: '14px', padding: '2px', boxSizing: 'border-box' }}
-      onClick={onChange}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-    >
-      {checked && (
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ position: 'absolute', left: '50%', top: '50%', translate: '-50% -50%' }}>
-          <path d="M3.333 8L6.667 11.333L13.333 4.667" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      )}
-    </div>
-  );
-}
-
-function ImgIconBtn({ children, onClick }) {
-  const [hovered, setHovered] = useState(false);
-  const [pressed, setPressed] = useState(false);
-  return (
-    <div
-      onClick={onClick}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => { setHovered(false); setPressed(false); }}
-      onMouseDown={() => setPressed(true)}
-      onMouseUp={() => setHovered(true)}
-      style={{
-        width: '28px', height: '28px', borderRadius: '6px', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer', flexShrink: 0,
-        background: pressed ? 'rgba(255,255,255,0.18)' : hovered ? 'rgba(255,255,255,0.12)' : 'transparent',
-        transition: 'background 100ms',
-      }}
-    >
-      {children}
-    </div>
-  );
-}
 
 function ImgUploadBtn({ label, onClick }) {
   const [hovered, setHovered] = useState(false);
@@ -910,8 +872,8 @@ function ImgItem({ settled, imageUrl, onView, onSettledChange }) {
       </div>
       {/* 顶部定稿 checkbox */}
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, padding: '8px 10px', backgroundImage: 'linear-gradient(in oklab 180deg, oklab(0% 0 0 / 60%) 0%, oklab(0% 0 0 / 0%) 100%)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-        <ImgCheckbox checked={settled} onChange={(e) => { e.stopPropagation(); onSettledChange?.(!settled); }} />
-        <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: settled ? '#2DC3E1' : '#FFFFFF66' }}>定稿</span>
+        <Checkbox checked={settled} onChange={(e) => { e.stopPropagation(); onSettledChange?.(!settled); }} />
+        <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '16px', color: '#FFFFFF' , fontWeight: settled ? 600 : 500 }}>定稿</span>
       </div>
       {/* 底部悬停按钮 */}
       {hovered && (
@@ -1820,6 +1782,15 @@ function PanelPromptInput({ value, onChange, chars = [], scenes = [], props = []
     if (el) syncToValue(el);
   }
 
+  function handlePaste(e) {
+    // 只允许纯文本粘贴，剥除富文本样式（颜色、加粗等）
+    e.preventDefault();
+    const text = e.clipboardData?.getData('text/plain') ?? '';
+    if (text) {
+      document.execCommand('insertText', false, text);
+    }
+  }
+
   function handleCompositionStart() { composingRef.current = true; }
   function handleCompositionEnd() {
     composingRef.current = false;
@@ -1904,6 +1875,7 @@ function PanelPromptInput({ value, onChange, chars = [], scenes = [], props = []
             onBlur={handleBlur}
             onKeyDown={handleKeyDown}
             onInput={handleInput}
+            onPaste={handlePaste}
             onCompositionStart={handleCompositionStart}
             onCompositionEnd={handleCompositionEnd}
             data-placeholder="描述画面内容、风格、镜头… 输入 @ 引入角色/场景/道具"
@@ -3056,8 +3028,8 @@ function VideoItem({ settled, videoUrl, onSettledChange, onView }) {
       </div>
       {/* 顶部定稿 checkbox */}
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, padding: '8px 10px', backgroundImage: 'linear-gradient(in oklab 180deg, oklab(0% 0 0 / 60%) 0%, oklab(0% 0 0 / 0%) 100%)', display: 'flex', alignItems: 'center', gap: '4px' }}>
-        <ImgCheckbox checked={settled} onChange={(e) => { e.stopPropagation(); onSettledChange?.(!settled); }} />
-        <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: settled ? '#2DC3E1' : '#FFFFFF66' }}>定稿</span>
+        <Checkbox checked={settled} onChange={(e) => { e.stopPropagation(); onSettledChange?.(!settled); }} />
+        <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '16px', color: '#FFFFFF' , fontWeight: settled ? 600 : 500 }}>定稿</span>
       </div>
       {/* 底部悬停按钮 */}
       {hovered && (
@@ -3314,7 +3286,7 @@ function EditableText({ value, onChange, placeholder = '点击编辑…', style 
           padding: '4px 6px',
           fontSize: '14px',
           lineHeight: '20px',
-          color: 'rgba(255,255,255,0.80)',
+          color: 'rgba(255,255,255,0.60)',
           outline: 'none',
           fontFamily: '"Alibaba PuHuiTi 2.0", system-ui, sans-serif',
           boxSizing: 'border-box',
@@ -3402,7 +3374,7 @@ function CharMentionDropdown({ chars, query, onSelect, onClose, triggerRef }) {
             borderRadius: '6px',
             fontSize: '14px',
             lineHeight: '18px',
-            color: 'rgba(255,255,255,0.80)',
+            color: 'rgba(255,255,255,0.60)',
             cursor: 'pointer',
             fontFamily: '"Alibaba PuHuiTi 2.0", system-ui, sans-serif',
           }}
@@ -3546,7 +3518,7 @@ function SubjectMentionDropdown({ chars, scenes, props, mainRefs = [], query, on
             borderRadius: '6px',
             fontSize: '14px',
             lineHeight: '18px',
-            color: 'rgba(255,255,255,0.80)',
+            color: 'rgba(255,255,255,0.60)',
             cursor: 'pointer',
             fontFamily: '"Alibaba PuHuiTi 2.0", system-ui, sans-serif',
             display: 'flex',
@@ -4000,7 +3972,7 @@ function VoiceDubModal({ open, onClose, chars = [], initialData = {}, onSaveGlob
               onFocus={() => setTextareaFocus(true)}
               onBlur={() => setTextareaFocus(false)}
               placeholder="输入台词内容…"
-              style={{ width: '100%', minHeight: '100px', borderRadius: '8px', padding: '10px 12px', boxSizing: 'border-box', background: '#1D1E1E', border: `1px solid ${textareaFocus ? 'rgba(45,195,225,0.6)' : 'rgba(255,255,255,0.08)'}`, outline: '1px solid rgba(0,0,0,0.5)', resize: 'vertical', fontSize: '14px', lineHeight: '20px', color: 'rgba(255,255,255,0.80)', fontFamily: FONT, caretColor: 'rgba(255,255,255,0.80)', transition: 'border-color 0.1s' }}
+              style={{ width: '100%', minHeight: '100px', borderRadius: '8px', padding: '10px 12px', boxSizing: 'border-box', background: '#1D1E1E', border: `1px solid ${textareaFocus ? 'rgba(45,195,225,0.6)' : 'rgba(255,255,255,0.08)'}`, outline: '1px solid rgba(0,0,0,0.5)', resize: 'vertical', fontSize: '14px', lineHeight: '20px', color: 'rgba(255,255,255,0.60)', fontFamily: FONT, caretColor: 'rgba(255,255,255,0.80)', transition: 'border-color 0.1s' }}
               className="placeholder:text-[rgba(255,255,255,0.25)]"
             />
           </div>
@@ -4083,7 +4055,7 @@ function NarrationItem({ item, onEdit, onDelete }) {
         </span>
       )}
       {item.lines && (
-        <span style={{ fontSize: '14px', lineHeight: '20px', color: 'rgba(255,255,255,0.80)', fontFamily: FONT, wordBreak: 'break-all' }}>
+        <span style={{ fontSize: '14px', lineHeight: '20px', color: 'rgba(255,255,255,0.60)', fontFamily: FONT, wordBreak: 'break-all' }}>
           {item.role ? ' ' : ''}{item.lines}
         </span>
       )}
@@ -4131,7 +4103,7 @@ function AddNarrationBtn({ onClick }) {
         </svg>
       </button>
       {hovered && tooltipPos && createPortal(
-        <div style={{ position: 'fixed', left: tooltipPos.x, top: tooltipPos.y, transform: 'translate(-50%, calc(-100% - 6px))', whiteSpace: 'nowrap', background: '#2A2A2A', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '6px', padding: '5px 8px', fontSize: '12px', lineHeight: '16px', color: 'rgba(255,255,255,0.80)', fontFamily: FONT, pointerEvents: 'none', zIndex: 9999, boxShadow: '0 4px 12px rgba(0,0,0,0.4)' }}>
+        <div style={{ position: 'fixed', left: tooltipPos.x, top: tooltipPos.y, transform: 'translate(-50%, calc(-100% - 6px))', whiteSpace: 'nowrap', background: '#2A2A2A', border: '1px solid rgba(255,255,255,0.12)', borderRadius: '6px', padding: '5px 8px', fontSize: '12px', lineHeight: '16px', color: 'rgba(255,255,255,0.60)', fontFamily: FONT, pointerEvents: 'none', zIndex: 9999, boxShadow: '0 4px 12px rgba(0,0,0,0.4)' }}>
           新增角色台词
         </div>,
         document.body
@@ -4705,7 +4677,7 @@ function MainRefModal({ shot, onChange, onClose }) {
                 backgroundColor: 'rgba(255,255,255,0.04)',
                 cursor: 'pointer',
                 fontSize: '14px',
-                color: 'rgba(255,255,255,0.80)',
+                color: 'rgba(255,255,255,0.60)',
                 fontFamily: '"Alibaba PuHuiTi 2.0", system-ui, sans-serif',
               }}
             >
@@ -4785,6 +4757,28 @@ function MediaViewModal({ url, onClose }) {
       </div>
     </div>,
     document.body
+  );
+}
+
+function ImgIconBtn({ children, onClick }) {
+  const [hov, setHov] = useState(false);
+  return (
+    <div
+      onClick={onClick}
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => setHov(false)}
+      style={{
+        width: "24px", height: "24px",
+        display: "flex", alignItems: "center", justifyContent: "center",
+        borderRadius: "4px",
+        backgroundColor: hov ? "rgba(255,255,255,0.20)" : "rgba(0,0,0,0.50)",
+        cursor: "pointer",
+        flexShrink: 0,
+        transition: "background-color 0.10s",
+      }}
+    >
+      {children}
+    </div>
   );
 }
 
@@ -5051,7 +5045,7 @@ function CardActionBtn({ btn, index, onAdd, onCopy, onDeleteRequest, onDragHandl
             padding: '5px 8px',
             fontSize: '12px',
             lineHeight: '16px',
-            color: 'rgba(255,255,255,0.60)',
+            color: 'rgba(255,255,255,0.80)',
             fontFamily: '"Alibaba PuHuiTi 2.0", system-ui, sans-serif',
             whiteSpace: 'nowrap',
             boxShadow: '0 4px 24px var(--color-shadow)',
@@ -5091,18 +5085,7 @@ function NumberCol({ number, isHovered, onAdd, onCopy, onDeleteRequest, onDragHa
     >
       {isSelectMode ? (
         <>
-          {/* Checkbox — 顶部，距上边缘 12px（由 paddingTop 控制） */}
-          <div className={
-            "relative rounded-sm shrink-0 border border-solid w-[16px] h-[16px] [outline:1px_solid_var(--color-stroke-outline)] outline-offset-0 " +
-            (isSelected ? "bg-checkbox-bg-active border-checkbox-border-active" : "bg-checkbox-bg-normal border-checkbox-border-normal")
-          }>
-            {isSelected && (
-              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"
-                style={{ position: 'absolute', left: '50%', top: '50%', translate: '-50% -50%' }}>
-                <path d="M3.333 8L6.667 11.333L13.333 4.667" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
-              </svg>
-            )}
-          </div>
+          <Checkbox checked={isSelected} />
           <span style={{ position: 'absolute', top: '50%', left: '50%', transform: 'translate(-50%, -50%)', fontSize: '14px', fontWeight: 700, color: '#FFFFFF', fontFamily: '"Alibaba PuHuiTi 2.0", system-ui, sans-serif', lineHeight: 1 }}>
             {String(number).padStart(2, '0')}
           </span>
@@ -6209,7 +6192,7 @@ export default function StoryboardPage({ serverReachable, projectId, projectName
           分镜
         </span>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minWidth: '18px', height: '16px', borderRadius: '999px', padding: '0 5px', backgroundColor: 'rgba(255,255,255,0.10)' }}>
-          <span style={{ fontSize: '11px', lineHeight: '100%', color: 'rgba(255,255,255,0.60)', fontFamily: FONT }}>{shots.length}</span>
+          <span style={{ fontSize: '12px', lineHeight: '100%', color: 'rgba(255,255,255,0.80)', fontFamily: 'AlibabaPuHuiTi_2_55_Regular, "Alibaba PuHuiTi 2.0", system-ui, sans-serif' }}>{shots.length}</span>
         </div>
       </div>
 
