@@ -35,11 +35,12 @@ const SUB_TAB_KEY_MAP = {
   '配音': 'dubbing',
 };
 
-function AssetCard({ asset, isSelected, isHovered, isDisabled, onMouseEnter, onMouseLeave, onClick, compact = false }) {
+function AssetCard({ asset, isSelected, isHovered, isDisabled, onMouseEnter, onMouseMove, onMouseLeave, onClick, compact = false }) {
   return (
     <div
       onClick={isDisabled ? undefined : onClick}
       onMouseEnter={onMouseEnter}
+      onMouseMove={onMouseMove}
       onMouseLeave={onMouseLeave}
       style={{
         width: compact ? 'calc((100% - 32px) / 3)' : '175px',
@@ -170,6 +171,7 @@ export default function AssetPickerModal({
   const [projectSubTab, setProjectSubTab] = useState(projectSubTabsAvail[0]);
   const [creativeSubTab, setCreativeSubTab] = useState(creativeSubTabsAvail[0]);
   const [favOnly, setFavOnly] = useState(false);
+  const [finalOnly, setFinalOnly] = useState(false);
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState(new Set());
   const preSelectedSet = useMemo(() => new Set(preSelectedIds ?? []), [preSelectedIds]);
@@ -212,11 +214,15 @@ export default function AssetPickerModal({
   const [searchFocused, setSearchFocused] = useState(false);
   const [hoveredCard, setHoveredCard] = useState(null);
   const [closeHovered, setCloseHovered] = useState(false);
+  const [previewImage, setPreviewImage] = useState(null); // { url, x, y }
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+  const hoverTimerRef = useRef(null);
   const [cancelHovered, setCancelHovered] = useState(false);
   const [cancelPressed, setCancelPressed] = useState(false);
   const [confirmHovered, setConfirmHovered] = useState(false);
   const [confirmPressed, setConfirmPressed] = useState(false);
   const [favHovered, setFavHovered] = useState(false);
+  const [finalHovered, setFinalHovered] = useState(false);
   const [projectOpen, setProjectOpen] = useState(false);
   const [projectHovIdx, setProjectHovIdx] = useState(null);
   const [activeProjectId, setActiveProjectId] = useState(projectId || null);
@@ -264,6 +270,7 @@ export default function AssetPickerModal({
           fileUrl: normalizeImageUrl(a.file_url) || null,
           subject_id: a.subject_id ?? null,
           starred: a.is_starred ?? false,
+          is_primary: a.is_primary ?? false,
           bgColor: '#252525',
           category: a.category,
           asset_type: a.asset_type,
@@ -367,11 +374,84 @@ export default function AssetPickerModal({
 
   const rawAssets = getCurrentAssets();
   const filteredAssets = rawAssets.filter(a => {
+    if (activeTab === 'project' && finalOnly && !a.is_primary) return false;
     if (favOnly && !a.starred) return false;
     if (search && !(a.name || '').includes(search)) return false;
     return true;
   });
 
+
+    // ── 资产卡片悬浮预览处理 ──────────────────────────────────────────────
+  function handlePreviewEnter(e, asset) {
+    if (!asset?.url) return;
+    const { clientX, clientY } = e;
+    setMousePos({ x: clientX, y: clientY });
+    hoverTimerRef.current = setTimeout(() => {
+      setPreviewImage({ url: asset.url, x: clientX, y: clientY });
+    }, 500);
+  }
+
+  function handlePreviewMove(e) {
+    setMousePos({ x: e.clientX, y: e.clientY });
+  }
+
+  function handlePreviewLeave() {
+    clearTimeout(hoverTimerRef.current);
+    setPreviewImage(null);
+  }
+
+// ── 悬浮预览 ───────────────────────────────────────────────────────────────
+  function AssetHoverPreview({ url, mouseX, mouseY }) {
+    const [imgSize, setImgSize] = useState(null);
+    const GAP = 16;
+
+    useEffect(() => {
+      setImgSize(null);
+      const img = new Image();
+      img.onload = () => setImgSize({ w: img.naturalWidth, h: img.naturalHeight });
+      img.src = url;
+    }, [url]);
+
+    if (!imgSize) return null;
+
+    const maxW = window.innerWidth * 0.35;
+    const maxH = window.innerHeight * 0.35;
+    const ratio = imgSize.w / imgSize.h;
+
+    let previewW, previewH;
+    if (ratio >= 1) {
+      previewW = maxW;
+      previewH = previewW / ratio;
+      if (previewH > maxH) { previewH = maxH; previewW = previewH * ratio; }
+    } else {
+      previewH = maxH;
+      previewW = previewH * ratio;
+      if (previewW > maxW) { previewW = maxW; previewH = previewW / ratio; }
+    }
+
+    let left = mouseX + GAP;
+    let top = mouseY + GAP;
+    if (left + previewW > window.innerWidth - GAP) left = mouseX - previewW - GAP;
+    if (top + previewH > window.innerHeight - GAP) top = mouseY - previewH - GAP;
+    left = Math.max(GAP, left);
+    top = Math.max(GAP, top);
+
+    return (
+      <div
+        style={{
+          position: 'fixed', left, top,
+          width: previewW, height: previewH,
+          zIndex: 99999, pointerEvents: 'none',
+          borderRadius: '8px', overflow: 'hidden',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.7)',
+          border: '1px solid rgba(255,255,255,0.12)',
+          backgroundColor: '#111',
+        }}
+      >
+        <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+      </div>
+    );
+  }
   return createPortal(
     <div
       style={{ position: 'fixed', inset: 0, zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
@@ -581,8 +661,9 @@ export default function AssetPickerModal({
                   isSelected={selected.has(asset.id) || disabled}
                   isHovered={hoveredCard === asset.id}
                   isDisabled={disabled}
-                  onMouseEnter={() => setHoveredCard(asset.id)}
-                  onMouseLeave={() => setHoveredCard(null)}
+                  onMouseEnter={(e) => { setHoveredCard(asset.id); handlePreviewEnter(e, asset); }}
+                  onMouseMove={handlePreviewMove}
+                  onMouseLeave={() => { setHoveredCard(null); handlePreviewLeave(); }}
                   onClick={() => toggle(asset)}
                   compact={isCompactCard}
                 />
@@ -593,7 +674,19 @@ export default function AssetPickerModal({
         </div>
 
         {/* ── Footer ── */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', justifyContent: 'flex-end', padding: '16px 24px', flexShrink: 0, borderRadius: '0 0 16px 16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 24px', flexShrink: 0, borderRadius: '0 0 16px 16px' }}>
+          {activeTab === 'project' && (
+            <div
+              onClick={() => setFinalOnly(v => !v)}
+              onMouseEnter={() => setFinalHovered(true)}
+              onMouseLeave={() => setFinalHovered(false)}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', flexShrink: 0 }}
+            >
+              <Checkbox checked={finalOnly} hovered={finalHovered} />
+              <span style={{ fontFamily: FONT, fontSize: '13px', lineHeight: '18px', color: finalHovered ? '#FFFFFF' : '#FFFFFF99', whiteSpace: 'nowrap' }}>仅显示定稿图</span>
+            </div>
+          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexShrink: 0 }}>
           <button
             type="button"
             onClick={onClose}
@@ -618,8 +711,13 @@ export default function AssetPickerModal({
               <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF', whiteSpace: 'nowrap' }}>确定</span>
             </div>
           </button>
+          </div>
         </div>
       </div>
+      {previewImage && createPortal(
+        <AssetHoverPreview url={previewImage.url} mouseX={mousePos.x} mouseY={mousePos.y} />,
+        document.body
+      )}
     </div>,
     document.body
   );

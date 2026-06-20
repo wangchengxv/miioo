@@ -16,3 +16,13 @@ export function normalizeImageUrl(url) {
   const origin = API_BASE.replace(/\/api\/?$/, '');
   return `${origin}${url.startsWith('/') ? '' : '/'}${url}`;
 }
+/**
+ * 始终返回完整绝对 URL（透传给第三方模型时需要）
+ */
+export function toAbsoluteUrl(url) {
+  if (!url) return url;
+  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('blob:')) return url;
+  const origin = API_BASE.replace(/\/api\/?$/, '');
+  if (!origin) return url.startsWith('/') ? url : `/${url}`;
+  return `${origin}${url.startsWith('/') ? '' : '/'}${url}`;
+}

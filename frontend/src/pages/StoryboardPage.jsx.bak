@@ -1141,7 +1141,7 @@ function FrameUploadSlot({ label, media, onUpload, onRemove, shortcutLabel, shor
       <AssetPickerModal accept="image" open={assetPickerOpen} onClose={() => setAssetPickerOpen(false)} projectId={projectId} onConfirm={(assets) => {
         if (assets?.length) {
           const a = assets[0];
-          onUpload?.({ id: a.id, url: a.fileUrl || a.originalUrl || a.original_url || a.thumbnailUrl || a.thumbnail_url || a.url || a.file_url || '', name: a.name || a.filename || '' });
+          onUpload?.({ id: a.id, url: a.originalUrl || a.original_url || a.thumbnailUrl || a.thumbnail_url || a.url || a.file_url || '', name: a.name || a.filename || '' });
         }
         setAssetPickerOpen(false);
       }} />
@@ -2152,7 +2152,7 @@ function GenerateImagePanel({ shot, projectId, chars = [], scenes = [], props = 
     const newItems = selectedAssets.map(a => ({
       id: a.id,
       assetId: a.id, // 标记来自资产库，用于 preSelectedIds 匹配
-      url: normalizeImageUrl(a.fileUrl || a.originalUrl || a.original_url || a.thumbnailUrl || a.thumbnail_url || a.url || a.file_url),
+      url: normalizeImageUrl(a.originalUrl || a.original_url || a.thumbnailUrl || a.thumbnail_url || a.url || a.file_url),
       name: a.name || a.filename || '',
     }));
     setRefImages(prev => {
@@ -2334,7 +2334,7 @@ function GenerateImagePanel({ shot, projectId, chars = [], scenes = [], props = 
               }}
               onAssetSelect={(assets) => {
                 assets.forEach(a => {
-                  const url = normalizeImageUrl(a.fileUrl || a.originalUrl || a.original_url || a.thumbnailUrl || a.thumbnail_url || a.url || a.file_url);
+                  const url = normalizeImageUrl(a.originalUrl || a.original_url || a.thumbnailUrl || a.thumbnail_url || a.url || a.file_url);
                   if (url) { onSetGeneratedImages((prev) => [{ url, settled: false, id: a.id || url }, ...prev]); onSettleImage?.(url); }
                 });
               }}
@@ -2774,7 +2774,7 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
                   const newItems = selectedAssets.map(a => ({
                     id: a.id,
                     assetId: a.id,
-                    url: normalizeImageUrl(a.fileUrl || a.originalUrl || a.original_url || a.thumbnailUrl || a.thumbnail_url || a.url || a.file_url),
+                    url: normalizeImageUrl(a.originalUrl || a.original_url || a.thumbnailUrl || a.thumbnail_url || a.url || a.file_url),
                     name: a.name || a.filename || '',
                   }));
                   setRefSubjects(prev => {
@@ -2801,7 +2801,7 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
                   const newItems = selectedAssets.map(a => ({
                     id: a.id,
                     assetId: a.id,
-                    url: normalizeImageUrl(a.fileUrl || a.originalUrl || a.original_url || a.thumbnailUrl || a.thumbnail_url || a.url || a.file_url),
+                    url: normalizeImageUrl(a.originalUrl || a.original_url || a.thumbnailUrl || a.thumbnail_url || a.url || a.file_url),
                     name: a.name || a.filename || '',
                   }));
                   setRefImages(prev => {
@@ -2898,7 +2898,7 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
               }}
               onAssetSelect={(assets) => {
                 const newItems = assets.map(a => {
-                  const url = normalizeImageUrl(a.fileUrl || a.originalUrl || a.original_url || a.thumbnailUrl || a.thumbnail_url || a.file_url || a.url);
+                  const url = normalizeImageUrl(a.originalUrl || a.original_url || a.thumbnailUrl || a.thumbnail_url || a.file_url || a.url);
                   return url ? { url, settled: false, id: a.id || a.asset_id || url } : null;
                 }).filter(Boolean);
                 onSetGeneratedVideos?.(prev => [...newItems, ...prev]);
@@ -4406,7 +4406,7 @@ function MainRefCol({ shot, onChange, chars, projectId }) {
   }
 
   function handleAssetConfirm(assets) {
-    const newRefs = assets.map(a => ({ id: a.id, assetId: a.id, url: (a.fileUrl || a.url) ?? null, name: a.name, type: a.type ?? 'image' }));
+    const newRefs = assets.map(a => ({ id: a.id, assetId: a.id, url: a.url ?? null, name: a.name, type: a.type ?? 'image' }));
     onChange({ ...shot, mainRefs: [...shot.mainRefs, ...newRefs] });
   }
 
@@ -4580,7 +4580,7 @@ function MainRefModal({ shot, onChange, onClose }) {
   const [assetPickerOpen, setAssetPickerOpen] = useState(false);
 
   function handleAssetConfirm(assets) {
-    const newRefs = assets.map(a => ({ id: a.id, assetId: a.id, url: (a.fileUrl || a.url) ?? null, name: a.name, type: a.type ?? 'image' }));
+    const newRefs = assets.map(a => ({ id: a.id, assetId: a.id, url: a.url ?? null, name: a.name, type: a.type ?? 'image' }));
     onChange({ ...shot, mainRefs: [...shot.mainRefs, ...newRefs] });
   }
 

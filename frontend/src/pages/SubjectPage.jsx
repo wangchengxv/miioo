@@ -1351,7 +1351,7 @@ function RefImageField({ maxImages = 3, projectId, subjectId, refImageIds = [], 
     const assetIds = selectedAssets.map(a => a.id);
     const newList = [
       ...refImages,
-      ...selectedAssets.map(a => ({ url: normalizeImageUrl(a.thumbnailUrl || a.thumbnail_url || a.originalUrl || a.original_url || a.url || a.file_url), id: a.id, assetId: a.id })),
+      ...selectedAssets.map(a => ({ url: normalizeImageUrl(a.fileUrl || a.originalUrl || a.original_url || a.thumbnailUrl || a.thumbnail_url || a.url || a.file_url), id: a.id, assetId: a.id })),
     ].slice(0, maxImages);
     setRefImages(newList);
     setAssetPickerOpen(false);
