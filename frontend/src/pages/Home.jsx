@@ -870,7 +870,6 @@ export default function Home({ onProjectCreated }) {
   const [notificationCenterOpen, setNotificationCenterOpen] = useState(false);
   // mock 模式下也需要检查 token，退出登录后应该显示未登录状态
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [serverReachable, setServerReachable] = useState(null); // null=检测中, true=可达, false=降级
   const [apiConfigured, setApiConfigured] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
@@ -1173,7 +1172,6 @@ export default function Home({ onProjectCreated }) {
     // 没有 token → 跳过所有鉴权请求，避免 401
     if (!getToken()) {
       setProjectsLoaded(true);
-      setServerReachable(null);
       return;
     }
 
@@ -1187,20 +1185,14 @@ export default function Home({ onProjectCreated }) {
       // token 刷新后仍然无效 → 跳过 API 请求，避免无意义的 401
       if (!getToken()) {
         setProjectsLoaded(true);
-        setServerReachable(null);
         return;
       }
 
       try {
         const user = await apiGetCurrentUser();
-        setServerReachable(true);
         setIsLoggedIn(true);
         setCurrentUser({ ...user, avatar_url: normalizeImageUrl(user.avatar_url) ?? '' });
       } catch (err) {
-        if (err.isNetworkError) {
-          setServerReachable(false);
-          showToast('后端服务连接异常，部分功能不可用', 'error');
-        }
         // 401 / 其他鉴权错误 → authFetch 已清 token + 触发 logout 事件
         setProjectsLoaded(true);
         return; // 阻止后续加载
@@ -1270,16 +1262,6 @@ export default function Home({ onProjectCreated }) {
       setLoginOpen(true);
     };
 
-    const handleBackendUnreachable = () => {
-      if (!getToken()) return;
-      setServerReachable(false);
-      showToast('后端服务连接异常，部分功能不可用', 'error');
-    };
-
-    const handleBackendReachable = () => {
-      setServerReachable(true);
-    };
-
     const handleProjectAssetsDeleted = (event) => {
       const projectId = event?.detail?.projectId;
       if (!projectId || projectId !== activeProject?.id) return;
@@ -1298,13 +1280,9 @@ export default function Home({ onProjectCreated }) {
     };
 
     window.addEventListener('auth:logout', handleForceLogout);
-    window.addEventListener('backend:unreachable', handleBackendUnreachable);
-    window.addEventListener('backend:reachable', handleBackendReachable);
     window.addEventListener('project-assets:deleted', handleProjectAssetsDeleted);
     return () => {
       window.removeEventListener('auth:logout', handleForceLogout);
-      window.removeEventListener('backend:unreachable', handleBackendUnreachable);
-      window.removeEventListener('backend:reachable', handleBackendReachable);
       window.removeEventListener('project-assets:deleted', handleProjectAssetsDeleted);
     };
   }, [activeProject?.id]);
@@ -1754,13 +1732,6 @@ export default function Home({ onProjectCreated }) {
 
           {/* page content */}
           <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden relative">
-            {/* 后端不可达降级横幅 */}
-            {serverReachable === false && (
-              <div className="flex items-center justify-center gap-2 px-16 py-2 text-sm" style={{ backgroundColor: 'rgba(255,77,79,0.12)', color: '#FF4D4F' }}>
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1L13 12H1L7 1Z" stroke="#FF4D4F" strokeLinejoin="round"/><path d="M7 5V8" stroke="#FF4D4F" strokeLinecap="round"/><circle cx="7" cy="10.5" r="0.5" fill="#FF4D4F"/></svg>
-                后端服务连接异常，部分功能不可用
-              </div>
-            )}
             {activeKey === 'home' && (
               <>
                 <HomeSloganText />
@@ -1777,7 +1748,6 @@ export default function Home({ onProjectCreated }) {
             )}
             {activeKey === 'project' && !activeProject && !isLoadingProject && projectsLoaded && (
               <ProjectList
-                serverReachable={serverReachable}
                 projects={projects}
                 onNewProject={() => {
                   if (!isLoggedIn) { setLoginOpen(true); return; }
@@ -1859,7 +1829,6 @@ export default function Home({ onProjectCreated }) {
             {activeKey === 'project' && activeProject && activeStep === 'subject' && (
               <SubjectPage
                 projectRatio={activeProject.aspect_ratio || activeProject.ratio}
-                serverReachable={serverReachable}
                 projectId={activeProject.id}
                 projectName={activeProject.name}
                 onBack={() => {
@@ -1890,7 +1859,6 @@ export default function Home({ onProjectCreated }) {
             )}
             {activeKey === 'project' && activeProject && activeStep === 'storyboard' && (
               <StoryboardPage
-                serverReachable={serverReachable}
                 projectId={activeProject.id}
                 projectName={activeProject.name}
                 projectRatio={activeProject.aspect_ratio || activeProject.ratio}
@@ -1912,11 +1880,10 @@ export default function Home({ onProjectCreated }) {
               />
             )}
             {activeKey === 'assets' && (
-              <AssetsPage serverReachable={serverReachable} projects={projects} />
+              <AssetsPage projects={projects} />
             )}
             {activeKey === 'create' && (
               <CreationPage
-                serverReachable={serverReachable}
                 isLoggedIn={isLoggedIn}
                 onLoginClick={() => setLoginOpen(true)}
                 apiConfigured={apiConfigured}

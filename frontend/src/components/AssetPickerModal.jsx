@@ -686,7 +686,7 @@ export default function AssetPickerModal({
               <span style={{ fontFamily: FONT, fontSize: '13px', lineHeight: '18px', color: finalHovered ? '#FFFFFF' : '#FFFFFF99', whiteSpace: 'nowrap' }}>仅显示定稿图</span>
             </div>
           )}
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexShrink: 0, marginLeft: 'auto' }}>
           <button
             type="button"
             onClick={onClose}

@@ -6,6 +6,8 @@ export const useCreationStore = create(
     (set) => ({
       generationsByTab: { image: [], video: [], dubbing: [] },
       favorites: new Set(),
+      // Keys currently being toggled (optimistic update in-flight); syncFavorites skips these
+      pendingFavoriteToggles: new Set(),
       // 每个 tab 的历史分页状态（不持久化，每次启动重新拉）
       historyMeta: {
         image:   { page: 0, hasMore: true, loading: false, initialized: false },
@@ -118,12 +120,46 @@ export const useCreationStore = create(
           };
         }),
 
+      // Sync favorites from backend history. Skips keys that have a pending
+      // in-flight toggle so optimistic updates are never overwritten mid-flight.
+      syncFavorites: (items) =>
+        set((state) => {
+          const next = new Set(state.favorites);
+          for (const item of items) {
+            if (state.pendingFavoriteToggles.has(item.key)) continue;
+            if (item.isFavorite === true) next.add(item.key);
+            else if (item.isFavorite === false) next.delete(item.key);
+          }
+          return { favorites: next };
+        }),
+
       toggleFavorite: (cardKey) =>
         set((state) => {
           const next = new Set(state.favorites);
           if (next.has(cardKey)) next.delete(cardKey);
           else next.add(cardKey);
-          return { favorites: next };
+          const pending = new Set(state.pendingFavoriteToggles);
+          pending.add(cardKey);
+          return { favorites: next, pendingFavoriteToggles: pending };
+        }),
+
+      // Call after API succeeds — removes key from pending set
+      confirmFavoriteToggle: (cardKey) =>
+        set((state) => {
+          const pending = new Set(state.pendingFavoriteToggles);
+          pending.delete(cardKey);
+          return { pendingFavoriteToggles: pending };
+        }),
+
+      // Call after API fails — reverts the toggle and removes from pending set
+      rollbackFavoriteToggle: (cardKey) =>
+        set((state) => {
+          const next = new Set(state.favorites);
+          if (next.has(cardKey)) next.delete(cardKey);
+          else next.add(cardKey);
+          const pending = new Set(state.pendingFavoriteToggles);
+          pending.delete(cardKey);
+          return { favorites: next, pendingFavoriteToggles: pending };
         }),
     }),
     {
@@ -138,6 +174,7 @@ export const useCreationStore = create(
             state: {
               ...parsed.state,
               favorites: new Set(parsed.state?.favorites || []),
+              pendingFavoriteToggles: new Set(),
             },
           };
         },

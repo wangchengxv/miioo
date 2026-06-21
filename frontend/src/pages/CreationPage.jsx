@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { PulsingBorder } from '@paper-design/shaders-react';
-import { apiGenerateCreation, apiGetVideoLastFrame, apiDeleteCreationImage, apiDeleteCreationVideo, apiToggleImageFavorite, apiToggleVideoFavorite, apiBatchDeleteImages, apiBatchDeleteVideos, apiCreateSession, apiGetSession, apiListShots, apiCreateShot, apiUpdateShot, apiListCreationImages, apiListCreationVideos, apiListCreationAudios } from '../api/creation';
+import { apiGenerateCreation, apiPollVideoTask, apiGetVideoLastFrame, apiDeleteCreationImage, apiDeleteCreationVideo, apiToggleImageFavorite, apiToggleVideoFavorite, apiBatchDeleteImages, apiBatchDeleteVideos, apiCreateSession, apiGetSession, apiListShots, apiCreateShot, apiUpdateShot, apiListCreationImages, apiListCreationVideos, apiListCreationAudios } from '../api/creation';
 import { useCreationStore } from '../stores/creationStore';
 import { apiListModels } from '../api/config';
 import { adaptModels, getModelParams } from '../utils/modelAdapter';
@@ -32,8 +32,8 @@ function CopyPromptButton({ text, onCopy }) {
       }}
     >
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <rect x="5.5" y="5.5" width="7" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.2"/>
-        <path d="M3.5 10.5V3.5A1.5 1.5 0 0 1 5 2h6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+        <path d="M4.33337 4.14383V2.60413C4.33337 2.08636 4.75311 1.66663 5.27087 1.66663H13.3959C13.9136 1.66663 14.3334 2.08636 14.3334 2.60413V10.7291C14.3334 11.2469 13.9136 11.6666 13.3959 11.6666H11.8388" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round"/>
+        <path d="M10.7291 4.33337H2.60413C2.08636 4.33337 1.66663 4.75311 1.66663 5.27087V13.3959C1.66663 13.9136 2.08636 14.3334 2.60413 14.3334H10.7291C11.2469 14.3334 11.6666 13.9136 11.6666 13.3959V5.27087C11.6666 4.75311 11.2469 4.33337 10.7291 4.33337Z" stroke="currentColor" strokeLinejoin="round"/>
       </svg>
     </button>
   );
@@ -2105,6 +2105,7 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
   const [mentionIndex, setMentionIndex] = useState(0);
   const editorRef = useRef(null);
   const mentionFromTagRef = useRef(false);
+  const savedCursorRangeRef = useRef(null); // 失焦前保存的光标位置
 
 
   // Video: filter modelOptions by refMode
@@ -2398,19 +2399,29 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
   const insertFromCard = (file) => {
     const editor = editorRef.current;
     if (!editor) return;
-    editor.focus();
+
     const sel = window.getSelection();
     let range;
+
+    // 优先使用当前 selection（输入框处于焦点时）
     if (sel && sel.rangeCount > 0 && editor.contains(sel.getRangeAt(0).startContainer)) {
       range = sel.getRangeAt(0);
+    // 其次使用 onBlur 时保存的光标位置
+    } else if (savedCursorRangeRef.current && editor.contains(savedCursorRangeRef.current.startContainer)) {
+      range = savedCursorRangeRef.current;
+      sel.removeAllRanges();
+      sel.addRange(range);
     } else {
-      // No cursor in editor — append to end
+      // 没有历史光标位置 — 追加到末尾
       range = document.createRange();
       range.selectNodeContents(editor);
       range.collapse(false);
       sel.removeAllRanges();
       sel.addRange(range);
     }
+
+    editor.focus();
+
     const tag = buildTagElement(file);
     tag.addEventListener('click', (e) => handleTagClick(e, tag));
     range.deleteContents();
@@ -2420,6 +2431,7 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
     afterRange.collapse(true);
     sel.removeAllRanges();
     sel.addRange(afterRange);
+    savedCursorRangeRef.current = null;
     setHasContent(true);
   };
 
@@ -2792,6 +2804,11 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
               onFocus={() => setFocused(true)}
               onBlur={() => {
                 setFocused(false);
+                // 失焦前保存光标位置，供点击图片卡片插入时使用
+                const sel = window.getSelection();
+                if (sel && sel.rangeCount > 0) {
+                  savedCursorRangeRef.current = sel.getRangeAt(0).cloneRange();
+                }
                 if (mentionFromTagRef.current) {
                   mentionFromTagRef.current = false;
                 } else {
@@ -3181,18 +3198,16 @@ function ImageDetailModal({ card, onClose, onDelete, favorited, onToggleFavorite
               {/* Left: image viewer */}
               <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#0A0A0A', position: 'relative', overflow: 'hidden' }}>
                 {card.imageUrl && (
-                  <div style={{
-                    position: 'absolute',
-                    left: 0,
-                    right: 0,
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    height: '70%',
-                    backgroundImage: `url(${card.imageUrl})`,
-                    backgroundSize: 'contain',
-                    backgroundPosition: '50%',
-                    backgroundRepeat: 'no-repeat',
-                  }} />
+                  <img
+                    src={card.imageUrl}
+                    alt=""
+                    style={{
+                      maxWidth: '100%',
+                      maxHeight: '100%',
+                      objectFit: 'contain',
+                      display: 'block',
+                    }}
+                  />
                 )}
               </div>
 
@@ -3205,7 +3220,7 @@ function ImageDetailModal({ card, onClose, onDelete, favorited, onToggleFavorite
                   {/* 提示词 */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '16px 20px', flexShrink: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                      <div style={{ fontFamily: FONT, fontSize: '11px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>提示词</div>
+                      <div style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.6)' }}>提示词</div>
                       <CopyPromptButton text={card.prompt} onCopy={handleCopyPrompt} />
                     </div>
                     <div style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '20px', letterSpacing: '0.01em', color: '#FFFFFFCC' }}>
@@ -3221,7 +3236,7 @@ function ImageDetailModal({ card, onClose, onDelete, favorited, onToggleFavorite
                     <>
                       {DETAIL_PANEL_DIVIDER}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px 20px', flexShrink: 0 }}>
-                        <div style={{ fontFamily: FONT, fontSize: '11px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>参考图</div>
+                        <div style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.6)' }}>参考图</div>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
                           {card.refImages.map((img, i) => {
                             const imgUrl = img.url || img.previewUrl || '';
@@ -3249,10 +3264,10 @@ function ImageDetailModal({ card, onClose, onDelete, favorited, onToggleFavorite
 
                   {/* 生成参数 */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px 20px', flexShrink: 0 }}>
-                    <div style={{ fontFamily: FONT, fontSize: '11px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>生成参数</div>
+                    <div style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.6)' }}>生成参数</div>
                     {card.model && (
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFF99' }}>模型</span>
+                        <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: 'rgba(255,255,255,0.6)' }}>模型</span>
                         <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFFCC' }}>{card.model}</span>
                       </div>
                     )}
@@ -3274,8 +3289,8 @@ function ImageDetailModal({ card, onClose, onDelete, favorited, onToggleFavorite
 
                   {/* AI生成时间 */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '16px 20px', flexShrink: 0 }}>
-                    <div style={{ fontFamily: FONT, fontSize: '11px', lineHeight: '14px', letterSpacing: '0.66px', textTransform: 'uppercase', color: '#FFFFFF99' }}>AI 生成时间</div>
-                    <div style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.12px', color: '#FFFFFF66' }}>{formatCreationDate(card.createdAt)}</div>
+                    <div style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '14px', letterSpacing: '0.66px', textTransform: 'uppercase', color: 'rgba(255,255,255,0.6)' }}>AI 生成时间</div>
+                    <div style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.12px', color: 'rgba(255,255,255,0.8)' }}>{formatCreationDate(card.createdAt)}</div>
                   </div>
 
                   {DETAIL_PANEL_DIVIDER}
@@ -3404,7 +3419,8 @@ function VideoResultCard({ status, videoUrl, prompt, model, ratio, resolution, d
           flexShrink: 0,
           borderRadius: '8px',
           overflow: 'hidden',
-          backgroundColor: '#1A1A1A',
+          backgroundColor: hovered ? '#343434' : '#272727',
+          transition: 'background-color 0.15s',
           position: 'relative',
           cursor: isDone ? 'pointer' : 'default',
           outline: isSelected ? '2px solid #2DC3E1' : 'none',
@@ -3426,7 +3442,7 @@ function VideoResultCard({ status, videoUrl, prompt, model, ratio, resolution, d
             loop
             muted
             playsInline
-            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+            style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
           />
         ) : (
           <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -3539,10 +3555,9 @@ function VideoResultCard({ status, videoUrl, prompt, model, ratio, resolution, d
   );
 }
 
-function ImageResultCard({ status, imageUrl, prompt, promptHTML, model, ratio, resolution, refImages, createdAt, onReEdit, onUseAsRef, onDelete, onSave, batchMode = false, isSelected = false, onToggleSelect }) {
+function ImageResultCard({ status, imageUrl, prompt, promptHTML, model, ratio, resolution, refImages, createdAt, onReEdit, onUseAsRef, onDelete, onSave, batchMode = false, isSelected = false, onToggleSelect, favorited = false, onToggleFavorite }) {
   const [hovered, setHovered] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
-  const [favorited, setFavorited] = useState(false);
   const [starAnim, setStarAnim] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   useEffect(() => { ensureShimmerStyle(); }, []);
@@ -3553,7 +3568,7 @@ function ImageResultCard({ status, imageUrl, prompt, promptHTML, model, ratio, r
     e.stopPropagation();
     setStarAnim(true);
     setTimeout(() => setStarAnim(false), 300);
-    setFavorited((v) => !v);
+    onToggleFavorite?.();
   }
 
   return (
@@ -3565,7 +3580,8 @@ function ImageResultCard({ status, imageUrl, prompt, promptHTML, model, ratio, r
           flexShrink: 0,
           borderRadius: '8px',
           overflow: 'hidden',
-          backgroundColor: '#1A1A1A',
+          backgroundColor: hovered ? '#343434' : '#272727',
+          transition: 'background-color 0.15s',
           position: 'relative',
           cursor: isDone ? 'pointer' : 'default',
           outline: isSelected ? '2px solid #2DC3E1' : 'none',
@@ -3581,7 +3597,7 @@ function ImageResultCard({ status, imageUrl, prompt, promptHTML, model, ratio, r
         {status === 'loading' ? (
           <div className="creation-shimmer" style={{ width: '100%', height: '100%' }} />
         ) : isDone ? (
-          <img src={imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+          <img src={imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
         ) : (
           <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <span style={{ color: '#FFFFFF33', fontSize: '12px', fontFamily: FONT }}>生成失败</span>
@@ -3706,7 +3722,7 @@ function ImageResultCard({ status, imageUrl, prompt, promptHTML, model, ratio, r
           onClose={() => setDetailOpen(false)}
           onDelete={onDelete}
           favorited={favorited}
-          onToggleFavorite={() => setFavorited(v => !v)}
+          onToggleFavorite={() => onToggleFavorite?.()}
         />
       )}
     </>
@@ -4112,6 +4128,8 @@ function CreationResultState({ generations, onGenerate, genType, onGenTypeChange
                   });
                   setPrefillVersion((v) => v + 1);
                 }}
+                favorited={favorites?.has(key)}
+                onToggleFavorite={() => toggleFavorite?.(key)}
                 onDelete={() => onDeleteCard?.(card.genId, card.cardIndex)}
               />
             );
@@ -4428,23 +4446,12 @@ function CreationLoginEmptyState({ onLoginClick }) {
 
 // 模块级常量和 ref：组件卸载重挂载不重置，避免 session 重复恢复导致数据叠加
 const SESSION_KEY = 'miioo_creation_session_id';
+const PENDING_VIDEO_TASKS_KEY = 'miioo_pending_video_tasks';
 const _sessionIdRef = { current: localStorage.getItem(SESSION_KEY) };
 const _sessionInitRef = { current: false };
 const _restoredShotIdsRef = { current: new Set() };
 
-export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick, apiConfigured = true, onShowNoModelNotice }) {
-  if (serverReachable === false) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-3" style={{ flex: 1, paddingTop: '80px' }}>
-        <div className="flex items-center gap-2 px-16 py-2 rounded-lg text-sm" style={{ backgroundColor: 'rgba(255,77,79,0.1)', color: '#FF4D4F' }}>
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1L13 12H1L7 1Z" stroke="#FF4D4F" strokeLinejoin="round"/><path d="M7 5V8" stroke="#FF4D4F" strokeLinecap="round"/><circle cx="7" cy="10.5" r="0.5" fill="#FF4D4F"/></svg>
-          后端服务连接异常，部分功能不可用
-        </div>
-      </div>
-    );
-  }
-
-  const [activeTab, setActiveTab] = useState('image');
+export default function CreationPage({ isLoggedIn, onLoginClick, apiConfigured = true, onShowNoModelNotice }) {  const [activeTab, setActiveTab] = useState('image');
   const [genType, setGenType] = useState('image');
   const [generating, setGenerating] = useState(false); // kept for isGenerating prop (skeleton)
   const [activeCountByTab, setActiveCountByTab] = useState({ image: 0, video: 0, dubbing: 0 });
@@ -4452,7 +4459,10 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
   const decrementActive = (tab) => setActiveCountByTab(prev => ({ ...prev, [tab]: Math.max(0, (prev[tab] || 0) - 1) }));
   const {
     generationsByTab, addGeneration, deleteCard: storeDeleteCard, deleteGeneration: storeDeleteGeneration, deleteSelectedCards,
+    updateCardIds: storeUpdateCardIds, syncFavorites: storeSyncFavorites,
     favorites, toggleFavorite: storeToggleFavorite,
+    confirmFavoriteToggle: storeConfirmFavoriteToggle,
+    rollbackFavoriteToggle: storeRollbackFavoriteToggle,
     historyMeta, mergeHistoryGenerations, updateHistoryMeta,
   } = useCreationStore();
   const generations = generationsByTab[activeTab] ?? [];
@@ -4500,7 +4510,7 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
         imageUrl: type === 'image' ? url : null,
         videoUrl: type === 'video' ? url : null,
         audioUrl: type === 'audio' ? url : null,
-        isFavorite: item.is_favorite ?? false,
+        isFavorite: item.is_favorite ?? item.is_liked ?? item.isLiked ?? false,
       }],
     };
   }
@@ -4529,14 +4539,30 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
       const list = Array.isArray(resp) ? resp : (resp?.list ?? resp?.items ?? resp?.data ?? []);
       const hasMore = list.length >= PAGE_SIZE;
 
-      const normalized = list.map((item) => normalizeHistoryItem(item, type));
-      mergeHistoryGenerations(tab, normalized);
-      updateHistoryMeta(tab, { page: nextPage, hasMore, loading: false, initialized: true });
+     const normalized = list.map((item) => normalizeHistoryItem(item, type));
+     mergeHistoryGenerations(tab, normalized);
+
+      // 同步后端收藏状态到本地 favorites Set
+      const latestGens = useCreationStore.getState().generationsByTab[tab] ?? [];
+      const syncItems = [];
+      for (const gen of latestGens) {
+        for (let i = 0; i < gen.cards.length; i++) {
+          const card = gen.cards[i];
+          if (card.isFavorite !== undefined) {
+            syncItems.push({ key: `${gen.id}-${i}`, isFavorite: card.isFavorite });
+          }
+        }
+      }
+      if (syncItems.length > 0) {
+        storeSyncFavorites(syncItems);
+      }
+
+     updateHistoryMeta(tab, { page: nextPage, hasMore, loading: false, initialized: true });
     } catch (err) {
       console.error('[CreationPage] 历史数据加载失败:', err);
       updateHistoryMeta(tab, { loading: false, initialized: true });
     }
-  }, [isLoggedIn, mergeHistoryGenerations, updateHistoryMeta]);
+  }, [isLoggedIn, mergeHistoryGenerations, updateHistoryMeta, storeSyncFavorites]);
 
   // 登录后 / 切换 tab 时，若当前 tab 未初始化则拉第一页
   useEffect(() => {
@@ -4577,11 +4603,82 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
     };
     initSession();
   }, [isLoggedIn]);
+
+  // 刷新恢复：检测 localStorage 中未完成的视频任务，重建占位卡片并继续轮询
+  useEffect(() => {
+    let pending;
+    try {
+      pending = JSON.parse(localStorage.getItem(PENDING_VIDEO_TASKS_KEY) || '[]');
+    } catch {
+      pending = [];
+    }
+    if (!pending.length) return;
+
+    // 清掉已恢复的，避免重复
+    localStorage.setItem(PENDING_VIDEO_TASKS_KEY, JSON.stringify([]));
+
+    pending.forEach((task) => {
+      const { taskId, genId, shotId, tab, prompt, promptHTML, model, ratio, resolution, duration, createdAt } = task;
+
+      // 重建占位卡片
+      addGeneration(tab, {
+        id: genId,
+        shot_id: shotId || undefined,
+        ratio,
+        resolution,
+        duration,
+        model,
+        prompt,
+        promptHTML: promptHTML || '',
+        refImages: [],
+        createdAt,
+        cards: [{ id: null, type: 'video', status: 'loading', imageUrl: null, videoUrl: null, audioUrl: null }],
+      });
+      incrementActive('video');
+
+      // 重新轮询
+      apiPollVideoTask(taskId)
+        .then(({ videos, cardIds }) => {
+          const mediaUrls = (videos || []).map((u) => normalizeImageUrl(u) || u);
+          if (!mediaUrls.length) {
+            showToast('error', '生成失败，请稍后重试');
+            storeDeleteGeneration(tab, genId);
+            return;
+          }
+          storeDeleteGeneration(tab, genId);
+          addGeneration(tab, {
+            id: genId,
+            shot_id: shotId || undefined,
+            ratio, resolution, duration, model, prompt,
+            promptHTML: promptHTML || '',
+            refImages: [],
+            createdAt,
+            cards: mediaUrls.map((url) => ({
+              id: null, type: 'video', status: 'done',
+              imageUrl: null, videoUrl: url, audioUrl: null,
+            })),
+          });
+          if (cardIds?.length) storeUpdateCardIds(tab, genId, cardIds);
+          // 写回 localStorage（此时任务已完成，不需要重新存）
+        })
+        .catch((err) => {
+          showToast('error', err?.message || '生成失败，请稍后重试');
+          storeDeleteGeneration(tab, genId);
+        })
+        .finally(() => {
+          decrementActive('video');
+        });
+    });
+  // 只在挂载时执行一次
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const [videoDetailModal, setVideoDetailModal] = useState(null);
 
-  // Toggle favorite with API linkage
+  // Toggle favorite with API linkage (optimistic update + rollback on failure)
   function handleToggleFavorite(cardKey) {
     const wasFav = favorites.has(cardKey);
+    // Optimistically update local state first
     storeToggleFavorite(cardKey);
     // Find the card to get its backend ID and type
     const lastDash = cardKey.lastIndexOf('-');
@@ -4590,11 +4687,14 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
     const gen = generationsByTab[activeTab]?.find((g) => g.id === genId);
     const card = gen?.cards?.[cardIdx];
     if (card?.id) {
-      if (card.type === 'video') {
-        apiToggleVideoFavorite(card.id).catch(() => {});
-      } else {
-        apiToggleImageFavorite(card.id, !wasFav).catch(() => {});
-      }
+      const apiCall = card.type === 'video'
+        ? apiToggleVideoFavorite(card.id)
+        : apiToggleImageFavorite(card.id, !wasFav);
+      apiCall
+        .then(() => storeConfirmFavoriteToggle(cardKey))
+        .catch(() => storeRollbackFavoriteToggle(cardKey));
+    } else {
+      storeConfirmFavoriteToggle(cardKey);
     }
   }
 
@@ -4811,7 +4911,28 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
     });
 
     try {
-      const result = await apiGenerateCreation(params);
+      const result = await apiGenerateCreation(params, {
+        onTaskCreated: ({ taskId }) => {
+          if (params.genType !== 'video') return;
+          try {
+            const pending = JSON.parse(localStorage.getItem(PENDING_VIDEO_TASKS_KEY) || '[]');
+            pending.push({
+              taskId,
+              genId,
+              shotId: shotId || null,
+              tab: currentTab,
+              prompt: params.prompt || '',
+              promptHTML: params.promptHTML || '',
+              model: params.model || '',
+              ratio: params.ratio || params.videoRatio || '16:9',
+              resolution: params.resolution || params.videoResolution || '',
+              duration: params.videoDuration || '5s',
+              createdAt: new Date().toISOString(),
+            });
+            localStorage.setItem(PENDING_VIDEO_TASKS_KEY, JSON.stringify(pending));
+          } catch {}
+        },
+      });
       const rawMediaUrls = isVideoGen ? (result.videos ?? []) : isDubbingGen ? (result.audios ?? []) : (result.images ?? []);
       const mediaUrls = rawMediaUrls.map((u) => normalizeImageUrl(u) || u);
 
@@ -4865,10 +4986,15 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
           imageUrl: isDubbingGen ? null : (isVideoGen ? null : url),
           videoUrl: isVideoGen ? url : null,
           audioUrl: isDubbingGen ? url : null,
-        })),
-      });
+       })),
+     });
 
-      // Update backend shot with result URLs
+      // 回写后端卡片 ID，使收藏功能可用
+      if (!isDubbingGen && result.cardIds && result.cardIds.length > 0) {
+        storeUpdateCardIds(currentTab, genId, result.cardIds);
+      }
+
+     // Update backend shot with result URLs
       if (shotId) {
         try {
           const updateData = {};
@@ -4882,9 +5008,20 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
           }
         } catch { /* shot update fails silently */ }
       }
+      // 清除 pending task 记录
+      try {
+        const pending = JSON.parse(localStorage.getItem(PENDING_VIDEO_TASKS_KEY) || '[]');
+        const filtered = pending.filter((t) => t.genId !== genId);
+        localStorage.setItem(PENDING_VIDEO_TASKS_KEY, JSON.stringify(filtered));
+      } catch {}
       return { success: true };
     } catch (error) {
-      showToast('error', '生成失败，请稍后重试');
+      try {
+        const pending = JSON.parse(localStorage.getItem(PENDING_VIDEO_TASKS_KEY) || '[]');
+        const filtered = pending.filter((t) => t.genId !== genId);
+        localStorage.setItem(PENDING_VIDEO_TASKS_KEY, JSON.stringify(filtered));
+      } catch {}
+      showToast('error', error?.message || '生成失败，请稍后重试');
       // 删除占位卡片
       storeDeleteGeneration(currentTab, genId);
       // 通知 InputCard 回退文本

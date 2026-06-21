@@ -79,15 +79,13 @@ export async function authFetch(url, options = {}) {
   try {
     res = await fetch(url, withAuth(options));
   } catch (networkErr) {
-    // AbortError 是用户主动取消，直接透传，不触发 backend:unreachable
+    // AbortError 是用户主动取消，直接透传
     if (networkErr.name === 'AbortError') throw networkErr;
-    window.dispatchEvent(new CustomEvent('backend:unreachable'));
     const err = new Error(networkErr.message || 'Network request failed');
     err.isNetworkError = true;
     err.cause = networkErr;
     throw err;
   }
-  window.dispatchEvent(new CustomEvent('backend:reachable'));
   if (res.status === 401) {
     const ok = await refreshAccessToken();
     if (ok) {
@@ -114,13 +112,11 @@ export async function authFetchForm(url, options = {}) {
   try {
     res = await fetch(url, { ...options, headers });
   } catch (networkErr) {
-    window.dispatchEvent(new CustomEvent('backend:unreachable'));
     const err = new Error(networkErr.message || 'Network request failed');
     err.isNetworkError = true;
     err.cause = networkErr;
     throw err;
   }
-  window.dispatchEvent(new CustomEvent('backend:reachable'));
   if (res.status === 401) {
     const ok = await refreshAccessToken();
     if (ok) {
@@ -147,23 +143,20 @@ export async function authFetchStream(url, options = {}) {
   try {
     res = await fetch(url, withAuth(options));
   } catch (networkErr) {
-    // AbortError 是用户主动取消，直接透传，不触发 backend:unreachable 也不包装为网络错误
+    // AbortError 是用户主动取消，直接透传
     if (networkErr.name === 'AbortError') throw networkErr;
     // 网络层错误（DNS 失败、连接被拒等）→ 包装为可识别的错误
-    window.dispatchEvent(new CustomEvent('backend:unreachable'));
     const err = new Error(networkErr.message || 'Network request failed');
     err.isNetworkError = true;
     err.cause = networkErr;
     throw err;
   }
-  window.dispatchEvent(new CustomEvent('backend:reachable'));
   if (res.status === 401) {
     const ok = await refreshAccessToken();
     if (ok) {
       try {
         return await fetch(url, withAuth(options));
       } catch (retryErr) {
-        window.dispatchEvent(new CustomEvent('backend:unreachable'));
         const err = new Error(retryErr.message || 'Network request failed after token refresh');
         err.isNetworkError = true;
         err.cause = retryErr;

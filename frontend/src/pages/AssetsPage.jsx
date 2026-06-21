@@ -549,15 +549,11 @@ function SubjectAssetDetailModal({ onClose, onDownload, onDeleteImage, onShowToa
           <div style={{ display: 'flex', flexDirection: 'column', flexGrow: 1, flexShrink: 1, flexBasis: '0%', minWidth: 0, minHeight: 0, backgroundColor: '#0D0D0D' }}>
             {/* Main image */}
             <div style={{ flexGrow: 1, flexShrink: 1, flexBasis: '0%', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 0, position: 'relative', backgroundColor: '#0A0A0A' }}>
-              <div style={{
-                position: 'absolute',
-                inset: '35px',
-                backgroundImage: `url(${currentImg?.fileUrl ?? currentImg?.url ?? placeholderFlowers})`,
-                backgroundSize: 'contain',
-                backgroundPosition: '50%',
-                backgroundRepeat: 'no-repeat',
-                transition: 'background-image 0.15s',
-              }} />
+              <img
+                src={currentImg?.fileUrl ?? currentImg?.url ?? placeholderFlowers}
+                alt=""
+                style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', display: 'block', padding: '16px', boxSizing: 'border-box', transition: 'opacity 0.15s' }}
+              />
             </div>
 
             {/* Ref images strip — if exist */}
@@ -933,15 +929,11 @@ function AssetDetailModal({ onClose, onDownload, name, description, prompt, mode
           <div style={{ display: 'flex', flexDirection: 'column', flexGrow: 1, flexShrink: 1, flexBasis: '0%', minWidth: 0, minHeight: 0, backgroundColor: '#0D0D0D' }}>
             {/* Main image */}
             <div style={{ flexGrow: 1, flexShrink: 1, flexBasis: '0%', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 0, position: 'relative', backgroundColor: '#0A0A0A' }}>
-              <div style={{
-                position: 'absolute',
-                top: '35px', bottom: '35px', left: 0, right: 0,
-                backgroundImage: `url(${currentImg?.src ?? placeholderFlowers})`,
-                backgroundSize: 'contain',
-                backgroundPosition: '50%',
-                backgroundRepeat: 'no-repeat',
-                transition: 'background-image 0.15s',
-              }} />
+              <img
+                src={currentImg?.src ?? placeholderFlowers}
+                alt=""
+                style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', display: 'block', padding: '16px', boxSizing: 'border-box', transition: 'opacity 0.15s' }}
+              />
             </div>
             {/* Thumbnails strip */}
             <div style={{
@@ -1189,15 +1181,11 @@ function ShotDetailModal({ onClose, onDownload, onDelete, onShowToast, shotNumbe
           <div style={{ display: 'flex', flexDirection: 'column', flexGrow: 1, flexShrink: 1, flexBasis: '0%', minWidth: 0, minHeight: 0, backgroundColor: '#0D0D0D' }}>
             {/* Main image */}
             <div style={{ flexGrow: 1, flexShrink: 1, flexBasis: '0%', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 0, position: 'relative', backgroundColor: '#0A0A0A' }}>
-              <div style={{
-                position: 'absolute',
-                top: '35px', bottom: '35px', left: 0, right: 0,
-                backgroundImage: `url(${currentImg?.src ?? placeholderFlowers})`,
-                backgroundSize: 'contain',
-                backgroundPosition: '50%',
-                backgroundRepeat: 'no-repeat',
-                transition: 'background-image 0.15s',
-              }} />
+              <img
+                src={currentImg?.src ?? placeholderFlowers}
+                alt=""
+                style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', display: 'block', padding: '16px', boxSizing: 'border-box', transition: 'opacity 0.15s' }}
+              />
             </div>
             {/* Thumbnails strip */}
             <div style={{
@@ -2144,13 +2132,13 @@ function AssetCard({ name, bgColor = '#252525', url = null, starred = false, sel
       onMouseLeave={() => setHov(false)}
       onClick={() => { if (batchMode) onSelect?.(); else handleOpen(); }}
     >
-      <div style={{ width: '100%', height: '100%', backgroundColor: (url || asset.videoUrl) ? 'transparent' : bgColor, position: 'relative' }}>
+      <div style={{ width: '100%', height: '100%', backgroundColor: hov ? '#343434' : '#272727', transition: 'background-color 0.15s', position: 'relative' }}>
         {asset.videoUrl ? (
-          <video ref={videoRef} src={asset.videoUrl} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} muted playsInline loop preload="metadata" />
+          <video ref={videoRef} src={asset.videoUrl} style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} muted playsInline loop preload="metadata" />
         ) : asset.type === 'video' && asset.videoUrl ? (
-          <video src={asset.videoUrl} poster={url} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} muted playsInline preload="metadata" />
+          <video src={asset.videoUrl} poster={url} style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} muted playsInline preload="metadata" />
         ) : url ? (
-          <img src={url} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+          <img src={url} alt={name} style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
         ) : null}
         {batchMode ? (
           <div style={{
@@ -2341,7 +2329,8 @@ function ProjectAssetCard({ name, desc, url, selected, batchMode, onDownload, on
           style={{
             flex: 1,
             position: 'relative',
-            backgroundColor: '#252525',
+            backgroundColor: '#1A1A1A',
+            transition: 'background-color 0.15s',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
@@ -3732,11 +3721,15 @@ function CreativeAssetsPanel() {
     setSelected(new Set());
   }
 
-  function toggleStar(cardKey) {
+  function toggleStar(cardKey, backendId, cardType) {
     const isLiked = favorites.has(cardKey);
     storeToggleFavorite(cardKey);
-    if (activeType === 'image') apiToggleImageFavorite(cardKey, !isLiked);
-    else if (activeType === 'video') apiToggleVideoFavorite(cardKey);
+    if (!backendId) return;
+    const type = cardType || activeType;
+    const apiCall = type === 'video'
+      ? apiToggleVideoFavorite(backendId)
+      : apiToggleImageFavorite(backendId, !isLiked);
+    apiCall.catch(() => storeToggleFavorite(cardKey)); // rollback on failure
   }
 
   function deleteSingle(card) {
@@ -3828,7 +3821,7 @@ function CreativeAssetsPanel() {
                     selected={batchMode && selected.has(card.id)}
                     batchMode={batchMode}
                     onSelect={() => toggleSelect(card.id)}
-                    onStar={() => toggleStar(card.id)}
+                    onStar={() => toggleStar(card.id, card.backendId, card.type)}
                     onDownload={() => {}}
                     onDelete={() => deleteSingle(card)}
                   />
@@ -3843,7 +3836,7 @@ function CreativeAssetsPanel() {
                     batchMode={batchMode}
                     showStar
                     onSelect={() => toggleSelect(card.id)}
-                    onStar={() => toggleStar(card.id)}
+                    onStar={() => toggleStar(card.id, card.backendId, card.type)}
                     onDownload={() => {}}
                     onDelete={() => deleteSingle(card)}
                     asset={card}
@@ -3878,19 +3871,7 @@ const MODULE_TABS = [
   { key: 'creative', label: '创作资产' },
 ];
 
-export default function AssetsPage({ serverReachable }) {
-  if (serverReachable === false) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-3" style={{ flex: 1, paddingTop: '80px' }}>
-        <div className="flex items-center gap-2 px-16 py-2 rounded-lg text-sm" style={{ backgroundColor: 'rgba(255,77,79,0.1)', color: '#FF4D4F' }}>
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1L13 12H1L7 1Z" stroke="#FF4D4F" strokeLinejoin="round"/><path d="M7 5V8" stroke="#FF4D4F" strokeLinecap="round"/><circle cx="7" cy="10.5" r="0.5" fill="#FF4D4F"/></svg>
-          后端服务连接异常，部分功能不可用
-        </div>
-      </div>
-    );
-  }
-
-  const [activeModule, setActiveModule] = useState('project');
+export default function AssetsPage({ projects }) {  const [activeModule, setActiveModule] = useState('project');
 
   return (
     <div style={{

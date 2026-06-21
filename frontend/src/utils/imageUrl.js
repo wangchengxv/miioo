@@ -26,3 +26,10 @@ export function toAbsoluteUrl(url) {
   if (!origin) return url.startsWith('/') ? url : `/${url}`;
   return `${origin}${url.startsWith('/') ? '' : '/'}${url}`;
 }
+
+/** 检查 URL 是否为 AI 模型可消费的安全格式（排除 AVIF / 派生资产等模型不支持的格式） */
+export function isSafeImageUrl(url) {
+  if (!url) return false;
+  const lower = url.toLowerCase();
+  return !lower.endsWith('.avif') && !lower.includes('/derived/assets/');
+}

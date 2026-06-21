@@ -120,18 +120,16 @@ export default function ImageDetailModal({ card, onClose, onDelete, favorited, o
               {/* Left: image viewer */}
               <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#0A0A0A', position: 'relative', overflow: 'hidden' }}>
                 {card.imageUrl && (
-                  <div style={{
-                    position: 'absolute',
-                    left: 0,
-                    right: 0,
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    height: '70%',
-                    backgroundImage: `url(${card.imageUrl})`,
-                    backgroundSize: 'contain',
-                    backgroundPosition: '50%',
-                    backgroundRepeat: 'no-repeat',
-                  }} />
+                  <img
+                    src={card.imageUrl}
+                    alt=""
+                    style={{
+                      maxWidth: '100%',
+                      maxHeight: '100%',
+                      objectFit: 'contain',
+                      display: 'block',
+                    }}
+                  />
                 )}
               </div>
 

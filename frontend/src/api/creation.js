@@ -412,9 +412,45 @@ export async function apiGetVideoLastFrame(videoUrl) {
   return { lastFrameUrl: null };
 }
 
+// ── 视频任务独立轮询（供刷新后恢复使用）──────────────────────────────────────
+
+export async function apiPollVideoTask(taskId, timeoutMs = 1800000) {
+  const start = Date.now();
+  while (Date.now() - start < timeoutMs) {
+    await new Promise((r) => setTimeout(r, 3000));
+    const pollRes = await authFetch(`${BASE}/api/creation/videos/tasks/${taskId}`);
+    const pollData = await pollRes.json();
+    const status = pollData.status;
+    if (status === 'done' || status === 'completed' || status === 'success') {
+      if (pollData.partial === true) continue;
+      const result = pollData.result;
+      if (!result) return { videos: [], cardIds: [] };
+      return {
+        videos: [result.video_url || result.videoUrl].filter(Boolean),
+        cardIds: [result.id].filter(Boolean),
+      };
+    }
+    if (status === 'failed' || status === 'error') {
+      const rawMsg = pollData.error_msg || pollData.errorMsg || '';
+      let userMessage;
+      if (rawMsg.includes('copyright')) {
+        userMessage = '生成的视频内容可能涉及版权限制，请修改素材或创作描述后重试';
+      } else if (rawMsg.includes('sensitive') || rawMsg.includes('policy')) {
+        userMessage = '生成内容触发了内容安全限制，请修改素材或创作描述后重试';
+      } else {
+        userMessage = rawMsg || 'Generation failed';
+      }
+      const err = new Error(userMessage);
+      err.rawMessage = rawMsg;
+      throw err;
+    }
+  }
+  throw new Error('Generation timeout');
+}
+
 // ── Legacy：apiGenerateCreation（兼容旧调用，内部拆分图片/视频分支）──────────
 
-export async function apiGenerateCreation(params) {
+export async function apiGenerateCreation(params, { onTaskCreated } = {}) {
   const isDubbing = params.genType === 'dubbing';
   const isVideo = params.genType === 'video';
 
@@ -432,7 +468,18 @@ export async function apiGenerateCreation(params) {
         return extractFn(pollData);
       }
       if (status === 'failed' || status === 'error') {
-        throw new Error(pollData.error_msg || 'Generation failed');
+        const rawMsg = pollData.error_msg || pollData.errorMsg || '';
+        let userMessage;
+        if (rawMsg.includes('copyright')) {
+          userMessage = '生成的视频内容可能涉及版权限制，请修改素材或创作描述后重试';
+        } else if (rawMsg.includes('sensitive') || rawMsg.includes('policy')) {
+          userMessage = '生成内容触发了内容安全限制，请修改素材或创作描述后重试';
+        } else {
+          userMessage = rawMsg || 'Generation failed';
+        }
+        const err = new Error(userMessage);
+        err.rawMessage = rawMsg;
+        throw err;
       }
     }
     throw new Error('Generation timeout');
@@ -646,6 +693,8 @@ export async function apiGenerateCreation(params) {
   const genData = await apiGenerateCreationVideo(body);
   const taskId = genData.task_id || genData.id;
   if (!taskId) throw new Error('No task_id returned');
+
+  onTaskCreated?.({ taskId, params });
 
   const { videos, cardIds } = await pollTask(
     `${BASE}/api/creation/videos/tasks/${taskId}`,

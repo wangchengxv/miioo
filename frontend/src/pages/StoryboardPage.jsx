@@ -57,9 +57,9 @@ function normalizeStoryboard(be) {
         ...(be.reference_image_urls || [])
           .filter(url => {
             // 排除与分镜图相同的 URL，避免分镜图出现在主体参考列
-            const n = normalizeImageUrl(url);
-            const imgUrl = be.image_url ? normalizeImageUrl(be.image_url) : null;
-            return n !== imgUrl;
+            // 使用路径键比较，兼容绝对/相对 URL 混用的情况
+            const imgPathKey = be.image_url ? urlPathKey(normalizeImageUrl(be.image_url)) : null;
+            return !imgPathKey || urlPathKey(normalizeImageUrl(url)) !== imgPathKey;
           })
           .map(url => {
             const n = normalizeImageUrl(url);
@@ -122,19 +122,66 @@ function toBackendStoryboard(shot) {
 }
 
 /**
+ * 将 URL 规范化为路径键，用于跨协议/域名的去重比较。
+ * 绝对 URL 取 pathname，相对路径直接使用。
+ * 例：
+ *   "https://api.example.com/uploads/char_A.jpg" → "/uploads/char_A.jpg"
+ *   "/uploads/char_A.jpg"                        → "/uploads/char_A.jpg"
+ */
+function urlPathKey(url) {
+  if (!url) return null;
+  try {
+    const u = new URL(url);
+    return u.pathname;
+  } catch {
+    // 非绝对 URL，直接用原值（已是相对路径）
+    return url.startsWith('/') ? url : `/${url}`;
+  }
+}
+
+/**
  * 为从 character_ids 构造的 mainRefs 补上 url（normalizeStoryboard 里只有 id+type）
+ * 同时去重：如果 reference_image_urls 里有与某个角色图片相同的条目（路径一致即视为相同），
+ * 则跳过该 reference_image_urls 条目，避免刷新后出现重复主体。
  */
 function enrichMainRefs(shot, chars) {
   if (!shot?.mainRefs) return shot;
-  shot.mainRefs = shot.mainRefs.map(ref => {
-    if (ref.type === 'char' && !ref.url) {
+
+  // Pass 1: enrich all subject-type entries (char/scene/prop) that don't have a URL,
+  // collecting their URL path keys for dedup regardless of entry order
+  const usedPathKeys = new Set();
+  const enrichedById = {};
+  for (const ref of shot.mainRefs) {
+    if ((ref.type === 'char' || ref.type === 'scene' || ref.type === 'prop') && !ref.url) {
       const ch = (chars || []).find(c => c.id === ref.id);
       if (ch?.imageUrl) {
-        return { ...ref, url: normalizeImageUrl(ch.imageUrl), name: ch.name };
+        const url = normalizeImageUrl(ch.imageUrl);
+        const pathKey = urlPathKey(url);
+        if (pathKey) usedPathKeys.add(pathKey);
+        enrichedById[ref.id] = { ...ref, url, name: ch.name };
       }
     }
-    return ref;
-  });
+  }
+
+  // Pass 2: build result, deduplicating by URL path
+  // - Use enriched versions for subject entries that were enriched
+  // - Skip non-subject entries whose URL path matches an already-used subject URL
+  const result = [];
+  for (const ref of shot.mainRefs) {
+    if (enrichedById[ref.id]) {
+      result.push(enrichedById[ref.id]);
+      continue;
+    }
+    // Dedup by URL path — handles absolute vs relative URL mismatch
+    if (ref.url) {
+      const pathKey = urlPathKey(normalizeImageUrl(ref.url));
+      if (pathKey && usedPathKeys.has(pathKey)) continue;
+      if (pathKey) usedPathKeys.add(pathKey);
+    }
+    result.push(ref);
+  }
+
+  shot.mainRefs = result;
   return shot;
 }
 
@@ -886,7 +933,7 @@ function ImgItem({ settled, imageUrl, onView, onSettledChange }) {
               <path d="M10.667 2H13.333C13.701 2 14 2.298 14 2.667V5.333" stroke="#FFFFFFCC" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           </ImgIconBtn>
-          <ImgIconBtn onClick={(e) => e.stopPropagation()}>
+          <ImgIconBtn onClick={(e) => { e.stopPropagation(); if (imageUrl) { const a = document.createElement("a"); a.href = imageUrl; a.download = imageUrl.split("/").pop() || "image.jpg"; a.click(); } }}>
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
               <path d="M8 2.667V10" stroke="#FFFFFFCC" strokeLinecap="round" strokeLinejoin="round" />
               <path d="M5.333 7.333L8 10L10.667 7.333" stroke="#FFFFFFCC" strokeLinecap="round" strokeLinejoin="round" />
@@ -1408,28 +1455,19 @@ function parseSegments(text, allSubjects) {
   const segments = [];
   let last = 0;
 
-  // 匹配 @角色/@场景/@道具 和 [参考图:URL] 两种格式
-  const combinedPattern = pattern
-    ? new RegExp(`(@(?:${pattern.source.slice(2, -2)})|\\[参考图:[^\\]]+\\])`, 'g')
-    : /\[参考图:[^\]]+\]/g;
+  // 只匹配 @名称 格式
+  if (!pattern) {
+    if (text) segments.push({ kind: 'text', text });
+    return segments;
+  }
 
   let m;
-  while ((m = combinedPattern.exec(text)) !== null) {
+  while ((m = pattern.exec(text)) !== null) {
     if (m.index > last) segments.push({ kind: 'text', text: text.slice(last, m.index) });
-
-    const matched = m[0];
-    if (matched.startsWith('[参考图:')) {
-      // 参考图标签
-      const url = matched.slice(5, -1); // 提取 URL
-      segments.push({ kind: 'mention', name: url, type: 'ref' });
-    } else if (matched.startsWith('@')) {
-      // 主体提及
-      const name = matched.slice(1);
-      const subject = allSubjects.find((s) => s.name === name);
-      segments.push({ kind: 'mention', name, type: subject?._type ?? 'char' });
-    }
-
-    last = m.index + matched.length;
+    const name = m[0].slice(1); // 去掉 @
+    const subject = allSubjects.find((s) => s.name === name);
+    segments.push({ kind: 'mention', name, type: subject?._type ?? 'image' });
+    last = m.index + m[0].length;
   }
 
   if (last < text.length) segments.push({ kind: 'text', text: text.slice(last) });
@@ -1443,14 +1481,8 @@ function serializeEditor(el) {
       out += node.textContent;
     } else if (node.nodeType === Node.ELEMENT_NODE) {
       if (node.dataset?.mention) {
-        const mentionType = node.dataset.mentionType;
-        if (mentionType === 'ref') {
-          // 参考图标签序列化为 [参考图:URL]
-          out += `[参考图:${node.dataset.mention}]`;
-        } else {
-          // 主体提及序列化为 @名称
-          out += `@${node.dataset.mention}`;
-        }
+        // 所有提及统一序列化为 @名称
+        out += `@${node.dataset.mention}`;
       } else if (node.tagName === 'BR') {
         out += '\n';
       } else {
@@ -1470,39 +1502,19 @@ function rebuildEditorDOM(el, text, allSubjects, typeOverrides = {}) {
       if (seg.text) el.appendChild(document.createTextNode(seg.text));
     } else {
       const type = typeOverrides[seg.name] ?? seg.type;
-      const color = SUBJECT_TYPE_COLOR[type] ?? '#E2E24B';
+      const color = MENTION_TYPE_COLOR[type] ?? '#E2E24B';
       const span = document.createElement('span');
       span.dataset.mention = seg.name;
       span.dataset.mentionType = type;
       span.contentEditable = 'false';
-
-      // 参考图标签显示简短文本，主体提及显示 @名称
-      if (type === 'ref') {
-        // 从 URL 中提取文件名，截断到 7 个字符
-        const rawName = seg.name.split('/').pop()?.split('?')[0] ?? '参考图';
-        const baseName = rawName.replace(/\.[^.]+$/, '') || '参考图';
-        span.textContent = baseName.length > 7 ? baseName.slice(0, 7) + '…' : baseName;
-      } else {
-        span.textContent = `@${seg.name}`;
-      }
-
-      if (type === 'ref') {
-        span.style.cssText = [
-          'display:inline-flex', 'align-items:center', 'padding:0 4px',
-          'border-radius:6px', 'font-size:14px', 'line-height:18px',
-          'background:#8870FF1A', 'color:#E8A1FF',
-          'box-shadow:inset 0 0 0 1px #FFFFFF14',
-          'vertical-align:middle', 'user-select:none', 'cursor:default',
-        ].join(';');
-      } else {
-        span.style.cssText = [
-          'display:inline-flex', 'align-items:center', 'padding:0 4px',
-          'border-radius:4px', 'font-size:14px', 'line-height:21px',
-          `background:${color}26`, `color:${color}`,
-          `box-shadow:inset 0 0 0 1px ${color}33`,
-          'vertical-align:middle', 'user-select:none', 'cursor:default',
-        ].join(';');
-      }
+      span.textContent = `@${seg.name}`;
+      span.style.cssText = [
+        'display:inline-flex', 'align-items:center', 'padding:0 4px',
+        'border-radius:4px', 'font-size:14px', 'line-height:21px',
+        `background:${color}26`, `color:${color}`,
+        `box-shadow:inset 0 0 0 1px ${color}33`,
+        'vertical-align:middle', 'user-select:none', 'cursor:default',
+      ].join(';');
       el.appendChild(span);
     }
   }
@@ -1520,25 +1532,14 @@ function getCaretOffset(el) {
     if (node === range.startContainer || node.contains?.(range.startContainer)) {
       if (node.nodeType === Node.TEXT_NODE) offset += range.startOffset;
       else if (node.dataset?.mention) {
-        const mentionType = node.dataset.mentionType;
-        if (mentionType === 'ref') {
-          // 参考图标签：[参考图:URL] 的长度
-          offset += `[参考图:${node.dataset.mention}]`.length;
-        } else {
-          // 主体提及：@名称 的长度
-          offset += node.dataset.mention.length + 1;
-        }
+        // 统一为 @名称 的长度
+        offset += node.dataset.mention.length + 1;
       }
       break;
     }
     if (node.nodeType === Node.TEXT_NODE) offset += node.textContent.length;
     else if (node.dataset?.mention) {
-      const mentionType = node.dataset.mentionType;
-      if (mentionType === 'ref') {
-        offset += `[参考图:${node.dataset.mention}]`.length;
-      } else {
-        offset += node.dataset.mention.length + 1;
-      }
+      offset += node.dataset.mention.length + 1;
     }
     else offset += node.textContent.length;
   }
@@ -1561,10 +1562,8 @@ function setCaretOffset(el, targetOffset) {
       }
       remaining -= len;
     } else if (node.dataset?.mention) {
-      const mentionType = node.dataset.mentionType;
-      const len = mentionType === 'ref'
-        ? `[参考图:${node.dataset.mention}]`.length
-        : node.dataset.mention.length + 1;
+      // 统一为 @名称 的长度
+      const len = node.dataset.mention.length + 1;
       if (remaining < len) {
         const range = document.createRange();
         range.setStartAfter(node);
@@ -1597,7 +1596,7 @@ function setCaretOffset(el, targetOffset) {
   sel.addRange(range);
 }
 
-function PanelPromptInput({ value, onChange, chars = [], scenes = [], props = [], mainRefs = [] }) {
+function PanelPromptInput({ value, onChange, referenceItems = [] }) {
   const [focused, setFocused] = useState(false);
   const [hov, setHov] = useState(false);
   const [mentionQuery, setMentionQuery] = useState(null);
@@ -1613,11 +1612,7 @@ function PanelPromptInput({ value, onChange, chars = [], scenes = [], props = []
   const outlineColor = focused ? 'rgba(45,195,225,0.12)' : '#00000080';
   const outlineWidth = focused ? '3px' : '1px';
 
-  const allSubjects = [
-    ...chars.map((c) => ({ ...c, _type: 'char' })),
-    ...scenes.map((s) => ({ ...s, _type: 'scene' })),
-    ...props.map((p) => ({ ...p, _type: 'prop' })),
-  ];
+  const allSubjects = referenceItems;
   allSubjectsRef.current = allSubjects;
 
   // 从当前 DOM 读出已确认的 name→type 映射，防止重建时因同名条目顺序问题丢失正确类型
@@ -1833,22 +1828,10 @@ function PanelPromptInput({ value, onChange, chars = [], scenes = [], props = []
     const before = value.slice(0, atIdx);
     const after = value.slice(caretOffset);
 
-    let newVal;
-    let newCaretOffset;
-    let typeOverrides;
-
-    if (type === 'ref') {
-      // 参考图：插入 [参考图:URL] 标签
-      const refTag = `[参考图:${name}]`;
-      newVal = `${before}${refTag} ${after}`.slice(0, MAX_PROMPT_LEN);
-      newCaretOffset = before.length + refTag.length + 1;
-      typeOverrides = { ...readDOMTypes(el) };
-    } else {
-      // 主体：插入 @name
-      newVal = `${before}@${name} ${after}`.slice(0, MAX_PROMPT_LEN);
-      newCaretOffset = atIdx + name.length + 2;
-      typeOverrides = { ...readDOMTypes(el), [name]: type };
-    }
+    // 统一插入 @名称
+    const newVal = `${before}@${name} ${after}`.slice(0, MAX_PROMPT_LEN);
+    const newCaretOffset = atIdx + name.length + 2;
+    const typeOverrides = { ...readDOMTypes(el), [name]: type };
 
     onChange(newVal);
     setMentionQuery(null);
@@ -1927,11 +1910,8 @@ function PanelPromptInput({ value, onChange, chars = [], scenes = [], props = []
         </div>
       </div>
       {mentionQuery !== null && (
-        <SubjectMentionDropdown
-          chars={chars}
-          scenes={scenes}
-          props={props}
-          mainRefs={mainRefs}
+        <ReferenceMentionDropdown
+          referenceItems={allSubjects}
           query={mentionQuery}
           onSelect={handleSelectMention}
           onClose={() => setMentionQuery(null)}
@@ -1951,7 +1931,7 @@ function PanelPromptInput({ value, onChange, chars = [], scenes = [], props = []
 // 因此这里每次打开面板都按 shot 的当前字段重建初始提示词——
 // 只有更新了列表字段，提示词框的初始内容才会随之变化。
 // 需求：只展示字段内容、不展示字段标题（如「景别：远景」只取「远景」）。
-function buildPromptFromShot(shot, chars = [], scenes = [], props = []) {
+function buildPromptFromShot(shot) {
   const lines = [];
 
   // 第一行：镜头固定参数（只取值，不带「景别：」等标题）
@@ -1971,23 +1951,9 @@ function buildPromptFromShot(shot, chars = [], scenes = [], props = []) {
   ].filter(Boolean);
   if (atmosphereParts.length) lines.push(atmosphereParts.join('，'));
 
-  // 第三行：画面描述（保留原有的 @提及），主体参考图以 [参考图:URL] 标签追加在末尾。
-  // 主体参考列上传的图不写回列表字段，只在这里出现在画面描述段末尾，由用户决定如何使用。
+  // 第三行：画面描述（纯文本，不含自动插入的标签；标签由用户手动 @ 引入）
   const descParts = [];
   if (shot?.description) descParts.push(shot.description);
-  if (shot?.mainRefs?.length > 0) {
-    shot.mainRefs.forEach((ref) => {
-      if (!ref) return;
-      if (ref.type === 'char' || ref.type === 'scene' || ref.type === 'prop') {
-        const subjects = ref.type === 'char' ? chars : ref.type === 'scene' ? scenes : props;
-        const found = subjects.find((s) => s.id === ref.id || s.name === ref.name);
-        const mentionName = ref.name || found?.name;
-        if (mentionName) descParts.push(`@${mentionName}`);
-        return;
-      }
-      if (ref?.url) descParts.push(`[参考图:${ref.url}]`);
-    });
-  }
   if (descParts.length) lines.push(descParts.join(' '));
 
   // 第四行：台词分配（去掉「台词分配：」标题，「角色：台词」属于内容予以保留）
@@ -2065,13 +2031,13 @@ function GenerateImagePanel({ shot, projectId, chars = [], scenes = [], props = 
   // 提示词：仅暂存在当前弹窗的本地 state，编辑不回写分镜列表字段。
   // 关闭面板时组件卸载、本地态丢弃，下次打开按 shot 当前字段重新生成初始内容。
   // 点击「生成分镜图」时才把 prompt 随 onGenerate 传回后端。
-  const [prompt, setPrompt] = useState(() => buildPromptFromShot(shot, chars, scenes, props));
+  const [prompt, setPrompt] = useState(() => buildPromptFromShot(shot));
   const [refImages, setRefImages] = useState(() => {
     const images = [];
     // 添加主体参考图——为项目主体补全 url/name（否则标签丢失 type 会变紫色）
     if (shot?.mainRefs?.length > 0) {
       shot.mainRefs.forEach(ref => {
-        if (ref?.url) { images.push(ref); return; }
+        if (ref?.url && !ref.url.toLowerCase().endsWith(".avif") && !ref.url.includes("/derived/assets/")) { images.push(ref); return; }
         // 从 chars/scenes/props 中查找补齐 url 和 name
         if (ref.type && ref.id) {
           const subjects = ref.type === 'char' ? chars : ref.type === 'scene' ? scenes : props;
@@ -2081,7 +2047,7 @@ function GenerateImagePanel({ shot, projectId, chars = [], scenes = [], props = 
             return;
           }
         }
-        if (ref?.url) images.push(ref);
+        if (ref?.url && !ref.url.toLowerCase().endsWith(".avif") && !ref.url.includes("/derived/assets/")) images.push(ref);
       });
     }
     return images;
@@ -2128,14 +2094,7 @@ function GenerateImagePanel({ shot, projectId, chars = [], scenes = [], props = 
       });
       const uploadedUrl = result.uploaded_url || result.uploadedUrl || result.url || result.file_url || '';
 
-      // 在提示词末尾添加参考图标签
-      const refTag = `[参考图:${uploadedUrl}]`;
-      setPrompt(prev => {
-        const newPrompt = prev ? `${prev} ${refTag}` : refTag;
-        return newPrompt.slice(0, MAX_PROMPT_LEN);
-      });
-
-      // 同时添加到参考图列表
+      // 添加到参考图列表（不再自动插入提示词标签，标签由用户手动 @ 引入）
       setRefImages(prev => [...prev, { id: result.id || result.asset_id || uploadedUrl, url: uploadedUrl, name: file.name }]);
 
       return result;
@@ -2219,6 +2178,14 @@ function GenerateImagePanel({ shot, projectId, chars = [], scenes = [], props = 
     }
   }
 
+  const imageReferenceItems = useMemo(() => {
+    return refImages.map((img) => ({
+      id: img.id,
+      name: img.name || (img.url ? img.url.split('/').pop()?.split('?')[0]?.replace(/\.[^.]+$/, '') || '参考图' : '参考图'),
+      _type: 'image',
+    }));
+  }, [refImages]);
+
   const btnBg = loading ? 'rgba(45,195,225,0.60)' : btnPressed ? '#28b0cc' : btnHov ? '#32cde8' : '#2DC3E1';
 
   return createPortal(
@@ -2259,7 +2226,7 @@ function GenerateImagePanel({ shot, projectId, chars = [], scenes = [], props = 
               <span style={{ fontSize: '14px', lineHeight: '20px', color: '#FFFFFF', fontFamily: FONT, flexShrink: 0 }}>{String(shot?.number ?? 1).padStart(2, '0')}</span>
             </div>
 
-            <PanelPromptInput value={prompt} onChange={setPrompt} chars={chars} scenes={scenes} props={props} mainRefs={shot?.mainRefs || []} />
+            <PanelPromptInput value={prompt} onChange={setPrompt} referenceItems={imageReferenceItems} />
             <PanelSelect label="选择模型" value={modelsLoading ? '加载中...' : (modelList.find(m => m.value === model)?.label || '请选择')} options={modelList.map(m => m.label)} onChange={(label) => {
               const selected = modelList.find(m => m.label === label);
               if (selected) setModel(selected.value);
@@ -2480,7 +2447,7 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
   // 提示词：仅暂存在当前弹窗的本地 state，编辑不回写分镜列表字段。
   // 关闭面板时组件卸载、本地态丢弃，下次打开按 shot 当前字段重新生成初始内容。
   // 点击「生成分镜视频」时才把 prompt 随 onGenerate 传回后端。
-  const [prompt, setPrompt] = useState(() => buildPromptFromShot(shot, chars, scenes, props));
+  const [prompt, setPrompt] = useState(() => buildPromptFromShot(shot));
   const [refSubjects, setRefSubjects] = useState(() => {
     // 从 shot.mainRefs 初始化主体列表，补全 url/name
     if (!shot?.mainRefs?.length) return [];
@@ -2589,6 +2556,27 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
     }
   }, [model, availableResolutions]);
 
+  const videoReferenceItems = useMemo(() => {
+    const items = [];
+    // 参考主体（保持原始 _type: char/scene/prop，供 MENTION_TABS 中的 "参考主体" tab 筛选）
+    refSubjects.forEach(s => {
+      items.push({ id: s.id, name: s.name || '参考主体', _type: s._type || s.type || 'char' });
+    });
+    // 参考图
+    refImages.forEach(img => {
+      items.push({ id: img.id, name: img.name || (img.url ? img.url.split('/').pop()?.split('?')[0]?.replace(/\.[^.]+$/, '') || '参考图' : '参考图'), _type: 'image' });
+    });
+    // 参考视频
+    if (refVideo) {
+      items.push({ id: refVideo.id, name: refVideo.name || '参考视频', _type: 'video' });
+    }
+    // 参考音频
+    if (refAudio) {
+      items.push({ id: refAudio.id, name: refAudio.name || '参考音频', _type: 'audio' });
+    }
+    return items;
+  }, [refSubjects, refImages, refVideo, refAudio]);
+
   async function handleRefMediaUpload(file, type = 'image') {
     try {
       const uploadFn = type === 'audio' ? apiUploadCreationAudio
@@ -2601,15 +2589,7 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
       });
       const uploadedUrl = result.uploaded_url || result.uploadedUrl || result.url || result.file_url || '';
 
-      // 只有图片类型才在提示词末尾添加参考图标签
-      if (type === 'image') {
-        const refTag = `[参考图:${uploadedUrl}]`;
-        setPrompt(prev => {
-          const newPrompt = prev ? `${prev} ${refTag}` : refTag;
-          return newPrompt.slice(0, MAX_PROMPT_LEN);
-        });
-      }
-
+      // 不再自动插入提示词标签，标签由用户手动 @ 引入
       return { id: result.id || result.asset_id || uploadedUrl, url: uploadedUrl, name: file.name, type: file.type };
     } catch (error) {
       console.error('参考媒体上传失败:', error);
@@ -2744,7 +2724,7 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
               </div>
             </div>
 
-            <PanelPromptInput value={prompt} onChange={setPrompt} chars={chars} scenes={scenes} props={props} mainRefs={shot?.mainRefs || []} />
+            <PanelPromptInput value={prompt} onChange={setPrompt} referenceItems={videoReferenceItems} />
 
             <PanelSelect label="选择模型" value={modelsLoading ? '加载中...' : (tabModels.find(m => m.value === model)?.label || '请选择')} options={tabModels.map(m => m.label)} onChange={(label) => {
               const selected = tabModels.find(m => m.label === label);
@@ -3059,7 +3039,7 @@ function VideoItem({ settled, videoUrl, onSettledChange, onView }) {
               </svg>
             </ImgIconBtn>
           )}
-          <ImgIconBtn onClick={(e) => e.stopPropagation()}>
+          <ImgIconBtn onClick={(e) => { e.stopPropagation(); if (videoUrl) { const a = document.createElement("a"); a.href = videoUrl; a.download = videoUrl.split("/").pop() || "video.mp4"; a.click(); } }}>
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
               <path d="M8 2.667V10" stroke="#FFFFFFCC" strokeLinecap="round" strokeLinejoin="round" />
               <path d="M5.333 7.333L8 10L10.667 7.333" stroke="#FFFFFFCC" strokeLinecap="round" strokeLinejoin="round" />
@@ -3406,41 +3386,29 @@ function CharMentionDropdown({ chars, query, onSelect, onClose, triggerRef }) {
 
 // ─── 主体 @ 下拉（角色/场景/道具，用于提示词输入框）─────────────────────────────
 
-const SUBJECT_TYPE_LABEL = { char: '角色', scene: '场景', prop: '道具', ref: '主体' };
-const SUBJECT_TYPE_COLOR = { char: '#E2E24B', scene: '#4BE2C3', prop: '#4B9EE2', ref: '#E8A1FF' };
-const SUBJECT_MENTION_TABS = [
+const MENTION_TYPE_LABEL = {
+  char: '角色', scene: '场景', prop: '道具',
+  image: '参考图', video: '参考视频', audio: '参考音频',
+};
+const MENTION_TYPE_COLOR = {
+  char: '#E2E24B', scene: '#4BE2C3', prop: '#4B9EE2',
+  image: '#E8A1FF', video: '#FF8A65', audio: '#66BB6A',
+};
+const MENTION_TABS = [
   { key: 'all', label: '全部' },
-  { key: 'char', label: '角色' },
-  { key: 'scene', label: '场景' },
-  { key: 'prop', label: '道具' },
-  { key: 'ref', label: '其他' },
+  { key: 'image', label: '参考图' },
+  { key: 'char', label: '参考主体' },
+  { key: 'video', label: '参考视频' },
+  { key: 'audio', label: '参考音频' },
 ];
 
-function SubjectMentionDropdown({ chars, scenes, props, mainRefs = [], query, onSelect, onClose, triggerRef }) {
+function ReferenceMentionDropdown({ referenceItems = [], query, onSelect, onClose, triggerRef }) {
   const ref = useRef(null);
   const [pos, setPos] = useState({ top: 0, left: 0, width: 0, visibility: 'hidden' });
   const [selectedTab, setSelectedTab] = useState('all');
 
-  // 主体参考图转换为下拉项，排在最前面
-  const refItems = mainRefs
-    .filter((ref) => ref.url && ref.name) // 只显示有 URL 和名称的
-    .map((ref) => ({
-      id: ref.id,
-      name: ref.name,
-      url: ref.url,
-      _type: 'ref',
-      displayName: `「主体」${ref.name}`,
-    }));
-
-  const allItems = [
-    ...refItems,
-    ...chars.map((c) => ({ ...c, _type: 'char' })),
-    ...scenes.map((s) => ({ ...s, _type: 'scene' })),
-    ...props.map((p) => ({ ...p, _type: 'prop' })),
-  ].filter((item) => {
-    // 参考图项按 displayName 过滤，其他按 name 过滤
-    const searchText = item._type === 'ref' ? item.displayName : item.name;
-    return searchText.includes(query);
+  const allItems = referenceItems.filter((item) => {
+    return item.name && item.name.includes(query);
   });
 
   useEffect(() => {
@@ -3467,11 +3435,16 @@ function SubjectMentionDropdown({ chars, scenes, props, mainRefs = [], query, on
 
   const filteredItems = selectedTab === 'all'
     ? allItems
-    : allItems.filter(item => item._type === selectedTab);
+    : selectedTab === 'char'
+      ? allItems.filter(item => ['char', 'scene', 'prop'].includes(item._type))
+      : allItems.filter(item => item._type === selectedTab);
 
-  // 如果没有"其他"类型（ref）的主体，则不显示"其他"Tab
-  const hasRefItems = allItems.some(item => item._type === 'ref');
-  const visibleTabs = hasRefItems ? SUBJECT_MENTION_TABS : SUBJECT_MENTION_TABS.filter(tab => tab.key !== 'ref');
+  // 只显示当前有匹配项的 tab
+  const visibleTabs = MENTION_TABS.filter(tab => {
+    if (tab.key === 'all') return true;
+    if (tab.key === 'char') return allItems.some(item => ['char', 'scene', 'prop'].includes(item._type));
+    return allItems.some(item => item._type === tab.key);
+  });
 
   if (filteredItems.length === 0) return null;
 
@@ -3521,12 +3494,7 @@ function SubjectMentionDropdown({ chars, scenes, props, mainRefs = [], query, on
           key={`${item._type}-${item.id}`}
           onMouseDown={(e) => {
             e.preventDefault();
-            // 参考图项点击时，传入 URL 和 'ref' 类型
-            if (item._type === 'ref') {
-              onSelect(item.url, 'ref');
-            } else {
-              onSelect(item.name, item._type);
-            }
+            onSelect(item.name, item._type);
           }}
           style={{
             padding: '7px 12px',
@@ -3548,14 +3516,14 @@ function SubjectMentionDropdown({ chars, scenes, props, mainRefs = [], query, on
             lineHeight: '16px',
             padding: '0 5px',
             borderRadius: '3px',
-            backgroundColor: `${SUBJECT_TYPE_COLOR[item._type]}22`,
-            color: SUBJECT_TYPE_COLOR[item._type],
+            backgroundColor: `${MENTION_TYPE_COLOR[item._type] ?? MENTION_TYPE_COLOR.char}22`,
+            color: MENTION_TYPE_COLOR[item._type] ?? MENTION_TYPE_COLOR.char,
             flexShrink: 0,
             fontFamily: '"Alibaba PuHuiTi 2.0", system-ui, sans-serif',
           }}>
-            {SUBJECT_TYPE_LABEL[item._type]}
+            {MENTION_TYPE_LABEL[item._type] || '其他'}
           </span>
-          {item._type === 'ref' ? item.displayName : item.name}
+          {item.name}
         </div>
       ))}
       </div>
@@ -3567,42 +3535,7 @@ function SubjectMentionDropdown({ chars, scenes, props, mainRefs = [], query, on
 // ─── 主体 Tag（提示词展示用）─────────────────────────────────────────────────────
 
 function SubjectTag({ name, type }) {
-  const color = SUBJECT_TYPE_COLOR[type] ?? '#E2E24B';
-
-  // 参考图标签：从 URL 提取文件名并截断到 7 个字符
-  let displayText;
-  if (type === 'ref') {
-    const rawName = name.split('/').pop()?.split('?')[0] ?? '参考图';
-    const baseName = rawName.replace(/\.[^.]+$/, '') || '参考图';
-    displayText = baseName.length > 7 ? baseName.slice(0, 7) + '…' : baseName;
-  } else {
-    displayText = name;
-  }
-
-  // 参考图标签使用特殊样式
-  if (type === 'ref') {
-    return (
-      <span
-        style={{
-          display: 'inline-flex',
-          alignItems: 'center',
-          paddingInline: '4px',
-          borderRadius: '6px',
-          fontSize: '14px',
-          lineHeight: '18px',
-          backgroundColor: '#8870FF1A',
-          color: '#E8A1FF',
-          boxShadow: 'inset 0 0 0 1px #FFFFFF14',
-          fontFamily: '"Alibaba PuHuiTi 2.0", system-ui, sans-serif',
-          flexShrink: 0,
-          verticalAlign: 'middle',
-        }}
-      >
-        {displayText}
-      </span>
-    );
-  }
-
+  const color = MENTION_TYPE_COLOR[type] ?? '#E2E24B';
   return (
     <span
       style={{
@@ -3620,7 +3553,7 @@ function SubjectTag({ name, type }) {
         verticalAlign: 'middle',
       }}
     >
-      {displayText}
+      @{name}
     </span>
   );
 }
@@ -5479,18 +5412,7 @@ const INITIAL_SHOTS = [
 
 const EPISODES = ['第一集', '第二集'];
 
-export default function StoryboardPage({ serverReachable, projectId, projectName = '两只老虎的奇遇', projectRatio, chars = [], scenes = [], props = [], episodes = EPISODES, onUnlockStep, onVideoGenerated, onGenerateStoryboards, generateError = null, isGenerating: homeIsGenerating = false }) {
-
-  if (serverReachable === false) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-3" style={{ flex: 1, paddingTop: "80px" }}>
-        <div className="flex items-center gap-2 px-16 py-2 rounded-lg text-sm" style={{ backgroundColor: "rgba(255,77,79,0.1)", color: "#FF4D4F" }}>
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1L13 12H1L7 1Z" stroke="#FF4D4F" strokeLinejoin="round"/><path d="M7 5V8" stroke="#FF4D4F" strokeLinecap="round"/><circle cx="7" cy="10.5" r="0.5" fill="#FF4D4F"/></svg>
-          后端服务连接异常，部分功能不可用
-        </div>
-      </div>
-    );
-  }
+export default function StoryboardPage({ projectId, projectName = '两只老虎的奇遇', projectRatio, chars = [], scenes = [], props = [], episodes = EPISODES, onUnlockStep, onVideoGenerated, onGenerateStoryboards, generateError = null, isGenerating: homeIsGenerating = false }) {
 
   const activeEpisodes = episodes.length > 0 ? episodes : EPISODES;
   // 用 peekCache 同步读取缓存，第一次渲染直接呈现旧数据，避免空状态闪烁
@@ -5709,7 +5631,7 @@ export default function StoryboardPage({ serverReachable, projectId, projectName
           resolution: params.resolution,
           prompt: params.prompt,
           aspect_ratio: projectRatio,
-          reference_images: (params.refImages || []).map(r => toAbsoluteUrl(typeof r === 'string' ? r : r.url)).filter(Boolean),
+          reference_images: (params.refImages || []).map(r => toAbsoluteUrl(typeof r === 'string' ? r : r.url)).filter(url => url && !url.toLowerCase().endsWith(".avif") && !url.includes("/derived/assets/")),
         });
         const task = await pollTask(taskResp.id, hasImageTaskResult);
         if (task.status === 'completed' || task.status === 'partial' || hasImageTaskResult(task)) {
@@ -5768,7 +5690,7 @@ export default function StoryboardPage({ serverReachable, projectId, projectName
           sound_effect: params.sound,
           prompt: params.prompt,
           ratio: projectRatio,
-          reference_images: (params.refImages || []).map(r => toAbsoluteUrl(typeof r === 'string' ? r : r.url)).filter(Boolean),
+          reference_images: (params.refImages || []).map(r => toAbsoluteUrl(typeof r === 'string' ? r : r.url)).filter(url => url && !url.toLowerCase().endsWith(".avif") && !url.includes("/derived/assets/")),
         });
         const task = await pollTask(taskResp.id, hasVideoTaskResult);
         const videoUrl = extractVideoUrlFromTask(task);
@@ -6389,7 +6311,7 @@ export default function StoryboardPage({ serverReachable, projectId, projectName
         const shot = imagePanel.shot;
         try {
           setGeneratingImageShotIds(prev => new Set([...prev, shot.id]));
-          const taskResp = await apiGenerateStoryboardImage(projectId, shot.id, { model: params.model, resolution: params.resolution, prompt: params.prompt, aspect_ratio: projectRatio, reference_images: (params.refImages || []).map(r => toAbsoluteUrl(typeof r === 'string' ? r : r.url)) });
+          const taskResp = await apiGenerateStoryboardImage(projectId, shot.id, { model: params.model, resolution: params.resolution, prompt: params.prompt, aspect_ratio: projectRatio, reference_images: (params.refImages || []).map(r => toAbsoluteUrl(typeof r === 'string' ? r : r.url)).filter(url => url && !url.toLowerCase().endsWith(".avif") && !url.includes("/derived/assets/")) });
           const task = await pollTask(taskResp.id, hasImageTaskResult);
           if (task.status === 'completed' || task.status === 'partial' || hasImageTaskResult(task)) {
              const imageUrl = extractImageUrlFromTask(task);
@@ -6460,7 +6382,7 @@ export default function StoryboardPage({ serverReachable, projectId, projectName
                 sound_effect: params.sound,
                 prompt: params.prompt,
                 ratio: projectRatio,
-                reference_images: (params.reference_images || (params.refImages || []).map(r => toAbsoluteUrl(typeof r === 'string' ? r : r.url)).filter(Boolean)),
+                reference_images: (params.reference_images || (params.refImages || []).map(r => toAbsoluteUrl(typeof r === 'string' ? r : r.url)).filter(url => url && !url.toLowerCase().endsWith(".avif") && !url.includes("/derived/assets/"))),
                 first_frame_url: toAbsoluteUrl(params.first_frame_url),
                 last_frame_url: toAbsoluteUrl(params.last_frame_url),
                 reference_video_url: toAbsoluteUrl(params.reference_video_url),
