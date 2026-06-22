@@ -783,9 +783,9 @@ function CharCard({ name, desc, imageUrl, voice, voiceName, voicePreviewUrl, onV
 
   return (
     <div
-      className="[font-synthesis:none] flex flex-col w-50 rounded-xl overflow-clip relative shrink-0 bg-[#1A1A1A] antialiased cursor-pointer"
+      className="[font-synthesis:none] flex flex-col rounded-xl overflow-clip relative bg-[#1A1A1A] antialiased cursor-pointer"
       style={{
-        height: '246px',
+        aspectRatio: '200/246',
         outline: selected
           ? '1px solid rgba(45,195,225,0.6)'
           : hovered
@@ -890,9 +890,9 @@ function AddCard({ onClick }) {
   const [hovered, setHovered] = useState(false);
   return (
     <div
-      className="[font-synthesis:none] flex flex-col items-center justify-center w-50 rounded-xl shrink-0 cursor-pointer border border-dashed"
+      className="[font-synthesis:none] flex flex-col items-center justify-center rounded-xl cursor-pointer border border-dashed"
       style={{
-        height: '246px',
+        aspectRatio: '200/246',
         borderColor: hovered ? '#FFFFFF40' : '#FFFFFF26',
         backgroundColor: hovered ? '#FFFFFF05' : 'transparent',
         gap: '6px',
@@ -2868,8 +2868,8 @@ export default function SubjectPage({ projectId, projectName = '两只老虎的�
 
       {/* card grid */}
       <div
-        className="flex flex-wrap content-start gap-[16px] flex-1 self-stretch overflow-auto min-h-0"
-        style={{ paddingTop: '16px' }}
+        className="flex-1 self-stretch overflow-auto min-h-0"
+        style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '16px', alignContent: 'flex-start', paddingTop: '16px' }}
       >
         {activeTab === 'char' && chars.map((char) => (
           <CharCard

@@ -3439,9 +3439,8 @@ function VideoResultCard({ status, videoUrl, prompt, model, ratio, resolution, d
     <>
       <div
         style={{
-          width: '320px',
-          height: '180px',
-          flexShrink: 0,
+          width: '100%',
+          aspectRatio: '16/9',
           borderRadius: '8px',
           overflow: 'hidden',
           backgroundColor: hovered ? '#343434' : '#272727',
@@ -3600,9 +3599,8 @@ function ImageResultCard({ status, imageUrl, prompt, promptHTML, model, ratio, r
     <>
       <div
         style={{
-          width: '320px',
-          height: '180px',
-          flexShrink: 0,
+          width: '100%',
+          aspectRatio: '16/9',
           borderRadius: '8px',
           overflow: 'hidden',
           backgroundColor: hovered ? '#343434' : '#272727',
@@ -3794,9 +3792,8 @@ function AudioResultCard({ status, audioUrl, prompt, model, createdAt, onDelete,
     <>
       <div
         style={{
-          width: '320px',
-          height: '180px',
-          flexShrink: 0,
+          width: '100%',
+          aspectRatio: '16/9',
           borderRadius: '8px',
           overflow: 'hidden',
           backgroundColor: '#1A1A1A',
@@ -4010,25 +4007,25 @@ function CreationResultState({ generations, onGenerate, genType, onGenTypeChange
         style={{
           position: 'absolute',
           inset: 0,
+          padding: '8px 24px 220px',
           overflowY: 'auto',
-          paddingTop: '16px',
-          paddingLeft: '32px',
-          paddingRight: '32px',
-          paddingBottom: '220px',
+          overflowX: 'hidden',
         }}
       >
         <div
           style={{
-            display: 'flex',
-            flexDirection: isAudio ? 'column' : 'row',
-            flexWrap: isAudio ? 'nowrap' : 'wrap',
-            gap: '16px',
+            display: isAudio ? 'flex' : 'grid',
+            gridTemplateColumns: isAudio ? undefined : 'repeat(auto-fill, minmax(240px, 1fr))',
+            flexDirection: isAudio ? 'column' : undefined,
+            width: '100%',
+            rowGap: '16px',
+            columnGap: '16px',
             alignContent: 'flex-start',
           }}
         >
           {isGenerating && allCards.length === 0 && (
             <div style={{
-              width: isAudio ? '100%' : '320px', height: isAudio ? '72px' : '180px', borderRadius: '8px',
+              width: '100%', height: isAudio ? '72px' : undefined, aspectRatio: isAudio ? undefined : '16/9', borderRadius: '8px',
               background: 'rgba(255,255,255,0.04)',
               border: '1px solid rgba(255,255,255,0.06)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -4262,7 +4259,7 @@ const CREATION_TABS = [
 
 function CreationTabBar({ activeTab, onChange }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'baseline', gap: '24px', paddingTop: '16px', paddingLeft: '32px', flex: 1, alignSelf: 'stretch' }}>
+    <div style={{ display: 'flex', alignItems: 'baseline', gap: '24px', paddingTop: '16px', paddingLeft: '24px', flex: 1, alignSelf: 'stretch' }}>
       {CREATION_TABS.map(({ key, label }) => {
         const isActive = key === activeTab;
         return (
@@ -5182,7 +5179,7 @@ export default function CreationPage({ isLoggedIn, onLoginClick, apiConfigured =
               </div>
 
             ) : (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flex: 1, justifyContent: 'flex-end', paddingRight: '32px', paddingTop: '6px', paddingBottom: '6px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flex: 1, justifyContent: 'flex-end', paddingRight: '24px', paddingTop: '6px', paddingBottom: '6px' }}>
                 <BatchButton onClick={() => setBatchMode(true)} />
               </div>
             )}

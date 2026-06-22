@@ -889,6 +889,7 @@ export default function Home({ onProjectCreated }) {
   const [generateError, setGenerateError] = useState(null);
   const [generateErrorProjectId, setGenerateErrorProjectId] = useState(null);
   const [isGeneratingStoryboards, setIsGeneratingStoryboards] = useState(false);
+  const [completedEpisodesCount, setCompletedEpisodesCount] = useState(0);
   const generatingStoryboardsRef = useRef(false); // 同步锁，防止并发调用
   // 自上次提取主体后，剧本是否又重新定稿过（用于控制"开始提取主体"按钮行为）
   const [scriptFinalizedSinceExtraction, setScriptFinalizedSinceExtraction] = useState(false);
@@ -1384,6 +1385,7 @@ export default function Home({ onProjectCreated }) {
     if (generatingStoryboardsRef.current) return;
     generatingStoryboardsRef.current = true;
     setIsGeneratingStoryboards(true);
+    setCompletedEpisodesCount(0);
     setGenerateError(null);
     setGenerateErrorProjectId(null);
     try {
@@ -1423,6 +1425,7 @@ export default function Home({ onProjectCreated }) {
       const flushEpisode = (num) => {
         if (notifiedEpisodeNumbers.has(num)) return;
         notifiedEpisodeNumbers.add(num);
+        setCompletedEpisodesCount(notifiedEpisodeNumbers.size);
         const epId = episodeNumberToId[num];
         if (!epId) return;
         invalidate(K.storyboards(activeProject.id, epId));
@@ -1897,6 +1900,7 @@ export default function Home({ onProjectCreated }) {
                 onUnlockStep={handleUnlockStep}
                 onGenerateStoryboards={handleGenerateStoryboards}
                 isGenerating={isGeneratingStoryboards}
+                completedEpisodesCount={completedEpisodesCount}
                 generateError={generateError}
                 onVideoGenerated={(episodeIndex) => {
                   setEpisodeStatuses((prev) => {

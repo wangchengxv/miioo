@@ -476,8 +476,8 @@ function NewProjectCard({ onClick }) {
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
-        width: '300px',
-        height: '200px',
+        width: '100%',
+        aspectRatio: '3/2',
         borderRadius: '8px',
         background: hovered ? '#252626' : '#1D1E1E',
         border: '1.5px dashed #FFFFFF33',
@@ -488,7 +488,6 @@ function NewProjectCard({ onClick }) {
         gap: '8px',
         cursor: 'pointer',
         transition: 'background 150ms',
-        flexShrink: 0,
       }}
     >
       <div
@@ -532,15 +531,14 @@ function ProjectCard({ project, onRename, onDelete, onOpen }) {
       onMouseUp={() => setPressed(false)}
       onClick={handleCardClick}
       style={{
-        width: '300px',
-        height: '200px',
+        width: '100%',
+        aspectRatio: '3/2',
         borderRadius: '8px',
         background: '#1D1E1E',
         border: `1px solid ${hovered ? 'rgba(255,255,255,0.22)' : '#FFFFFF14'}`,
         position: 'relative',
         overflow: 'visible',
         cursor: 'pointer',
-        flexShrink: 0,
         transform: pressed ? 'scale(0.985)' : 'scale(1)',
         transition: 'border-color 150ms, transform 120ms cubic-bezier(0.4, 0, 0.2, 1)',
       }}
@@ -715,7 +713,7 @@ export default function ProjectList({ projects = [], onNewProject, onRenameProje
         </div>
 
         {/* Card grid */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '16px' }}>
           <NewProjectCard onClick={onNewProject} />
           {filtered.map((project) => (
             <ProjectCard
