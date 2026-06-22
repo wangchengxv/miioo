@@ -4,7 +4,7 @@ import { useCreationStore } from '../stores/creationStore';
 import Checkbox from './Checkbox';
 import { generationsToFlatList } from '../utils/creativeDaysAdapter';
 import { apiGetProjects } from '../api/project';
-import { apiGetAssets } from '../api/assets';
+import { apiGetAssetsPage } from '../api/assets';
 import { normalizeImageUrl } from '../utils/imageUrl';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
@@ -33,6 +33,17 @@ const SUB_TAB_KEY_MAP = {
   '图片': 'images',
   '视频': 'videos',
   '配音': 'dubbing',
+};
+
+// 子 Tab → 后端 category / asset_type 过滤参数
+const SUB_TAB_CATEGORY_MAP = {
+  '角色':   { category: 'character' },
+  '场景':   { category: 'scene' },
+  '道具':   { category: 'prop' },
+  '分镜图': { category: 'storyboard', asset_type: 'image' },
+  '分镜视频': { category: 'storyboard', asset_type: 'video' },
+  '音频':   { category: 'audio' },
+  '成片':   { category: 'film' },
 };
 
 function AssetCard({ asset, isSelected, isHovered, isDisabled, onMouseEnter, onMouseMove, onMouseLeave, onClick, compact = false }) {
@@ -227,12 +238,16 @@ export default function AssetPickerModal({
   const [projectHovIdx, setProjectHovIdx] = useState(null);
   const [activeProjectId, setActiveProjectId] = useState(projectId || null);
   const projectBtnRef = useRef(null);
+  const pickerScrollRef = useRef(null);
+  const pickerSentinelRef = useRef(null);
 
   // ── 从后端拉取真实数据 ──────────────────────────────────────────────────
   const [apiProjects, setApiProjects] = useState(null);
   const [apiAssetsMap, setApiAssetsMap] = useState(null);
   const [assetsLoading, setAssetsLoading] = useState(false);
   const [projectsLoading, setProjectsLoading] = useState(false);
+  // 分页 meta：key = `${projectId}__${tabKey}`
+  const [pickerPageMeta, setPickerPageMeta] = useState({});
 
   useEffect(() => {
     if (!open) return;
@@ -252,67 +267,114 @@ export default function AssetPickerModal({
     })();
   }, [open]);
 
-  // 拉取或切换项目资产
+  const pickerPageKey = (pid, tabKey) => `${pid}__${tabKey}`;
+
+  function normalizePickerAsset(a) {
+    return {
+      id: a.id,
+      name: a.name || '未命名',
+      url: normalizeImageUrl(a.thumbnail_url || a.file_url) || null,
+      fileUrl: normalizeImageUrl(a.file_url) || null,
+      subject_id: a.subject_id ?? null,
+      starred: a.is_starred ?? false,
+      is_primary: a.is_primary ?? false,
+      bgColor: '#252525',
+      category: a.category,
+      asset_type: a.asset_type,
+    };
+  }
+
+  // 拉取或切换项目资产（首屏 limit=20，切 Tab 时懒加载）
   useEffect(() => {
-    if (!open) return;
-    // activeProjectId 优先：允许用户在弹窗内切换到不同项目
+    if (!open || activeTab !== 'project') return;
     const pullProjectId = activeProjectId || projectId;
     if (!pullProjectId) return;
+
+    const tabKey = SUB_TAB_KEY_MAP[projectSubTab];
+    const pKey = pickerPageKey(pullProjectId, tabKey);
+    // 已经加载过该分类，跳过
+    if (pickerPageMeta[pKey] !== undefined) return;
+
+    const categoryFilter = SUB_TAB_CATEGORY_MAP[projectSubTab];
+    if (!categoryFilter) return;
+
     (async () => {
       try {
         setAssetsLoading(true);
-        // 根据弹窗固定尺寸计算 limit：800×600 弹窗，内容区约 752×388px，卡片 175×208，gap 16
-        const MODAL_CONTENT_W = 752; // 800 - padding(24*2)
-        const MODAL_CONTENT_H = 388; // 600 - header(52) - 大tab(48) - 子tab(44) - footer(68) - padding(8*2)
-        const CARD_W = 175;
-        const CARD_H = 208;
-        const GAP = 16;
-        const cols = Math.max(1, Math.floor((MODAL_CONTENT_W + GAP) / (CARD_W + GAP)));
-        const rows = Math.max(1, Math.ceil(MODAL_CONTENT_H / (CARD_H + GAP))) + 1;
-        const limit = cols * rows;
-        // 拉取当前项目的资产
-        const assetsData = await apiGetAssets({ project_id: pullProjectId, scope: 'project', limit });
-        const normalizedAssets = Array.isArray(assetsData) ? assetsData.map(a => ({
-          id: a.id,
-          name: a.name || '未命名',
-          url: normalizeImageUrl(a.thumbnail_url || a.file_url) || null,
-          fileUrl: normalizeImageUrl(a.file_url) || null,
-          subject_id: a.subject_id ?? null,
-          starred: a.is_starred ?? false,
-          is_primary: a.is_primary ?? false,
-          bgColor: '#252525',
-          category: a.category,
-          asset_type: a.asset_type,
-        })) : [];
-
-        // 按分类分组
-        const grouped = { chars: [], scenes: [], props: [], storyboard_img: [], storyboard_video: [], audio: [], final_cut: [] };
-        normalizedAssets.forEach(a => {
-          if (a.category === 'storyboard') {
-            if (a.asset_type === 'video') grouped.storyboard_video.push(a);
-            else grouped.storyboard_img.push(a);
-          } else if (a.category === 'character') {
-            grouped.chars.push(a);
-          } else if (a.category === 'scene') {
-            grouped.scenes.push(a);
-          } else if (a.category === 'prop') {
-            grouped.props.push(a);
-          } else if (a.category === 'audio') {
-            grouped.audio.push(a);
-          } else if (a.category === 'film') {
-            grouped.final_cut.push(a);
-          }
+        const page = await apiGetAssetsPage({
+          project_id: pullProjectId,
+          scope: 'project',
+          limit: 20,
+          ...categoryFilter,
         });
-
-        setApiAssetsMap(prev => ({ ...prev, [pullProjectId]: grouped }));
+        const normalized = page.list.map(normalizePickerAsset);
+        setApiAssetsMap(prev => ({
+          ...prev,
+          [pullProjectId]: { ...(prev?.[pullProjectId] ?? {}), [tabKey]: normalized },
+        }));
+        setPickerPageMeta(prev => ({
+          ...prev,
+          [pKey]: { cursor: page.nextCursor, hasMore: page.hasMore, loading: false },
+        }));
       } catch (err) {
         console.error('[AssetPickerModal] 拉取项目资产失败:', err);
-        setApiAssetsMap(prev => ({ ...prev }));
+        setPickerPageMeta(prev => ({ ...prev, [pKey]: { cursor: null, hasMore: false, loading: false } }));
       } finally {
         setAssetsLoading(false);
       }
     })();
-  }, [open, projectId, activeProjectId]);
+  }, [open, activeTab, projectId, activeProjectId, projectSubTab]);
+
+  // 加载更多（触底时调用）
+  async function loadMorePickerAssets() {
+    const pullProjectId = activeProjectId || projectId;
+    if (!pullProjectId) return;
+    const tabKey = SUB_TAB_KEY_MAP[projectSubTab];
+    const pKey = pickerPageKey(pullProjectId, tabKey);
+    const meta = pickerPageMeta[pKey];
+    if (!meta || meta.loading || !meta.hasMore) return;
+
+    const categoryFilter = SUB_TAB_CATEGORY_MAP[projectSubTab];
+    if (!categoryFilter) return;
+
+    setPickerPageMeta(prev => ({ ...prev, [pKey]: { ...prev[pKey], loading: true } }));
+    try {
+      const page = await apiGetAssetsPage({
+        project_id: pullProjectId,
+        scope: 'project',
+        limit: 20,
+        cursor: meta.cursor,
+        ...categoryFilter,
+      });
+      const normalized = page.list.map(normalizePickerAsset);
+      setApiAssetsMap(prev => ({
+        ...prev,
+        [pullProjectId]: {
+          ...(prev?.[pullProjectId] ?? {}),
+          [tabKey]: [...(prev?.[pullProjectId]?.[tabKey] ?? []), ...normalized],
+        },
+      }));
+      setPickerPageMeta(prev => ({
+        ...prev,
+        [pKey]: { cursor: page.nextCursor, hasMore: page.hasMore, loading: false },
+      }));
+    } catch (err) {
+      console.error('[AssetPickerModal] 加载更多资产失败:', err);
+      setPickerPageMeta(prev => ({ ...prev, [pKey]: { ...prev[pKey], loading: false } }));
+    }
+  }
+
+  // IntersectionObserver 触底加载
+  useEffect(() => {
+    if (!pickerSentinelRef.current || !pickerScrollRef.current) return;
+    const observer = new IntersectionObserver(
+      (entries) => { if (entries[0].isIntersecting) loadMorePickerAssets(); },
+      { root: pickerScrollRef.current, rootMargin: '80px', threshold: 0 }
+    );
+    observer.observe(pickerSentinelRef.current);
+    return () => observer.disconnect();
+  }, [open, activeTab, projectSubTab, activeProjectId, pickerPageMeta]);
+
 
   const projects = apiProjects ?? [];
   const projectAssetsMap = apiAssetsMap ?? {};
@@ -660,7 +722,7 @@ export default function AssetPickerModal({
         </div>
 
         {/* ── 内容区（可滚动） ── */}
-        <div style={{ flex: 1, overflowY: 'auto', padding: '8px 24px', display: 'flex', flexDirection: 'column' }}>
+        <div ref={pickerScrollRef} style={{ flex: 1, overflowY: 'auto', padding: '8px 24px', display: 'flex', flexDirection: 'column' }}>
           {filteredAssets.length === 0 ? (
             <EmptyState />
           ) : (
@@ -682,6 +744,19 @@ export default function AssetPickerModal({
                 />
                 );
               })}
+              {/* 滚动加载哨兵 */}
+              <div ref={pickerSentinelRef} style={{ width: '100%', height: '1px', flexShrink: 0 }} />
+              {(() => {
+                const pullProjectId = activeProjectId || projectId;
+                const tabKey = SUB_TAB_KEY_MAP[projectSubTab];
+                const pKey = pickerPageKey(pullProjectId, tabKey);
+                const meta = pickerPageMeta[pKey];
+                return (meta?.loading) ? (
+                  <div style={{ width: '100%', display: 'flex', justifyContent: 'center', padding: '8px 0' }}>
+                    <span style={{ fontFamily: FONT, fontSize: '13px', color: '#FFFFFF40' }}>加载中…</span>
+                  </div>
+                ) : null;
+              })()}
             </div>
           )}
         </div>

@@ -6,7 +6,7 @@ import { getToken, getRefreshToken, refreshAccessToken } from '../api/request';
 import { clearTokens, apiLogout } from '../api/auth';
 import { apiListProviders } from '../api/config';
 import { apiGetCurrentUser, apiGetNotifications } from '../api/user';
-import { apiGetSubjects, apiGetEpisodes, apiGetScriptWorkspace, apiFinalizeScriptWorkspace, apiExtractSubjectsFromScript } from '../api/subject';
+import { apiGetSubjects, apiGetSubjectsPage, apiGetEpisodes, apiGetScriptWorkspace, apiFinalizeScriptWorkspace, apiExtractSubjectsFromScript } from '../api/subject';
 import { apiGetStoryboards, apiGenerateStoryboardsFromFinalScript, apiGetTask } from '../api/storyboard';
 import { invalidate } from '../utils/cache';
 import { normalizeImageUrl } from '../utils/imageUrl';
@@ -884,6 +884,12 @@ export default function Home({ onProjectCreated }) {
   const [sharedChars, setSharedChars] = useState(null);
   const [sharedScenes, setSharedScenes] = useState(null);
   const [sharedProps, setSharedProps] = useState(null);
+  // 主体分页 meta：{ cursor, hasMore, loading, rawList }
+  const [subjectPageMeta, setSubjectPageMeta] = useState({
+    chars:  { cursor: null, hasMore: false, loading: false, rawList: [] },
+    scenes: { cursor: null, hasMore: false, loading: false, rawList: [] },
+    props:  { cursor: null, hasMore: false, loading: false, rawList: [] },
+  });
   const [extractError, setExtractError] = useState(null);
   const [extractErrorProjectId, setExtractErrorProjectId] = useState(null);
   const [generateError, setGenerateError] = useState(null);
@@ -1099,36 +1105,34 @@ export default function Home({ onProjectCreated }) {
       setActiveStep(savedStep || 'script');
 
       // 3. 并行加载所有数据
-      // 主体卡片 200×246，gap 16，容器宽 = 视口 - NavW(48)
-      const _subjectAvailW = window.innerWidth - 48;
-      const _subjectAvailH = window.innerHeight - 60 - 48; // 顶栏60 + tab栏48
-      const _subjectCols = Math.max(1, Math.floor((_subjectAvailW + 16) / (200 + 16)));
-      const _subjectRows = Math.max(1, Math.ceil(_subjectAvailH / (246 + 16))) + 1;
-      const _subjectLimit = _subjectCols * _subjectRows;
-      const [scriptData, charsData, scenesData, propsData, episodesData, overviewData] = await Promise.all([
+      const SUBJECT_LIMIT = 20;
+      const [scriptData, charsPage, scenesPage, propsPage, episodesData, overviewData] = await Promise.all([
         apiGetScriptWorkspace(projectId).catch(err => {
           console.error('加载剧本数据失败:', err);
           return { content: '', episodes: [], phase: 'initial' };
         }),
-        apiGetSubjects(projectId, { type: 'character', limit: _subjectLimit }).catch(() => []),
-        apiGetSubjects(projectId, { type: 'scene', limit: _subjectLimit }).catch(() => []),
-        apiGetSubjects(projectId, { type: 'prop', limit: _subjectLimit }).catch(() => []),
+        apiGetSubjectsPage(projectId, { type: 'character', limit: SUBJECT_LIMIT }).catch(() => ({ list: [], nextCursor: null, hasMore: false })),
+        apiGetSubjectsPage(projectId, { type: 'scene', limit: SUBJECT_LIMIT }).catch(() => ({ list: [], nextCursor: null, hasMore: false })),
+        apiGetSubjectsPage(projectId, { type: 'prop', limit: SUBJECT_LIMIT }).catch(() => ({ list: [], nextCursor: null, hasMore: false })),
         apiGetEpisodes(projectId).catch(() => []),
         apiGetProjectOverview(projectId).catch(() => null),
       ]);
 
       // 4. 更新状态
-      // API 返回结构: { script: { content, status, ... }, messages: [...] }
       const scriptContent = scriptData.script?.content || scriptData.content || '';
       setScriptContent(scriptContent);
       setScriptEpisodes(episodesData || []);
       setScriptPhase(scriptContent ? 'view' : 'initial');
       setScriptHasStarted(!!scriptContent);
 
-      // 归一化：后端 API 返回 snake_case -> 前端 camelCase/shorthand
-      // apiGetSubjects 已在 API 层统一提取 list 字段，此处直接使用
-      setSharedChars(normalizeSubjects(charsData));
-      setSharedScenes(normalizeSubjects(scenesData));
+      setSharedChars(normalizeSubjects(charsPage.list));
+      setSharedScenes(normalizeSubjects(scenesPage.list));
+      setSharedProps(normalizeSubjects(propsPage.list));
+      setSubjectPageMeta({
+        chars:  { cursor: charsPage.nextCursor,  hasMore: charsPage.hasMore,  loading: false, rawList: charsPage.list },
+        scenes: { cursor: scenesPage.nextCursor, hasMore: scenesPage.hasMore, loading: false, rawList: scenesPage.list },
+        props:  { cursor: propsPage.nextCursor,  hasMore: propsPage.hasMore,  loading: false, rawList: propsPage.list },
+      });
       setSharedProps(normalizeSubjects(propsData));
 
       // 从后端数据中提取剧集状态，优先用 overview 的 episode_progress（状态更精准）
@@ -1280,19 +1284,20 @@ export default function Home({ onProjectCreated }) {
       const projectId = event?.detail?.projectId;
       if (!projectId || projectId !== activeProject?.id) return;
 
-      const _rAvailW = window.innerWidth - 48;
-      const _rAvailH = window.innerHeight - 60 - 48;
-      const _rCols = Math.max(1, Math.floor((_rAvailW + 16) / (200 + 16)));
-      const _rRows = Math.max(1, Math.ceil(_rAvailH / (246 + 16))) + 1;
-      const _rLimit = _rCols * _rRows;
+      const SUBJECT_LIMIT = 20;
       Promise.all([
-        apiGetSubjects(projectId, { type: 'character', limit: _rLimit }).catch(() => []),
-        apiGetSubjects(projectId, { type: 'scene', limit: _rLimit }).catch(() => []),
-        apiGetSubjects(projectId, { type: 'prop', limit: _rLimit }).catch(() => []),
-      ]).then(([charsData, scenesData, propsData]) => {
-        setSharedChars(normalizeSubjects(charsData));
-        setSharedScenes(normalizeSubjects(scenesData));
-        setSharedProps(normalizeSubjects(propsData));
+        apiGetSubjectsPage(projectId, { type: 'character', limit: SUBJECT_LIMIT }).catch(() => ({ list: [], nextCursor: null, hasMore: false })),
+        apiGetSubjectsPage(projectId, { type: 'scene', limit: SUBJECT_LIMIT }).catch(() => ({ list: [], nextCursor: null, hasMore: false })),
+        apiGetSubjectsPage(projectId, { type: 'prop', limit: SUBJECT_LIMIT }).catch(() => ({ list: [], nextCursor: null, hasMore: false })),
+      ]).then(([charsPage, scenesPage, propsPage]) => {
+        setSharedChars(normalizeSubjects(charsPage.list));
+        setSharedScenes(normalizeSubjects(scenesPage.list));
+        setSharedProps(normalizeSubjects(propsPage.list));
+        setSubjectPageMeta({
+          chars:  { cursor: charsPage.nextCursor,  hasMore: charsPage.hasMore,  loading: false, rawList: charsPage.list },
+          scenes: { cursor: scenesPage.nextCursor, hasMore: scenesPage.hasMore, loading: false, rawList: scenesPage.list },
+          props:  { cursor: propsPage.nextCursor,  hasMore: propsPage.hasMore,  loading: false, rawList: propsPage.list },
+        });
       }).catch((err) => {
         console.error('资产删除后刷新主体数据失败:', err);
       });
@@ -1313,6 +1318,28 @@ export default function Home({ onProjectCreated }) {
       next.add(stepKey);
       return next;
     });
+  };
+
+  // 加载更多主体（滚动触底时调用）
+  const loadMoreSubjects = async (type) => {
+    const key = type === 'character' ? 'chars' : type === 'scene' ? 'scenes' : 'props';
+    const meta = subjectPageMeta[key];
+    if (!meta || meta.loading || !meta.hasMore) return;
+    setSubjectPageMeta(prev => ({ ...prev, [key]: { ...prev[key], loading: true } }));
+    try {
+      const page = await apiGetSubjectsPage(activeProject.id, { type, limit: 20, cursor: meta.cursor });
+      const newItems = normalizeSubjects(page.list);
+      if (key === 'chars') setSharedChars(prev => [...(prev || []), ...newItems]);
+      else if (key === 'scenes') setSharedScenes(prev => [...(prev || []), ...newItems]);
+      else setSharedProps(prev => [...(prev || []), ...newItems]);
+      setSubjectPageMeta(prev => ({
+        ...prev,
+        [key]: { cursor: page.nextCursor, hasMore: page.hasMore, loading: false, rawList: [...meta.rawList, ...page.list] },
+      }));
+    } catch (err) {
+      console.error(`[Home] 加载更多主体失败 (${type}):`, err);
+      setSubjectPageMeta(prev => ({ ...prev, [key]: { ...prev[key], loading: false } }));
+    }
   };
 
   // 提取主体回调（由 SubjectPage 在挂载时调用）
@@ -1885,6 +1912,12 @@ export default function Home({ onProjectCreated }) {
                 }}
                 onExtractSubjects={forceExtract ? handleExtractSubjects : undefined}
                 extractError={extractError}
+                onLoadMoreChars={() => loadMoreSubjects('character')}
+                onLoadMoreScenes={() => loadMoreSubjects('scene')}
+                onLoadMoreProps={() => loadMoreSubjects('prop')}
+                hasMoreChars={subjectPageMeta.chars.hasMore}
+                hasMoreScenes={subjectPageMeta.scenes.hasMore}
+                hasMoreProps={subjectPageMeta.props.hasMore}
               />
             )}
             {activeKey === 'project' && activeProject && activeStep === 'storyboard' && (

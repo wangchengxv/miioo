@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import placeholderFlowers from '../assets/placeholder-flowers.webp';
-import { apiGetAssetDetail, apiGetShotDetail, apiGetShotVideoDetail, apiGetProjectAssets, calcProjectAssetsLimit, apiDeleteAsset, apiBatchDeleteAssets, apiUpdateAsset, apiDownloadAsset } from '../api/assets';
+import { apiGetAssetDetail, apiGetShotDetail, apiGetShotVideoDetail, apiGetProjectAssets, apiGetProjectAssetsPage, groupByCategory, calcProjectAssetsLimit, apiDeleteAsset, apiBatchDeleteAssets, apiUpdateAsset, apiDownloadAsset } from '../api/assets';
 import { apiGetSubjects, apiDeleteSubject } from '../api/subject';
 import { apiDeleteCreationImage, apiDeleteCreationVideo, apiBatchDeleteImages, apiBatchDeleteVideos, apiToggleImageFavorite, apiToggleVideoFavorite, apiListCreationImages, apiListCreationVideos, apiListCreationAudios } from '../api/creation';
 import { useCreationStore } from '../stores/creationStore';
@@ -171,13 +171,13 @@ function MoreMenu({ onDownload, onDelete }) {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          backgroundColor: open ? 'rgba(255,255,255,0.15)' : '#00000080',
+          backgroundColor: open ? 'rgba(0,0,0,0.75)' : '#00000080',
           border: 'none',
           cursor: 'pointer',
           transition: 'background-color 0.12s',
           flexShrink: 0,
         }}
-        onMouseEnter={(e) => { if (!open) e.currentTarget.style.backgroundColor = '#FFFFFF1A'; }}
+        onMouseEnter={(e) => { if (!open) e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.65)'; }}
         onMouseLeave={(e) => { if (!open) e.currentTarget.style.backgroundColor = '#00000080'; }}
         onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
         aria-label="更多操作"
@@ -2790,7 +2790,7 @@ function ProjectListItem({ project, active, onClick }) {
               transition: 'background-color 0.12s',
               flexShrink: 0,
             }}
-            onMouseEnter={(e) => { if (!menuOpen) e.currentTarget.style.backgroundColor = '#FFFFFF1A'; }}
+            onMouseEnter={(e) => { if (!menuOpen) e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.65)'; }}
             onMouseLeave={(e) => { if (!menuOpen) e.currentTarget.style.backgroundColor = '#00000080'; }}
             onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); }}
             aria-label="更多操作"
@@ -2960,6 +2960,10 @@ function ProjectAssetsPanel() {
   const [selected, setSelected] = useState(new Set());
   const [favOnly, setFavOnly] = useState(false);
   const [assetsMap, setAssetsMap] = useState({});
+  // 每个 [projectId+category] 的分页状态：{ cursor, hasMore, loading, rawList }
+  const [pageMeta, setPageMeta] = useState({});
+  const sentinelRef = useRef(null);
+  const scrollContainerRef = useRef(null);
   const [renameTarget, setRenameTarget] = useState(null);
   const [renameValue, setRenameValue] = useState('');
   const [deleteTarget, setDeleteTarget] = useState(null);
@@ -2971,9 +2975,50 @@ function ProjectAssetsPanel() {
     setTimeout(() => setToast(null), 2500);
   }
 
+  const pageKey = (projectId, category) => `${projectId}__${category}`;
+
+  // 首屏加载：切换项目或 tab 时触发
+  async function loadFirstPage(projectId, category) {
+    const key = pageKey(projectId, category);
+    setPageMeta(prev => ({ ...prev, [key]: { cursor: null, hasMore: false, loading: true, rawList: [] } }));
+    try {
+      const limit = calcProjectAssetsLimit(category);
+      const result = await apiGetProjectAssetsPage(projectId, { category, limit });
+      setAssetsMap(prev => ({ ...prev, [category]: result.grouped[category] ?? [] }));
+      setPageMeta(prev => ({
+        ...prev,
+        [key]: { cursor: result.nextCursor, hasMore: result.hasMore, loading: false, rawList: result.rawList },
+      }));
+    } catch (err) {
+      console.error('[ProjectAssetsPanel] 加载失败:', err);
+      setPageMeta(prev => ({ ...prev, [key]: { cursor: null, hasMore: false, loading: false, rawList: [] } }));
+    }
+  }
+
+  // 加载更多
+  async function loadMorePage(projectId, category) {
+    const key = pageKey(projectId, category);
+    const meta = pageMeta[key];
+    if (!meta || meta.loading || !meta.hasMore) return;
+    setPageMeta(prev => ({ ...prev, [key]: { ...prev[key], loading: true } }));
+    try {
+      const limit = calcProjectAssetsLimit(category);
+      const result = await apiGetProjectAssetsPage(projectId, { category, limit, cursor: meta.cursor });
+      const accumulated = [...(meta.rawList || []), ...result.rawList];
+      const regrouped = groupByCategory(accumulated);
+      setAssetsMap(prev => ({ ...prev, [category]: regrouped[category] ?? [] }));
+      setPageMeta(prev => ({
+        ...prev,
+        [key]: { cursor: result.nextCursor, hasMore: result.hasMore, loading: false, rawList: accumulated },
+      }));
+    } catch (err) {
+      console.error('[ProjectAssetsPanel] 加载更多失败:', err);
+      setPageMeta(prev => ({ ...prev, [key]: { ...prev[key], loading: false } }));
+    }
+  }
+
   useEffect(() => {
     apiGetProjects().then(async (list) => {
-      // 为每个项目获取资产数量
       const projectsWithCounts = await Promise.all(
         list.map(async (project) => {
           try {
@@ -2993,21 +3038,30 @@ function ProjectAssetsPanel() {
     });
   }, []);
 
+  // 项目或 tab 切换时加载首屏
   useEffect(() => {
     if (activeProject == null) return;
-    // 同步预填充缓存（秒开）
-    const cachedAssets = peekCache(K.projectAssets(activeProject), MEDIUM.CONTENT);
-    if (cachedAssets) setAssetsMap(cachedAssets);
-    // 用当前 activeCategory 计算视口 limit，保证首屏铺满
-    const limit = calcProjectAssetsLimit(activeCategory);
-    // 异步拉最新
-    apiGetProjectAssets(activeProject, { limit }).then(setAssetsMap);
-    // 订阅后台更新
+    loadFirstPage(activeProject, activeCategory);
     const unsubscribe = subscribe(K.projectAssets(activeProject), (data) => {
       if (data) setAssetsMap(data);
     });
     return unsubscribe;
-  }, [activeProject]);
+  }, [activeProject, activeCategory]);
+
+  // IntersectionObserver 触底加载更多
+  useEffect(() => {
+    if (!sentinelRef.current || !scrollContainerRef.current) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && activeProject) {
+          loadMorePage(activeProject, activeCategory);
+        }
+      },
+      { root: scrollContainerRef.current, rootMargin: '120px', threshold: 0 }
+    );
+    observer.observe(sentinelRef.current);
+    return () => observer.disconnect();
+  }, [activeProject, activeCategory, pageMeta]);
 
   const categoryAssets = assetsMap[activeCategory] || [];
   const filtered = favOnly ? categoryAssets.filter((a) => a.starred) : categoryAssets;
@@ -3269,11 +3323,7 @@ function ProjectAssetsPanel() {
             setActiveCategory(k);
             setFavOnly(false);
             exitBatch();
-            // 切 tab 时用新 tab 的卡片尺寸重新计算 limit，重新拉取
-            if (activeProject != null) {
-              const limit = calcProjectAssetsLimit(k);
-              apiGetProjectAssets(activeProject, { limit }).then(setAssetsMap);
-            }
+            // useEffect([activeProject, activeCategory]) 会自动触发首屏加载
           }} />
           {batchMode ? (
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingLeft: '24px', paddingRight: '24px', gap: '8px', flex: 1, height: '48px' }}>
@@ -3319,7 +3369,7 @@ function ProjectAssetsPanel() {
           )}
         </div>
 
-        <div style={{
+        <div ref={scrollContainerRef} style={{
           flex: 1,
           overflowY: 'auto',
           paddingTop: '16px',
@@ -3383,6 +3433,13 @@ function ProjectAssetsPanel() {
               />
             )
           ))}
+          {/* 滚动加载哨兵 */}
+          <div ref={sentinelRef} style={{ width: '100%', height: '1px', flexShrink: 0 }} />
+          {pageMeta[pageKey(activeProject, activeCategory)]?.loading && (
+            <div style={{ width: '100%', display: 'flex', justifyContent: 'center', padding: '16px 0', flexShrink: 0 }}>
+              <span style={{ fontFamily: FONT, fontSize: '13px', color: '#FFFFFF40' }}>加载中…</span>
+            </div>
+          )}
         </div>
       </div>
 

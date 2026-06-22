@@ -37,6 +37,26 @@ export async function apiGetAssets(filters = {}) {
   return [];
 }
 
+// 带分页信息的资产请求，返回 { list, nextCursor, hasMore, total }
+export async function apiGetAssetsPage(filters = {}) {
+  const params = new URLSearchParams();
+  Object.entries(filters).forEach(([k, v]) => {
+    if (v !== undefined && v !== null && v !== '') params.append(k, v);
+  });
+  const query = params.toString();
+  const url = query ? `${BASE}/api/assets?${query}` : `${BASE}/api/assets`;
+  const res = await authFetch(url, { headers: { 'Content-Type': 'application/json' } });
+  const data = await res.json();
+  if (Array.isArray(data)) return { list: data, nextCursor: null, hasMore: false, total: data.length };
+  const list = data?.list ?? data?.items ?? data?.data ?? [];
+  return {
+    list,
+    nextCursor: data?.next_cursor ?? data?.nextCursor ?? null,
+    hasMore: data?.has_more ?? data?.hasMore ?? false,
+    total: data?.total ?? list.length,
+  };
+}
+
 export async function apiGetAssetDetail(assetId) {
   const res = await authFetch(`${BASE}/api/assets/${assetId}`, {
     headers: { 'Content-Type': 'application/json' },
@@ -331,58 +351,98 @@ export function calcProjectAssetsLimit(category, {
   return cols * rows;
 }
 
-export async function apiGetProjectAssets(projectId, { limit } = {}) {
+// tab key → 后端 category / asset_type 过滤参数
+const TAB_CATEGORY_FILTER = {
+  chars:             { category: 'character' },
+  scenes:            { category: 'scene' },
+  props:             { category: 'prop' },
+  storyboard_img:    { category: 'storyboard', asset_type: 'image' },
+  storyboard_video:  { category: 'storyboard', asset_type: 'video' },
+  audio:             { category: 'audio' },
+  final:             { category: 'film' },
+};
+
+// 用 storyboard 数据给资产打 is_primary / ratio 标记，返回富化后的原始资产数组
+async function enrichWithStoryboards(projectId, rawList, needsStoryboards) {
+  if (!needsStoryboards) return rawList;
+  const storyboardsRaw = await apiGetStoryboards(projectId).catch(() => []);
+  const storyboards = Array.isArray(storyboardsRaw) ? storyboardsRaw : [];
+  const primaryImageUrls = new Set();
+  const primaryVideoAssetIds = new Set();
+  const primaryVideoUrls = new Set();
+  const videoAssetIdRatio = {};
+  const videoUrlRatio = {};
+  const imageUrlRatio = {};
+  storyboards.forEach((sb) => {
+    const ratio = sb.ratio || sb.aspect_ratio || '';
+    if (sb.image_url) {
+      primaryImageUrls.add(normalizeImageUrl(sb.image_url));
+      if (ratio) imageUrlRatio[normalizeImageUrl(sb.image_url)] = ratio;
+    }
+    if (sb.video_asset_id) {
+      primaryVideoAssetIds.add(sb.video_asset_id);
+      if (ratio) videoAssetIdRatio[sb.video_asset_id] = ratio;
+    } else if (sb.video_url) {
+      primaryVideoUrls.add(normalizeImageUrl(sb.video_url));
+      if (ratio) videoUrlRatio[normalizeImageUrl(sb.video_url)] = ratio;
+    }
+  });
+  return rawList.map((item) => {
+    if (item.category !== 'storyboard') return item;
+    let is_primary = item.is_primary ?? false;
+    let ratio = item.ratio || '';
+    if (item.asset_type === 'video') {
+      is_primary = primaryVideoAssetIds.has(item.id) || primaryVideoUrls.has(normalizeImageUrl(item.file_url));
+      if (!ratio) ratio = videoAssetIdRatio[item.id] || videoUrlRatio[normalizeImageUrl(item.file_url)] || '';
+    } else {
+      is_primary = primaryImageUrls.has(normalizeImageUrl(item.file_url)) || primaryImageUrls.has(normalizeImageUrl(item.thumbnail_url));
+      if (!ratio) ratio = imageUrlRatio[normalizeImageUrl(item.file_url)] || imageUrlRatio[normalizeImageUrl(item.thumbnail_url)] || '';
+    }
+    return { ...item, is_primary, ...(ratio ? { ratio } : {}) };
+  });
+}
+
+// 导出 groupByCategory 供调用方在累积原始数据后重新分组
+export { groupByCategory };
+
+export async function apiGetProjectAssets(projectId, { limit, category } = {}) {
   const fetchFn = async () => {
-    const [data, storyboardsRaw] = await Promise.all([
-      apiGetAssets({ project_id: projectId, scope: 'project', ...(limit ? { limit } : {}) }),
-      apiGetStoryboards(projectId).catch(() => []),
-    ]);
-
-    const storyboards = Array.isArray(storyboardsRaw) ? storyboardsRaw : [];
-    const primaryImageUrls = new Set();
-    const primaryVideoAssetIds = new Set();
-    const primaryVideoUrls = new Set();
-    const videoAssetIdRatio = {};
-    const videoUrlRatio = {};
-    const imageUrlRatio = {};
-
-    storyboards.forEach((sb) => {
-      const ratio = sb.ratio || sb.aspect_ratio || '';
-      if (sb.image_url) {
-        primaryImageUrls.add(normalizeImageUrl(sb.image_url));
-        if (ratio) imageUrlRatio[normalizeImageUrl(sb.image_url)] = ratio;
-      }
-      if (sb.video_asset_id) {
-        primaryVideoAssetIds.add(sb.video_asset_id);
-        if (ratio) videoAssetIdRatio[sb.video_asset_id] = ratio;
-      } else if (sb.video_url) {
-        primaryVideoUrls.add(normalizeImageUrl(sb.video_url));
-        if (ratio) videoUrlRatio[normalizeImageUrl(sb.video_url)] = ratio;
-      }
-    });
-
-    const assets = (Array.isArray(data) ? data : []).map((item) => {
-      if (item.category !== 'storyboard') return item;
-      let is_primary = item.is_primary ?? false;
-      let ratio = item.ratio || '';
-      if (item.asset_type === 'video') {
-        is_primary = primaryVideoAssetIds.has(item.id)
-          || primaryVideoUrls.has(normalizeImageUrl(item.file_url));
-        if (!ratio) ratio = videoAssetIdRatio[item.id] || videoUrlRatio[normalizeImageUrl(item.file_url)] || '';
-      } else {
-        is_primary = primaryImageUrls.has(normalizeImageUrl(item.file_url))
-          || primaryImageUrls.has(normalizeImageUrl(item.thumbnail_url));
-        if (!ratio) ratio = imageUrlRatio[normalizeImageUrl(item.file_url)] || imageUrlRatio[normalizeImageUrl(item.thumbnail_url)] || '';
-      }
-      return { ...item, is_primary, ...(ratio ? { ratio } : {}) };
-    });
-
-    return groupByCategory(assets);
+    const categoryFilter = category ? (TAB_CATEGORY_FILTER[category] ?? {}) : {};
+    const effectiveLimit = limit || 200;
+    const needsStoryboards = category === 'storyboard_img' || category === 'storyboard_video' || !category;
+    const rawList = await apiGetAssets({ project_id: projectId, scope: 'project', limit: effectiveLimit, ...categoryFilter });
+    const enriched = await enrichWithStoryboards(projectId, Array.isArray(rawList) ? rawList : [], needsStoryboards);
+    return groupByCategory(enriched);
   };
 
-  // 有 limit 时跳过缓存直接请求；无 limit 时走正常缓存路径
-  if (limit) return fetchFn();
+  // 指定 category 时跳过全局缓存（按分类局部请求）；有 limit 时也跳过缓存；否则走正常缓存路径
+  if (limit || category) return fetchFn();
   return cached(K.projectAssets(projectId), fetchFn, { medium: MEDIUM.CONTENT, ttl: TTL.CONTENT });
+}
+
+/**
+ * 带 cursor 分页的项目资产请求（按 tab category 单独拉取）
+ * 返回 { grouped: { [tabKey]: [] }, rawList, nextCursor, hasMore }
+ * rawList 是未分组的原始资产，调用方需自行累积后调用 groupByCategory 重新分组
+ */
+export async function apiGetProjectAssetsPage(projectId, { category, limit = 20, cursor } = {}) {
+  const categoryFilter = category ? (TAB_CATEGORY_FILTER[category] ?? {}) : {};
+  const needsStoryboards = category === 'storyboard_img' || category === 'storyboard_video' || !category;
+  const page = await apiGetAssetsPage({
+    project_id: projectId,
+    scope: 'project',
+    limit,
+    cursor: cursor || undefined,
+    ...categoryFilter,
+  });
+  const enriched = await enrichWithStoryboards(projectId, page.list, needsStoryboards);
+  return {
+    rawList: enriched,
+    grouped: groupByCategory(enriched),
+    nextCursor: page.nextCursor,
+    hasMore: page.hasMore,
+    total: page.total,
+  };
 }
 
 export async function apiGetShotDetail(shotId) {
