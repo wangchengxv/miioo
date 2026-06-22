@@ -3155,7 +3155,7 @@ const IconVideoPlaceholder = () => (
 
 const PARAM_OPTIONS = {
   framing: ['全景', '中景', '近景', '特写'],
-  cameraMotion: ['固定机位', '跟拍镜头', '环绕镜头', '缓推镜头', '缓拉镜头', '左摇镜头', '左移镜头', '右移镜头', '右摇镜头', '上升镜头', '下降镜头'],
+  cameraMotion: ['固定机位', '跟拍镜头', '环绕镜头', '缓推镜头', '缓拉镜头', '左摇镜头', '右摇镜头', '左移镜头', '右移镜头', '上升镜头', '下降镜头'],
   angle: ['平视拍摄', '仰视拍摄', '俯视拍摄', '左侧45度拍摄', '右侧45度拍摄', '正面视角拍摄', '背面视角拍摄', '侧面视角拍摄', '过肩镜头拍摄', '主观镜头拍摄'],
   composition: ['三分法构图', '中心构图', '前景构图', '对角线构图', '对称构图', '框架构图', '三角形构图', '留白构图', '引导线构图'],
   duration: Array.from({ length: 13 }, (_, i) => `${i + 3}s`),
@@ -3197,6 +3197,7 @@ function ParamSelect({ field, value, onChange, onClose, triggerRef }) {
   return createPortal(
     <div
       ref={ref}
+      onClick={(e) => e.stopPropagation()}
       style={{
         position: 'fixed',
         top: pos.top,
@@ -4915,7 +4916,7 @@ function MediaCol({ media, onUpload, accept, isVideo, label, onAIGenerate, shotM
 // ─── 镜头编号列 ───────────────────────────────────────────────────────────────
 
 const NUMBER_BTNS = [
-  { key: 'drag', icon: <IconDrag />, label: '拖拽移动卡片顺序' },
+  { key: 'drag', icon: <IconDrag />, label: '拖拽移动分镜' },
   { key: 'add', icon: <IconAdd />, label: '下方添加空分镜' },
   { key: 'copy', icon: <IconCopy />, label: '复制当前分镜' },
   { key: 'delete', icon: <IconDelete />, label: '删除分镜' },
@@ -5059,6 +5060,72 @@ function NumberCol({ number, isHovered, onAdd, onCopy, onDeleteRequest, onDragHa
   );
 }
 
+// ─── 参数触发器（景别/运镜/拍摄角度/构图/时长）────────────────────────────────
+
+function ParamTrigger({ field, label, value, isActive, triggerRefs, onToggle, onClose, onUpdate }) {
+  const [hov, setHov] = useState(false);
+  const [pressed, setPressed] = useState(false);
+
+  return (
+    <div
+      ref={(el) => { triggerRefs.current[field] = el; }}
+      onClick={onToggle}
+      onMouseEnter={() => setHov(true)}
+      onMouseLeave={() => { setHov(false); setPressed(false); }}
+      onMouseDown={() => setPressed(true)}
+      onMouseUp={() => setPressed(false)}
+      style={{
+        position: 'relative',
+        display: 'flex',
+        alignItems: 'center',
+        gap: '2px',
+        height: '22px',
+        paddingInline: '6px',
+        borderRadius: '6px',
+        cursor: 'pointer',
+        backgroundColor: pressed
+          ? 'rgba(255,255,255,0.10)'
+          : isActive
+          ? 'rgba(255,255,255,0.08)'
+          : hov
+          ? 'rgba(255,255,255,0.06)'
+          : 'transparent',
+        border: `1px solid ${isActive ? 'rgba(255,255,255,0.18)' : hov ? 'rgba(255,255,255,0.10)' : 'transparent'}`,
+        transition: 'background-color 0.12s, border-color 0.12s',
+        userSelect: 'none',
+      }}
+    >
+      <span style={{
+        fontSize: '12px',
+        color: hov || isActive ? 'rgba(255,255,255,0.50)' : 'rgba(255,255,255,0.35)',
+        fontFamily: '"Alibaba PuHuiTi 2.0", system-ui, sans-serif',
+        transition: 'color 0.12s',
+        whiteSpace: 'nowrap',
+      }}>
+        {label}：
+      </span>
+      <span style={{
+        fontSize: '12px',
+        color: hov || isActive ? '#FFFFFF' : 'rgba(255,255,255,0.80)',
+        fontFamily: '"Alibaba PuHuiTi 2.0", system-ui, sans-serif',
+        transition: 'color 0.12s',
+        whiteSpace: 'nowrap',
+      }}>
+        {value || '—'}
+      </span>
+      {isActive && (
+        <ParamSelect
+          field={field}
+          value={value}
+          onChange={onUpdate}
+          onClose={onClose}
+          triggerRef={{ current: triggerRefs.current[field] }}
+        />
+      )}
+    </div>
+  );
+}
+
 // ─── 画面描述列 ───────────────────────────────────────────────────────────────
 
 function DescriptionCol({ shot, onChange }) {
@@ -5077,6 +5144,7 @@ function DescriptionCol({ shot, onChange }) {
       flexDirection: 'column',
       gap: '8px',
       padding: '12px',
+      paddingBottom: '8px',
       borderRight: '1px solid rgba(255,255,255,0.08)',
       overflow: 'hidden',
       alignSelf: 'stretch',
@@ -5089,42 +5157,19 @@ function DescriptionCol({ shot, onChange }) {
         onChange={(v) => onChange({ ...shot, description: v })}
         placeholder="描述画面内容…"
       />
-      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', flexShrink: 0 }}>
+      <div style={{ display: 'flex', flexWrap: 'wrap', gap: '4px', flexShrink: 0, marginTop: 'auto' }}>
         {Object.entries(PARAM_LABELS).map(([field, label]) => (
-          <div key={field} style={{ position: 'relative', display: 'flex', alignItems: 'center' }}>
-            <span
-              ref={(el) => { triggerRefs.current[field] = el; }}
-              onClick={() => setActiveParam(activeParam === field ? null : field)}
-              style={{
-                fontSize: '12px',
-                color: 'rgba(255,255,255,0.60)',
-                cursor: 'pointer',
-                fontFamily: '"Alibaba PuHuiTi 2.0", system-ui, sans-serif',
-              }}
-            >
-              {label}：
-            </span>
-            <span
-              onClick={() => setActiveParam(activeParam === field ? null : field)}
-              style={{
-                fontSize: '12px',
-                color: '#FFFFFF',
-                cursor: 'pointer',
-                fontFamily: '"Alibaba PuHuiTi 2.0", system-ui, sans-serif',
-              }}
-            >
-              {shot.params[field] || '—'}
-            </span>
-            {activeParam === field && (
-              <ParamSelect
-                field={field}
-                value={shot.params[field]}
-                onChange={(v) => updateParam(field, v)}
-                onClose={() => setActiveParam(null)}
-                triggerRef={{ current: triggerRefs.current[field] }}
-              />
-            )}
-          </div>
+          <ParamTrigger
+            key={field}
+            field={field}
+            label={label}
+            value={shot.params[field]}
+            isActive={activeParam === field}
+            triggerRefs={triggerRefs}
+            onToggle={() => setActiveParam(activeParam === field ? null : field)}
+            onClose={() => setActiveParam(null)}
+            onUpdate={(v) => updateParam(field, v)}
+          />
         ))}
       </div>
     </div>
@@ -5404,7 +5449,7 @@ const INITIAL_SHOTS = [
 
 const EPISODES = ['第一集', '第二集'];
 
-export default function StoryboardPage({ projectId, projectName = '两只老虎的奇遇', projectRatio, chars = [], scenes = [], props = [], episodes = EPISODES, initialEpisodeIndex = null, onUnlockStep, onVideoGenerated, onGenerateStoryboards, generateError = null, isGenerating: homeIsGenerating = false }) {
+export default function StoryboardPage({ projectId, projectName = '两只老虎的奇遇', projectRatio, chars = [], scenes = [], props = [], episodes = EPISODES, initialEpisodeIndex = null, onUnlockStep, onVideoGenerated, onGenerateStoryboards, generateError = null, isGenerating: homeIsGenerating = false, completedEpisodesCount = 0 }) {
 
   const activeEpisodes = episodes.length > 0 ? episodes : EPISODES;
   // 用 peekCache 同步读取缓存，第一次渲染直接呈现旧数据，避免空状态闪烁
@@ -6010,7 +6055,7 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
       boxSizing: 'border-box',
     }}>
       {/* toolbar */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0, position: 'relative' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
           <span style={{ fontSize: '14px', color: 'rgba(255,255,255,0.45)', fontFamily: FONT }}>
             {projectName}
@@ -6019,25 +6064,28 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
             <path d="M5.5 3.5L9 7L5.5 10.5" stroke="#FFFFFF40" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
           </svg>
           <EpisodeSelector episodes={activeEpisodes} value={episode} onChange={setEpisode} />
-          {/* 后台分镜生成中提示：有数据时不全屏 loading，改用 inline 状态条 */}
-          {homeIsGenerating && shots.length > 0 && (
-            <div style={{
-              display: 'flex', alignItems: 'center', gap: '6px',
-              height: '28px', padding: '0 10px', borderRadius: '6px',
-              background: 'rgba(45,195,225,0.08)',
-              border: '1px solid rgba(45,195,225,0.2)',
-              flexShrink: 0,
-            }}>
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ flexShrink: 0, animation: 'spin 1.2s linear infinite' }}>
-                <circle cx="6" cy="6" r="4.5" stroke="rgba(45,195,225,0.3)" strokeWidth="1.5" />
-                <path d="M6 1.5A4.5 4.5 0 0 1 10.5 6" stroke="#2DC3E1" strokeWidth="1.5" strokeLinecap="round" />
-              </svg>
-              <span style={{ fontFamily: FONT, fontSize: '12px', color: '#2DC3E1', whiteSpace: 'nowrap' }}>
-                {loadingTexts[loadingTextIndex]}
-              </span>
-            </div>
-          )}
         </div>
+        {/* 后台分镜生成中提示：有数据时不全屏 loading，改用居中 inline 状态条 */}
+        {homeIsGenerating && shots.length > 0 && (
+          <div style={{
+            position: 'absolute', left: '50%', top: '50%',
+            transform: 'translate(-50%, -50%)',
+            display: 'flex', alignItems: 'center', gap: '6px',
+            height: '28px', padding: '0 10px', borderRadius: '6px',
+            background: 'rgba(45,195,225,0.08)',
+            border: '1px solid rgba(45,195,225,0.2)',
+            pointerEvents: 'none',
+            flexShrink: 0,
+          }}>
+            <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ flexShrink: 0, animation: 'spin 1.2s linear infinite' }}>
+              <circle cx="6" cy="6" r="4.5" stroke="rgba(45,195,225,0.3)" strokeWidth="1.5" />
+              <path d="M6 1.5A4.5 4.5 0 0 1 10.5 6" stroke="#2DC3E1" strokeWidth="1.5" strokeLinecap="round" />
+            </svg>
+            <span style={{ fontFamily: FONT, fontSize: '12px', color: '#2DC3E1', whiteSpace: 'nowrap' }}>
+              后台还在抽取分镜，已完成 {completedEpisodesCount}/{activeEpisodes.length} 集
+            </span>
+          </div>
+        )}
         <div ref={batchBtnRef} style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
           {downloadMode ? (
             <>
