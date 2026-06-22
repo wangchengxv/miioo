@@ -222,9 +222,11 @@ function groupByShot(normalized) {
   const shotMap = {};
 
   normalized.forEach((asset) => {
-    // key 加入 episode_number，避免第一集分镜01和第二集分镜01被合并
+    // key 加入 episode_number（优先）或 episodeLabel（兜底），避免第一集分镜01和第二集分镜01被合并
+    // episode_number 存在于 metadata_json，后端未必写入；episodeLabel 是 AssetResponse 顶层字段，更可靠
+    const epKey = asset.episode_number ?? asset.episodeLabel ?? 'x';
     const key = asset.shot_number != null
-      ? `ep${asset.episode_number ?? 'x'}_${asset.storyboard_id ?? 'local'}_shot_${asset.shot_number}`
+      ? `ep${epKey}_${asset.storyboard_id ?? 'local'}_shot_${asset.shot_number}`
       : asset.name;
     if (!shotMap[key]) shotMap[key] = [];
     shotMap[key].push(asset);
@@ -268,9 +270,15 @@ function groupByShot(normalized) {
       episodeLabel: primaryImage.episodeLabel,
     };
   }).sort((a, b) => {
-    // 先按 episode_number 排序，再按 shot_number 排序，无编号的排最后
-    const epA = a.episode_number ?? Infinity;
-    const epB = b.episode_number ?? Infinity;
+    // 先按集数排序，再按 shot_number 排序，无编号的排最后
+    // episode_number（metadata_json）优先；后端若未写则用 episodeLabel 里的数字兜底
+    const epNumFromLabel = (label) => {
+      if (label == null) return null;
+      const m = String(label).match(/\d+/);
+      return m ? parseInt(m[0], 10) : null;
+    };
+    const epA = a.episode_number ?? epNumFromLabel(a.episodeLabel) ?? Infinity;
+    const epB = b.episode_number ?? epNumFromLabel(b.episodeLabel) ?? Infinity;
     if (epA !== epB) return epA - epB;
     if (a.shot_number == null) return 1;
     if (b.shot_number == null) return -1;

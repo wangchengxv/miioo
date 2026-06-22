@@ -7,8 +7,8 @@ import { apiDeleteCreationImage, apiDeleteCreationVideo, apiBatchDeleteImages, a
 import { useCreationStore } from '../stores/creationStore';
 import { generationsToDays } from '../utils/creativeDaysAdapter';
 import { apiGetProjects, apiGetProjectOverview, apiDeleteProject, apiUpdateProject, apiDownloadProjectAssets } from '../api/project';
-import { subscribe, peekCache } from '../utils/cache';
-import { K, MEDIUM } from '../utils/cacheKeys';
+import { invalidate } from '../utils/cache';
+import { K } from '../utils/cacheKeys';
 import ImageDetailModal from '../components/ImageDetailModal';
 import CreationVideoDetailModal from '../components/CreationVideoDetailModal';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -632,24 +632,6 @@ function SubjectAssetDetailModal({ onClose, onDownload, onDeleteImage, onShowToa
                           <span style={{ fontFamily: FONT, fontSize: '10px', lineHeight: '14px', color: '#0A0A0A', fontWeight: 500 }}>定稿</span>
                         </div>
                       )}
-                      {/* Hover overlay */}
-                      {isHov && (
-                        <div style={{
-                          position: 'absolute', bottom: 0, left: 0, right: 0,
-                          paddingTop: '8px', paddingBottom: '4px', paddingLeft: '4px', paddingRight: '4px',
-                          display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px',
-                          backgroundImage: 'linear-gradient(in oklab 180deg, oklab(0% 0 0 / 0%) 0%, oklab(0% 0 0 / 80%) 100%)',
-                        }}>
-                          <div style={{ display: 'flex', alignItems: 'center', padding: '2px', cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); setActiveImg(idx); }} title="切换">
-                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
-                              <path d="M5.333 2H2.667C2.298 2 2 2.298 2 2.667V5.333" stroke="#FFFFFF" strokeLinejoin="round" />
-                              <path d="M5.333 14H2.667C2.298 14 2 13.701 2 13.333V10.667" stroke="#FFFFFF" strokeLinejoin="round" />
-                              <path d="M10.667 14H13.333C13.701 14 14 13.701 14 13.333V10.667" stroke="#FFFFFF" strokeLinejoin="round" />
-                              <path d="M10.667 2H13.333C13.701 2 14 2.298 14 2.667V5.333" stroke="#FFFFFF" strokeLinejoin="round" />
-                            </svg>
-                          </div>
-                        </div>
-                      )}
                     </div>
                   );
                 })}
@@ -966,28 +948,6 @@ function AssetDetailModal({ onClose, onDownload, name, description, prompt, mode
                         backgroundImage: `url(${img.src ?? placeholderFlowers})`,
                         backgroundSize: 'cover', backgroundPosition: '50%',
                       }} />
-                      {/* Hover overlay: show "放大查看" icon in bottom-right */}
-                      {isHov && (
-                        <div style={{
-                          position: 'absolute', bottom: 0, left: 0, right: 0,
-                          paddingTop: '8px', paddingBottom: '4px', paddingLeft: '4px', paddingRight: '4px',
-                          display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px',
-                          backgroundImage: 'linear-gradient(in oklab 180deg, oklab(0% 0 0 / 0%) 0%, oklab(0% 0 0 / 80%) 100%)',
-                        }}>
-                          <div
-                            style={{ display: 'flex', alignItems: 'center', padding: '2px', cursor: 'pointer' }}
-                            onClick={(e) => { e.stopPropagation(); setActiveImg(idx); }}
-                            title="放大查看"
-                          >
-                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
-                              <path d="M5.333 2H2.667C2.298 2 2 2.298 2 2.667V5.333" stroke="#FFFFFF" strokeLinejoin="round" />
-                              <path d="M5.333 14H2.667C2.298 14 2 13.701 2 13.333V10.667" stroke="#FFFFFF" strokeLinejoin="round" />
-                              <path d="M10.667 14H13.333C13.701 14 14 13.701 14 13.333V10.667" stroke="#FFFFFF" strokeLinejoin="round" />
-                              <path d="M10.667 2H13.333C13.701 2 14 2.298 14 2.667V5.333" stroke="#FFFFFF" strokeLinejoin="round" />
-                            </svg>
-                          </div>
-                        </div>
-                      )}
                     </div>
                   );
                 })}
@@ -1228,27 +1188,6 @@ function ShotDetailModal({ onClose, onDownload, onDelete, onShowToast, shotNumbe
                           height: '18px', display: 'flex', alignItems: 'center',
                         }}>
                           <span style={{ fontFamily: FONT, fontSize: '10px', lineHeight: '14px', color: '#0A0A0A', fontWeight: 500 }}>定稿</span>
-                        </div>
-                      )}
-                      {isHov && (
-                        <div style={{
-                          position: 'absolute', bottom: 0, left: 0, right: 0,
-                          paddingTop: '8px', paddingBottom: '4px', paddingLeft: '4px', paddingRight: '4px',
-                          display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px',
-                          backgroundImage: 'linear-gradient(in oklab 180deg, oklab(0% 0 0 / 0%) 0%, oklab(0% 0 0 / 80%) 100%)',
-                        }}>
-                          <div
-                            style={{ display: 'flex', alignItems: 'center', padding: '2px', cursor: 'pointer' }}
-                            onClick={(e) => { e.stopPropagation(); setActiveImg(idx); }}
-                            title="放大查看"
-                          >
-                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
-                              <path d="M5.333 2H2.667C2.298 2 2 2.298 2 2.667V5.333" stroke="#FFFFFF" strokeLinejoin="round" />
-                              <path d="M5.333 14H2.667C2.298 14 2 13.701 2 13.333V10.667" stroke="#FFFFFF" strokeLinejoin="round" />
-                              <path d="M10.667 14H13.333C13.701 14 14 13.701 14 13.333V10.667" stroke="#FFFFFF" strokeLinejoin="round" />
-                              <path d="M10.667 2H13.333C13.701 2 14 2.298 14 2.667V5.333" stroke="#FFFFFF" strokeLinejoin="round" />
-                            </svg>
-                          </div>
                         </div>
                       )}
                     </div>
@@ -1493,23 +1432,6 @@ function VideoFrameThumbnail({ frame, isActive, isHov, onSelect, onMouseEnter, o
         </div>
       )}
 
-      {isHov && (
-        <div style={{
-          position: 'absolute', bottom: 0, left: 0, right: 0,
-          paddingTop: '8px', paddingBottom: '4px', paddingLeft: '4px', paddingRight: '4px',
-          display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px',
-          backgroundImage: 'linear-gradient(in oklab 180deg, oklab(0% 0 0 / 0%) 0%, oklab(0% 0 0 / 80%) 100%)',
-        }}>
-          <div style={{ display: 'flex', alignItems: 'center', padding: '2px', cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); onSelect(); }} title="放大查看">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
-              <path d="M5.333 2H2.667C2.298 2 2 2.298 2 2.667V5.333" stroke="#FFFFFF" strokeLinejoin="round" />
-              <path d="M5.333 14H2.667C2.298 14 2 13.701 2 13.333V10.667" stroke="#FFFFFF" strokeLinejoin="round" />
-              <path d="M10.667 14H13.333C13.701 14 14 13.701 14 13.333V10.667" stroke="#FFFFFF" strokeLinejoin="round" />
-              <path d="M10.667 2H13.333C13.701 2 14 2.298 14 2.667V5.333" stroke="#FFFFFF" strokeLinejoin="round" />
-            </svg>
-          </div>
-        </div>
-      )}
     </div>
   );
 }
@@ -2117,13 +2039,12 @@ function AssetCard({ name, bgColor = '#252525', url = null, starred = false, sel
     <>
     <div
       style={{
-        width: '320px',
-        height: '180px',
+        width: '100%',
+        aspectRatio: '16/9',
         borderRadius: '10px',
         backgroundColor: '#1C1C1C',
         border: selected ? '1px solid #2DC3E1' : hov ? '1px solid #FFFFFF33' : '1px solid #FFFFFF0F',
         overflow: 'hidden',
-        flexShrink: 0,
         transition: 'border-color 0.15s',
         cursor: 'pointer',
         position: 'relative',
@@ -2289,11 +2210,7 @@ function ProjectAssetCard({ name, desc, url, selected, batchMode, onDownload, on
   const videoRef = useRef(null);
 
   const isStoryboard = category === 'storyboard_img' || category === 'storyboard_video';
-  let cardWidth = 200, cardHeight = 246;
-  if (isStoryboard) {
-    cardWidth = 320;
-    cardHeight = 180;
-  }
+  const cardAspectRatio = isStoryboard ? '16/9' : '200/246';
 
   // 视频悬停播放
   useEffect(() => {
@@ -2316,11 +2233,10 @@ function ProjectAssetCard({ name, desc, url, selected, batchMode, onDownload, on
     <>
       <div
         style={{
-          width: `${cardWidth}px`,
-          height: `${cardHeight}px`,
+          width: '100%',
+          aspectRatio: cardAspectRatio,
           borderRadius: '12px',
           overflow: 'hidden',
-          flexShrink: 0,
           backgroundColor: '#1A1A1A',
           border: selected ? '1px solid #2DC3E1' : '1px solid #FFFFFF14',
           outline: hov && !selected ? '1px solid #FFFFFF26' : '1px solid transparent',
@@ -2980,6 +2896,8 @@ function ProjectAssetsPanel() {
   // 首屏加载：切换项目或 tab 时触发
   async function loadFirstPage(projectId, category) {
     const key = pageKey(projectId, category);
+    // 清掉旧非分页接口写入的 localStorage 缓存，防止过期分组数据覆盖新结果
+    invalidate(K.projectAssets(projectId), 'local');
     setPageMeta(prev => ({ ...prev, [key]: { cursor: null, hasMore: false, loading: true, rawList: [] } }));
     try {
       const limit = calcProjectAssetsLimit(category);
@@ -3042,10 +2960,6 @@ function ProjectAssetsPanel() {
   useEffect(() => {
     if (activeProject == null) return;
     loadFirstPage(activeProject, activeCategory);
-    const unsubscribe = subscribe(K.projectAssets(activeProject), (data) => {
-      if (data) setAssetsMap(data);
-    });
-    return unsubscribe;
   }, [activeProject, activeCategory]);
 
   // IntersectionObserver 触底加载更多
@@ -3376,13 +3290,23 @@ function ProjectAssetsPanel() {
           paddingBottom: '24px',
           paddingLeft: '24px',
           paddingRight: '24px',
-          display: 'flex',
-          flexDirection: filtered.length === 0 ? 'column' : (activeCategory === 'audio' ? 'column' : 'row'),
-          flexWrap: filtered.length === 0 ? 'nowrap' : (activeCategory === 'audio' ? 'nowrap' : 'wrap'),
-          gap: '8px',
-          alignContent: filtered.length === 0 ? undefined : 'flex-start',
-          alignItems: filtered.length === 0 ? 'center' : undefined,
-          justifyContent: filtered.length === 0 ? 'center' : undefined,
+          ...(filtered.length === 0 ? {
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+          } : activeCategory === 'audio' ? {
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+          } : {
+            display: 'grid',
+            gridTemplateColumns: SUBJECT_CARD_CATEGORIES.has(activeCategory) && !['storyboard_img', 'storyboard_video'].includes(activeCategory)
+              ? 'repeat(auto-fill, minmax(160px, 1fr))'
+              : 'repeat(auto-fill, minmax(240px, 1fr))',
+            gap: '8px',
+            alignContent: 'flex-start',
+          }),
         }}>
           {filtered.length === 0 ? (
             <EmptyProjectAssets category={activeCategory} />
@@ -3992,7 +3916,7 @@ function CreativeAssetsPanel({ isLoggedIn }) {
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               <span style={{ fontFamily: FONT, fontSize: '14px', color: '#FFFFFF99', flexShrink: 0 }}>{day.date}</span>
             </div>
-            <div style={{ display: 'flex', flexDirection: activeType === 'dubbing' ? 'column' : 'row', flexWrap: activeType === 'dubbing' ? 'nowrap' : 'wrap', gap: activeType === 'dubbing' ? '8px' : '16px' }}>
+            <div style={activeType === 'dubbing' ? { display: 'flex', flexDirection: 'column', gap: '8px' } : { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '16px' }}>
               {day.cards.map((card) => {
                 const isStarred = favorites.has(card.id);
                 return activeType === 'dubbing' ? (

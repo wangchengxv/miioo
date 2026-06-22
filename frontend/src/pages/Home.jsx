@@ -1133,7 +1133,7 @@ export default function Home({ onProjectCreated }) {
         scenes: { cursor: scenesPage.nextCursor, hasMore: scenesPage.hasMore, loading: false, rawList: scenesPage.list },
         props:  { cursor: propsPage.nextCursor,  hasMore: propsPage.hasMore,  loading: false, rawList: propsPage.list },
       });
-      setSharedProps(normalizeSubjects(propsData));
+      // setSharedProps already set above from propsPage.list
 
       // 从后端数据中提取剧集状态，优先用 overview 的 episode_progress（状态更精准）
       // 不依赖后端 status 字符串（实际值与文档不符），直接用计数字段判断：

@@ -274,6 +274,7 @@ export default function AssetPickerModal({
       id: a.id,
       name: a.name || '未命名',
       url: normalizeImageUrl(a.thumbnail_url || a.file_url) || null,
+      fullUrl: normalizeImageUrl(a.file_url) || null,
       fileUrl: normalizeImageUrl(a.file_url) || null,
       subject_id: a.subject_id ?? null,
       starred: a.is_starred ?? false,
@@ -462,7 +463,7 @@ export default function AssetPickerModal({
     const { clientX, clientY } = e;
     setMousePos({ x: clientX, y: clientY });
     hoverTimerRef.current = setTimeout(() => {
-      setPreviewImage({ url: asset.url, x: clientX, y: clientY });
+      setPreviewImage({ url: asset.fullUrl || asset.url, x: clientX, y: clientY });
     }, 500);
   }
 

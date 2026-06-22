@@ -3815,7 +3815,7 @@ function VoiceDubModal({ open, onClose, chars = [], initialData = {}, onSaveGlob
       >
         {/* header */}
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 24px', borderTopLeftRadius: '16px', borderTopRightRadius: '16px', background: '#161616', flexShrink: 0 }}>
-          <span style={{ fontFamily: FONT_MEDIUM, fontWeight: 500, fontSize: '16px', lineHeight: '20px', color: '#FFFFFF' }}>配音设置</span>
+          <span style={{ fontFamily: FONT_MEDIUM, fontWeight: 500, fontSize: '16px', lineHeight: '20px', color: '#FFFFFF' }}>台词分配</span>
           <button type="button" onClick={onClose}
             onMouseEnter={() => setCloseBtnHov(true)} onMouseLeave={() => setCloseBtnHov(false)}
             style={{ background: closeBtnHov ? 'rgba(255,255,255,0.08)' : 'transparent', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', width: '28px', height: '28px', borderRadius: '6px', transition: 'background 0.1s' }}>
@@ -5532,8 +5532,15 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
 
     apiGetStoryboards(projectId, { episode_id: episodeId })
       .then((data) => {
-        if (data !== null && data !== undefined) {
-          setShots(normalizeShots(data));
+        if (!Array.isArray(data)) return;
+        const normalized = normalizeShots(data);
+        if (normalized.length > 0) {
+          // 有数据：直接覆盖（正常加载 / 刷新场景）
+          setShots(normalized);
+        } else {
+          // 空数组：只有在当前 shots 也为空时才清空，避免剧本定稿后
+          // episode ID 变更导致 API 用新 ID 查不到数据而误清已有分镜
+          setShots((prev) => (prev.length > 0 ? prev : normalized));
         }
       })
       .catch((err) => {
@@ -5541,10 +5548,22 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
       });
 
     const unsub1 = subscribe(cacheKey, (data) => {
-      if (data != null) setShots(normalizeShots(data));
+      if (!Array.isArray(data)) return;
+      const normalized = normalizeShots(data);
+      if (normalized.length > 0) {
+        setShots(normalized);
+      } else {
+        setShots((prev) => (prev.length > 0 ? prev : normalized));
+      }
     });
     const unsub2 = subscribe(cacheKeyAll, (data) => {
-      if (data != null) setShots(normalizeShots(data));
+      if (!Array.isArray(data)) return;
+      const normalized = normalizeShots(data);
+      if (normalized.length > 0) {
+        setShots(normalized);
+      } else {
+        setShots((prev) => (prev.length > 0 ? prev : normalized));
+      }
     });
 
     return () => { unsub1(); unsub2(); };

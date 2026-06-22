@@ -604,11 +604,13 @@ function ProjectCard({ project, onRename, onDelete, onOpen }) {
           <div ref={moreRef} style={{ position: 'relative', flexShrink: 0, marginLeft: '8px' }}>
             <div
               onClick={handleMoreClick}
+              onMouseEnter={(e) => { if (!menuOpen) e.currentTarget.style.background = 'rgba(0,0,0,0.55)'; }}
+              onMouseLeave={(e) => { if (!menuOpen) e.currentTarget.style.background = 'rgba(0,0,0,0.40)'; }}
               style={{
                 width: '28px',
                 height: '28px',
                 borderRadius: '6px',
-                background: menuOpen ? 'rgba(255,255,255,0.18)' : '#FFFFFF14',
+                background: menuOpen ? 'rgba(0,0,0,0.65)' : 'rgba(0,0,0,0.40)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
