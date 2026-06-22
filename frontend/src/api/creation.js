@@ -365,6 +365,17 @@ export async function apiGetCreationAudioTask(taskId) {
 
 // ── 创作上传 ──────────────────────────────────────────────────────────────────
 
+/**
+ * 将文件名中的非 ASCII 字符替换为下划线，保留扩展名。
+ * 避免部分服务端（python-multipart）解析 Content-Disposition 中中文文件名时报 500。
+ */
+function safeFileName(file) {
+  const ext = file.name.includes('.') ? file.name.slice(file.name.lastIndexOf('.')) : '';
+  const base = file.name.slice(0, file.name.length - ext.length);
+  const safeBase = base.replace(/[^\x00-\x7F]/g, '_') || 'upload';
+  return safeBase + ext;
+}
+
 export async function apiUploadCreationImage({ file, category, asset_name, session_id, shot_id, project_id }) {
   const params = new URLSearchParams();
   if (category) params.append('category', category);
@@ -373,7 +384,7 @@ export async function apiUploadCreationImage({ file, category, asset_name, sessi
   if (shot_id) params.append('shot_id', shot_id);
   if (project_id) params.append('project_id', project_id);
   const form = new FormData();
-  form.append('file', file);
+  form.append('file', file, safeFileName(file));
   const res = await authFetch(`${BASE}/api/creation/images/upload?${params.toString()}`, {
     method: 'POST',
     body: form,
@@ -389,7 +400,7 @@ export async function apiUploadCreationVideo({ file, category, asset_name, sessi
   if (shot_id) params.append('shot_id', shot_id);
   if (project_id) params.append('project_id', project_id);
   const form = new FormData();
-  form.append('file', file);
+  form.append('file', file, safeFileName(file));
   const res = await authFetch(`${BASE}/api/creation/videos/upload?${params.toString()}`, {
     method: 'POST',
     body: form,
@@ -405,7 +416,7 @@ export async function apiUploadCreationAudio({ file, category, asset_name, sessi
   if (shot_id) params.append('shot_id', shot_id);
   if (project_id) params.append('project_id', project_id);
   const form = new FormData();
-  form.append('file', file);
+  form.append('file', file, safeFileName(file));
   const res = await authFetch(`${BASE}/api/creation/audios/upload?${params.toString()}`, {
     method: 'POST',
     body: form,
@@ -434,11 +445,14 @@ export async function apiPollVideoTask(taskId, timeoutMs = 1800000) {
     if (status === 'done' || status === 'completed' || status === 'success' || status === 'partial') {
       const result = pollData.result;
       if (!result) continue;
-      const videoUrl = result.video_url || result.videoUrl;
+      const videoUrl = result.hlsUrl || result.hls_url
+        || result.previewVideoUrl || result.preview_video_url
+        || result.video_url || result.videoUrl;
       if (!videoUrl) continue;
       return {
         videos: [videoUrl].filter(Boolean),
         cardIds: [result.id].filter(Boolean),
+        posterUrl: result.posterUrl || result.poster_url || undefined,
       };
     }
     if (status === 'failed' || status === 'error') {
@@ -596,6 +610,7 @@ export async function apiGenerateCreation(params, { onTaskCreated } = {}) {
     }
     const dubbingBody = {
       text: params.prompt || params.text,
+      prompt_raw: params.prompt || params.text || undefined,
       model: params.model || undefined,
       speed: params.speed ?? 1.0,
       emotion: params.emotion || undefined,
@@ -718,6 +733,36 @@ export async function apiGenerateCreation(params, { onTaskCreated } = {}) {
   const hasRefMedia = refUrls.length > 0 || refAssetIds.length > 0 || uploadedRefVideoUrl || uploadedRefAudioUrl;
   const effectiveGenerationMode = hasRefMedia ? 'full' : (params.generation_mode || undefined);
 
+  // ── @ 数字资产绑定（attachments）────────────────────────────────────────
+  // 后端视频生成消费 @ 参考图的真正入口是 attachments（CreationAssetBinding[]），
+  // 而非 reference_image_urls（该字段后端不存在）。这里把图片/视频/音频参考统一组装为绑定。
+  const attachments = [];
+  refUrls.forEach((url, i) => {
+    attachments.push({
+      asset_id: refAssetIds[i] || undefined,
+      asset_type: 'image',
+      url: toAbsoluteUrl(url),
+      role: 'reference',
+      source: 'mention',
+    });
+  });
+  if (uploadedRefVideoUrl) {
+    attachments.push({
+      asset_type: 'video',
+      url: toAbsoluteUrl(uploadedRefVideoUrl),
+      role: 'reference',
+      source: 'mention',
+    });
+  }
+  if (uploadedRefAudioUrl) {
+    attachments.push({
+      asset_type: 'audio',
+      url: toAbsoluteUrl(uploadedRefAudioUrl),
+      role: 'reference',
+      source: 'mention',
+    });
+  }
+
   const body = {
     prompt: params.prompt,
     model: params.model || 'doubao-seedance-2.0',
@@ -732,10 +777,11 @@ export async function apiGenerateCreation(params, { onTaskCreated } = {}) {
     last_frame_url: lastFrameUrl || params.lastFrameUrl || undefined,
     first_frame_asset_id: firstFrameAssetId || params.first_frame_asset_id || undefined,
     last_frame_asset_id: lastFrameAssetId || params.last_frame_asset_id || undefined,
-    // 参考资源（图片：URL + asset_id 双通道；视频/音频：本次上传或外部传入）
-    // toAbsoluteUrl 确保相对路径转为后端 AI 模型可访问的完整 URL
-    reference_image_urls: refUrls.length > 0 ? refUrls.map(toAbsoluteUrl) : undefined,
+    // 参考资源：@ 数字资产绑定通过 attachments 传递（后端真正消费的入口）
+    attachments: attachments.length > 0 ? attachments : undefined,
+    // asset_id 双通道兜底（后端 reference_image_asset_ids 仍支持）
     reference_image_asset_ids: refAssetIds.length > 0 ? refAssetIds : undefined,
+    // 视频/音频参考的独立 URL 字段（兼容后端既有取数口径）
     reference_video_url: uploadedRefVideoUrl ? toAbsoluteUrl(uploadedRefVideoUrl) : (params.reference_video_url ? toAbsoluteUrl(params.reference_video_url) : undefined),
     reference_audio_url: uploadedRefAudioUrl ? toAbsoluteUrl(uploadedRefAudioUrl) : (params.reference_audio_url ? toAbsoluteUrl(params.reference_audio_url) : undefined),
     watermark: params.watermark || undefined,
@@ -749,16 +795,20 @@ export async function apiGenerateCreation(params, { onTaskCreated } = {}) {
 
   onTaskCreated?.({ taskId, params });
 
-  const { videos, cardIds } = await pollTask(
+  const { videos, cardIds, posterUrl } = await pollTask(
     `${BASE}/api/creation/videos/tasks/${taskId}`,
     (pollData) => {
       const result = pollData.result;
-      if (!result) return { videos: [], cardIds: [] };
+      if (!result) return { videos: [], cardIds: [], posterUrl: undefined };
+      const videoUrl = result.hlsUrl || result.hls_url
+        || result.previewVideoUrl || result.preview_video_url
+        || result.video_url || result.videoUrl;
       return {
-        videos: [result.video_url || result.videoUrl],
+        videos: [videoUrl].filter(Boolean),
         cardIds: [result.id],
+        posterUrl: result.posterUrl || result.poster_url || undefined,
       };
     },
   );
-  return { taskId, videos, cardIds, referenceImages: refUrls };
+  return { taskId, videos, cardIds, posterUrl, referenceImages: refUrls };
 }

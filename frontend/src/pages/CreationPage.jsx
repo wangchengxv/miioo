@@ -5243,6 +5243,7 @@ export default function CreationPage({ isLoggedIn, onLoginClick, apiConfigured =
       <CreationVideoDetailModal
         videoUrl={videoDetailModal.videoUrl}
         prompt={videoDetailModal.prompt}
+        promptHTML={videoDetailModal.promptHTML}
         model={videoDetailModal.model}
         ratio={videoDetailModal.ratio}
         resolution={videoDetailModal.resolution}

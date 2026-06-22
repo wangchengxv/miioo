@@ -60,6 +60,7 @@ export default function CreationVideoDetailModal({
   onClose,
   videoUrl,
   prompt = '',
+  promptHTML = '',
   model = '',
   ratio = '16:9',
   resolution = '',
@@ -324,7 +325,10 @@ export default function CreationVideoDetailModal({
                 <CopyPromptButton text={prompt} onCopy={handleCopyPrompt} />
               </div>
               <div className="tracking-[0.12px] font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFFCC] text-xs/5 m-0">
-                {prompt || '无'}
+                {promptHTML
+                  ? <span dangerouslySetInnerHTML={{ __html: promptHTML }} />
+                  : (prompt || '无')
+                }
               </div>
             </div>
 
