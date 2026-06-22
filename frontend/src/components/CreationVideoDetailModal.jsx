@@ -370,8 +370,8 @@ export default function CreationVideoDetailModal({
                     {refImages.map((img, i) => {
                       const imgUrl = typeof img === 'string' ? img : (img.url || img.previewUrl || '');
                       return (
-                        <div key={i} className="rounded-md overflow-clip flex flex-col items-center gap-0 justify-center h-[84px] w-[calc(47.49%)] bg-[#FFFFFF14] border border-solid border-[#FFFFFF14] p-0">
-                          <div className="w-[93px] h-[144px] shrink-0 bg-cover bg-[center]" style={{ backgroundImage: `url(${imgUrl})` }} />
+                        <div key={i} className="rounded-md overflow-clip h-[84px] w-[calc(47.49%)] bg-[#FFFFFF14] border border-solid border-[#FFFFFF14]">
+                          <div className="w-full h-full bg-cover bg-center" style={{ backgroundImage: `url(${imgUrl})` }} />
                         </div>
                       );
                     })}

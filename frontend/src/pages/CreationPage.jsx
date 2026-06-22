@@ -2341,7 +2341,18 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
     setAssetPickerOpen(false);
     if (frameAssetTarget && selectedAssets.length > 0) {
       const asset = selectedAssets[0];
-      const assetFile = { name: asset.name || asset.id, size: 0, url: asset.url, isAsset: true };
+      // fileUrl 是真实文件地址（项目资产 normalize 后），url 可能是缩略图
+      const realUrl = asset.fileUrl || asset.url;
+      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const rawFrameId = asset.backendId || asset.asset_id;
+      const assetFile = {
+        name: asset.name || asset.id,
+        size: 0,
+        url: realUrl,
+        previewUrl: asset.url || realUrl,
+        assetId: rawFrameId && UUID_RE.test(rawFrameId) ? rawFrameId : undefined,
+        isAsset: true,
+      };
       if (frameAssetTarget === 'first') setFirstFrameFile(assetFile);
       else setLastFrameFile(assetFile);
       setFrameAssetTarget(null);
@@ -2350,15 +2361,22 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
     const assetFiles = selectedAssets.map((asset) => {
       const isVideo = asset.type === 'video';
       const isAudio = asset.type === 'audio';
-      // 视频/音频资产必须用真实文件 URL（asset.url），图片才优先用缩略图做预览
-      const fileUrl = asset.url;
-      const previewUrl = asset.thumbnailUrl || asset.thumbnail_url || asset.url;
+      let fileUrl;
+      if (isVideo) fileUrl = asset.videoUrl || asset.fileUrl || asset.url;
+      else if (isAudio) fileUrl = asset.audioUrl || asset.fileUrl || asset.url;
+      else fileUrl = asset.fileUrl || asset.url;
+      const previewUrl = asset.url || asset.thumbnailUrl || asset.thumbnail_url || fileUrl;
+      // 只传真实后端 UUID：backendId（创作资产回写的 card.id）或 asset_id（项目资产）
+      // 排除 composite id（如 "gen-xxx-0" / "history-xxx-0"），这些不是有效后端 ID
+      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const rawId = asset.backendId || asset.asset_id;
+      const assetId = rawId && UUID_RE.test(rawId) ? rawId : undefined;
       return {
         name: asset.name || asset.id,
         size: 0,
         url: fileUrl,
         previewUrl,
-        assetId: asset.id || asset.asset_id || undefined,
+        assetId,
         isAsset: true,
         type: isVideo ? 'video/mp4' : isAudio ? 'audio/mpeg' : 'image/jpeg',
       };

@@ -755,7 +755,7 @@ function MoreMenu({ onDownload, onDelete }) {
   );
 }
 
-function CharCard({ name, desc, imageUrl, voice, voiceName, voicePreviewUrl, onVoiceClick, onClick, onDownloadImage, onDeleteSubject, placeholderImg: cardPlaceholder = placeholderImg, loading = false }) {
+function CharCard({ name, desc, imageUrl, voice, voiceName, voicePreviewUrl, onVoiceClick, onClick, onDownloadImage, onDeleteSubject, placeholderImg: cardPlaceholder = placeholderImg, loading = false, selected = false }) {
   const [hovered, setHovered] = useState(false);
   const [voicePlaying, setVoicePlaying] = useState(false);
   const voiceAudioRef = useRef(null);
@@ -783,15 +783,23 @@ function CharCard({ name, desc, imageUrl, voice, voiceName, voicePreviewUrl, onV
 
   return (
     <div
-      className="[font-synthesis:none] flex flex-col w-50 rounded-xl overflow-clip relative shrink-0 bg-[#1A1A1A] border border-solid border-[#FFFFFF14] antialiased cursor-pointer"
-      style={{ height: '246px', outline: hovered ? '1px solid #FFFFFF26' : '1px solid transparent', transition: 'outline-color 0.15s' }}
+      className="[font-synthesis:none] flex flex-col w-50 rounded-xl overflow-clip relative shrink-0 bg-[#1A1A1A] antialiased cursor-pointer"
+      style={{
+        height: '246px',
+        outline: selected
+          ? '1px solid rgba(45,195,225,0.6)'
+          : hovered
+          ? '1px solid rgba(255,255,255,0.15)'
+          : '1px solid rgba(255,255,255,0.08)',
+        transition: 'outline-color 0.15s',
+      }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      onClick={loading ? undefined : onClick}
+      onClick={onClick}
     >
       {/* image area */}
       <div
-        className="flex items-center justify-center flex-1 self-stretch relative"
+        className="flex-1 self-stretch relative"
         style={{
           minHeight: '148px',
           backgroundImage: `url(${imageUrl || cardPlaceholder})`,
@@ -799,20 +807,17 @@ function CharCard({ name, desc, imageUrl, voice, voiceName, voicePreviewUrl, onV
           backgroundPosition: '50%',
         }}
       >
-        {/* 批量生成加载遮罩 */}
+        {/* 加载遮罩 */}
         {loading && (
           <div
-            className="absolute inset-0 z-10"
-            style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
-            onClick={(e) => e.stopPropagation()}
+            className="absolute inset-0 z-10 flex items-center justify-center"
+            style={{ backgroundColor: 'rgba(0,0,0,0.45)', paddingBottom: '10%' }}
           >
-            <div style={{ position: 'absolute', top: '33%', left: '50%', transform: 'translate(-50%, -50%)' }}>
-              <DotsLoading size={6} color="#2DC3E1" gap={4} />
-            </div>
+            <DotsLoading size={6} color="#2DC3E1" gap={4} />
           </div>
         )}
 
-        {/* top-right actions — 加载中隐藏 */}
+        {/* 右上角操作 — 加载中隐藏 */}
         <div
           className="absolute flex gap-[4px]"
           style={{ top: '8px', right: '8px', opacity: hovered && !loading ? 1 : 0, transition: 'opacity 0.15s' }}
@@ -824,8 +829,7 @@ function CharCard({ name, desc, imageUrl, voice, voiceName, voicePreviewUrl, onV
 
       {/* info overlay */}
       <div
-        className="flex flex-col gap-1.5 absolute left-0 -bottom-px bg-[#161616F2] p-3"
-        style={{ width: '100%' }}
+        className="flex flex-col gap-1.5 absolute -inset-x-px -bottom-px bg-[#161616F2] p-3"
       >
         <div
           className="inline-block font-medium text-[#FFFFFFE6] text-sm/5"
@@ -839,41 +843,44 @@ function CharCard({ name, desc, imageUrl, voice, voiceName, voicePreviewUrl, onV
         >
           {desc}
         </div>
-        {/* voice row — characters only */}
-        {onVoiceClick !== undefined && <div
-          className="flex items-center justify-between"
-       style={{ gap: '6px' }}
-        onClick={(e) => { e.stopPropagation(); onVoiceClick?.(); }}
-      >
-        <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '17px', color: '#FFFFFFCC', flexShrink: 0 }}>
-          选择音色：
-        </span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); onVoiceClick?.(); }}
-              style={{
-                background: 'transparent', border: 'none', padding: 0, cursor: 'pointer',
-                maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-              }}
-            >
-              {voiceName || voice || '未选择'}
-            </button>
-            {/* headphone preview icon */}
-            <button
-              type="button"
-              title={!voice ? '请先选择音色' : '试听'}
-              disabled={!voice}
-              onClick={handleVoicePlay}
-              style={{ background: 'transparent', border: 'none', padding: 0, cursor: voice ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', }}
-            >
-              {voicePlaying
-              ? <PlayingWaveIcon color="#2DC3E1" size={16} />
-              : <HeadphoneIcon color={voice ? '#2DC3E1' : '#FFFFFF66'} />
-            }
-          </button>
-        </div>
-        </div>}
+        {/* 音色行 — 仅角色 */}
+        {onVoiceClick !== undefined && (
+          <div
+            className="flex items-center justify-between"
+            style={{ gap: '6px' }}
+            onClick={(e) => { e.stopPropagation(); onVoiceClick?.(); }}
+          >
+            <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '17px', color: '#FFFFFFCC', flexShrink: 0 }}>
+              选择音色：
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onVoiceClick?.(); }}
+                style={{
+                  background: 'transparent', border: 'none', padding: 0, cursor: 'pointer',
+                  maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  fontFamily: FONT, fontSize: '12px', lineHeight: '17px',
+                  color: voice ? '#2DC3E1' : '#FFFFFFCC',
+                }}
+              >
+                {voiceName || voice || '未选择'}
+              </button>
+              <button
+                type="button"
+                title={!voice ? '请先选择音色' : '试听'}
+                disabled={!voice}
+                onClick={handleVoicePlay}
+                style={{ background: 'transparent', border: 'none', padding: 0, cursor: voice ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', flexShrink: 0 }}
+              >
+                {voicePlaying
+                  ? <PlayingWaveIcon color="#2DC3E1" size={16} />
+                  : <HeadphoneIcon color={voice ? '#2DC3E1' : '#FFFFFF66'} />
+                }
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -2878,6 +2885,7 @@ export default function SubjectPage({ projectId, projectName = '两只老虎的�
             onDownloadImage={() => handleDownloadSubjectImage(char.id)}
             onDeleteSubject={() => handleDeleteSubject(char.id)}
             loading={!!batchLoadingSubjects[char.id]}
+            selected={selectedChar?.id === char.id}
           />
         ))}
         {activeTab === 'char' && <AddCard onClick={handleAdd} />}
@@ -2892,6 +2900,7 @@ export default function SubjectPage({ projectId, projectName = '两只老虎的�
             onDownloadImage={() => handleDownloadSubjectImage(scene.id)}
             onDeleteSubject={() => handleDeleteSubject(scene.id)}
             loading={!!batchLoadingSubjects[scene.id]}
+            selected={selectedScene?.id === scene.id}
           />
         ))}
         {activeTab === 'scene' && <AddCard onClick={handleAdd} />}
@@ -2906,6 +2915,7 @@ export default function SubjectPage({ projectId, projectName = '两只老虎的�
             onDownloadImage={() => handleDownloadSubjectImage(prop.id)}
             onDeleteSubject={() => handleDeleteSubject(prop.id)}
             loading={!!batchLoadingSubjects[prop.id]}
+            selected={selectedProp?.id === prop.id}
           />
         ))}
         {activeTab === 'prop' && <AddCard onClick={handleAdd} />}

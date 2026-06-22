@@ -1,6 +1,7 @@
 const BASE = import.meta.env.VITE_API_BASE_URL;
 
 import { authFetch } from './request.js';
+import { toAbsoluteUrl } from '../utils/imageUrl.js';
 
 // ── 创作会话（Session）───────────────────────────────────────────────────────
 
@@ -559,6 +560,10 @@ export async function apiGenerateCreation(params, { onTaskCreated } = {}) {
       firstFrameUrl = r.uploaded_url || r.uploadedUrl || undefined;
       firstFrameAssetId = r.asset_id || undefined;
     } catch {}
+  } else if (params.firstFrameFile && params.firstFrameFile.url) {
+    // 资产库选择的首帧：已有 URL，无需上传
+    firstFrameUrl = params.firstFrameFile.url;
+    firstFrameAssetId = params.firstFrameFile.assetId || undefined;
   }
   if (params.lastFrameFile instanceof File) {
     try {
@@ -566,6 +571,10 @@ export async function apiGenerateCreation(params, { onTaskCreated } = {}) {
       lastFrameUrl = r.uploaded_url || r.uploadedUrl || undefined;
       lastFrameAssetId = r.asset_id || undefined;
     } catch {}
+  } else if (params.lastFrameFile && params.lastFrameFile.url) {
+    // 资产库选择的尾帧：已有 URL，无需上传
+    lastFrameUrl = params.lastFrameFile.url;
+    lastFrameAssetId = params.lastFrameFile.assetId || undefined;
   }
 
   // ── 配音生成 ────────────────────────────────────────────────────────────
@@ -705,6 +714,10 @@ export async function apiGenerateCreation(params, { onTaskCreated } = {}) {
   }
 
   // ── 视频生成 ────────────────────────────────────────────────────────────
+  // 有参考图/参考视频时强制 generation_mode=full，不让后端自行推断（资产库选图时后端会错误设为 text_to_video）
+  const hasRefMedia = refUrls.length > 0 || refAssetIds.length > 0 || uploadedRefVideoUrl || uploadedRefAudioUrl;
+  const effectiveGenerationMode = hasRefMedia ? 'full' : (params.generation_mode || undefined);
+
   const body = {
     prompt: params.prompt,
     model: params.model || 'doubao-seedance-2.0',
@@ -712,7 +725,7 @@ export async function apiGenerateCreation(params, { onTaskCreated } = {}) {
     resolution: params.resolution || params.videoResolution || '720P',
     duration: parseInt(params.videoDuration) || 5,
     reference_mode: params.refMode || undefined,
-    generation_mode: params.generation_mode || undefined,
+    generation_mode: effectiveGenerationMode,
     with_audio: params.soundEnabled ?? false,
     // 首尾帧（URL + asset_id 双通道，后端优先看 asset_id）
     first_frame_url: firstFrameUrl || params.firstFrameUrl || undefined,
@@ -720,10 +733,11 @@ export async function apiGenerateCreation(params, { onTaskCreated } = {}) {
     first_frame_asset_id: firstFrameAssetId || params.first_frame_asset_id || undefined,
     last_frame_asset_id: lastFrameAssetId || params.last_frame_asset_id || undefined,
     // 参考资源（图片：URL + asset_id 双通道；视频/音频：本次上传或外部传入）
-    reference_image_urls: refUrls.length > 0 ? refUrls : undefined,
+    // toAbsoluteUrl 确保相对路径转为后端 AI 模型可访问的完整 URL
+    reference_image_urls: refUrls.length > 0 ? refUrls.map(toAbsoluteUrl) : undefined,
     reference_image_asset_ids: refAssetIds.length > 0 ? refAssetIds : undefined,
-    reference_video_url: uploadedRefVideoUrl || params.reference_video_url || undefined,
-    reference_audio_url: uploadedRefAudioUrl || params.reference_audio_url || undefined,
+    reference_video_url: uploadedRefVideoUrl ? toAbsoluteUrl(uploadedRefVideoUrl) : (params.reference_video_url ? toAbsoluteUrl(params.reference_video_url) : undefined),
+    reference_audio_url: uploadedRefAudioUrl ? toAbsoluteUrl(uploadedRefAudioUrl) : (params.reference_audio_url ? toAbsoluteUrl(params.reference_audio_url) : undefined),
     watermark: params.watermark || undefined,
     session_id: uploadContext.session_id,
     shot_id: uploadContext.shot_id,
