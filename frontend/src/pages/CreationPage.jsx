@@ -2347,15 +2347,22 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
       setFrameAssetTarget(null);
       return;
     }
-    const assetFiles = selectedAssets.map((asset) => ({
-      name: asset.name || asset.id,
-      size: 0,
-      url: asset.thumbnailUrl || asset.thumbnail_url || asset.url,
-      previewUrl: asset.thumbnailUrl || asset.thumbnail_url || asset.url,
-      assetId: asset.id || asset.asset_id || undefined,
-      isAsset: true,
-      type: asset.type === 'video' ? 'video/mp4' : asset.type === 'audio' ? 'audio/mpeg' : 'image/jpeg',
-    }));
+    const assetFiles = selectedAssets.map((asset) => {
+      const isVideo = asset.type === 'video';
+      const isAudio = asset.type === 'audio';
+      // 视频/音频资产必须用真实文件 URL（asset.url），图片才优先用缩略图做预览
+      const fileUrl = asset.url;
+      const previewUrl = asset.thumbnailUrl || asset.thumbnail_url || asset.url;
+      return {
+        name: asset.name || asset.id,
+        size: 0,
+        url: fileUrl,
+        previewUrl,
+        assetId: asset.id || asset.asset_id || undefined,
+        isAsset: true,
+        type: isVideo ? 'video/mp4' : isAudio ? 'audio/mpeg' : 'image/jpeg',
+      };
+    });
     setFiles((prev) => [...prev, ...assetFiles]);
   };
 
@@ -3442,7 +3449,7 @@ function VideoResultCard({ status, videoUrl, prompt, model, ratio, resolution, d
             loop
             muted
             playsInline
-            style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }}
+            style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
           />
         ) : (
           <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -4620,6 +4627,9 @@ export default function CreationPage({ isLoggedIn, onLoginClick, apiConfigured =
     pending.forEach((task) => {
       const { taskId, genId, shotId, tab, prompt, promptHTML, model, ratio, resolution, duration, createdAt } = task;
 
+      // 先删除 store 中可能残留的同 genId 旧条目（Zustand store 是内存单例，页面导航不清空）
+      storeDeleteGeneration(tab, genId);
+
       // 重建占位卡片
       addGeneration(tab, {
         id: genId,
@@ -4680,6 +4690,7 @@ export default function CreationPage({ isLoggedIn, onLoginClick, apiConfigured =
     const wasFav = favorites.has(cardKey);
     // Optimistically update local state first
     storeToggleFavorite(cardKey);
+    showToast('success', wasFav ? '取消收藏' : '收藏成功');
     // Find the card to get its backend ID and type
     const lastDash = cardKey.lastIndexOf('-');
     const genId = cardKey.slice(0, lastDash);
@@ -4688,7 +4699,7 @@ export default function CreationPage({ isLoggedIn, onLoginClick, apiConfigured =
     const card = gen?.cards?.[cardIdx];
     if (card?.id) {
       const apiCall = card.type === 'video'
-        ? apiToggleVideoFavorite(card.id)
+        ? apiToggleVideoFavorite(card.id, !wasFav)
         : apiToggleImageFavorite(card.id, !wasFav);
       apiCall
         .then(() => storeConfirmFavoriteToggle(cardKey))

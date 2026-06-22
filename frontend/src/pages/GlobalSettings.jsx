@@ -129,11 +129,12 @@ const EPISODE_STATUS = {
   pending:   { bg: '#FFFFFF08', border: '#FFFFFF14', color: '#FFFFFF99', label: '未生成视频' },
 };
 
-function EpisodeCard({ index, status = 'pending' }) {
+function EpisodeCard({ index, status = 'pending', onClick }) {
   const [hovered, setHovered] = useState(false);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
   const s = EPISODE_STATUS[status] || EPISODE_STATUS.pending;
   const label = String(index + 1).padStart(2, '0');
+  const isClickable = status === 'generated' || status === 'edited';
 
   const handleMouseEnter = useCallback((e) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -146,6 +147,7 @@ function EpisodeCard({ index, status = 'pending' }) {
       <div
         onMouseEnter={handleMouseEnter}
         onMouseLeave={() => setHovered(false)}
+        onClick={isClickable ? onClick : undefined}
         style={{
           width: '100%',
           height: '32px',
@@ -155,9 +157,9 @@ function EpisodeCard({ index, status = 'pending' }) {
           borderRadius: '5px',
           background: s.bg,
           border: `1px solid ${s.border}`,
-          cursor: 'default',
+          cursor: isClickable ? 'pointer' : 'default',
           transition: 'opacity 0.12s',
-          opacity: hovered ? 0.8 : 1,
+          opacity: hovered && isClickable ? 0.7 : 1,
         }}
       >
         <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '100%', color: s.color }}>{label}</span>
@@ -177,7 +179,7 @@ function EpisodeCard({ index, status = 'pending' }) {
           whiteSpace: 'nowrap',
         }}>
           <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: '#FFFFFF99' }}>
-            第{index + 1}集 · {s.label}
+            第{index + 1}集 · {s.label}{isClickable ? ' · 点击跳转' : ''}
           </span>
         </div>
       )}
@@ -185,7 +187,7 @@ function EpisodeCard({ index, status = 'pending' }) {
   );
 }
 
-function EpisodeGrid({ episodes = [], statuses = {} }) {
+function EpisodeGrid({ episodes = [], statuses = {}, onEpisodeClick }) {
   const total = episodes.length;
   const isEmpty = total === 0;
 
@@ -235,7 +237,7 @@ function EpisodeGrid({ episodes = [], statuses = {} }) {
           paddingRight: '2px',
         }}>
           {episodes.map((_, i) => (
-            <EpisodeCard key={i} index={i} status={statuses[i] ?? 'pending'} />
+            <EpisodeCard key={i} index={i} status={statuses[i] ?? 'pending'} onClick={() => onEpisodeClick?.(i)} />
           ))}
         </div>
       )}
@@ -294,9 +296,9 @@ function TextInput({ value, onChange, placeholder, maxLength }) {
         <span
           style={{
             fontFamily: FONT,
-            fontSize: '14px',
+            fontSize: '12px',
             lineHeight: '18px',
-            color: '#FFFFFF66',
+            color: 'rgba(255, 255, 255, 0.4)',
             flexShrink: 0,
             whiteSpace: 'nowrap',
           }}
@@ -553,7 +555,8 @@ export default function GlobalSettings({
   onScriptContentChange,
   scriptDraftContent,
   onScriptDraftContentChange,
-  episodeStatuses = {}
+  episodeStatuses = {},
+  onGoToStoryboard,
 }) {
   const [name, setName] = useState(projectName);
   const [description, setDescription] = useState(projectDescription);
@@ -739,7 +742,7 @@ export default function GlobalSettings({
                 onClick={tab ? (isSubjectUnlocked || count > 0 ? () => onGoToSubject?.(tab) : undefined) : undefined}
               />
             ))}
-            <EpisodeGrid episodes={episodes} statuses={episodeStatuses} />
+            <EpisodeGrid episodes={episodes} statuses={episodeStatuses} onEpisodeClick={onGoToStoryboard} />
           </div>
         </div>
 

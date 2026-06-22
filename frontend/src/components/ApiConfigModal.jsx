@@ -565,9 +565,9 @@ function MainModal({
     <div className="[font-synthesis:none] flex h-[600px] w-[800px] max-w-[calc(100vw-48px)] flex-col overflow-hidden text-xs/4 antialiased">
       <div className="flex items-center justify-between gap-[16px] rounded-t-2xl bg-surface-modal px-[24px] py-[16px]">
         <div className="flex-1 text-base/5 font-medium text-text-primary" style={{ fontFamily: FONT_MEDIUM }}>
-          API配置
+          配置API
         </div>
-        <button type="button" onClick={onClose} className="flex shrink-0 items-center justify-center transition-opacity hover:opacity-80 active:opacity-60" aria-label="关闭API配置">
+        <button type="button" onClick={onClose} className="flex shrink-0 items-center justify-center transition-opacity hover:opacity-80 active:opacity-60" aria-label="关闭配置API">
           <CloseIcon />
         </button>
       </div>
@@ -616,11 +616,11 @@ function MainModal({
           </div>
         </div>
 
-        <div className="flex flex-col gap-[8px] self-stretch">
-          <div className="self-stretch text-sm/4.5 font-medium text-text-primary" style={{ fontFamily: FONT_MEDIUM }}>
+        <div className="flex flex-col gap-[4px] self-stretch">
+          <div className="self-stretch text-xs font-normal " style={{ fontFamily: FONT_MEDIUM, fontWeight: 400, color: "rgba(255, 255, 255, 0.6)" }}>
             配置说明
           </div>
-          <div className="text-[14px] leading-[150%] text-text-secondary" style={{ fontFamily: FONT }}>
+          <div className="text-xs leading-[150%] text-text-secondary" style={{ fontFamily: FONT }}>
             平台已内置OneLinkAI、火山引擎主流模型列表，前往官网
             <span
               onClick={() => window.open('https://www.onelinkai.cloud/', '_blank')}

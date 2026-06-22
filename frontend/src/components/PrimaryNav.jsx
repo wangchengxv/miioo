@@ -29,7 +29,7 @@ function Tooltip({ label }) {
         backgroundColor: '#111111',
         whiteSpace: 'nowrap',
         fontFamily: "'AlibabaPuHuiTi_2_55_Regular', 'Alibaba PuHuiTi 2.0', system-ui, sans-serif",
-        fontSize: '14px',
+        fontSize: '12px',
         fontWeight: 400,
         lineHeight: '16px',
         color: '#FFFFFF',

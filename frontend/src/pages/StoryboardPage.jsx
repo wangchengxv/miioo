@@ -2220,11 +2220,7 @@ function GenerateImagePanel({ shot, projectId, chars = [], scenes = [], props = 
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
           {/* 左侧表单 */}
           <div style={{ display: 'flex', flexDirection: 'column', width: '419px', flexShrink: 0, padding: '8px 12px 80px 24px', gap: '20px', overflowY: 'auto' }}>
-            {/* 分镜编号 */}
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-              <span style={{ fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.60)', fontFamily: FONT, flexShrink: 0 }}>分镜编号</span>
-              <span style={{ fontSize: '14px', lineHeight: '20px', color: '#FFFFFF', fontFamily: FONT, flexShrink: 0 }}>{String(shot?.number ?? 1).padStart(2, '0')}</span>
-            </div>
+            <span style={{ fontSize: "14px", lineHeight: "18px", color: "rgba(255,255,255,0.80)", fontFamily: FONT }}>分镜{String(shot?.number ?? 1).padStart(2, "0")}</span>
 
             <PanelPromptInput value={prompt} onChange={setPrompt} referenceItems={imageReferenceItems} />
             <PanelSelect label="选择模型" value={modelsLoading ? '加载中...' : (modelList.find(m => m.value === model)?.label || '请选择')} options={modelList.map(m => m.label)} onChange={(label) => {
@@ -2680,11 +2676,7 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
         <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
           {/* 左侧表单 */}
           <div style={{ display: 'flex', flexDirection: 'column', width: '419px', flexShrink: 0, padding: '8px 12px 80px 24px', gap: '20px', overflowY: 'auto' }}>
-            {/* 分镜编号 */}
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '20px' }}>
-              <span style={{ fontSize: '14px', lineHeight: '18px', color: 'rgba(255,255,255,0.60)', fontFamily: FONT, flexShrink: 0 }}>分镜编号</span>
-              <span style={{ fontSize: '14px', lineHeight: '20px', color: '#FFFFFF', fontFamily: FONT, flexShrink: 0 }}>{String(shot?.number ?? 1).padStart(2, '0')}</span>
-            </div>
+            <span style={{ fontSize: "14px", lineHeight: "18px", color: "rgba(255,255,255,0.80)", fontFamily: FONT }}>分镜{String(shot?.number ?? 1).padStart(2, "0")}</span>
 
             {/* Tab：全能参考 / 首尾帧 */}
             <div style={{ display: 'flex', alignItems: 'flex-start', gap: '24px', alignSelf: 'stretch' }}>
@@ -5145,7 +5137,7 @@ function TextEditCol({ label, value, onChange, isLast = false }) {
   return (
     <div style={{
       width: 'calc(5.695% - 1px)',
-      minWidth: '80px',
+      minWidth: '120px',
       display: 'flex',
       flexDirection: 'column',
       gap: '8px',
@@ -5208,7 +5200,7 @@ function MediaColWrapper({ label, media, onUpload, accept, isVideo, isLast = fal
   return (
     <div style={{
       width: 'calc(15% - 1px)',
-      minWidth: '160px',
+      minWidth: '160px', maxWidth: '220px',
       display: 'flex',
       flexDirection: 'column',
       gap: '8px',
@@ -5412,7 +5404,7 @@ const INITIAL_SHOTS = [
 
 const EPISODES = ['第一集', '第二集'];
 
-export default function StoryboardPage({ projectId, projectName = '两只老虎的奇遇', projectRatio, chars = [], scenes = [], props = [], episodes = EPISODES, onUnlockStep, onVideoGenerated, onGenerateStoryboards, generateError = null, isGenerating: homeIsGenerating = false }) {
+export default function StoryboardPage({ projectId, projectName = '两只老虎的奇遇', projectRatio, chars = [], scenes = [], props = [], episodes = EPISODES, initialEpisodeIndex = null, onUnlockStep, onVideoGenerated, onGenerateStoryboards, generateError = null, isGenerating: homeIsGenerating = false }) {
 
   const activeEpisodes = episodes.length > 0 ? episodes : EPISODES;
   // 用 peekCache 同步读取缓存，第一次渲染直接呈现旧数据，避免空状态闪烁
@@ -5421,7 +5413,9 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
     const cachedEpisodes = episodes.length > 0
       ? episodes
       : (peekCache(K.episodes(projectId), MEDIUM.CONTENT) ?? []);
-    const initialEpisode = cachedEpisodes[0];
+    const targetIdx = (initialEpisodeIndex != null && initialEpisodeIndex >= 0 && initialEpisodeIndex < cachedEpisodes.length)
+      ? initialEpisodeIndex : 0;
+    const initialEpisode = cachedEpisodes[targetIdx];
     if (!initialEpisode || typeof initialEpisode === 'string') return [];
     const episodeId = initialEpisode?.id ?? '';
     if (!episodeId) return [];
@@ -5433,7 +5427,11 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
     return raw.map(be => enrichMainRefs(normalizeStoryboard(be), chars));
   });
   const [globalVoiceParams, setGlobalVoiceParams] = useState({});
-  const [episode, setEpisode] = useState(() => activeEpisodes[0] ?? '第一集');
+  const [episode, setEpisode] = useState(() => {
+    const idx = (initialEpisodeIndex != null && initialEpisodeIndex >= 0 && initialEpisodeIndex < activeEpisodes.length)
+      ? initialEpisodeIndex : 0;
+    return activeEpisodes[idx] ?? '第一集';
+  });
   const [dragId, setDragId] = useState(null);
   const [overId, setOverId] = useState(null);
   const [isGenerating, setIsGenerating] = useState(false);
@@ -6243,7 +6241,7 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
           }}
         >
           <IconPlus color="currentColor" />
-          添加镜头
+          添加空白分镜
         </div>
       </div>
     </div>

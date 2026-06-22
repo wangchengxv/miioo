@@ -10,25 +10,35 @@ function invalidateSubjects(projectId) {
   invalidate(K.projectOverview(projectId));
 }
 
-export async function apiGetSubjects(projectId, { type, episode_id } = {}) {
+export async function apiGetSubjects(projectId, { type, episode_id, limit } = {}) {
+  const fetchFn = async () => {
+    const params = new URLSearchParams();
+    if (type) params.append('type', type);
+    if (episode_id) params.append('episode_id', episode_id);
+    if (limit) params.append('limit', limit);
+    const query = params.toString();
+    const url = query ? `${BASE}/api/projects/${projectId}/subjects?${query}` : `${BASE}/api/projects/${projectId}/subjects`;
+    const res = await authFetch(url, { headers: { 'Content-Type': 'application/json' } });
+    const data = await res.json();
+    // 后端返回 SubjectListResponse: { list: [...], total, limit, offset, has_more }
+    if (Array.isArray(data)) return data;
+    if (Array.isArray(data?.list)) return data.list;
+    if (Array.isArray(data?.items)) return data.items;
+    if (Array.isArray(data?.data)) return data.data;
+    return [];
+  };
+
+  // 有 limit 时跳过缓存直接请求；无 limit 时走正常缓存路径
+  if (limit) {
+    const raw = await fetchFn();
+    if (Array.isArray(raw)) return raw;
+    if (Array.isArray(raw?.list)) return raw.list;
+    return [];
+  }
+
   const raw = await cached(
     K.subjects(projectId, type, episode_id),
-    async () => {
-      const params = new URLSearchParams();
-      if (type) params.append('type', type);
-      if (episode_id) params.append('episode_id', episode_id);
-      const query = params.toString();
-      const url = query ? `${BASE}/api/projects/${projectId}/subjects?${query}` : `${BASE}/api/projects/${projectId}/subjects`;
-      const res = await authFetch(url, { headers: { 'Content-Type': 'application/json' } });
-      const data = await res.json();
-      // 后端返回 SubjectListResponse: { list: [...], total, limit, offset, has_more }
-      // 在存入缓存前就提取数组，确保缓存始终存数组
-      if (Array.isArray(data)) return data;
-      if (Array.isArray(data?.list)) return data.list;
-      if (Array.isArray(data?.items)) return data.items;
-      if (Array.isArray(data?.data)) return data.data;
-      return [];
-    },
+    fetchFn,
     { medium: MEDIUM.CONTENT, ttl: TTL.CONTENT },
   );
   // 兼容旧缓存：SWR 命中时直接返回旧缓存值，可能还是 SubjectListResponse 对象

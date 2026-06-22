@@ -299,61 +299,90 @@ function groupByCategory(list) {
   return grouped;
 }
 
-export async function apiGetProjectAssets(projectId) {
-  return cached(
-    K.projectAssets(projectId),
-    async () => {
-      // 并行拉取资产列表和分镜列表
-      const [data, storyboardsRaw] = await Promise.all([
-        apiGetAssets({ project_id: projectId, scope: 'project' }),
-        apiGetStoryboards(projectId).catch(() => []),
-      ]);
+/**
+ * 计算某个 tab 的 limit：根据视口可用区域 + 卡片尺寸算出足以铺满屏幕的条数
+ * @param {string} category - tab key
+ * @param {{ navW?: number, leftPanelW?: number, tabBarH?: number, toolbarH?: number }} opts
+ */
+export function calcProjectAssetsLimit(category, {
+  navW = 48,          // PrimaryNav 宽度
+  leftPanelW = 220,   // 项目列表侧边栏宽度
+  tabBarH = 48,       // category tab 栏高度
+  toolbarH = 48,      // 批量操作工具栏高度
+  extraH = 0,         // 额外减去的高度（如顶栏）
+} = {}) {
+  const isSubject = ['chars', 'scenes', 'props'].includes(category);
+  const isStoryboard = ['storyboard_img', 'storyboard_video'].includes(category);
+  const isAudio = category === 'audio';
 
-      const storyboards = Array.isArray(storyboardsRaw) ? storyboardsRaw : [];
+  if (isAudio) return 50; // 音频是列表布局，直接给个足够大的数
 
-      const primaryImageUrls = new Set();
-      const primaryVideoAssetIds = new Set();
-      const primaryVideoUrls = new Set();
-      // ratio 补全：storyboard → 资产，用于视频/图片资产 ratio 字段缺失时回填
-      const videoAssetIdRatio = {};   // asset_id → ratio
-      const videoUrlRatio = {};       // normalized url → ratio
-      const imageUrlRatio = {};       // normalized url → ratio
+  const CARD_W = isSubject ? 200 : 320;
+  const CARD_H = isSubject ? 246 : 180;
+  const GAP = 8;
+  const PAD_X = 24; // 左右各 24px
 
-      storyboards.forEach((sb) => {
-        const ratio = sb.ratio || sb.aspect_ratio || '';
-        if (sb.image_url) {
-          primaryImageUrls.add(normalizeImageUrl(sb.image_url));
-          if (ratio) imageUrlRatio[normalizeImageUrl(sb.image_url)] = ratio;
-        }
-        if (sb.video_asset_id) {
-          primaryVideoAssetIds.add(sb.video_asset_id);
-          if (ratio) videoAssetIdRatio[sb.video_asset_id] = ratio;
-        } else if (sb.video_url) {
-          primaryVideoUrls.add(normalizeImageUrl(sb.video_url));
-          if (ratio) videoUrlRatio[normalizeImageUrl(sb.video_url)] = ratio;
-        }
-      });
+  const availW = window.innerWidth - navW - leftPanelW - PAD_X * 2;
+  const availH = window.innerHeight - tabBarH - toolbarH - extraH;
 
-      const assets = (Array.isArray(data) ? data : []).map((item) => {
-        if (item.category !== 'storyboard') return item;
-        let is_primary = item.is_primary ?? false;
-        let ratio = item.ratio || '';
-        if (item.asset_type === 'video') {
-          is_primary = primaryVideoAssetIds.has(item.id)
-            || primaryVideoUrls.has(normalizeImageUrl(item.file_url));
-          if (!ratio) ratio = videoAssetIdRatio[item.id] || videoUrlRatio[normalizeImageUrl(item.file_url)] || '';
-        } else {
-          is_primary = primaryImageUrls.has(normalizeImageUrl(item.file_url))
-            || primaryImageUrls.has(normalizeImageUrl(item.thumbnail_url));
-          if (!ratio) ratio = imageUrlRatio[normalizeImageUrl(item.file_url)] || imageUrlRatio[normalizeImageUrl(item.thumbnail_url)] || '';
-        }
-        return { ...item, is_primary, ...(ratio ? { ratio } : {}) };
-      });
+  const cols = Math.max(1, Math.floor((availW + GAP) / (CARD_W + GAP)));
+  const rows = Math.max(1, Math.ceil(availH / (CARD_H + GAP))) + 1; // +1 行缓冲
 
-      return groupByCategory(assets);
-    },
-    { medium: MEDIUM.CONTENT, ttl: TTL.CONTENT },
-  );
+  return cols * rows;
+}
+
+export async function apiGetProjectAssets(projectId, { limit } = {}) {
+  const fetchFn = async () => {
+    const [data, storyboardsRaw] = await Promise.all([
+      apiGetAssets({ project_id: projectId, scope: 'project', ...(limit ? { limit } : {}) }),
+      apiGetStoryboards(projectId).catch(() => []),
+    ]);
+
+    const storyboards = Array.isArray(storyboardsRaw) ? storyboardsRaw : [];
+    const primaryImageUrls = new Set();
+    const primaryVideoAssetIds = new Set();
+    const primaryVideoUrls = new Set();
+    const videoAssetIdRatio = {};
+    const videoUrlRatio = {};
+    const imageUrlRatio = {};
+
+    storyboards.forEach((sb) => {
+      const ratio = sb.ratio || sb.aspect_ratio || '';
+      if (sb.image_url) {
+        primaryImageUrls.add(normalizeImageUrl(sb.image_url));
+        if (ratio) imageUrlRatio[normalizeImageUrl(sb.image_url)] = ratio;
+      }
+      if (sb.video_asset_id) {
+        primaryVideoAssetIds.add(sb.video_asset_id);
+        if (ratio) videoAssetIdRatio[sb.video_asset_id] = ratio;
+      } else if (sb.video_url) {
+        primaryVideoUrls.add(normalizeImageUrl(sb.video_url));
+        if (ratio) videoUrlRatio[normalizeImageUrl(sb.video_url)] = ratio;
+      }
+    });
+
+    const assets = (Array.isArray(data) ? data : []).map((item) => {
+      if (item.category !== 'storyboard') return item;
+      let is_primary = item.is_primary ?? false;
+      let ratio = item.ratio || '';
+      if (item.asset_type === 'video') {
+        is_primary = primaryVideoAssetIds.has(item.id)
+          || primaryVideoUrls.has(normalizeImageUrl(item.file_url));
+        if (!ratio) ratio = videoAssetIdRatio[item.id] || videoUrlRatio[normalizeImageUrl(item.file_url)] || '';
+      } else {
+        is_primary = primaryImageUrls.has(normalizeImageUrl(item.file_url))
+          || primaryImageUrls.has(normalizeImageUrl(item.thumbnail_url));
+        if (!ratio) ratio = imageUrlRatio[normalizeImageUrl(item.file_url)] || imageUrlRatio[normalizeImageUrl(item.thumbnail_url)] || '';
+      }
+      return { ...item, is_primary, ...(ratio ? { ratio } : {}) };
+    });
+
+    return groupByCategory(assets);
+  };
+
+  // 有 limit 时跳过缓存直接请求；无 limit 时走正常缓存路径
+  if (limit) return fetchFn();
+  return cached(K.projectAssets(projectId), fetchFn, { medium: MEDIUM.CONTENT, ttl: TTL.CONTENT });
 }
 
 export async function apiGetShotDetail(shotId) {

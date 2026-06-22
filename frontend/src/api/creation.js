@@ -217,8 +217,17 @@ export async function apiDeleteCreationVideo(videoId) {
   return res.json();
 }
 
-export async function apiToggleVideoFavorite(videoId) {
-  const res = await authFetch(`${BASE}/api/creation/videos/${videoId}/favorite`, { method: 'POST' });
+export async function apiToggleVideoFavorite(videoId, liked) {
+  const res = await authFetch(`${BASE}/api/creation/videos/${videoId}/favorite`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ liked }),
+  });
+  if (!res.ok) {
+    const err = new Error(`toggleVideoFavorite failed: ${res.status}`);
+    err.status = res.status;
+    throw err;
+  }
   return res.json();
 }
 
@@ -421,12 +430,13 @@ export async function apiPollVideoTask(taskId, timeoutMs = 1800000) {
     const pollRes = await authFetch(`${BASE}/api/creation/videos/tasks/${taskId}`);
     const pollData = await pollRes.json();
     const status = pollData.status;
-    if (status === 'done' || status === 'completed' || status === 'success') {
-      if (pollData.partial === true) continue;
+    if (status === 'done' || status === 'completed' || status === 'success' || status === 'partial') {
       const result = pollData.result;
-      if (!result) return { videos: [], cardIds: [] };
+      if (!result) continue;
+      const videoUrl = result.video_url || result.videoUrl;
+      if (!videoUrl) continue;
       return {
-        videos: [result.video_url || result.videoUrl].filter(Boolean),
+        videos: [videoUrl].filter(Boolean),
         cardIds: [result.id].filter(Boolean),
       };
     }
@@ -462,9 +472,9 @@ export async function apiGenerateCreation(params, { onTaskCreated } = {}) {
       const pollRes = await authFetch(pollUrl);
       const pollData = await pollRes.json();
       const status = pollData.status;
-      if (status === 'done' || status === 'completed' || status === 'success') {
-        // partial=true 表示部分图片完成，继续轮询直到全部完成
-        if (pollData.partial === true) continue;
+      if (status === 'done' || status === 'completed' || status === 'success' || status === 'partial') {
+        // partial=true 字段表示部分图片完成，继续轮询直到全部完成（针对图片多张生成）
+        if (status !== 'partial' && pollData.partial === true) continue;
         return extractFn(pollData);
       }
       if (status === 'failed' || status === 'error') {
@@ -492,24 +502,52 @@ export async function apiGenerateCreation(params, { onTaskCreated } = {}) {
     project_id: params.project_id || undefined,
   };
 
-  // 上传参考图片（InputCard 的 files 数组，均为图片类参考）
+  // 上传参考文件（按媒体类型分类：图片 / 视频 / 音频）
   const files = params.files ? (Array.isArray(params.files) ? params.files : [params.files]) : [];
   const refUrls = [];
   const refAssetIds = [];
+  let uploadedRefVideoUrl;
+  let uploadedRefAudioUrl;
+
   for (const f of files) {
-    // 已经有 URL 的资产（如「用作参考图」、资产库选择的图片），直接使用
+    // 已经有 URL 的资产（如「用作参考图」、资产库选择的素材），直接分类使用
     if (f && typeof f === 'object' && !(f instanceof File) && f.url) {
-      refUrls.push(f.url);
-      if (f.assetId) refAssetIds.push(f.assetId);
+      const mime = (f.type || '').toLowerCase();
+      const name = (f.name || '').toLowerCase();
+      const isVid = mime.startsWith('video/') || /\.(mp4|mov|avi|webm|mkv|wmv|flv)$/.test(name);
+      const isAud = mime.startsWith('audio/') || /\.(mp3|wav|aac|ogg|flac|m4a|wma)$/.test(name);
+      if (isVid) {
+        uploadedRefVideoUrl = f.url;
+      } else if (isAud) {
+        uploadedRefAudioUrl = f.url;
+      } else {
+        // 图片资产
+        refUrls.push(f.url);
+        if (f.assetId) refAssetIds.push(f.assetId);
+      }
       continue;
     }
     if (!(f instanceof File)) continue;
+    const mime = f.type.toLowerCase();
+    const isVid = mime.startsWith('video/');
+    const isAud = mime.startsWith('audio/');
     try {
-      const result = await apiUploadCreationImage({ file: f, category: 'reference', ...uploadContext });
-      const url = result.uploaded_url || result.uploadedUrl || '';
-      if (url) refUrls.push(url);
-      const assetId = result.asset_id;
-      if (assetId) refAssetIds.push(assetId);
+      if (isVid) {
+        const result = await apiUploadCreationVideo({ file: f, category: 'reference', ...uploadContext });
+        const url = result.uploaded_url || result.uploadedUrl || '';
+        if (url) uploadedRefVideoUrl = url;
+      } else if (isAud) {
+        const result = await apiUploadCreationAudio({ file: f, category: 'reference', ...uploadContext });
+        const url = result.uploaded_url || result.uploadedUrl || '';
+        if (url) uploadedRefAudioUrl = url;
+      } else {
+        // 图片
+        const result = await apiUploadCreationImage({ file: f, category: 'reference', ...uploadContext });
+        const url = result.uploaded_url || result.uploadedUrl || '';
+        if (url) refUrls.push(url);
+        const assetId = result.asset_id;
+        if (assetId) refAssetIds.push(assetId);
+      }
     } catch { /* 单个文件上传失败不阻塞整体 */ }
   }
 
@@ -681,10 +719,11 @@ export async function apiGenerateCreation(params, { onTaskCreated } = {}) {
     last_frame_url: lastFrameUrl || params.lastFrameUrl || undefined,
     first_frame_asset_id: firstFrameAssetId || params.first_frame_asset_id || undefined,
     last_frame_asset_id: lastFrameAssetId || params.last_frame_asset_id || undefined,
-    // 参考资源
+    // 参考资源（图片：URL + asset_id 双通道；视频/音频：本次上传或外部传入）
+    reference_image_urls: refUrls.length > 0 ? refUrls : undefined,
     reference_image_asset_ids: refAssetIds.length > 0 ? refAssetIds : undefined,
-    reference_video_url: params.reference_video_url || undefined,
-    reference_audio_url: params.reference_audio_url || undefined,
+    reference_video_url: uploadedRefVideoUrl || params.reference_video_url || undefined,
+    reference_audio_url: uploadedRefAudioUrl || params.reference_audio_url || undefined,
     watermark: params.watermark || undefined,
     session_id: uploadContext.session_id,
     shot_id: uploadContext.shot_id,

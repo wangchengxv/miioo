@@ -261,8 +261,17 @@ export default function AssetPickerModal({
     (async () => {
       try {
         setAssetsLoading(true);
+        // 根据弹窗固定尺寸计算 limit：800×600 弹窗，内容区约 752×388px，卡片 175×208，gap 16
+        const MODAL_CONTENT_W = 752; // 800 - padding(24*2)
+        const MODAL_CONTENT_H = 388; // 600 - header(52) - 大tab(48) - 子tab(44) - footer(68) - padding(8*2)
+        const CARD_W = 175;
+        const CARD_H = 208;
+        const GAP = 16;
+        const cols = Math.max(1, Math.floor((MODAL_CONTENT_W + GAP) / (CARD_W + GAP)));
+        const rows = Math.max(1, Math.ceil(MODAL_CONTENT_H / (CARD_H + GAP))) + 1;
+        const limit = cols * rows;
         // 拉取当前项目的资产
-        const assetsData = await apiGetAssets({ project_id: pullProjectId, scope: 'project' });
+        const assetsData = await apiGetAssets({ project_id: pullProjectId, scope: 'project', limit });
         const normalizedAssets = Array.isArray(assetsData) ? assetsData.map(a => ({
           id: a.id,
           name: a.name || '未命名',
@@ -346,7 +355,11 @@ export default function AssetPickerModal({
       ...Object.values(creativeAssets).flat(),
     ];
     const assetMap = Object.fromEntries(allAssets.map(a => [a.id, a]));
-    const selectedAssets = Array.from(selected).map(id => assetMap[id]).filter(Boolean);
+    // 只返回本次新增选择的资产，排除上轮已存在的预选项（preSelectedIds），避免上游重复输入
+    const selectedAssets = Array.from(selected)
+      .filter(id => !preSelectedSet.has(id))
+      .map(id => assetMap[id])
+      .filter(Boolean);
     onConfirm?.(selectedAssets);
     onClose?.();
   };

@@ -245,7 +245,7 @@ const BOTTOM_NAV_ITEMS = [
   {
     key: 'notifications',
     label: '通知',
-    tooltip: '通知',
+    tooltip: '消息中心',
     icon: (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={ICON_STYLE}>
         <path d="M3.8 12.2H3.3V12.7H3.8V12.2ZM12.2 12.2V12.7H12.7V12.2H12.2ZM2 11.7C1.724 11.7 1.5 11.924 1.5 12.2C1.5 12.476 1.724 12.7 2 12.7V12.2V11.7ZM14 12.7C14.276 12.7 14.5 12.476 14.5 12.2C14.5 11.924 14.276 11.7 14 11.7V12.2V12.7ZM9.5 12.2H10C10 11.924 9.776 11.7 9.5 11.7V12.2ZM6.5 12.2V11.7C6.224 11.7 6 11.924 6 12.2H6.5ZM8 2V1.5C5.404 1.5 3.3 3.604 3.3 6.2H3.8H4.3C4.3 4.157 5.957 2.5 8 2.5V2ZM3.8 6.2H3.3V12.2H3.8H4.3V6.2H3.8ZM3.8 12.2V12.7H12.2V12.2V11.7H3.8V12.2ZM12.2 12.2H12.7V6.2H12.2H11.7V12.2H12.2ZM12.2 6.2H12.7C12.7 3.604 10.596 1.5 8 1.5V2V2.5C10.043 2.5 11.7 4.157 11.7 6.2H12.2ZM2 12.2V12.7H14V12.2V11.7H2V12.2ZM8 14V14.5C9.105 14.5 10 13.605 10 12.5H9.5H9C9 13.052 8.552 13.5 8 13.5V14ZM9.5 12.5H10V12.2H9.5H9V12.5H9.5ZM9.5 12.2V11.7H6.5V12.2V12.7H9.5V12.2ZM6.5 12.2H6V12.5H6.5H7V12.2H6.5ZM6.5 12.5H6C6 13.605 6.895 14.5 8 14.5V14V13.5C7.448 13.5 7 13.052 7 12.5H6.5Z" fill="#FFFFFF" />
@@ -898,6 +898,7 @@ export default function Home({ onProjectCreated }) {
   const [scriptContent, setScriptContent] = useState('');
   const [scriptDraftContent, setScriptDraftContent] = useState('');
   const [episodeStatuses, setEpisodeStatuses] = useState({});
+  const [storyboardInitialEpisodeIndex, setStoryboardInitialEpisodeIndex] = useState(null);
   // Tracks which non-alwaysEnabled steps have ever had content — once unlocked, stays unlocked
   const [unlockedSteps, setUnlockedSteps] = useState(new Set());
   const [currentUser, setCurrentUser] = useState({});
@@ -998,9 +999,9 @@ export default function Home({ onProjectCreated }) {
   // 统一的项目数据加载函数
   const loadProjectDetails = async (projectId) => {
     setIsLoadingProject(true);
-    // 每次进入项目时主动失效 episodes 缓存，确保拿到后端最新的 episode ID
-    // （智能分镜可能已重新创建 episodes，旧缓存会导致分镜请求用错 ID）
+    // 每次进入项目时主动失效 episodes 和 overview 缓存，确保拿到后端最新数据
     invalidate(K.episodes(projectId));
+    invalidate(K.projectOverview(projectId));
     try {
       // 0. 切换项目前先清空旧项目所有数据状态，避免闪现旧数据
       setActiveProject(null);
@@ -1097,14 +1098,20 @@ export default function Home({ onProjectCreated }) {
       setActiveStep(savedStep || 'script');
 
       // 3. 并行加载所有数据
+      // 主体卡片 200×246，gap 16，容器宽 = 视口 - NavW(48)
+      const _subjectAvailW = window.innerWidth - 48;
+      const _subjectAvailH = window.innerHeight - 60 - 48; // 顶栏60 + tab栏48
+      const _subjectCols = Math.max(1, Math.floor((_subjectAvailW + 16) / (200 + 16)));
+      const _subjectRows = Math.max(1, Math.ceil(_subjectAvailH / (246 + 16))) + 1;
+      const _subjectLimit = _subjectCols * _subjectRows;
       const [scriptData, charsData, scenesData, propsData, episodesData, overviewData] = await Promise.all([
         apiGetScriptWorkspace(projectId).catch(err => {
           console.error('加载剧本数据失败:', err);
           return { content: '', episodes: [], phase: 'initial' };
         }),
-        apiGetSubjects(projectId, { type: 'character' }).catch(() => []),
-        apiGetSubjects(projectId, { type: 'scene' }).catch(() => []),
-        apiGetSubjects(projectId, { type: 'prop' }).catch(() => []),
+        apiGetSubjects(projectId, { type: 'character', limit: _subjectLimit }).catch(() => []),
+        apiGetSubjects(projectId, { type: 'scene', limit: _subjectLimit }).catch(() => []),
+        apiGetSubjects(projectId, { type: 'prop', limit: _subjectLimit }).catch(() => []),
         apiGetEpisodes(projectId).catch(() => []),
         apiGetProjectOverview(projectId).catch(() => null),
       ]);
@@ -1124,16 +1131,22 @@ export default function Home({ onProjectCreated }) {
       setSharedProps(normalizeSubjects(propsData));
 
       // 从后端数据中提取剧集状态，优先用 overview 的 episode_progress（状态更精准）
-      // 只接受 edited / generated / pending，其他值统一回退为 pending
-      const VALID_STATUSES = ['edited', 'generated', 'pending'];
-      const normalizeStatus = (s) => VALID_STATUSES.includes(s) ? s : 'pending';
+      // 不依赖后端 status 字符串（实际值与文档不符），直接用计数字段判断：
+      // - video_generated_count > 0 → 'generated'（蓝色，已生成分镜视频）
+      // - 否则 → 'pending'（灰色）
       if (overviewData?.episode_progress?.length > 0) {
         const statusMap = {};
         overviewData.episode_progress.forEach((ep, index) => {
-          statusMap[index] = normalizeStatus(ep.status);
+          if (ep.video_generated_count > 0) {
+            statusMap[index] = 'generated';
+          } else {
+            statusMap[index] = 'pending';
+          }
         });
         setEpisodeStatuses(statusMap);
       } else if (episodesData.length > 0) {
+        const VALID_STATUSES = ['edited', 'generated', 'pending'];
+        const normalizeStatus = (s) => VALID_STATUSES.includes(s) ? s : 'pending';
         const statusMap = {};
         episodesData.forEach((episode, index) => {
           statusMap[index] = normalizeStatus(episode.status);
@@ -1266,10 +1279,15 @@ export default function Home({ onProjectCreated }) {
       const projectId = event?.detail?.projectId;
       if (!projectId || projectId !== activeProject?.id) return;
 
+      const _rAvailW = window.innerWidth - 48;
+      const _rAvailH = window.innerHeight - 60 - 48;
+      const _rCols = Math.max(1, Math.floor((_rAvailW + 16) / (200 + 16)));
+      const _rRows = Math.max(1, Math.ceil(_rAvailH / (246 + 16))) + 1;
+      const _rLimit = _rCols * _rRows;
       Promise.all([
-        apiGetSubjects(projectId, { type: 'character' }).catch(() => []),
-        apiGetSubjects(projectId, { type: 'scene' }).catch(() => []),
-        apiGetSubjects(projectId, { type: 'prop' }).catch(() => []),
+        apiGetSubjects(projectId, { type: 'character', limit: _rLimit }).catch(() => []),
+        apiGetSubjects(projectId, { type: 'scene', limit: _rLimit }).catch(() => []),
+        apiGetSubjects(projectId, { type: 'prop', limit: _rLimit }).catch(() => []),
       ]).then(([charsData, scenesData, propsData]) => {
         setSharedChars(normalizeSubjects(charsData));
         setSharedScenes(normalizeSubjects(scenesData));
@@ -1395,11 +1413,12 @@ export default function Home({ onProjectCreated }) {
       if (!taskId) throw new Error('未获取到任务 ID');
 
       // 2. 轮询任务，每完成一集立即失效对应缓存，让 StoryboardPage 实时看到结果
-      const MAX_POLLS = 200;  // 最多等 200 × 3s = 10 分钟
+      const TIMEOUT_MS = 500 * 1000; // 500 秒超时
       const INTERVAL = 3000;
       let finalTask = null;
       const notifiedEpisodeNumbers = new Set(); // 已通知过的分集，避免重复失效
       let prevCurrentEpisodeNumber = null; // 上次轮询时的 current_episode_number
+      const pollStartTime = Date.now();
 
       const flushEpisode = (num) => {
         if (notifiedEpisodeNumbers.has(num)) return;
@@ -1411,8 +1430,9 @@ export default function Home({ onProjectCreated }) {
         apiGetStoryboards(activeProject.id, { episode_id: epId }).catch(() => {});
       };
 
-      for (let i = 0; i < MAX_POLLS; i++) {
+      while (Date.now() - pollStartTime < TIMEOUT_MS) {
         await new Promise(r => setTimeout(r, INTERVAL));
+        if (Date.now() - pollStartTime >= TIMEOUT_MS) break;
         const t = await apiGetTask(taskId).catch(() => null);
         if (!t) continue;
         console.log('[poll] task status:', t.status, 'params:', JSON.stringify(t.params));
@@ -1438,7 +1458,7 @@ export default function Home({ onProjectCreated }) {
         }
       }
 
-      if (!finalTask) throw new Error('任务超时，请重试');
+      if (!finalTask) throw new Error('POLL_TIMEOUT');
       if (finalTask.status === 'failed') {
         const msg = finalTask.params?.status_message || finalTask.params?.error || '分镜生成失败';
         throw new Error(msg);
@@ -1466,7 +1486,9 @@ export default function Home({ onProjectCreated }) {
       const status = err?.status;
       const msg = err?.message || String(err);
       let errorMsg;
-      if (status === 502) {
+      if (msg === 'POLL_TIMEOUT') {
+        errorMsg = '剧本生成超时，请重新生成';
+      } else if (status === 502) {
         errorMsg = '服务器繁忙，请稍后重试';
       } else if (status === 504 || msg.includes('timeout') || msg.includes('Timeout') || msg.includes('abort')) {
         errorMsg = '请求超时，请重试！';
@@ -1824,6 +1846,11 @@ export default function Home({ onProjectCreated }) {
                 scriptFinalizedSinceExtraction={scriptFinalizedSinceExtraction}
                 onScriptFinalized={handleScriptFinalized}
                 episodeStatuses={episodeStatuses}
+                onGoToStoryboard={(episodeIndex) => {
+                  setStoryboardInitialEpisodeIndex(episodeIndex);
+                  handleUnlockStep('storyboard');
+                  setActiveStep('storyboard');
+                }}
               />
             )}
             {activeKey === 'project' && activeProject && activeStep === 'subject' && (
@@ -1866,7 +1893,7 @@ export default function Home({ onProjectCreated }) {
                 scenes={sharedScenes ?? []}
                 props={sharedProps ?? []}
                 episodes={scriptEpisodes}
-                onUnlockStep={handleUnlockStep}
+                initialEpisodeIndex={storyboardInitialEpisodeIndex}
                 onUnlockStep={handleUnlockStep}
                 onGenerateStoryboards={handleGenerateStoryboards}
                 isGenerating={isGeneratingStoryboards}
@@ -1880,7 +1907,7 @@ export default function Home({ onProjectCreated }) {
               />
             )}
             {activeKey === 'assets' && (
-              <AssetsPage projects={projects} />
+              <AssetsPage projects={projects} isLoggedIn={isLoggedIn} />
             )}
             {activeKey === 'create' && (
               <CreationPage
