@@ -832,8 +832,13 @@ export default function LoginModal({ open, onClose, onSuccess }) {
         console.log('[LoginModal] 接收到微信回调完成消息:', result);
 
         if (result?.status === 'confirmed') {
-          onSuccess?.();
-          handleClose();
+          if (result?.access_token) {
+            // callback/complete가 토큰까지 반환한 경우 (현재 백엔드 스키마에는 없음)
+            onSuccess?.();
+            handleClose();
+          }
+          // 토큰 없이 confirmed만 온 경우: 폴링이 다음 주기에 confirmed + access_token 반환
+          // → WechatView의 onLoginSuccess 콜백이 처리
         } else if (result?.status === 'need_bind_mobile') {
           // bind_token 只有轮询接口会返回，callback/complete 不含此字段
           // 若 postMessage 没带 bind_token，继续等轮询拿到正确 token 后再切换
