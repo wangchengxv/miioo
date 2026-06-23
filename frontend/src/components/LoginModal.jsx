@@ -383,7 +383,7 @@ function Agreement({ checked, onToggle }) {
 function PhoneLoginView({ onLogin, onChangeTab, onShowToast }) {
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
-  const [agreed, setAgreed] = useState(false);
+  const [agreed, setAgreed] = useState(true);
   const [phoneError, setPhoneError] = useState(false);
   const [phoneTouched, setPhoneTouched] = useState(false);
   const [codeError, setCodeError] = useState(false);
@@ -483,11 +483,15 @@ function PhoneLoginView({ onLogin, onChangeTab, onShowToast }) {
 
 // qr status: 'loading' | 'ready' | 'scanned' | 'confirmed' | 'need_bind_mobile' | 'expired' | 'error'
 function WechatView({ onBackToPhone, onLoginSuccess, onNeedBind, onShowToast, onSessionId }) {
-  const [agreed, setAgreed] = useState(false);
+  const [agreed, setAgreed] = useState(true);
+  const agreedRef = useRef(true);
   const [qrStatus, setQrStatus] = useState('loading');
   const [authUrl, setAuthUrl] = useState('');
   const qrcodeIdRef = useRef('');
   const pollingRef = useRef(null);
+
+  // 保持 agreedRef 与 agreed state 同步，供轮询回调读取最新值
+  useEffect(() => { agreedRef.current = agreed; }, [agreed]);
 
   const startPolling = (qrcodeId) => {
     if (pollingRef.current) { pollingRef.current.stop(); pollingRef.current = null; }
@@ -497,9 +501,17 @@ function WechatView({ onBackToPhone, onLoginSuccess, onNeedBind, onShowToast, on
       onResult: (data) => {
         if (data.status === 'confirmed') {
           pollingRef.current?.stop();
+          if (!agreedRef.current) {
+            onShowToast('error', '请先阅读并同意用户协议和隐私政策');
+            return;
+          }
           onLoginSuccess();
         } else if (data.status === 'need_bind_mobile') {
           pollingRef.current?.stop();
+          if (!agreedRef.current) {
+            onShowToast('error', '请先阅读并同意用户协议和隐私政策');
+            return;
+          }
           onNeedBind(data.bind_token || data.session_id);
         } else if (data.status === 'expired') {
           pollingRef.current?.stop();
@@ -673,14 +685,14 @@ function BindPhoneView({ onBind, onBack, onShowToast, bindToken }) {
       return;
     }
     try {
-      const data = await apiConfirmWechatLogin({ session_id: bindToken, phone, sms_code: code });
-      if (!data.access_token) {
-        onShowToast?.('error', data.message || '绑定失败，请重试');
-        return;
-      }
-      onBind();
+      await apiConfirmWechatLogin({ session_id: bindToken, phone, sms_code: code });
+      onShowToast?.('success', '绑定成功，正在为您登录...');
+      setTimeout(() => { onBind(); window.location.reload(); }, 1200);
     } catch (err) {
-      onShowToast?.('error', err.message || '绑定失败，请重试');
+      const friendlyMsg = err.status === 400
+        ? '验证码错误或已失效，请重新获取'
+        : (err.message || '绑定失败，请稍后重试');
+      onShowToast?.('error', friendlyMsg);
     }
   };
 
@@ -858,7 +870,7 @@ export default function LoginModal({ open, onClose, onSuccess }) {
     return () => window.removeEventListener('message', handleWechatCallbackMessage);
   }, [onSuccess]);
 
-  if (!open) return null;
+  if (!open) return <Toast toasts={toasts} />;
 
   return (
     <>
