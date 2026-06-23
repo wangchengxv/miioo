@@ -37,7 +37,15 @@ function withAuth(options = {}) {
 let refreshPromise = null;
 function cloneFormData(fd) {
   const c = new FormData();
-  for (const [k, v] of fd.entries()) c.append(k, v);
+  for (const [k, v] of fd.entries()) {
+    // File 类型需要保留克隆前已设置的文件名（第三参数），
+    // 直接 append(k, v) 会回退到 File.name（可能含中文），导致服务端 500
+    if (v instanceof File) {
+      c.append(k, v, v.name);
+    } else {
+      c.append(k, v);
+    }
+  }
   return c;
 }
 

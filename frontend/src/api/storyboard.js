@@ -189,9 +189,20 @@ export async function apiGenerateStoryboardVideo(projectId, storyboardId, params
 
 // ── 分镜文件上传/下载 ─────────────────────────────────────────────────────────
 
+/**
+ * 将文件名中的非 ASCII 字符替换为下划线，保留扩展名。
+ * 避免部分服务端（python-multipart）解析 Content-Disposition 中中文文件名时报 500。
+ */
+function safeFileName(file) {
+  const ext = file.name.includes('.') ? file.name.slice(file.name.lastIndexOf('.')) : '';
+  const base = file.name.slice(0, file.name.length - ext.length);
+  const safeBase = base.replace(/[^\x00-\x7F]/g, '_') || 'upload';
+  return safeBase + ext;
+}
+
 export async function apiUploadStoryboardImage(projectId, storyboardId, file) {
   const form = new FormData();
-  form.append('file', file);
+  form.append('file', file, safeFileName(file));
   const res = await authFetchForm(
     `${BASE}/api/projects/${projectId}/storyboards/${storyboardId}/upload-image`,
     { method: 'POST', body: form }
@@ -202,7 +213,7 @@ export async function apiUploadStoryboardImage(projectId, storyboardId, file) {
 
 export async function apiUploadStoryboardVideo(projectId, storyboardId, file) {
   const form = new FormData();
-  form.append('file', file);
+  form.append('file', file, safeFileName(file));
   const res = await authFetchForm(
     `${BASE}/api/projects/${projectId}/storyboards/${storyboardId}/upload-video`,
     { method: 'POST', body: form }
@@ -241,7 +252,7 @@ export async function apiBatchDownloadStoryboardVideos(projectId, storyboard_ids
 
 export async function apiUploadImage(file) {
   const form = new FormData();
-  form.append('file', file);
+  form.append('file', file, safeFileName(file));
   const res = await authFetchForm(`${BASE}/api/images/upload`, {
     method: 'POST',
     body: form,

@@ -2888,7 +2888,7 @@ export default function SubjectPage({ projectId, projectName = '两只老虎的�
       <div
         ref={subjectListRef}
         className="flex-1 self-stretch overflow-auto min-h-0"
-        style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '16px', alignContent: 'flex-start', paddingTop: '16px' }}
+        style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '16px', alignContent: 'flex-start', padding: '16px 2px 2px 2px' }}
       >
         {activeTab === 'char' && chars.map((char) => (
           <CharCard

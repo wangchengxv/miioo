@@ -182,7 +182,7 @@ export default function AssetPickerModal({
   const [projectSubTab, setProjectSubTab] = useState(projectSubTabsAvail[0]);
   const [creativeSubTab, setCreativeSubTab] = useState(creativeSubTabsAvail[0]);
   const [favOnly, setFavOnly] = useState(false);
-  const [finalOnly, setFinalOnly] = useState(false);
+  const [finalOnly, setFinalOnly] = useState(true);
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState(new Set());
   const preSelectedSet = useMemo(() => new Set(preSelectedIds ?? []), [preSelectedIds]);

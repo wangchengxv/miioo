@@ -1969,9 +1969,14 @@ export default function Home({ onProjectCreated }) {
         </div>,
         document.body
       )}
-      <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} onSuccess={() => {
+      <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} onSuccess={async () => {
         setLoginOpen(false);
         setIsLoggedIn(true);
+        // 登录成功后立即拉取用户信息，确保头像菜单中手机号等绑定状态即时正确显示
+        try {
+          const user = await apiGetCurrentUser();
+          setCurrentUser({ ...user, avatar_url: normalizeImageUrl(user.avatar_url) ?? '' });
+        } catch {}
         apiGetProjects().then((data) => {
           const normalized = data.map((p) => ({ ...p, cover: p.cover ?? p.cover_url }));
           const sorted = [...normalized].sort((a, b) => {

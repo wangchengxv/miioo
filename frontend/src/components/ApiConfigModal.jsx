@@ -1164,7 +1164,9 @@ export default function ApiConfigModal({ open, onClose, onConfigured }) {
       }
     } catch (error) {
       console.error('测试连接失败:', error);
-      const msg = error?.message && !error.message.startsWith('请求失败') ? error.message : '连接失败，请检查API是否正确';
+      const msg = error?.message && !error.message.startsWith('请求失败') && error.message !== 'Unauthorized'
+        ? error.message
+        : '连接失败，请检查API是否正确';
       showToast('error', msg);
     }
   }, [showToast, state.onelinkApiKeyActual, state.onelinkKeyIsFromServer, state.onelinkProviderId, loadModelsFromBackend]);
@@ -1519,7 +1521,10 @@ export default function ApiConfigModal({ open, onClose, onConfigured }) {
       }
     } catch (error) {
       console.error('测试连接失败:', error);
-      showToast('error', '连接失败，请检查API是否正确');
+      const msg = error?.message && !error.message.startsWith('请求失败') && error.message !== 'Unauthorized'
+        ? error.message
+        : '连接失败，请检查API是否正确';
+      showToast('error', msg);
     }
   };
 

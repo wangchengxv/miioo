@@ -142,15 +142,27 @@ const CATEGORY_TO_TAB = {
 
 function normalizeAsset(item) {
   const meta = (item.metadata_json) || {};
+  const isVideo = item.asset_type === 'video';
   return {
     id: item.id,
     name: item.name,
     // 视频资产：url 只用缩略图，不 fallback 到视频地址（避免图片标签加载视频）
-    url: item.asset_type === 'video'
+    url: isVideo
       ? (normalizeImageUrl(item.thumbnail_url || meta.thumbnail_url) || null)
       : (normalizeImageUrl(item.thumbnail_url || item.file_url) || null),
     fileUrl: normalizeImageUrl(item.file_url) || null,
-    videoUrl: item.asset_type === 'video' ? (normalizeImageUrl(item.file_url) || null) : null,
+    videoUrl: isVideo ? (normalizeImageUrl(item.file_url) || null) : null,
+    // 媒体分层字段（方案A）
+    previewUrl: isVideo
+      ? null
+      : (normalizeImageUrl(item.preview_url || item.previewUrl || item.file_url) || null),
+    downloadUrl: item.download_url || item.downloadUrl || item.file_url || null,
+    posterUrl: isVideo ? (normalizeImageUrl(item.poster_url || item.posterUrl) || null) : null,
+    previewVideoUrl: isVideo
+      ? (normalizeImageUrl(item.preview_video_url || item.previewVideoUrl || item.file_url) || null)
+      : null,
+    previewReady: item.preview_ready ?? item.previewReady ?? false,
+    largeUrl: !isVideo ? (normalizeImageUrl(item.large_url || item.largeUrl) || null) : null,
     starred: item.is_starred ?? false,
     description: item.description ?? '',
     prompt: item.prompt ?? '',
@@ -243,8 +255,9 @@ function groupByShot(normalized) {
     // 显示名称：有 episodeLabel 时拼上集数前缀，否则用"分镜-N"
     let displayName;
     if (primaryImage.shot_number != null) {
+      const shotStr = String(primaryImage.shot_number).padStart(2, '0');
       const prefix = primaryImage.episodeLabel ? `${primaryImage.episodeLabel}-` : '';
-      displayName = `${prefix}分镜-${primaryImage.shot_number}`;
+      displayName = `${prefix}分镜${shotStr}`;
     } else {
       displayName = primaryImage.name;
     }
@@ -271,11 +284,24 @@ function groupByShot(normalized) {
     };
   }).sort((a, b) => {
     // 先按集数排序，再按 shot_number 排序，无编号的排最后
-    // episode_number（metadata_json）优先；后端若未写则用 episodeLabel 里的数字兜底
+    // episode_number（metadata_json）优先；后端若未写则从 episodeLabel 提取集序号兜底
+    const CN = { '零':0,'一':1,'二':2,'三':3,'四':4,'五':5,'六':6,'七':7,'八':8,'九':9 };
+    const chineseToNum = (s) => {
+      if (s === '十') return 10;
+      if (s.startsWith('十')) return 10 + (CN[s[1]] ?? 0);
+      if (s.endsWith('十')) return (CN[s[0]] ?? 0) * 10;
+      if (s.length === 3 && s[1] === '十') return (CN[s[0]] ?? 0) * 10 + (CN[s[2]] ?? 0);
+      return CN[s] ?? null;
+    };
     const epNumFromLabel = (label) => {
       if (label == null) return null;
-      const m = String(label).match(/\d+/);
-      return m ? parseInt(m[0], 10) : null;
+      // 阿拉伯数字："第1集" → 1
+      const arabic = String(label).match(/\d+/);
+      if (arabic) return parseInt(arabic[0], 10);
+      // 中文数字："第一集" → 1，"第十二集" → 12
+      const chinese = String(label).match(/[零一二三四五六七八九十百千]+/);
+      if (chinese) return chineseToNum(chinese[0]);
+      return null;
     };
     const epA = a.episode_number ?? epNumFromLabel(a.episodeLabel) ?? Infinity;
     const epB = b.episode_number ?? epNumFromLabel(b.episodeLabel) ?? Infinity;

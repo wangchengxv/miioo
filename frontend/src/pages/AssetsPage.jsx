@@ -6,7 +6,7 @@ import { apiGetSubjects, apiDeleteSubject } from '../api/subject';
 import { apiDeleteCreationImage, apiDeleteCreationVideo, apiBatchDeleteImages, apiBatchDeleteVideos, apiToggleImageFavorite, apiToggleVideoFavorite, apiListCreationImages, apiListCreationVideos, apiListCreationAudios } from '../api/creation';
 import { useCreationStore } from '../stores/creationStore';
 import { generationsToDays } from '../utils/creativeDaysAdapter';
-import { apiGetProjects, apiGetProjectOverview, apiDeleteProject, apiUpdateProject, apiDownloadProjectAssets } from '../api/project';
+import { apiGetProjects, apiDeleteProject, apiUpdateProject, apiDownloadProjectAssets } from '../api/project';
 import { invalidate } from '../utils/cache';
 import { K } from '../utils/cacheKeys';
 import ImageDetailModal from '../components/ImageDetailModal';
@@ -2677,15 +2677,8 @@ function ProjectListItem({ project, active, onClick }) {
         }}>{project.name}</span>
       </button>
 
-      {/* count + hover more button — button overlays count on hover */}
+      {/* hover more button */}
       <div ref={menuRef} style={{ position: 'relative', flexShrink: 0 }}>
-        <span style={{
-          fontFamily: FONT,
-          fontSize: '12px',
-          color: '#FFFFFF99',
-          flexShrink: 0,
-          visibility: hov ? 'hidden' : 'visible',
-        }}>{project.count}</span>
         {hov && (
           <button
             type="button"
@@ -2936,23 +2929,9 @@ function ProjectAssetsPanel() {
   }
 
   useEffect(() => {
-    apiGetProjects().then(async (list) => {
-      const projectsWithCounts = await Promise.all(
-        list.map(async (project) => {
-          try {
-            const overview = await apiGetProjectOverview(project.id);
-            const counts = overview.asset_counts || {};
-            const totalCount = (counts.character || 0) + (counts.prop || 0) + (counts.scene || 0) +
-                               (counts.storyboard || 0) + (counts.image || 0) + (counts.video || 0);
-            return { ...project, count: totalCount };
-          } catch (err) {
-            console.error(`Failed to get overview for project ${project.id}`, err);
-            return { ...project, count: 0 };
-          }
-        })
-      );
-      setProjects(projectsWithCounts);
-      setActiveProject((prev) => prev ?? projectsWithCounts[0]?.id ?? null);
+    apiGetProjects().then((list) => {
+      setProjects(list);
+      setActiveProject((prev) => prev ?? list[0]?.id ?? null);
     });
   }, []);
 
@@ -3689,6 +3668,12 @@ function CreativeAssetsPanel({ isLoggedIn }) {
   const [activeType, setActiveType] = useState('image');
   const [batchMode, setBatchMode] = useState(false);
   const [selected, setSelected] = useState(new Set());
+  const [toast, setToast] = useState(null);
+
+  function showToast(msg, type = 'success') {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 2500);
+  }
 
   const [batchDeleteConfirm, setBatchDeleteConfirm] = useState(false);
   const generationsByTab = useCreationStore((s) => s.generationsByTab);
@@ -3968,6 +3953,24 @@ function CreativeAssetsPanel({ isLoggedIn }) {
           }}
           zIndex={100}
         />
+      )}
+      {toast && createPortal(
+        <div style={{
+          position: 'fixed', top: '25vh', left: '50%', transform: 'translateX(-50%)',
+          zIndex: 9999, pointerEvents: 'none',
+          animation: 'slideUpBounce 250ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '8px', background: 'rgba(30,30,30,0.92)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.1)', whiteSpace: 'nowrap' }}>
+            {toast.type === 'success' && (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}><path d="M8 14.667C11.682 14.667 14.667 11.682 14.667 8C14.667 4.318 11.682 1.333 8 1.333C4.318 1.333 1.333 4.318 1.333 8C1.333 11.682 4.318 14.667 8 14.667Z" fill="#52BF92" stroke="#52BF92" strokeWidth="1.333" strokeLinejoin="round"/><path d="M5.333 8L7.333 10L11.333 6" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            )}
+            {toast.type === 'error' && (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}><path d="M8 14.667C11.682 14.667 14.667 11.682 14.667 8C14.667 4.318 11.682 1.333 8 1.333C4.318 1.333 1.333 4.318 1.333 8C1.333 11.682 4.318 14.667 8 14.667Z" fill="#F75F5F" stroke="#F75F5F" strokeWidth="1.333" strokeLinejoin="round"/><path d="M5.333 5.333L10.667 10.667M10.667 5.333L5.333 10.667" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round"/></svg>
+            )}
+            <span style={{ fontSize: '14px', color: '#FFFFFF', fontFamily: FONT }}>{toast.msg}</span>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );
