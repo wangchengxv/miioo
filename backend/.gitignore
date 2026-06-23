@@ -1,0 +1,13 @@
+.venv/
+.runtime/
+uploads/
+sql/
+backend/
+__pycache__/
+*.pyc
+.pytest_cache/
+.mypy_cache/
+.DS_Store
+.env
+.env copy
+.env prod
