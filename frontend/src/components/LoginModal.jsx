@@ -477,7 +477,7 @@ function PhoneLoginView({ onLogin, onChangeTab, onShowToast }) {
 }
 
 // qr status: 'loading' | 'ready' | 'scanned' | 'confirmed' | 'need_bind_mobile' | 'expired' | 'error'
-function WechatView({ onBackToPhone, onLoginSuccess, onNeedBind, onShowToast }) {
+function WechatView({ onBackToPhone, onLoginSuccess, onNeedBind, onShowToast, onSessionId }) {
   const [agreed, setAgreed] = useState(false);
   const [qrStatus, setQrStatus] = useState('loading');
   const [authUrl, setAuthUrl] = useState('');
@@ -523,6 +523,7 @@ function WechatView({ onBackToPhone, onLoginSuccess, onNeedBind, onShowToast }) 
     try {
       const data = await apiGetWechatQrCode();
       qrcodeIdRef.current = data.qrcode_id;
+      onSessionId?.(data.qrcode_id);
       setAuthUrl(data.raw_qr_code_value);
       setQrStatus('ready');
       startPolling(data.qrcode_id);
@@ -791,6 +792,7 @@ export default function LoginModal({ open, onClose, onSuccess }) {
   const [step, setStep] = useState('login');
   const [bindToken, setBindToken] = useState('');
   const [toasts, setToasts] = useState([]);
+  const wechatSessionIdRef = useRef('');
 
   const showToast = (type, message) => {
     const id = Date.now();
@@ -828,7 +830,7 @@ export default function LoginModal({ open, onClose, onSuccess }) {
           onSuccess?.();
           handleClose();
         } else if (result?.status === 'need_bind_mobile') {
-          setBindToken(result?.bind_token || result?.session_id);
+          setBindToken(result?.bind_token || result?.session_id || wechatSessionIdRef.current);
           setStep('bind');
         } else if (result?.status === 'error') {
           showToast('error', result?.message || '微信登录失败，请稍后重试');
@@ -877,7 +879,7 @@ export default function LoginModal({ open, onClose, onSuccess }) {
           ) : tab === 'phone' ? (
             <PhoneLoginView onLogin={handleLoginSuccess} onChangeTab={setTab} onShowToast={showToast} />
           ) : (
-            <WechatView onBackToPhone={() => setTab('phone')} onLoginSuccess={handleLoginSuccess} onNeedBind={handleNeedBind} onShowToast={showToast} />
+            <WechatView onBackToPhone={() => setTab('phone')} onLoginSuccess={handleLoginSuccess} onNeedBind={handleNeedBind} onShowToast={showToast} onSessionId={(id) => { wechatSessionIdRef.current = id; }} />
           )}
         </div>
       </div>
