@@ -1,4 +1,5 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { useModalSize } from '../utils/useModalSize';
 import { createPortal } from 'react-dom';
 import { PulsingBorder } from '@paper-design/shaders-react';
 import { apiGenerateCreation, apiPollVideoTask, apiGetVideoLastFrame, apiDeleteCreationImage, apiDeleteCreationVideo, apiToggleImageFavorite, apiToggleVideoFavorite, apiBatchDeleteImages, apiBatchDeleteVideos, apiCreateSession, apiGetSession, apiListShots, apiCreateShot, apiUpdateShot, apiListCreationImages, apiListCreationVideos, apiListCreationAudios } from '../api/creation';
@@ -3176,6 +3177,7 @@ const DETAIL_PANEL_DIVIDER = (
 );
 
 function ImageDetailModal({ card, onClose, onDelete, favorited, onToggleFavorite }) {
+  const { width: modalW, height: modalH } = useModalSize();
   const [starAnim, setStarAnim] = useState(false);
   const [closeHovered, setCloseHovered] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -3200,7 +3202,7 @@ function ImageDetailModal({ card, onClose, onDelete, favorited, onToggleFavorite
           onClick={onClose}
         >
           <div
-            style={{ width: '960px', borderRadius: '16px', border: '1px solid #FFFFFF14', backgroundColor: '#161616', boxShadow: '#00000099 -10px 24px 64px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+            style={{ width: `${modalW}px`, borderRadius: '16px', border: '1px solid #FFFFFF14', backgroundColor: '#161616', boxShadow: '#00000099 -10px 24px 64px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
@@ -3219,7 +3221,7 @@ function ImageDetailModal({ card, onClose, onDelete, favorited, onToggleFavorite
             </div>
 
             {/* Body */}
-            <div style={{ display: 'flex', height: '540px' }}>
+            <div style={{ display: 'flex', height: `${modalH - 60}px` }}>
               {/* Left: image viewer */}
               <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#0A0A0A', position: 'relative', overflow: 'hidden' }}>
                 {card.imageUrl && (
@@ -3237,7 +3239,7 @@ function ImageDetailModal({ card, onClose, onDelete, favorited, onToggleFavorite
               </div>
 
               {/* Right: info panel */}
-              <div style={{ width: '280px', flexShrink: 0, backgroundColor: '#161616', borderLeft: '1px solid #FFFFFF0F', display: 'flex', flexDirection: 'column', height: '540px', position: 'relative' }}>
+              <div style={{ width: '280px', flexShrink: 0, backgroundColor: '#161616', borderLeft: '1px solid #FFFFFF0F', display: 'flex', flexDirection: 'column', height: `${modalH - 60}px`, position: 'relative' }}>
                 {/* Scrollable content area */}
                 <div style={{ flex: 1, overflowY: 'auto', minHeight: 0, paddingBottom: '76px' }}>
                   {DETAIL_PANEL_DIVIDER}

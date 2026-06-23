@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { createPortal } from 'react-dom';
+import { useModalSize } from '../utils/useModalSize';
 import placeholderFlowers from '../assets/placeholder-flowers.webp';
 import { apiGetAssetDetail, apiGetShotDetail, apiGetShotVideoDetail, apiGetProjectAssets, apiGetProjectAssetsPage, groupByCategory, calcProjectAssetsLimit, apiDeleteAsset, apiBatchDeleteAssets, apiUpdateAsset, apiDownloadAsset } from '../api/assets';
 import { apiGetSubjects, apiDeleteSubject } from '../api/subject';
@@ -463,6 +464,7 @@ const MOCK_SHOT_VIDEO_DETAIL = {
 
 // 主体资产详情弹窗 — 图片列表（角色/场景/道具的多张图聚合）
 function SubjectAssetDetailModal({ onClose, onDownload, onDeleteImage, onShowToast, name, description, images }) {
+  const { width: modalW, height: modalH } = useModalSize();
   const imgs = images ?? [];
   const defaultIdx = imgs.findIndex((img) => img.is_primary);
   const [activeImg, setActiveImg] = useState(defaultIdx >= 0 ? defaultIdx : 0);
@@ -503,8 +505,8 @@ function SubjectAssetDetailModal({ onClose, onDownload, onDeleteImage, onShowToa
         style={{
           display: 'flex',
           flexDirection: 'column',
-          width: '960px',
-          height: '600px',
+          width: `${modalW}px`,
+          height: `${modalH}px`,
           borderRadius: '16px',
           overflow: 'hidden',
           boxShadow: '#00000099 -10px 24px 64px',
@@ -544,7 +546,7 @@ function SubjectAssetDetailModal({ onClose, onDownload, onDeleteImage, onShowToa
         </div>
 
         {/* Body */}
-        <div style={{ display: 'flex', height: '500px', flex: 1 }}>
+        <div style={{ display: 'flex', height: `${modalH - 60}px`, flex: 1 }}>
           {/* Left: preview + thumbnails */}
           <div style={{ display: 'flex', flexDirection: 'column', flexGrow: 1, flexShrink: 1, flexBasis: '0%', minWidth: 0, minHeight: 0, backgroundColor: '#0D0D0D' }}>
             {/* Main image */}
@@ -830,6 +832,7 @@ function SubjectAssetDetailModal({ onClose, onDownload, onDeleteImage, onShowToa
 // Props: name, description, prompt, model, ratio, resolution, images (array of {id, src, finalized})
 // images[0] should be the finalized image; default activeImg = index of first finalized image
 function AssetDetailModal({ onClose, onDownload, name, description, prompt, model, ratio, resolution, generatedAt, images }) {
+  const { width: modalW, height: modalH } = useModalSize();
   const imgs = images ?? MOCK_DETAIL.images;
   const defaultIdx = imgs.findIndex((img) => img.finalized);
   const [activeImg, setActiveImg] = useState(defaultIdx >= 0 ? defaultIdx : 0);
@@ -866,7 +869,7 @@ function AssetDetailModal({ onClose, onDownload, name, description, prompt, mode
         style={{
           display: 'flex',
           flexDirection: 'column',
-          width: '960px',
+          width: `${modalW}px`,
           borderRadius: '16px',
           overflow: 'hidden',
           boxShadow: '#00000099 -10px 24px 64px',
@@ -906,7 +909,7 @@ function AssetDetailModal({ onClose, onDownload, name, description, prompt, mode
         </div>
 
         {/* Body */}
-        <div style={{ display: 'flex', height: '540px' }}>
+        <div style={{ display: 'flex', height: `${modalH - 60}px` }}>
           {/* Left: preview */}
           <div style={{ display: 'flex', flexDirection: 'column', flexGrow: 1, flexShrink: 1, flexBasis: '0%', minWidth: 0, minHeight: 0, backgroundColor: '#0D0D0D' }}>
             {/* Main image */}
@@ -958,7 +961,7 @@ function AssetDetailModal({ onClose, onDownload, name, description, prompt, mode
           {/* Right: info panel — scrollable content + sticky download */}
           <div style={{
             width: '280px', display: 'flex', flexDirection: 'column',
-            height: '540px', flexShrink: 0,
+            height: `${modalH - 60}px`, flexShrink: 0,
             backgroundColor: '#161616', borderLeft: '1px solid #FFFFFF0F',
           }}>
             {/* Scrollable content */}
@@ -1056,6 +1059,7 @@ function AssetDetailModal({ onClose, onDownload, name, description, prompt, mode
 
 // Props: shotNumber, prompt, model, resolution, images (array of {id, src, finalized})
 function ShotDetailModal({ onClose, onDownload, onDelete, onShowToast, shotNumber, prompt, model, resolution, generatedAt, images, refImages }) {
+  const { width: modalW, height: modalH } = useModalSize();
   const imgs = images ?? MOCK_SHOT_DETAIL.images;
   const defaultIdx = imgs.findIndex((img) => img.finalized);
   const [activeImg, setActiveImg] = useState(defaultIdx >= 0 ? defaultIdx : 0);
@@ -1096,7 +1100,7 @@ function ShotDetailModal({ onClose, onDownload, onDelete, onShowToast, shotNumbe
         style={{
           display: 'flex',
           flexDirection: 'column',
-          width: '960px',
+          width: `${modalW}px`,
           borderRadius: '16px',
           overflow: 'hidden',
           boxShadow: '#00000099 -10px 24px 64px',
@@ -1136,7 +1140,7 @@ function ShotDetailModal({ onClose, onDownload, onDelete, onShowToast, shotNumbe
         </div>
 
         {/* Body */}
-        <div style={{ display: 'flex', height: '540px' }}>
+        <div style={{ display: 'flex', height: `${modalH - 60}px` }}>
           {/* Left: preview */}
           <div style={{ display: 'flex', flexDirection: 'column', flexGrow: 1, flexShrink: 1, flexBasis: '0%', minWidth: 0, minHeight: 0, backgroundColor: '#0D0D0D' }}>
             {/* Main image */}
@@ -1200,7 +1204,7 @@ function ShotDetailModal({ onClose, onDownload, onDelete, onShowToast, shotNumbe
           {/* Right: info panel — scrollable content + sticky download */}
           <div style={{
             width: '280px', display: 'flex', flexDirection: 'column',
-            height: '540px', flexShrink: 0,
+            height: `${modalH - 60}px`, flexShrink: 0,
             backgroundColor: '#161616', borderLeft: '1px solid #FFFFFF0F',
           }}>
             {/* Scrollable content */}
@@ -1437,6 +1441,7 @@ function VideoFrameThumbnail({ frame, isActive, isHov, onSelect, onMouseEnter, o
 }
 
 function ShotVideoDetailModal({ onClose, onDownload, onDelete, onShowToast, shotNumber, prompt, model, resolution, duration, ratio, generatedAt, frames, videoSrc, refMode, firstFrame, lastFrame, sound, refImages, refVideos }) {
+  const { width: modalW, height: modalH } = useModalSize();
   const frms = frames ?? MOCK_SHOT_VIDEO_DETAIL.frames;
   const defaultIdx = frms.findIndex((f) => f.finalized);
   const [activeFrame, setActiveFrame] = useState(defaultIdx >= 0 ? defaultIdx : 0);
@@ -1548,7 +1553,7 @@ function ShotVideoDetailModal({ onClose, onDownload, onDelete, onShowToast, shot
     >
       <div
         style={{
-          display: 'flex', flexDirection: 'column', width: '960px',
+          display: 'flex', flexDirection: 'column', width: `${modalW}px`,
           borderRadius: '16px', overflow: 'hidden',
           boxShadow: '#00000099 -10px 24px 64px',
           backgroundColor: '#161616', border: '1px solid #FFFFFF14',
@@ -1580,7 +1585,7 @@ function ShotVideoDetailModal({ onClose, onDownload, onDelete, onShowToast, shot
         </div>
 
         {/* Body */}
-        <div style={{ display: 'flex', height: '540px' }}>
+        <div style={{ display: 'flex', height: `${modalH - 60}px` }}>
           {/* Left: video player */}
           <div style={{ display: 'flex', flexDirection: 'column', flexGrow: 1, flexShrink: 1, flexBasis: '0%', minWidth: 0, minHeight: 0, backgroundColor: '#0D0D0D' }}>
             {/* Main video preview */}
@@ -1737,7 +1742,7 @@ function ShotVideoDetailModal({ onClose, onDownload, onDelete, onShowToast, shot
           {/* Right: info panel */}
           <div style={{
             width: '280px', display: 'flex', flexDirection: 'column',
-            height: '540px', flexShrink: 0,
+            height: `${modalH - 60}px`, flexShrink: 0,
             backgroundColor: '#161616', borderLeft: '1px solid #FFFFFF0F',
           }}>
             <div style={{ flexGrow: 1, flexShrink: 1, flexBasis: '0%', overflowY: 'auto', minHeight: 0 }}>

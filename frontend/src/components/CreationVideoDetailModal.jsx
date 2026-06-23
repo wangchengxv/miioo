@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { useModalSize } from '../utils/useModalSize';
 import ConfirmDialog from './ConfirmDialog';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
@@ -84,6 +85,7 @@ export default function CreationVideoDetailModal({
     console.error('CreationVideoDetailModal: videoUrl is missing!');
   }
 
+  const { width: modalW } = useModalSize();
   const [isPlaying, setIsPlaying] = useState(false);
   const [starAnim, setStarAnim] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -188,7 +190,7 @@ export default function CreationVideoDetailModal({
       onClick={onClose}
     >
       <div
-        className="flex flex-col w-[960px] rounded-2xl h-fit [box-shadow:#00000099_-10px_24px_64px] bg-[#161616] border border-solid border-[#FFFFFF14]"
+        className="flex flex-col rounded-2xl h-fit [box-shadow:#00000099_-10px_24px_64px] bg-[#161616] border border-solid border-[#FFFFFF14]" style={{ width: `${modalW}px` }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}

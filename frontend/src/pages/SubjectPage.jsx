@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
+import { useModalSize } from '../utils/useModalSize';
 import DotsLoading from '../components/DotsLoading';
 import BatchGenerateModal from '../components/BatchGenerateModal';
 import AssetPickerModal from '../components/AssetPickerModal';
@@ -1014,6 +1015,7 @@ function ImageItemUpload({ onUpload, projectId }) {
 
 // Modal for viewing an uploaded image full-size
 function ImageViewModal({ open, imageUrl, imageId, projectId, subjectId, onClose }) {
+  const { width: modalW, height: modalH } = useModalSize();
   const [closeHovered, setCloseHovered] = useState(false);
   const [downloadHovered, setDownloadHovered] = useState(false);
   const [downloadPressed, setDownloadPressed] = useState(false);
@@ -1038,7 +1040,7 @@ function ImageViewModal({ open, imageUrl, imageId, projectId, subjectId, onClose
       onClick={onClose}
     >
       <div
-        style={{ display: 'flex', flexDirection: 'column', width: '800px', borderRadius: '16px', overflow: 'hidden', height: '600px' }}
+        style={{ display: 'flex', flexDirection: 'column', width: `${modalW}px`, borderRadius: '16px', overflow: 'hidden', height: `${modalH}px` }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* header */}

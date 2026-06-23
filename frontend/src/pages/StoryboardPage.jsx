@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
 import { createPortal } from 'react-dom';
+import { useModalSize } from '../utils/useModalSize';
 import BatchDownloadModal from '../components/BatchDownloadModal';
 import ShotViewerModal from '../components/ShotViewerModal';
 import Toggle from '../components/Toggle';
@@ -4634,6 +4635,7 @@ function MainRefModal({ shot, onChange, onClose }) {
 // ─── 媒体列（分镜图 / 分镜视频）────────────────────────────────────────────────
 
 function MediaViewModal({ url, onClose }) {
+  const { width: modalW, height: modalH } = useModalSize();
   const [closeHov, setCloseHov] = useState(false);
   const [downloadHov, setDownloadHov] = useState(false);
   const [downloadPressed, setDownloadPressed] = useState(false);
@@ -4654,7 +4656,7 @@ function MediaViewModal({ url, onClose }) {
       onClick={onClose}
     >
       <div
-        style={{ display: 'flex', flexDirection: 'column', width: '800px', height: '600px', borderRadius: '16px', overflow: 'hidden' }}
+        style={{ display: 'flex', flexDirection: 'column', width: `${modalW}px`, height: `${modalH}px`, borderRadius: '16px', overflow: 'hidden' }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* header */}
