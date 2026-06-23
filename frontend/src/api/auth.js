@@ -95,7 +95,14 @@ export async function apiPollWechatQrCodeStatus(qrcodeId) {
   if (import.meta.env.VITE_USE_MOCK === 'true') {
     return { status: 'pending' };
   }
-  const res = await fetch(`${BASE}/api/auth/wechat/qrcode/status?qrcode_id=${encodeURIComponent(qrcodeId)}`);
+  const res = await fetch(`${BASE}/api/auth/wechat/poll/${encodeURIComponent(qrcodeId)}`);
+  if (!res.ok) {
+    let detail = res.statusText;
+    try { const body = await res.json(); detail = body?.detail || body?.message || detail; } catch {}
+    const err = new Error(`轮询状态接口请求失败（${res.status}）：${detail}`);
+    err.status = res.status;
+    throw err;
+  }
   const data = await res.json();
   if (data.access_token) setTokens(data.access_token, data.refresh_token);
   return data;
@@ -110,7 +117,7 @@ export async function apiCompleteWechatCallback({ code, state }) {
       refresh_token: 'mock-refresh',
     };
   }
-  const res = await fetch(`${BASE}/api/auth/wechat/callback`, {
+  const res = await fetch(`${BASE}/api/auth/wechat/callback/complete`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ code, state }),
@@ -135,7 +142,7 @@ export async function apiConfirmWechatLogin({ session_id, phone, sms_code }) {
   if (import.meta.env.VITE_USE_MOCK === 'true') {
     return { access_token: 'mock-token', refresh_token: 'mock-refresh' };
   }
-  const res = await fetch(`${BASE}/api/auth/wechat/confirm-login`, {
+  const res = await fetch(`${BASE}/api/auth/wechat/confirm`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ session_id, phone, sms_code }),
