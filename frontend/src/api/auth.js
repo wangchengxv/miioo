@@ -9,6 +9,13 @@ export async function apiSendCode(phone) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ phone }),
   });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try { const body = await res.json(); detail = body?.detail || body?.message || detail; } catch {}
+    const err = new Error(`发送验证码失败（${res.status}）：${detail}`);
+    err.status = res.status;
+    throw err;
+  }
   return res.json();
 }
 

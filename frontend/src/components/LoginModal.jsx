@@ -153,7 +153,7 @@ function Tabs({ tab, onChange }) {
   );
 }
 
-function SendCodeButton({ phone, disabled: externalDisabled }) {
+function SendCodeButton({ phone, disabled: externalDisabled, onError }) {
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
   const [countdown, setCountdown] = useState(0);
@@ -167,8 +167,13 @@ function SendCodeButton({ phone, disabled: externalDisabled }) {
 
   const handleClick = async () => {
     if (disabled) return;
-    await sendVerificationCode(phone);
-    setCountdown(60);
+    try {
+      await sendVerificationCode(phone);
+      setCountdown(60);
+    } catch (err) {
+      console.error('[SendCodeButton] 发送验证码失败:', err);
+      onError?.(err.message || '发送验证码失败，请稍后重试');
+    }
   };
 
   useEffect(() => {
@@ -463,7 +468,7 @@ function PhoneLoginView({ onLogin, onChangeTab, onShowToast }) {
             onBlur={handleCodeBlur}
             error={codeError}
             errorText="验证码只能包含数字"
-            suffix={<SendCodeButton phone={phone} disabled={!validatePhone(phone)} />}
+            suffix={<SendCodeButton phone={phone} disabled={!validatePhone(phone)} onError={(msg) => onShowToast?.('error', msg)} />}
             inputMode="numeric"
           />
         </div>
@@ -723,7 +728,7 @@ function BindPhoneView({ onBind, onBack, onShowToast, bindToken }) {
             onBlur={handleCodeBlur}
             error={codeError}
             errorText="验证码只能包含数字"
-            suffix={<SendCodeButton phone={phone} disabled={!validatePhone(phone)} />}
+            suffix={<SendCodeButton phone={phone} disabled={!validatePhone(phone)} onError={(msg) => onShowToast?.('error', msg)} />}
             inputMode="numeric"
           />
         </div>
