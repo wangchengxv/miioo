@@ -789,11 +789,19 @@ function FileCard({ file, onRemove, disabled = false, onInsert }) {
 
     if (isVideo) {
       // 保留 src 供 hover 时内联播放
+      // 优先使用 handleFileSelect 中预建的 _objectUrl，避免 React Strict Mode
+      // 双执行 effect 时 revoke 旧 URL 导致 ERR_FILE_NOT_FOUND
       let objectUrl = null;
+      let videoUrl;
       if (file.isAsset && file.url) {
+        videoUrl = file.url;
         setVideoSrc(file.url);
+      } else if (file._objectUrl) {
+        videoUrl = file._objectUrl;
+        setVideoSrc(file._objectUrl);
       } else {
         objectUrl = URL.createObjectURL(file);
+        videoUrl = objectUrl;
         setVideoSrc(objectUrl);
       }
       // 提取首帧作为缩略图
@@ -811,10 +819,11 @@ function FileCard({ file, onRemove, disabled = false, onInsert }) {
       };
       video.addEventListener('loadeddata', handleLoadedData);
       video.addEventListener('seeked', handleSeeked);
-      video.src = file.isAsset && file.url ? file.url : objectUrl;
+      video.src = videoUrl;
       return () => {
         video.removeEventListener('loadeddata', handleLoadedData);
         video.removeEventListener('seeked', handleSeeked);
+        // 仅 revoke 在此 effect 内创建的 URL（_objectUrl 由 handleRemoveFile 统一管理）
         if (objectUrl) URL.revokeObjectURL(objectUrl);
       };
     }
@@ -871,7 +880,7 @@ ref={cardRef}
               loop
               playsInline
               style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
-              onClick={(e) => e.stopPropagation()}
+              onClick={(e) => { e.stopPropagation(); if (!disabled && onInsert) onInsert(); }}
             />
           ) : (
             <div
@@ -2272,6 +2281,11 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
         if (isImageFile(f)) {
           const previewUrl = URL.createObjectURL(f);
           Object.defineProperty(f, 'previewUrl', { value: previewUrl, writable: true });
+        } else if (isVideoFile(f)) {
+          // 预先创建 blob URL，避免 FileCard effect 在 React Strict Mode 双执行时
+          // revoke 掉旧 URL 而新 URL 还未设置导致 ERR_FILE_NOT_FOUND
+          const objectUrl = URL.createObjectURL(f);
+          Object.defineProperty(f, '_objectUrl', { value: objectUrl, writable: true });
         }
         return f;
       });
@@ -2326,13 +2340,18 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
   const handleRemoveFile = (index) => {
     setFiles((prev) => {
       const file = prev[index];
-      if (file && editorRef.current) {
-        const tags = editorRef.current.querySelectorAll('[data-file-ref]');
-        tags.forEach((tag) => {
-          if (tag.dataset.fileRef === file.name) tag.remove();
-        });
-        const content = editorRef.current.innerText ?? '';
-        setHasContent(content.trim().length > 0);
+      if (file) {
+        // 释放预先创建的 blob URL
+        if (file._objectUrl) URL.revokeObjectURL(file._objectUrl);
+        if (file.previewUrl && file.previewUrl.startsWith('blob:')) URL.revokeObjectURL(file.previewUrl);
+        if (editorRef.current) {
+          const tags = editorRef.current.querySelectorAll('[data-file-ref]');
+          tags.forEach((tag) => {
+            if (tag.dataset.fileRef === file.name) tag.remove();
+          });
+          const content = editorRef.current.innerText ?? '';
+          setHasContent(content.trim().length > 0);
+        }
       }
       return prev.filter((_, i) => i !== index);
     });
@@ -3527,17 +3546,20 @@ function VideoResultCard({ status, videoUrl, prompt, model, ratio, resolution, d
                   </svg>
                 }
               />
-              <CardActionBtn
-                tooltip="尾帧用作首帧参考"
-                onClick={() => onUseAsFirstFrame?.()}
-                icon={
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ width: '16px', height: '16px' }}>
+             <CardActionBtn
+               tooltip="尾帧用作首帧参考"
+               onClick={() => onUseAsFirstFrame?.()}
+               icon={
+                  <svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style={{ width: '16px', height: '16px', overflow: 'visible' }}>
                     <path d="M9.446 1.733C9.888 1.733 10.246 2.092 10.246 2.533V21.855C10.246 22.297 9.888 22.655 9.447 22.655C9.005 22.655 8.646 22.297 8.646 21.855V2.533C8.646 2.092 9.005 1.733 9.447 1.733H9.446Z" fill="#FFFFFF" />
                     <path d="M9.194 3.483V5.083H4.706C4.411 5.083 4.172 5.322 4.172 5.617V18.946C4.172 19.241 4.411 19.479 4.706 19.479H9.194V21.079H4.706C3.527 21.079 2.572 20.124 2.572 18.946V5.617C2.572 4.438 3.527 3.483 4.706 3.483H9.194Z" fill="#FFFFFF" />
-                    <path d="M3.814 8.787H9.446V7.187H3.814V8.787ZM3.814 17.402H9.446V15.802H3.814V17.402Z" fill="#FFFFFF" />
+                    <path d="M14.957 3.483V5.083H19.446C19.74 5.083 19.979 5.322 19.979 5.617V18.946C19.979 19.241 19.74 19.479 19.446 19.479H14.957V21.079H19.446C20.624 21.079 21.579 20.124 21.579 18.946V5.617C21.579 4.438 20.624 3.483 19.446 3.483H14.957Z" fill="#FFFFFF66" />
+                    <path d="M20.339 8.787H14.707V7.187H20.339V8.787ZM20.339 17.402H14.707V15.802H20.339V17.402Z" fill="#FFFFFF66" />
+                    <path d="M 3 9.1 L 8.632 9.1 L 8.632 7.5 L 3 7.5 L 3 9.1 Z M 3 17.715 L 8.632 17.715 L 8.632 16.115 L 3 16.115 L 3 17.715 Z" fill="#FFFFFF" />
+                    <path d="M 14.3 22.422 C 14.742 22.422 15.1 22.064 15.1 21.622 L 15.1 2.3 C 15.1 1.859 14.742 1.5 14.3 1.5 C 13.858 1.5 13.5 1.859 13.5 2.3 L 13.5 21.622 C 13.5 22.064 13.858 22.422 14.3 22.422 Z" fill="#FFFFFF66" />
                   </svg>
-                }
-              />
+               }
+             />
               <CardActionBtn
                 tooltip="下载"
                 onClick={() => downloadVideo(videoUrl)}
@@ -4746,7 +4768,12 @@ export default function CreationPage({ isLoggedIn, onLoginClick, apiConfigured =
         if (cancelled) return;
         capabilitiesMapRef.current = capabilitiesMap;
         setModelOptions(opts);
-        setModel(opts[0]?.value ?? '');
+        // 优先使用用户在 API 配置中设置的默认模型（is_default: true），
+        // 若未设置则回退到列表第一个
+        const defaultFromConfig = Array.isArray(models)
+          ? models.find((m) => m.is_default && m.is_enabled && opts.some((o) => o.value === m.model_id))
+          : null;
+        setModel(defaultFromConfig?.model_id ?? opts[0]?.value ?? '');
       } catch {
         if (cancelled) return;
         const { modelOptions: opts, capabilitiesMap } = adaptModels([], genType);
