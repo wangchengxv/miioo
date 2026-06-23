@@ -4533,8 +4533,34 @@ export default function CreationPage({ isLoggedIn, onLoginClick, apiConfigured =
   // 将后端返回的 image/video/audio 列表项转换为 generation 格式
   function normalizeHistoryItem(item, type) {
     const id = `history-${item.id}`;
-    const rawUrl = item.original_url || item.file_url || item.url || '';
+
+    // video 类型优先取 video_url/videoUrl，图片/音频沿用 original_url/file_url/url
+    const rawUrl =
+      type === 'video'
+        ? (item.video_url || item.videoUrl || item.preview_video_url || item.previewVideoUrl || item.original_url || item.file_url || item.url || '')
+        : (item.original_url || item.file_url || item.url || '');
     const url = normalizeImageUrl(rawUrl) || '';
+
+    // video 类型从 asset_bindings 提取参考图（首帧/尾帧等），其他类型沿用 reference_images
+    const assetBindings = item.asset_bindings || item.assetBindings || [];
+    const refImages =
+      type === 'video'
+        ? assetBindings
+            .filter((b) => b.asset_type === 'image')
+            .map((b) => {
+              const imgUrl = b.preview_url || b.previewUrl || b.url || '';
+              const normalized = normalizeImageUrl(imgUrl) || imgUrl;
+              return { url: normalized, previewUrl: normalized, isAsset: true, name: b.asset_name || 'ref.png', size: 0 };
+            })
+        : (item.reference_images || item.referenceImages || []).map((img) => {
+            const imgUrl = typeof img === 'string' ? img : (img?.url || img?.original_url || '');
+            const normalized = normalizeImageUrl(imgUrl) || imgUrl;
+            return { url: normalized, previewUrl: normalized, isAsset: true, name: normalized.split('/').pop() || 'ref.png', size: 0 };
+          });
+
+    // poster：视频封面图
+    const posterUrl = normalizeImageUrl(item.poster_url || item.posterUrl || '') || undefined;
+
     return {
       id,
       backendId: item.id,
@@ -4543,11 +4569,7 @@ export default function CreationPage({ isLoggedIn, onLoginClick, apiConfigured =
       duration: item.duration || undefined,
       model: item.model || '',
       prompt: item.prompt || '',
-      refImages: (item.reference_images || item.referenceImages || []).map((img) => {
-        const imgUrl = typeof img === 'string' ? img : (img?.url || img?.original_url || '');
-        const normalized = normalizeImageUrl(imgUrl) || imgUrl;
-        return { url: normalized, previewUrl: normalized, isAsset: true, name: normalized.split('/').pop() || 'ref.png', size: 0 };
-      }),
+      refImages,
       createdAt: item.created_at || new Date().toISOString(),
       cards: [{
         id: item.id,
@@ -4556,6 +4578,7 @@ export default function CreationPage({ isLoggedIn, onLoginClick, apiConfigured =
         imageUrl: type === 'image' ? url : null,
         videoUrl: type === 'video' ? url : null,
         audioUrl: type === 'audio' ? url : null,
+        posterUrl: type === 'video' ? posterUrl : undefined,
         isFavorite: item.is_favorite ?? item.is_liked ?? item.isLiked ?? false,
       }],
     };
