@@ -426,10 +426,12 @@ async function enrichWithStoryboards(projectId, rawList, needsStoryboards) {
     let is_primary = item.is_primary ?? false;
     let ratio = item.ratio || '';
     if (item.asset_type === 'video') {
-      is_primary = primaryVideoAssetIds.has(item.id) || primaryVideoUrls.has(normalizeImageUrl(item.file_url));
+      // 保留后端原始 is_primary，或通过 storyboard 交叉比对补充
+      is_primary = is_primary || primaryVideoAssetIds.has(item.id) || primaryVideoUrls.has(normalizeImageUrl(item.file_url));
       if (!ratio) ratio = videoAssetIdRatio[item.id] || videoUrlRatio[normalizeImageUrl(item.file_url)] || '';
     } else {
-      is_primary = primaryImageUrls.has(normalizeImageUrl(item.file_url)) || primaryImageUrls.has(normalizeImageUrl(item.thumbnail_url));
+      // 保留后端原始 is_primary，或通过 storyboard 交叉比对补充
+      is_primary = is_primary || primaryImageUrls.has(normalizeImageUrl(item.file_url)) || primaryImageUrls.has(normalizeImageUrl(item.thumbnail_url));
       if (!ratio) ratio = imageUrlRatio[normalizeImageUrl(item.file_url)] || imageUrlRatio[normalizeImageUrl(item.thumbnail_url)] || '';
     }
     return { ...item, is_primary, ...(ratio ? { ratio } : {}) };

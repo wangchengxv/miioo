@@ -5,6 +5,7 @@ import Checkbox from './Checkbox';
 import { generationsToFlatList } from '../utils/creativeDaysAdapter';
 import { apiGetProjects } from '../api/project';
 import { apiGetAssetsPage, enrichWithStoryboards } from '../api/assets';
+import { apiListCreationImages, apiListCreationVideos, apiListCreationAudios } from '../api/creation';
 import { normalizeImageUrl } from '../utils/imageUrl';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
@@ -72,13 +73,19 @@ function AssetCard({ asset, isSelected, isHovered, isDisabled, onMouseEnter, onM
         background: asset.url ? 'transparent' : (asset.bgColor || '#252525'),
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
-        {asset.asset_type === 'video' && asset.url ? (
-          <video
-            src={asset.url}
-            style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: isHovered && !isSelected ? 0.85 : 1, transition: 'opacity 100ms' }}
-            muted
-            playsInline
-          />
+        {asset.asset_type === 'video' && (asset.posterUrl || asset.url) ? (
+          // 视频卡片：优先用封面图显示（清晰、快速），无封面时回退到 video 标签加载首帧
+          asset.posterUrl ? (
+            <img src={asset.posterUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: isHovered && !isSelected ? 0.85 : 1, transition: 'opacity 100ms' }} />
+          ) : (
+            <video
+              src={asset.url}
+              style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: isHovered && !isSelected ? 0.85 : 1, transition: 'opacity 100ms' }}
+              muted
+              playsInline
+              preload="metadata"
+            />
+          )
         ) : asset.url ? (
           <img src={asset.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: isHovered && !isSelected ? 0.85 : 1, transition: 'opacity 100ms' }} />
         ) : asset.type === 'audio' ? (
@@ -155,10 +162,45 @@ export default function AssetPickerModal({
   const generationsByTab = useCreationStore((s) => s.generationsByTab);
   const favorites = useCreationStore((s) => s.favorites);
 
+  // 创作资产本地缓存（弹窗内懒加载，避免依赖 CreationPage 初始化）
+  const [localCreativeAssets, setLocalCreativeAssets] = useState(null);
+  const [creativeLoadedTabs, setCreativeLoadedTabs] = useState(new Set());
+  const [creativeLoading, setCreativeLoading] = useState(false);
+
+  // 将后端历史记录条目归一化为 picker 卡片格式
+  function normalizeCreativeItem(item, type) {
+    // 视频优先取 video_url，图片/音频取 original_url/file_url
+    const rawUrl = type === 'video'
+      ? (item.video_url || item.videoUrl || item.preview_video_url || item.previewVideoUrl || item.original_url || item.file_url || item.url || '')
+      : (item.original_url || item.file_url || item.url || item.thumbnail_url || item.thumbnailUrl || '');
+    const url = normalizeImageUrl(rawUrl) || null;
+
+    // 视频封面：poster_url / thumbnail_url，用于静态预览
+    const posterUrl = type === 'video'
+      ? (normalizeImageUrl(item.poster_url || item.posterUrl || item.thumbnail_url || item.thumbnailUrl || '') || null)
+      : null;
+
+    return {
+      id: item.id,
+      name: item.name || item.prompt?.slice(0, 20) || '未命名',
+      // AssetCard 渲染视频时优先用 posterUrl（封面图），无封面时 url 传视频地址让 <video> 加载
+      url,
+      posterUrl,
+      // 悬浮预览大图用 fullUrl（视频类型可以用 poster）
+      fullUrl: type === 'video' ? (posterUrl || url) : url,
+      fileUrl: url,
+      asset_type: type,
+      starred: item.is_favorite ?? item.is_liked ?? item.isLiked ?? false,
+      bgColor: '#252525',
+    };
+  }
+
   const creativeAssets = useMemo(() => {
     if (creativeAssetsProp) return creativeAssetsProp;
+    // 优先使用弹窗内加载的数据；如果还没加载，降级到 store 数据
+    if (localCreativeAssets) return localCreativeAssets;
 
-    // 从 store 转换数据格式
+    // 从 store 转换数据格式（store 由 CreationPage 初始化，可能为空）
     return {
       images: generationsToFlatList(generationsByTab.image || [], favorites).map(item => ({
         ...item,
@@ -166,6 +208,8 @@ export default function AssetPickerModal({
       })),
       videos: generationsToFlatList(generationsByTab.video || [], favorites).map(item => ({
         ...item,
+        // 视频卡片封面：posterUrl 字段（不是 poster）
+        url: item.posterUrl || item.url || null,
         bgColor: item.bgColor || '#1F2324',
       })),
       dubbing: generationsToFlatList(generationsByTab.dubbing || [], favorites).map(item => ({
@@ -174,7 +218,7 @@ export default function AssetPickerModal({
         type: 'audio',
       })),
     };
-  }, [creativeAssetsProp, generationsByTab, favorites]);
+  }, [creativeAssetsProp, localCreativeAssets, generationsByTab, favorites]);
 
   const projectSubTabsAvail = accept === 'video' ? PROJECT_SUB_TABS_VIDEO : accept === 'image' ? PROJECT_SUB_TABS_IMAGE : accept === 'audio' ? PROJECT_SUB_TABS_AUDIO : PROJECT_SUB_TABS_ALL;
   const creativeSubTabsAvail = accept === 'video' ? CREATIVE_SUB_TABS_VIDEO : accept === 'image' ? CREATIVE_SUB_TABS_IMAGE : accept === 'audio' ? CREATIVE_SUB_TABS_AUDIO : CREATIVE_SUB_TABS_ALL;
@@ -220,8 +264,14 @@ export default function AssetPickerModal({
 
   // 每次弹窗打开时用 preSelectedIds 初始化选中状态，关闭时清空
   useEffect(() => {
-    if (open) setSelected(new Set(preSelectedIds ?? []));
-    else setSelected(new Set());
+    if (open) {
+      setSelected(new Set(preSelectedIds ?? []));
+    } else {
+      setSelected(new Set());
+      // 关闭时重置创作资产本地缓存，下次打开重新加载
+      setLocalCreativeAssets(null);
+      setCreativeLoadedTabs(new Set());
+    }
   }, [open]);
   const [searchFocused, setSearchFocused] = useState(false);
   const [hoveredCard, setHoveredCard] = useState(null);
@@ -341,6 +391,50 @@ export default function AssetPickerModal({
     })();
   }, [open, activeTab, projectId, activeProjectId, projectSubTab]);
 
+  // 切换到创作资产 tab 时，若 store 中对应数据未初始化则从后端拉取
+  useEffect(() => {
+    if (!open || activeTab !== 'creative' || creativeAssetsProp) return;
+
+    // 确定当前 sub-tab 对应需要加载的类型
+    const subTabTypeMap = { '图片': 'image', '视频': 'video', '配音': 'audio' };
+    const type = subTabTypeMap[creativeSubTab];
+    if (!type || creativeLoadedTabs.has(type)) return;
+
+    // 如果 store 里已有数据（由 CreationPage 初始化），直接跳过
+    const storeKey = type === 'audio' ? 'dubbing' : type;
+    const storeData = generationsByTab[storeKey];
+    if (storeData && storeData.length > 0) {
+      setCreativeLoadedTabs(prev => new Set([...prev, type]));
+      return;
+    }
+
+    (async () => {
+      try {
+        setCreativeLoading(true);
+        let resp;
+        if (type === 'image') {
+          resp = await apiListCreationImages({ page: 1, page_size: 100 });
+        } else if (type === 'video') {
+          resp = await apiListCreationVideos({ page: 1, page_size: 100 });
+        } else {
+          resp = await apiListCreationAudios({ page: 1, page_size: 100 });
+        }
+        const list = Array.isArray(resp) ? resp : (resp?.list ?? resp?.items ?? resp?.data ?? []);
+        const normalized = list.map(item => normalizeCreativeItem(item, type === 'audio' ? 'audio' : type));
+        setLocalCreativeAssets(prev => ({
+          images: prev?.images ?? [],
+          videos: prev?.videos ?? [],
+          dubbing: prev?.dubbing ?? [],
+          [type === 'audio' ? 'dubbing' : type === 'video' ? 'videos' : 'images']: normalized,
+        }));
+        setCreativeLoadedTabs(prev => new Set([...prev, type]));
+      } catch (err) {
+        console.error('[AssetPickerModal] 拉取创作资产失败:', err);
+      } finally {
+        setCreativeLoading(false);
+      }
+    })();
+  }, [open, activeTab, creativeSubTab, creativeAssetsProp]);
 
   const projects = apiProjects ?? [];
   const projectAssetsMap = apiAssetsMap ?? {};
