@@ -2957,7 +2957,7 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
                   return url ? { url, settled: false, id: a.id || a.asset_id || url } : null;
                 }).filter(Boolean);
                 onSetGeneratedVideos?.(prev => [...newItems, ...prev]);
-                if (newItems.length > 0) onSettleVideo?.(newItems[0].url);
+                // 只加入列表，不自动定稿；用户点「定稿」checkbox 时才会触发 onSettleVideo
               }}
             />
             {generatedVideos.map((vid, i) => (
@@ -5849,10 +5849,13 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
         if (videoUrl) {
           if (videoUrl) {
             const normalizedUrl = normalizeImageUrl(videoUrl);
+            const updatedVideo = { id: `vid-${shot.id}`, url: normalizedUrl, name: 'generated.mp4', type: 'video/mp4' };
             setShots((prev) => prev.map((s) => s.id === shot.id
-              ? { ...s, storyboardVideo: { id: `vid-${shot.id}`, url: normalizedUrl, name: 'generated.mp4', type: 'video/mp4' } }
+              ? { ...s, storyboardVideo: updatedVideo }
               : s
             ));
+            // 持久化到后端，避免刷新后视频列消失
+            apiUpdateStoryboard(projectId, shot.id, { video_url: normalizedUrl }).catch(console.error);
             successCount++;
           } else {
             failCount++;
@@ -6511,14 +6514,18 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
         onShowToast={showToast}
         onSettleVideo={(videoUrl) => {
           const n = normalizeImageUrl(videoUrl);
+          const shotId = videoPanel.shot.id;
           setShots((prev) => {
-            const updated = prev.map((s) => s.id === videoPanel.shot.id
+            const updated = prev.map((s) => s.id === shotId
               ? { ...s, storyboardVideo: { id: n, url: n, name: 'generated.mp4', type: 'video/mp4' } }
               : s
             );
-            apiUpdateStoryboard(projectId, videoPanel.shot.id, toBackendStoryboard(updated.find(s => s.id === videoPanel.shot.id))).catch(console.error);
             return updated;
           });
+          // API 调用放在 setShots 外面，避免在 state updater 内产生副作用
+          apiUpdateStoryboard(projectId, shotId, { video_url: n })
+            .then((res) => console.log('[onSettleVideo] video_url 保存成功，后端返回:', JSON.stringify(res)))
+            .catch((err) => console.error('[onSettleVideo] video_url 保存失败', err));
         }}
        onGenerate={async (params) => {
          const shot = videoPanel.shot;
@@ -6555,17 +6562,27 @@ export default function StoryboardPage({ projectId, projectName = '两只老虎�
                 referenceVideoUrl: params.reference_video_url || undefined,
                 referenceAudioUrl: params.reference_audio_url || undefined,
               };
-              setShots((prev) => prev.map((s) => s.id === shot.id && !s.storyboardVideo
-                ? { ...s, storyboardVideo: { id: `vid-${shot.id}`, url: normalizedUrl, name: 'generated.mp4', type: 'video/mp4' }, ...refInfo }
-                : s
-              ));
+              setShots((prev) => {
+                const updated = prev.map((s) => s.id === shot.id && !s.storyboardVideo
+                  ? { ...s, storyboardVideo: { id: `vid-${shot.id}`, url: normalizedUrl, name: 'generated.mp4', type: 'video/mp4' }, ...refInfo }
+                  : s
+                );
+                // 若该分镜尚无视频（首次生成），自动持久化到后端
+                const wasEmpty = !prev.find(s => s.id === shot.id)?.storyboardVideo;
+                if (wasEmpty) {
+                  apiUpdateStoryboard(projectId, shot.id, { video_url: normalizedUrl }).catch(console.error);
+                }
+                return updated;
+              });
               onVideoGenerated?.(activeEpisodes.findIndex(ep => getEpisodeId(ep) === getEpisodeId(episode)));
               return { url: normalizedUrl };
             }
             // 终态但没有视频 — 发送 toast 提示失败
             const failStatuses = ['failed', 'cancelled', 'canceled', 'expired', 'error'];
             if (failStatuses.includes(task.status) || (!task.result && !task.results?.length)) {
-              const errMsg = task.error_msg || task.errorMsg || (task.status ? `任务状态: ${task.status}` : '');
+              const errMsg = task.error_msg || task.errorMsg
+              || (Array.isArray(task.results) && task.results[0]?.error)
+              || (task.status ? `任务状态: ${task.status}` : '');
               throw Object.assign(new Error(errMsg || '视频生成失败'), { status: task.status });
             }
             throw new Error('生成失败，请重试');

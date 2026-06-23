@@ -3,7 +3,7 @@ import { createPortal } from 'react-dom';
 import { PulsingBorder } from '@paper-design/shaders-react';
 import { apiGetProjects, apiUpdateProject, apiDeleteProject, apiGetProject, apiGetProjectOverview } from '../api/project';
 import { getToken, getRefreshToken, refreshAccessToken } from '../api/request';
-import { clearTokens, apiLogout } from '../api/auth';
+import { clearTokens, apiLogout, apiCompleteWechatCallback } from '../api/auth';
 import { apiListProviders } from '../api/config';
 import { apiGetCurrentUser, apiGetNotifications } from '../api/user';
 import { apiGetSubjects, apiGetSubjectsPage, apiGetEpisodes, apiGetScriptWorkspace, apiFinalizeScriptWorkspace, apiExtractSubjectsFromScript } from '../api/subject';
@@ -1234,6 +1234,67 @@ export default function Home({ onProjectCreated }) {
     }
   };
 
+  // 处理微信回调（根路径 ?code=&state=）
+  useEffect(() => {
+    const handleWechatCallback = async () => {
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get('code');
+      const state = params.get('state');
+
+      if (!code || !state) return; // 没有微信参数，继续正常流程
+
+      try {
+        // 调用后端完成回调
+        const result = await apiCompleteWechatCallback({ code, state });
+        console.log('[Home] 微信回调完成:', result);
+
+        // 如果是 iframe 内，通知父窗口
+        if (window.self !== window.top) {
+          try {
+            window.parent.postMessage({
+              type: 'wechat-callback-complete',
+              payload: result,
+            }, '*');
+          } catch (err) {
+            console.error('[Home] postMessage 失败:', err);
+          }
+        } else {
+          // 顶层窗口直接处理回调结果
+          if (result?.status === 'confirmed' && result?.access_token) {
+            // token 已由 apiCompleteWechatCallback 写入，触发页面刷新完成登录
+            window.location.replace('/');
+          } else if (result?.status === 'need_bind_mobile') {
+            // 通知自身（LoginModal 监听同一个 message 事件）
+            window.dispatchEvent(new MessageEvent('message', {
+              data: { type: 'wechat-callback-complete', payload: result },
+            }));
+          }
+        }
+
+        // 清理 URL 中的微信参数（避免刷新重复执行）
+        const cleanUrl = window.location.pathname;
+        window.history.replaceState({}, document.title, cleanUrl);
+      } catch (err) {
+        console.error('[Home] 微信回调处理失败:', err);
+        // 无论 iframe 还是顶层，均通知 LoginModal 显示错误
+        const errorPayload = {
+          type: 'wechat-callback-complete',
+          payload: { status: 'error', message: err?.message || '微信登录失败，请稍后重试' },
+        };
+        if (window.self !== window.top) {
+          try { window.parent.postMessage(errorPayload, '*'); } catch {}
+        } else {
+          window.dispatchEvent(new MessageEvent('message', { data: errorPayload }));
+        }
+        // 清理 URL（即使失败也要清理，避免重复尝试）
+        const cleanUrl = window.location.pathname;
+        window.history.replaceState({}, document.title, cleanUrl);
+      }
+    };
+
+    handleWechatCallback();
+  }, []);
+
   useEffect(() => {
     // 没有 token → 跳过所有鉴权请求，避免 401
     if (!getToken()) {
@@ -1328,6 +1389,14 @@ export default function Home({ onProjectCreated }) {
       setLoginOpen(true);
     };
 
+    // 微信回调 need_bind_mobile：确保登录弹窗打开，再让 LoginModal 内部切换到绑定手机步骤
+    const handleWechatNeedBind = (event) => {
+      if (event.data?.type === 'wechat-callback-complete' &&
+          event.data?.payload?.status === 'need_bind_mobile') {
+        setLoginOpen(true);
+      }
+    };
+
     const handleProjectAssetsDeleted = (event) => {
       const projectId = event?.detail?.projectId;
       if (!projectId || projectId !== activeProject?.id) return;
@@ -1352,9 +1421,11 @@ export default function Home({ onProjectCreated }) {
     };
 
     window.addEventListener('auth:logout', handleForceLogout);
+    window.addEventListener('message', handleWechatNeedBind);
     window.addEventListener('project-assets:deleted', handleProjectAssetsDeleted);
     return () => {
       window.removeEventListener('auth:logout', handleForceLogout);
+      window.removeEventListener('message', handleWechatNeedBind);
       window.removeEventListener('project-assets:deleted', handleProjectAssetsDeleted);
     };
   }, [activeProject?.id]);
@@ -1715,6 +1786,11 @@ export default function Home({ onProjectCreated }) {
     setActiveStep('script');
     setActiveKey('project');
   };
+
+  // 在 iframe 内（微信 redirect 回调）不渲染完整 UI，只执行 useEffect 回调逻辑
+  if (window.self !== window.top) {
+    return null;
+  }
 
   return (
     <div className="[font-synthesis:none] overflow-clip w-screen h-screen relative bg-neutral-400 antialiased">

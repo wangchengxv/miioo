@@ -926,7 +926,7 @@ function AssetDetailModal({ onClose, onDownload, name, description, prompt, mode
               paddingTop: '14px', paddingBottom: '16px', paddingLeft: '16px', paddingRight: '16px',
               backgroundColor: '#111111',
             }}>
-              <div style={{ display: 'flex', gap: '12px' }}>
+              <div style={{ display: 'flex', gap: '12px', overflowX: 'auto' }}>
                 {imgs.map((img, idx) => {
                   const isActive = activeImg === idx;
                   const isHov = hovThumb === idx;
@@ -1157,7 +1157,7 @@ function ShotDetailModal({ onClose, onDownload, onDelete, onShowToast, shotNumbe
               paddingTop: '14px', paddingBottom: '16px', paddingLeft: '16px', paddingRight: '16px',
               backgroundColor: '#111111',
             }}>
-              <div style={{ display: 'flex', gap: '12px' }}>
+              <div style={{ display: 'flex', gap: '12px', overflowX: 'auto' }}>
                 {imgs.map((img, idx) => {
                   const isActive = activeImg === idx;
                   const isHov = hovThumb === idx;
@@ -1719,7 +1719,7 @@ function ShotVideoDetailModal({ onClose, onDownload, onDelete, onShowToast, shot
               paddingTop: '12px', paddingBottom: '16px', paddingLeft: '16px', paddingRight: '16px',
               backgroundColor: '#111111', borderTop: '1px solid #FFFFFF14',
             }}>
-              <div style={{ display: 'flex', gap: '10px' }}>
+              <div style={{ display: 'flex', gap: '10px', overflowX: 'auto' }}>
                 {frms.map((frm, idx) => {
                   const isActive = activeFrame === idx;
                   const isHov = hovThumb === idx;

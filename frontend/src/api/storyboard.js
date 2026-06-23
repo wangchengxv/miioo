@@ -1,7 +1,7 @@
 const BASE = import.meta.env.VITE_API_BASE_URL;
 
 import { authFetch, authFetchForm } from './request.js';
-import { cached, invalidate } from '../utils/cache.js';
+import { cached, invalidate, setCache, peekCache } from '../utils/cache.js';
 import { K, TTL, MEDIUM } from '../utils/cacheKeys.js';
 
 // 分镜写操作后统一失效该项目的分镜缓存 + 概览（概览含分镜进度）
@@ -76,8 +76,24 @@ export async function apiUpdateStoryboard(projectId, storyboardId, data) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(data),
   });
-  invalidateStoryboards(projectId);
-  return res.json();
+  const updated = await res.json();
+  // 把最新数据回填进所有相关缓存 key，避免刷新时读到旧缓存导致字段丢失
+  if (updated?.id) {
+    const prefix = K.storyboardsPrefix(projectId);
+    for (const m of ['memory', 'local', 'session']) {
+      // 枚举该项目下所有已缓存的 storyboards key
+      for (const episodeId of [undefined, updated.episode_id]) {
+        const key = K.storyboards(projectId, episodeId);
+        const cached = peekCache(key, m);
+        if (Array.isArray(cached)) {
+          const next = cached.map(s => s.id === updated.id ? updated : s);
+          setCache(key, next, { medium: m });
+        }
+      }
+    }
+  }
+  invalidate(K.projectOverview(projectId));
+  return updated;
 }
 
 export async function apiDeleteStoryboard(projectId, storyboardId) {

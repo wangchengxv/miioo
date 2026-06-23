@@ -3603,7 +3603,10 @@ function VideoResultCard({ status, videoUrl, prompt, model, ratio, resolution, d
   );
 }
 
-function ImageResultCard({ status, imageUrl, prompt, promptHTML, model, ratio, resolution, refImages, createdAt, onReEdit, onUseAsRef, onDelete, onSave, batchMode = false, isSelected = false, onToggleSelect, favorited = false, onToggleFavorite }) {
+function ImageResultCard({ status, imageUrl, originalUrl, prompt, promptHTML, model, ratio, resolution, refImages, createdAt, onReEdit, onUseAsRef, onDelete, onSave, batchMode = false, isSelected = false, onToggleSelect, favorited = false, onToggleFavorite }) {
+  // 下载和详情弹窗使用原图；缩略图仅用于卡片显示
+  const displayUrl = imageUrl;
+  const downloadUrl = originalUrl || imageUrl;
   const [hovered, setHovered] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
   const [starAnim, setStarAnim] = useState(false);
@@ -3716,7 +3719,7 @@ function ImageResultCard({ status, imageUrl, prompt, promptHTML, model, ratio, r
               />
               <CardActionBtn
                 tooltip="下载"
-                onClick={() => downloadImage(imageUrl)}
+                onClick={() => downloadImage(downloadUrl)}
                 icon={
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                     <path d="M8.003 11.3V2" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
@@ -3757,7 +3760,7 @@ function ImageResultCard({ status, imageUrl, prompt, promptHTML, model, ratio, r
       {detailOpen && (
         <ImageDetailModal
           card={{
-            imageUrl,
+            imageUrl: downloadUrl,   // 详情弹窗和下载都用原图
             prompt,
             promptHTML,
             model,
@@ -4538,8 +4541,14 @@ export default function CreationPage({ isLoggedIn, onLoginClick, apiConfigured =
     const rawUrl =
       type === 'video'
         ? (item.video_url || item.videoUrl || item.preview_video_url || item.previewVideoUrl || item.original_url || item.file_url || item.url || '')
-        : (item.original_url || item.file_url || item.url || '');
+        : (item.original_url || item.file_url || item.url || item.thumbnail_url || item.thumbnailUrl || '');
     const url = normalizeImageUrl(rawUrl) || '';
+
+    // 图片类型单独保存缩略图（仅用于低流量预览），原图用于展示和下载
+    const rawThumbUrl = type === 'image'
+      ? (item.thumbnail_url || item.thumbnailUrl || rawUrl)
+      : '';
+    const thumbnailUrl = normalizeImageUrl(rawThumbUrl) || url;
 
     // video 类型从 asset_bindings 提取参考图（首帧/尾帧等），其他类型沿用 reference_images
     const assetBindings = item.asset_bindings || item.assetBindings || [];
@@ -4576,6 +4585,8 @@ export default function CreationPage({ isLoggedIn, onLoginClick, apiConfigured =
         type,
         status: 'done',
         imageUrl: type === 'image' ? url : null,
+        originalUrl: type === 'image' ? url : null,      // 原图，用于展示和下载
+        thumbnailUrl: type === 'image' ? thumbnailUrl : null, // 缩略图（备用）
         videoUrl: type === 'video' ? url : null,
         audioUrl: type === 'audio' ? url : null,
         posterUrl: type === 'video' ? posterUrl : undefined,
@@ -4885,7 +4896,7 @@ export default function CreationPage({ isLoggedIn, onLoginClick, apiConfigured =
       gen.cards.forEach((card, i) => {
         const key = `${gen.id}-${i}`;
         if (selected.has(key)) {
-          if (card.imageUrl) downloadImage(card.imageUrl);
+          if (card.imageUrl) downloadImage(card.originalUrl || card.imageUrl);
           if (card.audioUrl && !card.imageUrl && !card.videoUrl) {
             const a = document.createElement('a');
             a.href = card.audioUrl;

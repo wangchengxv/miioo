@@ -1,10 +1,10 @@
 import { useState, useEffect, useRef } from 'react';
-import { sendVerificationCode, loginWithPhone, apiGetWechatQrCode, apiPollWechatQrCodeStatus, apiBindMobileWithBindToken } from '../api/auth';
-import qrCodeImg from '../assets/qr-code.png';
+import { sendVerificationCode, loginWithPhone, apiGetWechatQrCode, apiPollWechatQrCodeStatus, apiConfirmWechatLogin } from '../api/auth';
+import { createSerialPolling } from '../utils/serialPolling';
+import WechatOfficialQr from './WechatOfficialQr';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
-const QR_CODE_URL = qrCodeImg;
 
 function BrandLogo() {
   return (
@@ -441,7 +441,7 @@ function PhoneLoginView({ onLogin, onChangeTab, onShowToast }) {
 
   return (
     <>
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 24, width: '100%', paddingLeft: 32, paddingRight: 32, flex: 1, backgroundColor: '#161616' }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 24, width: '100%', paddingLeft: 32, paddingRight: 32, backgroundColor: '#161616' }}>
         <Tabs tab="phone" onChange={onChangeTab} />
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', gap: 4, alignSelf: 'stretch', padding: 0 }}>
           <Field
@@ -480,56 +480,54 @@ function PhoneLoginView({ onLogin, onChangeTab, onShowToast }) {
 function WechatView({ onBackToPhone, onLoginSuccess, onNeedBind, onShowToast }) {
   const [agreed, setAgreed] = useState(false);
   const [qrStatus, setQrStatus] = useState('loading');
-  const [qrcodeUrl, setQrcodeUrl] = useState('');
+  const [authUrl, setAuthUrl] = useState('');
   const qrcodeIdRef = useRef('');
-  const pollTimerRef = useRef(null);
-
-  const stopPolling = () => {
-    if (pollTimerRef.current) {
-      clearTimeout(pollTimerRef.current);
-      pollTimerRef.current = null;
-    }
-  };
+  const pollingRef = useRef(null);
 
   const startPolling = (qrcodeId) => {
-    const poll = async () => {
-      try {
-        const data = await apiPollWechatQrCodeStatus(qrcodeId);
+    if (pollingRef.current) { pollingRef.current.stop(); pollingRef.current = null; }
+    pollingRef.current = createSerialPolling({
+      task: async () => apiPollWechatQrCodeStatus(qrcodeId),
+      interval: 2000,
+      onResult: (data) => {
         if (data.status === 'confirmed') {
-          stopPolling();
+          pollingRef.current?.stop();
           onLoginSuccess();
         } else if (data.status === 'need_bind_mobile') {
-          stopPolling();
-          onNeedBind(data.bind_token);
+          pollingRef.current?.stop();
+          onNeedBind(data.bind_token || data.session_id);
         } else if (data.status === 'expired') {
-          stopPolling();
+          pollingRef.current?.stop();
           setQrStatus('expired');
         } else if (data.status === 'scanned') {
           setQrStatus('scanned');
-          pollTimerRef.current = setTimeout(poll, 2000);
-        } else {
-          // pending
-          pollTimerRef.current = setTimeout(poll, 2000);
+        } else if (data.status === 'error') {
+          pollingRef.current?.stop();
+          setQrStatus('error');
         }
-      } catch {
-        stopPolling();
+      },
+      onError: (error) => {
+        console.error('[WechatView] 轮询出错:', error);
+        pollingRef.current?.stop();
         setQrStatus('error');
-      }
-    };
-    pollTimerRef.current = setTimeout(poll, 2000);
+      },
+      maxConsecutiveErrors: 3,
+      pauseWhenHidden: true,
+    });
+    pollingRef.current.start();
   };
 
   const loadQrCode = async () => {
-    stopPolling();
     setQrStatus('loading');
-    setQrcodeUrl('');
+    setAuthUrl('');
     try {
       const data = await apiGetWechatQrCode();
       qrcodeIdRef.current = data.qrcode_id;
-      setQrcodeUrl(data.qrcode_url);
+      setAuthUrl(data.raw_qr_code_value);
       setQrStatus('ready');
       startPolling(data.qrcode_id);
-    } catch {
+    } catch (error) {
+      console.error('[WechatView] 获取二维码失败:', error);
       setQrStatus('error');
       onShowToast('error', '获取二维码失败，请重试');
     }
@@ -537,7 +535,7 @@ function WechatView({ onBackToPhone, onLoginSuccess, onNeedBind, onShowToast }) 
 
   useEffect(() => {
     loadQrCode();
-    return () => stopPolling();
+    return () => { pollingRef.current?.stop(); pollingRef.current = null; };
   }, []);
 
   const qrLabel = {
@@ -558,33 +556,28 @@ function WechatView({ onBackToPhone, onLoginSuccess, onNeedBind, onShowToast }) 
           <TabButton active onClick={() => {}}>微信扫码</TabButton>
         </div>
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 12 }}>
-          <button
+          <div
             type="button"
             onClick={isExpiredOrError ? loadQrCode : undefined}
             style={{
               position: 'relative',
-              width: 200,
-              height: 200,
+              width: 284,
+              height: 284,
               flexShrink: 0,
               padding: 0,
               border: 0,
-              background: '#1D1E1E',
               borderRadius: 8,
               overflow: 'hidden',
               cursor: isExpiredOrError ? 'pointer' : 'default',
             }}
           >
-            {qrcodeUrl && (
-              <img
-                src={qrcodeUrl}
-                alt="微信登录二维码"
-                style={{
-                  width: '100%',
-                  height: '100%',
-                  objectFit: 'cover',
-                  display: 'block',
-                  opacity: isExpiredOrError || qrStatus === 'scanned' ? 0.25 : 1,
-                  transition: 'opacity 200ms ease',
+            {qrStatus !== 'loading' && qrStatus !== 'error' && qrStatus !== 'expired' && (
+              <WechatOfficialQr
+                authUrl={authUrl}
+                onReady={() => {}}
+                onError={(err) => {
+                  console.error('[WechatOfficialQr] 渲染失败:', err);
+                  setQrStatus('error');
                 }}
               />
             )}
@@ -594,7 +587,7 @@ function WechatView({ onBackToPhone, onLoginSuccess, onNeedBind, onShowToast }) 
               </div>
             )}
             {isExpiredOrError && (
-              <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#1D1E1E' }}>
                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
                   <path d="M12 4V8M12 4L9 7M12 4L15 7" stroke="#FFFFFFCC" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
                   <path d="M4 12C4 7.582 7.582 4 12 4" stroke="#FFFFFFCC" strokeWidth="1.5" strokeLinecap="round" />
@@ -604,16 +597,15 @@ function WechatView({ onBackToPhone, onLoginSuccess, onNeedBind, onShowToast }) 
               </div>
             )}
             {qrStatus === 'scanned' && (
-              <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8 }}>
+              <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#1D1E1E' }}>
                 <SuccessIcon />
                 <div style={{ fontFamily: FONT, color: '#52BF92', fontSize: 12, lineHeight: '16px' }}>扫码成功</div>
               </div>
             )}
-          </button>
-          <div style={{ fontFamily: FONT, color: '#FFFFFF99', fontSize: 12, lineHeight: '16px' }}>{qrLabel}</div>
+          </div>
         </div>
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, justifyContent: 'space-between', width: '100%', backgroundColor: '#161616', padding: 32 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 16, justifyContent: 'space-between', width: '100%', backgroundColor: '#161616', paddingTop: 0, paddingRight: 32, paddingBottom: 32, paddingLeft: 32 }}>
         <Agreement checked={agreed} onToggle={() => setAgreed((value) => !value)} />
       </div>
     </>
@@ -674,7 +666,7 @@ function BindPhoneView({ onBind, onBack, onShowToast, bindToken }) {
       onShowToast?.('error', '验证码只能包含数字');
       return;
     }
-    await apiBindMobileWithBindToken({ bind_token: bindToken, mobile: phone, sms_code: code });
+    await apiConfirmWechatLogin({ session_id: bindToken, phone, sms_code: code });
     onBind();
   };
 
@@ -798,8 +790,6 @@ export default function LoginModal({ open, onClose, onSuccess }) {
     setTimeout(() => setToasts((prev) => prev.filter((t) => t.id !== id)), 3000);
   };
 
-  if (!open) return null;
-
   const handleClose = () => {
     onClose();
     setTimeout(() => {
@@ -818,6 +808,31 @@ export default function LoginModal({ open, onClose, onSuccess }) {
     setBindToken(token);
     setStep('bind');
   };
+
+  // 监听来自首页（iframe 父窗口）的微信回调完成消息
+  useEffect(() => {
+    const handleWechatCallbackMessage = (event) => {
+      if (event.data?.type === 'wechat-callback-complete') {
+        const result = event.data?.payload;
+        console.log('[LoginModal] 接收到微信回调完成消息:', result);
+
+        if (result?.status === 'confirmed') {
+          onSuccess?.();
+          handleClose();
+        } else if (result?.status === 'need_bind_mobile') {
+          setBindToken(result?.bind_token || result?.session_id);
+          setStep('bind');
+        } else if (result?.status === 'error') {
+          showToast('error', result?.message || '微信登录失败，请稍后重试');
+        }
+      }
+    };
+
+    window.addEventListener('message', handleWechatCallbackMessage);
+    return () => window.removeEventListener('message', handleWechatCallbackMessage);
+  }, [onSuccess]);
+
+  if (!open) return null;
 
   return (
     <>
@@ -842,7 +857,8 @@ export default function LoginModal({ open, onClose, onSuccess }) {
           borderRadius: 16,
           overflow: 'clip',
           width: 400,
-          height: 470,
+          height: 470 ,
+          transition: 'height 200ms ease',
         }}
         onClick={(event) => event.stopPropagation()}
       >
