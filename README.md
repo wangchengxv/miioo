@@ -39,6 +39,6 @@ Miioo AI 是面向短剧生产的流程化工具平台，围绕“剧本 → 主
 
 ---
 
-* 本仓库放的是前端代码，后端代码地址为：https://github.com/wangchengxv/miiooo/tree/enter
+* 最新前端代码放在feat/project分支，最新后端代码放在backend分支
 * 欢迎大家共创！
 ⓒ2026 Miioo AI 济南三脚猫科技有限公司
