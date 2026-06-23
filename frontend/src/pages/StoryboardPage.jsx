@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react';
 import { createPortal } from 'react-dom';
 import { useModalSize } from '../utils/useModalSize';
 import BatchDownloadModal from '../components/BatchDownloadModal';
@@ -1039,19 +1039,24 @@ function FrameUploadSlot({ label, media, onUpload, onRemove, shortcutLabel, shor
     setPreviewPos(null);
   }
 
-  async function handleFile(e) {
-    const file = e.target.files[0];
-    if (!file) return;
-    if (file.size > 20 * 1024 * 1024) { alert('抱歉，平台暂不支持上传20M以上的图片资源！'); e.target.value = ''; return; }
-    setUploading(true);
-    try {
-      const result = await apiUploadCreationImage({ file, category: 'reference', project_id: projectId });
-      const url = result.uploaded_url || result.uploadedUrl || result.url || result.file_url || '';
-      onUpload?.({ id: url, url, name: file.name, type: file.type });
-    } catch {
-      alert('上传失败，请重试');
-    }
-    setUploading(false);
+ async function handleFile(e) {
+   const file = e.target.files[0];
+   if (!file) return;
+    const isVideo = file.type.startsWith('video/');
+    const isAudio = file.type.startsWith('audio/');
+    const maxSize = isVideo ? 200 * 1024 * 1024 : isAudio ? 50 * 1024 * 1024 : 20 * 1024 * 1024;
+    const typeLabel = isVideo ? '视频' : isAudio ? '音频' : '图片';
+    if (file.size > maxSize) { alert(`抱歉，平台暂不支持上传${maxSize / 1024 / 1024}M以上的${typeLabel}资源！`); e.target.value = ''; return; }
+   setUploading(true);
+   try {
+      const uploadFn = isVideo ? apiUploadCreationVideo : isAudio ? apiUploadCreationAudio : apiUploadCreationImage;
+      const result = await uploadFn({ file, category: 'reference', project_id: projectId });
+     const url = result.uploaded_url || result.uploadedUrl || result.url || result.file_url || '';
+     onUpload?.({ id: url, url, name: file.name, type: file.type });
+   } catch {
+     alert('上传失败，请重试');
+   }
+   setUploading(false);
     e.target.value = '';
   }
 
@@ -1203,7 +1208,7 @@ function FrameUploadSlot({ label, media, onUpload, onRemove, shortcutLabel, shor
 
 // ─── 面板上传区（虚线框）────────────────────────────────────────────────────────
 
-function PanelUploadSlot({ label, onUpload, media, onRemove, accept = 'image/*', projectId, countLabel, mediaList, canAddMore = true, onRemoveItem, onAssetConfirm }) {
+function PanelUploadSlot({ label, onUpload, media, onRemove, accept = 'image/*', projectId, countLabel, mediaList, canAddMore = true, onRemoveItem, onAssetConfirm, onInsert }) {
   const fileRef = useRef(null);
   const [hov, setHov] = useState(false);
   const [addHov, setAddHov] = useState(false);
@@ -1213,8 +1218,9 @@ function PanelUploadSlot({ label, onUpload, media, onRemove, accept = 'image/*',
   const [btn2Pressed, setBtn2Pressed] = useState(false);
   const [assetPickerOpen, setAssetPickerOpen] = useState(false);
   const [previewMedia, setPreviewMedia] = useState(null); // { url, isVideo }
-  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
-  const hoverTimerRef = useRef(null);
+const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+ const [uploading, setUploading] = useState(false);
+const hoverTimerRef = useRef(null);
 
   function startPreview(e, item) {
     const { clientX, clientY } = e;
@@ -1240,10 +1246,15 @@ function PanelUploadSlot({ label, onUpload, media, onRemove, accept = 'image/*',
   async function handleFile(e) {
     const file = e.target.files[0];
     if (!file) return;
-    if (file.size > 20 * 1024 * 1024) { alert('抱歉，平台暂不支持上传20M以上的图片资源！'); e.target.value = ''; return; }
+    const isVideo = file.type.startsWith('video/');
+    const isAudio = file.type.startsWith('audio/');
+    const maxSize = isVideo ? 200 * 1024 * 1024 : isAudio ? 50 * 1024 * 1024 : 20 * 1024 * 1024;
+    const typeLabel = isVideo ? '视频' : isAudio ? '音频' : '图片';
+    if (file.size > maxSize) { alert(`抱歉，平台暂不支持上传${maxSize / 1024 / 1024}M以上的${typeLabel}资源！`); e.target.value = ''; return; }
     setUploading(true);
     try {
-      const result = await apiUploadCreationImage({ file, category: 'reference', project_id: projectId });
+      const uploadFn = isVideo ? apiUploadCreationVideo : isAudio ? apiUploadCreationAudio : apiUploadCreationImage;
+      const result = await uploadFn({ file, category: 'reference', project_id: projectId });
       const url = result.uploaded_url || result.uploadedUrl || result.url || result.file_url || '';
       onUpload?.({ id: url, url, name: file.name, type: file.type });
     } catch {
@@ -1349,10 +1360,12 @@ function PanelUploadSlot({ label, onUpload, media, onRemove, accept = 'image/*',
             <input ref={fileRef} type="file" accept={accept} style={{ display: 'none' }} onChange={handleFile} />
             {media ? (
               <div
+                onMouseDown={(e) => { if (onInsert) e.preventDefault(); }}
+                onClick={() => onInsert?.(media)}
                 onMouseEnter={(e) => startPreview(e, media)}
                 onMouseMove={movePreview}
                 onMouseLeave={stopPreview}
-                style={{ position: 'relative', width: '120px', height: '120px', borderRadius: '6px', overflow: 'hidden', flexShrink: 0, border: '1px solid rgba(255,255,255,0.12)' }}>
+                style={{ position: 'relative', width: '120px', height: '120px', borderRadius: '6px', overflow: 'hidden', flexShrink: 0, border: `1px solid ${onInsert ? 'rgba(255,255,255,0.20)' : 'rgba(255,255,255,0.12)'}`, cursor: onInsert ? 'pointer' : 'default' }}>
                 {media.type?.startsWith('video') ? (
                   <video src={media.url || null} style={{ width: '100%', height: '100%', objectFit: 'cover' }} muted playsInline />
                 ) : media.type?.startsWith('audio') ? (
@@ -1597,7 +1610,7 @@ function setCaretOffset(el, targetOffset) {
   sel.addRange(range);
 }
 
-function PanelPromptInput({ value, onChange, referenceItems = [] }) {
+const PanelPromptInput = forwardRef(function PanelPromptInput({ value, onChange, referenceItems = [] }, ref) {
   const [focused, setFocused] = useState(false);
   const [hov, setHov] = useState(false);
   const [mentionQuery, setMentionQuery] = useState(null);
@@ -1608,6 +1621,42 @@ function PanelPromptInput({ value, onChange, referenceItems = [] }) {
   const allSubjectsRef = useRef([]);
   const typeOverridesRef = useRef({});
   const isBlurringRef = useRef(false);
+  const pendingMentionRef = useRef(null); // { name, type } 等待编辑器挂载后插入
+
+  // 暴露 insertMention 方法，供外部（如参考视频卡片点击）调用
+  useImperativeHandle(ref, () => ({
+    insertMention(name, type) {
+      const el = editorRef.current;
+      if (el) {
+        // 编辑器已挂载，直接插入
+        doInsertMention(el, name, type);
+      } else {
+        // 展示态，先记录 pending，触发 focused=true 后在 useEffect 中插入
+        pendingMentionRef.current = { name, type };
+        setFocused(true);
+      }
+    },
+  }));
+
+  function doInsertMention(el, name, type) {
+    const caretOffset = getCaretOffset(el);
+    const currentVal = serializeEditor(el);
+    const before = currentVal.slice(0, caretOffset);
+    const after = currentVal.slice(caretOffset);
+    const newVal = `${before}@${name} ${after}`.slice(0, MAX_PROMPT_LEN);
+    const newCaretOffset = caretOffset + name.length + 2;
+    const typeOverrides = { ...typeOverridesRef.current, [name]: type };
+    typeOverridesRef.current = typeOverrides;
+    onChange(newVal);
+    suppressSyncRef.current = true;
+    requestAnimationFrame(() => {
+      if (!editorRef.current) return;
+      suppressSyncRef.current = false;
+      rebuildEditorDOM(editorRef.current, newVal, allSubjectsRef.current, typeOverrides);
+      setCaretOffset(editorRef.current, newCaretOffset);
+      editorRef.current.focus();
+    });
+  }
 
   const borderColor = focused ? 'rgba(45,195,225,0.60)' : hov ? 'rgba(255,255,255,0.20)' : 'rgba(255,255,255,0.08)';
   const outlineColor = focused ? 'rgba(45,195,225,0.12)' : '#00000080';
@@ -1655,8 +1704,20 @@ function PanelPromptInput({ value, onChange, referenceItems = [] }) {
 
   useEffect(() => {
     if (focused && editorRef.current) {
-      rebuildEditorDOM(editorRef.current, value, allSubjects, typeOverridesRef.current);
-      setCaretOffset(editorRef.current, value.length);
+      const el = editorRef.current;
+      // 必须先 focus，否则 window.getSelection() 无法定位光标
+      el.focus();
+      rebuildEditorDOM(el, value, allSubjects, typeOverridesRef.current);
+      // 若有待插入的 mention（点击卡片时编辑器还未挂载），在此消费
+      if (pendingMentionRef.current) {
+        const { name, type } = pendingMentionRef.current;
+        pendingMentionRef.current = null;
+        // 光标先移到末尾，再插入
+        setCaretOffset(el, value.length);
+        doInsertMention(el, name, type);
+      } else {
+        setCaretOffset(el, value.length);
+      }
     }
   }, [focused]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -1921,7 +1982,7 @@ function PanelPromptInput({ value, onChange, referenceItems = [] }) {
       )}
     </div>
   );
-}
+});
 
 // ─── 生成分镜图面板 ────────────────────────────────────────────────────────────
 
@@ -2288,7 +2349,13 @@ function GenerateImagePanel({ shot, projectId, chars = [], scenes = [], props = 
               projectId={projectId}
               onUpload={async (file) => {
                 try {
-                  const result = await apiUploadCreationImage({ file, category: 'reference', project_id: projectId });
+                  const isVideo = file.type.startsWith('video/');
+                  const isAudio = file.type.startsWith('audio/');
+                  const maxSize = isVideo ? 200 * 1024 * 1024 : isAudio ? 50 * 1024 * 1024 : 20 * 1024 * 1024;
+                  const typeLabel = isVideo ? '视频' : isAudio ? '音频' : '图片';
+                 if (file.size > maxSize) { alert(`抱歉，平台暂不支持上传${maxSize / 1024 / 1024}M以上的${typeLabel}资源！`); e.target.value = ''; return; }
+                 const uploadFn = isVideo ? apiUploadCreationVideo : isAudio ? apiUploadCreationAudio : apiUploadCreationImage;
+                  const result = await uploadFn({ file, category: 'reference', project_id: projectId });
                   const uploadedUrl = result.uploaded_url || result.uploadedUrl || result.url || result.file_url || '';
                   onSetGeneratedImages((prev) => [{ url: uploadedUrl, settled: false, id: result.asset_id || result.id || uploadedUrl }, ...prev]);
                   onSettleImage?.(uploadedUrl);
@@ -2445,6 +2512,7 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
   // 关闭面板时组件卸载、本地态丢弃，下次打开按 shot 当前字段重新生成初始内容。
   // 点击「生成分镜视频」时才把 prompt 随 onGenerate 传回后端。
   const [prompt, setPrompt] = useState(() => buildPromptFromShot(shot));
+  const promptRef = useRef(null);
   const [refSubjects, setRefSubjects] = useState(() => {
     // 从 shot.mainRefs 初始化主体列表，补全 url/name
     if (!shot?.mainRefs?.length) return [];
@@ -2717,7 +2785,7 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
               </div>
             </div>
 
-            <PanelPromptInput value={prompt} onChange={setPrompt} referenceItems={videoReferenceItems} />
+            <PanelPromptInput ref={promptRef} value={prompt} onChange={setPrompt} referenceItems={videoReferenceItems} />
 
             <PanelSelect label="选择模型" value={modelsLoading ? '加载中...' : (tabModels.find(m => m.value === model)?.label || '请选择')} options={tabModels.map(m => m.label)} onChange={(label) => {
               const selected = tabModels.find(m => m.label === label);
@@ -2797,7 +2865,14 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
                   } else {
                     setRefVideo(media);
                   }
-                }} onRemove={() => setRefVideo(null)} />
+                }} onRemove={() => setRefVideo(null)} onAssetConfirm={(assets) => {
+                  const a = assets[0];
+                  if (!a) return;
+                  setRefVideo({ id: a.id, url: a.fileUrl || a.url, name: a.name || '参考视频', type: 'video/mp4' });
+                }} onInsert={(media) => {
+                  const name = media.name || '参考视频';
+                  promptRef.current?.insertMention(name, 'video');
+                }} />
                 )}
                 {showRefAudio && (
                 <PanelUploadSlot projectId={projectId} label="参考音频" countLabel={audioCountLabel} accept="audio/mpeg,audio/wav" media={refAudio} onUpload={async (media) => {
@@ -2814,7 +2889,14 @@ function GenerateVideoPanel({ shot, projectId, nextShot = null, chars = [], scen
                   } else {
                     setRefAudio(media);
                   }
-                }} onRemove={() => setRefAudio(null)} />
+                }} onRemove={() => setRefAudio(null)} onAssetConfirm={(assets) => {
+                  const a = assets[0];
+                  if (!a) return;
+                  setRefAudio({ id: a.id, url: a.fileUrl || a.url, name: a.name || '参考音频', type: 'audio/mpeg' });
+                }} onInsert={(media) => {
+                  const name = media.name || '参考音频';
+                  promptRef.current?.insertMention(name, 'audio');
+                }} />
                 )}
               </>
             )}
@@ -4311,7 +4393,13 @@ function MainRefCol({ shot, onChange, chars, projectId }) {
 
     // 立即上传到后端
     try {
-      const result = await apiUploadCreationImage({ file, category: 'reference', project_id: projectId });
+      const isVideo = file.type.startsWith('video/');
+      const isAudio = file.type.startsWith('audio/');
+      const maxSize = isVideo ? 200 * 1024 * 1024 : isAudio ? 50 * 1024 * 1024 : 20 * 1024 * 1024;
+      const typeLabel = isVideo ? '视频' : isAudio ? '音频' : '图片';
+      if (file.size > maxSize) { alert(`抱歉，平台暂不支持上传${maxSize / 1024 / 1024}M以上的${typeLabel}资源！`); e.target.value = ''; return; }
+      const uploadFn = isVideo ? apiUploadCreationVideo : isAudio ? apiUploadCreationAudio : apiUploadCreationImage;
+      const result = await uploadFn({ file, category: 'reference', project_id: projectId });
       const uploadedUrl = result.uploaded_url || result.uploadedUrl || result.url || result.file_url || '';
 
       // 更新 mainRefs：替换临时 URL 为后端 URL
@@ -4366,10 +4454,14 @@ function MainRefCol({ shot, onChange, chars, projectId }) {
         overflowX: 'hidden',
         display: 'flex',
         flexWrap: 'wrap',
-        gap: '4px',
-        scrollbarWidth: 'none',
-      }}>
-        {shot.mainRefs.map((img, idx) => (
+       gap: '4px',
+       scrollbarWidth: 'none',
+     }}>
+        {/* 添加按钮始终在第一个槽 */}
+        <div ref={addBtnRef} style={{ display: 'inline-flex', flexShrink: 0 }}>
+          <AddSlotBtn onClick={() => setDropdownOpen((v) => !v)} />
+        </div>
+       {shot.mainRefs.map((img, idx) => (
           <div
             key={img.id ?? idx}
             onMouseEnter={(e) => { setHoveredIdx(idx); handleImgMouseEnter(e, img); }}
@@ -4410,12 +4502,8 @@ function MainRefCol({ shot, onChange, chars, projectId }) {
               </div>
             )}
           </div>
-        ))}
-        {/* 添加按钮始终跟在最后 */}
-        <div ref={addBtnRef} style={{ display: 'inline-flex', flexShrink: 0 }}>
-          <AddSlotBtn onClick={() => setDropdownOpen((v) => !v)} />
-        </div>
-      </div>
+       ))}
+     </div>
 
       {previewImg && createPortal(
         <MediaHoverPreview url={previewImg} isVideo={false} mouseX={mousePos.x} mouseY={mousePos.y} />,

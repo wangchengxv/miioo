@@ -17,22 +17,23 @@ function Tooltip({ label }) {
     <div
       style={{
         position: 'absolute',
-        left: 'calc(100% + 8px)',
+        left: 'calc(100% + 2px)',
         top: '50%',
         transform: 'translateY(-50%)',
         pointerEvents: 'none',
         zIndex: 50,
         display: 'flex',
         alignItems: 'center',
-        padding: '2px 8px',
+        padding: '4px 8px',
         borderRadius: '4px',
-        backgroundColor: '#111111',
+        backgroundColor: '#161616',
+        border: '1px solid #FFFFFF0D',
         whiteSpace: 'nowrap',
         fontFamily: "'AlibabaPuHuiTi_2_55_Regular', 'Alibaba PuHuiTi 2.0', system-ui, sans-serif",
         fontSize: '12px',
         fontWeight: 400,
         lineHeight: '16px',
-        color: '#FFFFFF',
+        color: '#FFFFFFE6',
       }}
     >
       {label}

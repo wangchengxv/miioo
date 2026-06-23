@@ -84,16 +84,18 @@ const NAV_ITEMS = [
   },
 ];
 
-function MenuPopupItem({ label, onClick }) {
+function MenuPopupItem({ label, onClick, showExternalIcon = false }) {
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
 
   return (
     <button
       type="button"
-      className="flex items-center gap-[4px] w-full rounded-[6px] border-0 bg-transparent text-left cursor-pointer"
+      className="flex items-center w-full rounded-[6px] border-0 bg-transparent text-left cursor-pointer"
       style={{
         padding: '8px 12px',
+        gap: '4px',
+        justifyContent: showExternalIcon ? 'space-between' : 'flex-start',
         backgroundColor: pressed ? '#FFFFFF14' : hovered ? '#FFFFFF0D' : 'transparent',
         transition: 'background-color 120ms ease, color 120ms ease',
       }}
@@ -107,11 +109,17 @@ function MenuPopupItem({ label, onClick }) {
       onMouseUp={() => setPressed(false)}
     >
       <div
-        className="w-fit shrink-0 font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-font-size-14"
-        style={{ color: pressed || hovered ? '#FFFFFF' : '#FFFFFF99' }}
+        className="w-fit shrink-0 font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif]"
+        style={{ fontSize: '14px', lineHeight: '18px', color: pressed || hovered ? '#FFFFFF' : '#FFFFFFCC' }}
       >
         {label}
       </div>
+      {showExternalIcon && (
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+          <path d="M4.5 11.5L11.5 4.5" stroke="#FFFFFF80" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M7 4.5H11.5V9" stroke="#FFFFFF80" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )}
     </button>
   );
 }
@@ -135,49 +143,96 @@ function QRCodePopup({ anchorLeft }) {
 function MoreOptionsMenu({ close, setWatermarkSettingsOpen }) {
   const [bizQrVisible, setBizQrVisible] = useState(false);
   const bizItemRef = useRef(null);
+  const containerRef = useRef(null);
 
   const handleMenuClick = (label) => {
-    if (label === '创作手册' && CREATION_MANUAL_URL) {
+    if (label === '创作手册') {
       window.open(CREATION_MANUAL_URL, '_blank');
+    } else if (label === '更新日志') {
+      // 链接待补充
+    } else if (label === '开源社区') {
+      window.open('https://github.com/wangchengxv/miioo', '_blank');
     } else if (label === '用户协议') {
       window.open('https://gcn0je6sgrhe.feishu.cn/wiki/FIspwGURtikxiwk28svc4thOn9c?from=from_copylink', '_blank');
     } else if (label === '隐私政策') {
       window.open('https://gcn0je6sgrhe.feishu.cn/wiki/LKlewdQJ0iaYVmkOPXVc4PWgnoc?from=from_copylink', '_blank');
-    } else if (label === '水印设置') {
-      close();
-      setWatermarkSettingsOpen(true);
     } else if (label === '商务合作') {
       setBizQrVisible((v) => !v);
+    } else if (label === 'AI生成水印设置') {
+      close();
+      setWatermarkSettingsOpen(true);
     }
   };
-
-  const containerRef = useRef(null);
 
   const getBizQrTop = () => {
     if (!bizItemRef.current || !containerRef.current) return 0;
     const itemTop = bizItemRef.current.offsetTop;
-    // 浮窗高度：padding(16+16) + 图片(120) + gap(9) + 文字(16) = 177px
     const popupHeight = 177;
     const containerRect = containerRef.current.getBoundingClientRect();
     const maxTop = window.innerHeight - 24 - popupHeight - containerRect.top;
     return Math.min(itemTop, maxTop);
   };
 
+  const FONT = "'AlibabaPuHuiTi_2_55_Regular', 'Alibaba PuHuiTi 2.0', system-ui, sans-serif";
+
   return (
     <div
       ref={containerRef}
-      className="flex flex-col items-start w-max rounded-medium absolute left-[40px] bottom-0 [box-shadow:#00000066_0px_4px_16px] bg-neutral-200 border border-solid border-[#FFFFFF0D] p-[4px]"
-      style={{ zIndex: 50 }}
+      style={{
+        position: 'absolute',
+        left: '40px',
+        bottom: '0',
+        zIndex: 50,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'stretch',
+        width: '150px',
+        borderRadius: '8px',
+        boxShadow: '#00000066 0px 4px 16px',
+        backgroundColor: '#161616',
+        border: '1px solid #FFFFFF0D',
+        padding: '4px',
+      }}
     >
-      {['创作手册', '更新日志', '用户协议', '隐私政策', '商务合作', '水印设置'].map((label) =>
-        label === '商务合作' ? (
-          <div key={label} ref={bizItemRef} style={{ width: '100%' }}>
-            <MenuPopupItem label={label} onClick={() => handleMenuClick(label)} />
-          </div>
-        ) : (
-          <MenuPopupItem key={label} label={label} onClick={() => handleMenuClick(label)} />
-        )
-      )}
+      {/* 外链类：创作手册、更新日志、开源社区 */}
+      {['创作手册', '更新日志', '开源社区'].map((label) => (
+        <MenuPopupItem key={label} label={label} showExternalIcon onClick={() => handleMenuClick(label)} />
+      ))}
+
+      {/* 内页类：用户协议、隐私政策、商务合作 */}
+      {['用户协议', '隐私政策'].map((label) => (
+        <MenuPopupItem key={label} label={label} onClick={() => handleMenuClick(label)} />
+      ))}
+      <div ref={bizItemRef} style={{ width: '100%' }}>
+        <MenuPopupItem label="商务合作" onClick={() => handleMenuClick('商务合作')} />
+      </div>
+
+      {/* AI生成水印设置 */}
+      <MenuPopupItem label="AI生成水印设置" onClick={() => handleMenuClick('AI生成水印设置')} />
+
+      {/* 备案信息 */}
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'flex-start',
+          gap: '4px',
+          padding: '8px 12px',
+          borderRadius: '6px',
+        }}
+      >
+        <span style={{ fontFamily: FONT, fontSize: '10px', lineHeight: '12px', color: '#FFFFFF80' }}>
+          ©2026 Miioo AI
+        </span>
+        <span style={{ fontFamily: FONT, fontSize: '10px', lineHeight: '12px', color: '#FFFFFF80' }}>
+          济南三脚猫科技有限公司
+        </span>
+        <span style={{ fontFamily: FONT, fontSize: '10px', lineHeight: '12px', color: '#FFFFFF80' }}>
+          鲁ICP备2026030778号
+        </span>
+      </div>
+
+      {/* 商务合作二维码浮层 */}
       {bizQrVisible && (
         <div
           style={{
@@ -206,14 +261,7 @@ function MoreOptionsMenu({ close, setWatermarkSettingsOpen }) {
               flexShrink: 0,
             }}
           />
-          <div
-            style={{
-              fontFamily: "'AlibabaPuHuiTi_2_55_Regular', 'Alibaba PuHuiTi 2.0', system-ui, sans-serif",
-              color: '#FFFFFFCC',
-              fontSize: '12px',
-              lineHeight: '16px',
-            }}
-          >
+          <div style={{ fontFamily: FONT, color: '#FFFFFFCC', fontSize: '12px', lineHeight: '16px' }}>
             扫码添加客服
           </div>
         </div>
@@ -1958,17 +2006,6 @@ export default function Home({ onProjectCreated }) {
         </div>
       </div>
 
-      {/* 网站备案信息 — 仅首页可见 */}
-      {activeKey === 'home' && createPortal(
-        <div
-          className="fixed bottom-0 right-0 flex items-center gap-16 text-text-hint z-10"
-          style={{ height: "32px", paddingRight: "24px", fontSize: "12px" }}
-        >
-          <span>ⓒ2026 MiiooAI 版权所有</span>
-          <span>鲁ICP备2026030778号</span>
-        </div>,
-        document.body
-      )}
       <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} onSuccess={async () => {
         setLoginOpen(false);
         setIsLoggedIn(true);
