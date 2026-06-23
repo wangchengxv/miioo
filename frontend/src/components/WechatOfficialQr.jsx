@@ -5,7 +5,7 @@ import { useEffect, useRef } from 'react';
  * 动态加载微信官方脚本，从授权链接中解析参数，通过 WxLogin 渲染真实二维码
  * 自动适配外部容器大小
  */
-export default function WechatOfficialQr({ authUrl, onReady, onError }) {
+export default function WechatOfficialQr({ authUrl, onReady, onError, containerId = 'wechat-qr-container' }) {
   const containerRef = useRef(null);
   const wxLoginInstanceRef = useRef(null);
   const observerRef = useRef(null);
@@ -162,7 +162,7 @@ export default function WechatOfficialQr({ authUrl, onReady, onError }) {
   return (
     <div
       ref={containerRef}
-      id="wechat-qr-container"
+      id={containerId}
       className="w-full h-full overflow-hidden"
     />
   );

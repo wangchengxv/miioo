@@ -697,6 +697,7 @@ function WechatBindView({ onBack, onClose, onBindSuccess }) {
           {qrStatus !== 'loading' && !isExpiredOrError && authUrl && (
             <WechatOfficialQr
               authUrl={authUrl}
+              containerId="wechat-bind-qr-container"
               onReady={() => {}}
               onError={() => setQrStatus('error')}
             />
