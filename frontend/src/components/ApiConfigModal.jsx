@@ -2,6 +2,7 @@ import { forwardRef, useCallback, useEffect, useLayoutEffect, useMemo, useRef, u
 import Toggle from './Toggle';
 import ConfirmDialog from './ConfirmDialog';
 import { apiOneClickSetup, apiCreateModel, apiListModels, apiUpdateModel, apiGetBanner, apiListProviders, apiTestConnection, apiUpdateProvider, apiGetCardVisibility } from '../api/config';
+import bizQrCodeImg from '../assets/biz-qr-code.png';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
@@ -564,9 +565,9 @@ function MainModal({
     <div className="[font-synthesis:none] flex h-[600px] w-[800px] max-w-[calc(100vw-48px)] flex-col overflow-hidden text-xs/4 antialiased">
       <div className="flex items-center justify-between gap-[16px] rounded-t-2xl bg-surface-modal px-[24px] py-[16px]">
         <div className="flex-1 text-base/5 font-medium text-text-primary" style={{ fontFamily: FONT_MEDIUM }}>
-          API配置
+          配置API
         </div>
-        <button type="button" onClick={onClose} className="flex shrink-0 items-center justify-center transition-opacity hover:opacity-80 active:opacity-60" aria-label="关闭API配置">
+        <button type="button" onClick={onClose} className="flex shrink-0 items-center justify-center transition-opacity hover:opacity-80 active:opacity-60" aria-label="关闭配置API">
           <CloseIcon />
         </button>
       </div>
@@ -615,11 +616,11 @@ function MainModal({
           </div>
         </div>
 
-        <div className="flex flex-col gap-[8px] self-stretch">
-          <div className="self-stretch text-sm/4.5 font-medium text-text-primary" style={{ fontFamily: FONT_MEDIUM }}>
+        <div className="flex flex-col gap-[4px] self-stretch">
+          <div className="self-stretch text-xs font-normal " style={{ fontFamily: FONT_MEDIUM, fontWeight: 400, color: "rgba(255, 255, 255, 0.6)" }}>
             配置说明
           </div>
-          <div className="text-[14px] leading-[150%] text-text-secondary" style={{ fontFamily: FONT }}>
+          <div className="text-xs leading-[150%] text-text-secondary" style={{ fontFamily: FONT }}>
             平台已内置OneLinkAI、火山引擎主流模型列表，前往官网
             <span
               onClick={() => window.open('https://www.onelinkai.cloud/', '_blank')}
@@ -649,7 +650,7 @@ function MainModal({
                   >
                     <div
                       className="w-[120px] h-[120px] shrink-0 bg-cover bg-center"
-                      style={{ backgroundImage: 'url(https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KT856M9JGFA1FF8DBG9699ZM.png)' }}
+                      style={{ backgroundImage: `url(${bizQrCodeImg})` }}
                     />
                     <div className="text-xs/4 text-[#FFFFFFCC]" style={{ fontFamily: FONT }}>
                       扫码添加工作人员
@@ -1163,7 +1164,9 @@ export default function ApiConfigModal({ open, onClose, onConfigured }) {
       }
     } catch (error) {
       console.error('测试连接失败:', error);
-      const msg = error?.message && !error.message.startsWith('请求失败') ? error.message : '连接失败，请检查API是否正确';
+      const msg = error?.message && !error.message.startsWith('请求失败') && error.message !== 'Unauthorized'
+        ? error.message
+        : '连接失败，请检查API是否正确';
       showToast('error', msg);
     }
   }, [showToast, state.onelinkApiKeyActual, state.onelinkKeyIsFromServer, state.onelinkProviderId, loadModelsFromBackend]);
@@ -1268,23 +1271,63 @@ export default function ApiConfigModal({ open, onClose, onConfigured }) {
   // const updateCustomProviderDraft = (field, value) =>
   //   setState((current) => ({ ...current, customProviderDraft: { ...current.customProviderDraft, [field]: value } }));
 
-  const openOneLinkConfig = () => setState((current) => ({ ...current, childView: 'onelink-config' }));
+  const openOneLinkConfig = () => {
+    // 打开配置弹窗时重新拉取最新的模型列表
+    loadModelsFromBackend();
+    setState((current) => ({ ...current, childView: 'onelink-config' }));
+  };
 
   const openOtherProviderConfig = (providerId) => {
     const provider = state.otherProviders.find(p => p.id === providerId);
     if (!provider) return;
-    setState(current => ({
-      ...current,
-      activeOtherProviderId: providerId,
-      editProviderApiKey: provider.apiKeyMasked,
-      editProviderApiKeyActual: provider.apiKeyMasked,
-      editProviderKeyIsFromServer: provider.configured,
-      editProviderApiTested: provider.configured,
-      editProviderModelsByTab: provider.modelsByTab,
-      editProviderModelDraft: createEmptyModelDraft(),
-      childView: 'other-provider-config',
-      activeModelTab: '对话模型',
-    }));
+
+    // 打开配置弹窗时重新拉取该 provider 的最新模型列表
+    if (provider.configured) {
+      apiListModels().then((models) => {
+        if (!models || !models.length) return;
+        const providerModels = models.filter(m => m.provider_id === providerId);
+        const modelsByTab = createEmptyModelsByTab();
+        providerModels.forEach(model => {
+          const tab = getCategoryTab(model.category);
+          if (!tab) return;
+          modelsByTab[tab].push({
+            id: model.id,
+            name: model.name || model.model_id,
+            description: model.description || MODEL_DESCRIPTION,
+            enabled: model.is_enabled ?? false,
+            isDefault: model.is_default ?? false,
+            modelId: model.model_id,
+          });
+        });
+        setState(current => ({
+          ...current,
+          activeOtherProviderId: providerId,
+          editProviderApiKey: provider.apiKeyMasked,
+          editProviderApiKeyActual: provider.apiKeyMasked,
+          editProviderKeyIsFromServer: provider.configured,
+          editProviderApiTested: provider.configured,
+          editProviderModelsByTab: Object.fromEntries(
+            Object.entries(modelsByTab).map(([tab, list]) => [tab, sortModels(list)])
+          ),
+          editProviderModelDraft: createEmptyModelDraft(),
+          childView: 'other-provider-config',
+          activeModelTab: '对话模型',
+        }));
+      }).catch(err => console.error('加载模型列表失败:', err));
+    } else {
+      setState(current => ({
+        ...current,
+        activeOtherProviderId: providerId,
+        editProviderApiKey: provider.apiKeyMasked,
+        editProviderApiKeyActual: provider.apiKeyMasked,
+        editProviderKeyIsFromServer: provider.configured,
+        editProviderApiTested: provider.configured,
+        editProviderModelsByTab: provider.modelsByTab,
+        editProviderModelDraft: createEmptyModelDraft(),
+        childView: 'other-provider-config',
+        activeModelTab: '对话模型',
+      }));
+    }
   };
 
   // 通过 card_key 打开未配置服务商的配置页
@@ -1295,14 +1338,45 @@ export default function ApiConfigModal({ open, onClose, onConfigured }) {
   };
 
   const saveOtherProviderConfig = () => {
-    setState(current => {
-      const updatedOtherProviders = current.otherProviders.map(p =>
-        p.id === current.activeOtherProviderId
-          ? { ...p, modelsByTab: current.editProviderModelsByTab }
-          : p
-      );
-      return { ...current, otherProviders: updatedOtherProviders, childView: null };
-    });
+    // 保存时刷新该 provider 的模型列表以同步最新状态
+    const providerId = state.activeOtherProviderId;
+    if (providerId) {
+      apiListModels().then((models) => {
+        if (!models || !models.length) return;
+        const providerModels = models.filter(m => m.provider_id === providerId);
+        if (providerModels.length === 0) return;
+        setState(current => {
+          const modelsByTab = createEmptyModelsByTab();
+          providerModels.forEach(model => {
+            const tab = getCategoryTab(model.category);
+            if (!tab) return;
+            modelsByTab[tab].push({
+              id: model.id,
+              name: model.name || model.model_id,
+              description: model.description || MODEL_DESCRIPTION,
+              enabled: model.is_enabled ?? false,
+              isDefault: model.is_default ?? false,
+              modelId: model.model_id,
+            });
+          });
+          const updatedOtherProviders = current.otherProviders.map(p =>
+            p.id === providerId
+              ? { ...p, modelsByTab: Object.fromEntries(
+                  Object.entries(modelsByTab).map(([tab, list]) => [tab, sortModels(list)])
+                )}
+              : p
+          );
+          return {
+            ...current,
+            otherProviders: updatedOtherProviders,
+            editProviderModelsByTab: Object.fromEntries(
+              Object.entries(modelsByTab).map(([tab, list]) => [tab, sortModels(list)])
+            ),
+            childView: null,
+          };
+        });
+      }).catch(err => console.error('刷新模型列表失败:', err));
+    }
   };
 
   const toggleOtherProvider = (providerId) => {
@@ -1447,7 +1521,10 @@ export default function ApiConfigModal({ open, onClose, onConfigured }) {
       }
     } catch (error) {
       console.error('测试连接失败:', error);
-      showToast('error', '连接失败，请检查API是否正确');
+      const msg = error?.message && !error.message.startsWith('请求失败') && error.message !== 'Unauthorized'
+        ? error.message
+        : '连接失败，请检查API是否正确';
+      showToast('error', msg);
     }
   };
 
@@ -1545,6 +1622,8 @@ export default function ApiConfigModal({ open, onClose, onConfigured }) {
   };
 
   const saveOneLinkConfig = () => {
+    // 保存时刷新模型列表以同步最新状态
+    loadModelsFromBackend();
     setState((current) => ({ ...current, mainConfigured: true, onelinkEnabled: true, childView: null }));
     onConfigured?.();
   };

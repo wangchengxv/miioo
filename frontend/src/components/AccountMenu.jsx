@@ -150,20 +150,20 @@ export default function AccountMenu({
 
   return (
     <div className="relative" ref={ref}>
-      {/* Trigger */}
-      <button
-        type="button"
-        className="[font-synthesis:none] flex items-center gap-[4px] rounded-full pl-[4px] pr-[8px] py-[4px] bg-black-20 antialiased cursor-pointer border-0"
-        onClick={() => setOpen((v) => !v)}
-        aria-expanded={open}
-      >
-        <AvatarSvg size={28} avatarUrl={avatarUrl} />
-        <svg
-          width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"
-          style={{ flexShrink: 0, transition: 'transform 0.15s', transform: open ? 'rotate(180deg)' : 'rotate(0deg)' }}
+     {/* Trigger */}
+     <button
+       type="button"
+      className="[font-synthesis:none] flex items-center gap-[4px] rounded-full pl-[4px] pr-[12px] py-[4px] bg-black-20 antialiased cursor-pointer border-0"
+       onClick={() => setOpen((v) => !v)}
+       aria-expanded={open}
+     >
+       <AvatarSvg size={28} avatarUrl={avatarUrl} />
+        <span
+          className="truncate max-w-[120px]"
+          style={{ fontFamily: FONT_REGULAR, fontSize: '14px', lineHeight: '20px', color: '#FFFFFF' }}
         >
-          <path d="M12 6.333L8 10.333L4 6.333H12Z" fill="#FFFFFF" stroke="#FFFFFF" strokeWidth="1.333" strokeLinejoin="round" />
-        </svg>
+          {nickname}
+        </span>
       </button>
 
       {/* Dropdown */}

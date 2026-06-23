@@ -145,7 +145,7 @@ function RadioGroup({ label, value, options, onChange }) {
   );
 }
 
-export default function BatchGenerateModal({ open, onClose, onConfirm, generating = false, projectRatio }) {
+export default function BatchGenerateModal({ open, onClose, onConfirm, generating = false, projectRatio, activeTab = 'char' }) {
   // ── 从后端拉取模型列表，与本地能力表合并 ──────────────────────
   const [modelList, setModelList] = useState(FALLBACK_MODELS);
   const [modelsLoading, setModelsLoading] = useState(true);
@@ -317,7 +317,9 @@ export default function BatchGenerateModal({ open, onClose, onConfirm, generatin
           <SelectField label="选择模型" value={model} options={modelList} onChange={handleModelChange} loading={modelsLoading} />
           <SelectField label="比例" value={ratio} options={ratioOptions} onChange={setRatio} />
           <SelectField label="分辨率" value={resolution} options={resolutionOptions} onChange={handleResolutionChange} />
-          <RadioGroup label="生成方式" value={mode} options={GENERATION_MODES} onChange={setMode} />
+          {activeTab === 'char' && (
+            <RadioGroup label="生成方式" value={mode} options={GENERATION_MODES} onChange={setMode} />
+          )}
         </div>
 
         {/* Footer */}

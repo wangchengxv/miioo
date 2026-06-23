@@ -57,6 +57,7 @@ export function generationsToDays(generations) {
       groupedByDate[dateLabel].push({
         ...card,
         id: compositeId,
+        backendId: card.id ?? null,   // preserve real backend ID for API calls
         genId: gen.id,
         cardIdx,
         name: card.name || `生成_${gen.id.slice(0, 8)}`,
@@ -80,7 +81,8 @@ export function generationsToDays(generations) {
   // 转换为数组格式，按日期排序（今天 > 昨天 > 其他日期倒序）
   const days = Object.entries(groupedByDate).map(([date, cards]) => ({
     date,
-    cards,
+    // 组内按 createdAt 倒序，最新创建的在最前面
+    cards: cards.slice().sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)),
   }));
 
   // 排序逻辑
@@ -115,6 +117,7 @@ export function generationsToFlatList(generations, favorites) {
       list.push({
         ...card,
         id: compositeId,
+        backendId: card.id ?? null,   // preserve real backend ID for API calls
         genId: gen.id,
         cardIdx,
         name: card.name || `生成_${gen.id.slice(0, 8)}`,
@@ -136,6 +139,9 @@ export function generationsToFlatList(generations, favorites) {
       });
     });
   });
+
+  // 最新创建的在最前面
+  list.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt));
 
   return list;
 }

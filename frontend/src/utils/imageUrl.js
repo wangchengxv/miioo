@@ -16,3 +16,20 @@ export function normalizeImageUrl(url) {
   const origin = API_BASE.replace(/\/api\/?$/, '');
   return `${origin}${url.startsWith('/') ? '' : '/'}${url}`;
 }
+/**
+ * 始终返回完整绝对 URL（透传给第三方模型时需要）
+ */
+export function toAbsoluteUrl(url) {
+  if (!url) return url;
+  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('blob:')) return url;
+  const origin = API_BASE.replace(/\/api\/?$/, '');
+  if (!origin) return url.startsWith('/') ? url : `/${url}`;
+  return `${origin}${url.startsWith('/') ? '' : '/'}${url}`;
+}
+
+/** 检查 URL 是否为 AI 模型可消费的安全格式（排除 AVIF / 派生资产等模型不支持的格式） */
+export function isSafeImageUrl(url) {
+  if (!url) return false;
+  const lower = url.toLowerCase();
+  return !lower.endsWith('.avif') && !lower.includes('/derived/assets/');
+}

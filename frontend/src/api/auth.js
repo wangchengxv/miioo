@@ -9,6 +9,13 @@ export async function apiSendCode(phone) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ phone }),
   });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try { const body = await res.json(); detail = body?.detail || body?.message || detail; } catch {}
+    const err = new Error(`发送验证码失败（${res.status}）：${detail}`);
+    err.status = res.status;
+    throw err;
+  }
   return res.json();
 }
 
@@ -49,7 +56,7 @@ export async function apiLogout() {
   try {
     await authFetch(`${BASE}/api/auth/logout`, { method: 'POST' });
   } catch {}
-  _clearTokens();
+  _clearTokens(); // clearTokens 内部已清空业务缓存
 }
 
 export async function apiGetCurrentUser() {
@@ -69,50 +76,97 @@ export async function loginWithPhone(phone, code) {
   return apiVerifyCodeLogin({ phone, code });
 }
 
-// ── Legacy alias（兼容 LoginModal 中微信扫码后绑定手机流程）─────────────────
-// 后端无 /api/auth/bind-phone，此处映射到微信登录确认接口
-export async function bindPhone(_wechatToken, phone, code) {
-  console.warn('[api] bindPhone 为 legacy alias，后端无 /api/auth/bind-phone，改用 apiConfirmWechatLogin');
-  return apiConfirmWechatLogin({ session_id: _wechatToken, phone, nickname: undefined });
-}
-
-// ── 微信扫码登录（新版，接口路径待后端确认）────────────────────────────────
-// 生成二维码
+// ── 微信扫码登录（新版，完整闭环实现）────────────────────────────────────
+// 1. 生成二维码会话 → 返回真实微信授权链接
 export async function apiGetWechatQrCode() {
   if (import.meta.env.VITE_USE_MOCK === 'true') {
     return {
       qrcode_id: 'mock-qr-001',
+      raw_qr_code_value: 'https://open.weixin.qq.com/connect/qrconnect?appid=wx2a38a6d71c1b6b72&redirect_uri=https%3A%2F%2Fmiiooai.com%2F&response_type=code&scope=snsapi_login&state=mock-state-001&#wechat_redirect',
       expire_seconds: 120,
-      qrcode_url: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KR8EAVS6CW9V257SBVP40T1A.png',
     };
   }
   const res = await fetch(`${BASE}/api/auth/wechat/qrcode`);
-  return res.json();
+  const data = await res.json();
+  // 字段映射：后端返回的字段 → 前端使用的字段
+  return {
+    qrcode_id: data.qrcode_id || data.session_id,
+    raw_qr_code_value: data.raw_qr_code_value || data.qr_code_value,
+    expire_seconds: data.expire_seconds || data.expires_in,
+  };
 }
 
-// 轮询二维码状态
-// 响应 status: 'pending' | 'scanned' | 'confirmed' | 'need_bind_mobile' | 'expired'
+// 2. 轮询二维码状态
+// 响应 status: 'pending' | 'scanned' | 'confirmed' | 'need_bind_mobile' | 'expired' | 'error'
 export async function apiPollWechatQrCodeStatus(qrcodeId) {
   if (import.meta.env.VITE_USE_MOCK === 'true') {
     return { status: 'pending' };
   }
-  const res = await fetch(`${BASE}/api/auth/wechat/qrcode/status?qrcode_id=${encodeURIComponent(qrcodeId)}`);
+  const res = await fetch(`${BASE}/api/auth/wechat/poll/${encodeURIComponent(qrcodeId)}`);
+  if (!res.ok) {
+    let detail = res.statusText;
+    try { const body = await res.json(); detail = body?.detail || body?.message || detail; } catch {}
+    const err = new Error(`轮询状态接口请求失败（${res.status}）：${detail}`);
+    err.status = res.status;
+    throw err;
+  }
   const data = await res.json();
   if (data.access_token) setTokens(data.access_token, data.refresh_token);
   return data;
 }
 
-// 绑定手机号（微信登录 need_bind_mobile 分支）
-export async function apiBindMobileWithBindToken({ bind_token, mobile, sms_code }) {
+// 3. 完成微信回调（根路径 ?code=&state= 回调）
+export async function apiCompleteWechatCallback({ code, state }) {
   if (import.meta.env.VITE_USE_MOCK === 'true') {
-    return { access_token: 'mock-token', refresh_token: 'mock-refresh' };
+    return {
+      status: 'confirmed',
+      access_token: 'mock-token',
+      refresh_token: 'mock-refresh',
+    };
   }
-  const res = await fetch(`${BASE}/api/auth/wechat/bind-mobile`, {
+  const res = await fetch(`${BASE}/api/auth/wechat/callback/complete`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ bind_token, mobile, sms_code }),
+    body: JSON.stringify({ code, state }),
   });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const body = await res.json();
+      detail = body?.detail || body?.message || detail;
+    } catch {}
+    const err = new Error(`微信回调接口请求失败（${res.status}）：${detail}`);
+    err.status = res.status;
+    throw err;
+  }
   const data = await res.json();
   if (data.access_token) setTokens(data.access_token, data.refresh_token);
   return data;
+}
+
+// 4. 继续绑定手机号（微信登录 need_bind_mobile 分支）
+export async function apiConfirmWechatLogin({ session_id, phone, sms_code }) {
+  if (import.meta.env.VITE_USE_MOCK === 'true') {
+    return { access_token: 'mock-token', refresh_token: 'mock-refresh' };
+  }
+  const res = await fetch(`${BASE}/api/auth/wechat/confirm`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ session_id, phone, sms_code }),
+  });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try { const body = await res.json(); detail = body?.detail || body?.message || detail; } catch {}
+    const err = new Error(`绑定手机号失败（${res.status}）：${detail}`);
+    err.status = res.status;
+    throw err;
+  }
+  const data = await res.json();
+  if (data.access_token) setTokens(data.access_token, data.refresh_token);
+  return data;
+}
+
+// ── Legacy alias（旧的绑定接口，保留向后兼容）─────────────────
+export async function apiBindMobileWithBindToken({ bind_token, mobile, sms_code }) {
+  return apiConfirmWechatLogin({ session_id: bind_token, phone: mobile, sms_code });
 }

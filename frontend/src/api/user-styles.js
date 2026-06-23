@@ -1,4 +1,6 @@
 import { authFetch } from './request.js';
+import { cached, invalidate } from '../utils/cache.js';
+import { K, TTL, MEDIUM } from '../utils/cacheKeys.js';
 
 const BASE = import.meta.env.VITE_API_BASE_URL;
 
@@ -28,10 +30,16 @@ export async function apiGetVisualStyleOptions() {
       })),
     ];
   }
-  const res = await authFetch(`${BASE}/api/user-styles/options`, {
-    headers: { 'Content-Type': 'application/json' },
-  });
-  return res.json();
+  return cached(
+    K.visualStyles(),
+    async () => {
+      const res = await authFetch(`${BASE}/api/user-styles/options`, {
+        headers: { 'Content-Type': 'application/json' },
+      });
+      return res.json();
+    },
+    { medium: MEDIUM.STATIC, ttl: TTL.STATIC },
+  );
 }
 
 export async function apiCreateUserStyle({ name, prompt, color }) {
@@ -45,6 +53,7 @@ export async function apiCreateUserStyle({ name, prompt, color }) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, prompt, color }),
   });
+  invalidate(K.visualStyles());
   return res.json();
 }
 
@@ -60,6 +69,7 @@ export async function apiUpdateUserStyle(styleId, { name, prompt, color }) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, prompt, color }),
   });
+  invalidate(K.visualStyles());
   return res.json();
 }
 
@@ -72,4 +82,5 @@ export async function apiDeleteUserStyle(styleId) {
     method: 'DELETE',
     headers: { 'Content-Type': 'application/json' },
   });
+  invalidate(K.visualStyles());
 }

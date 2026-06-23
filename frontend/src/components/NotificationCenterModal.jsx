@@ -42,48 +42,72 @@ function TabButton({ active, children, onClick, disabled }) {
 function NotificationCard({ item, onOpenDetail }) {
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
+  const isUnread = !!item.unread;
 
   return (
     <button
       type="button"
       className="flex items-start gap-[12px] self-stretch rounded-lg px-[12px] py-[8px] border-0 text-left cursor-pointer transition-colors"
       style={{
-        backgroundColor: pressed ? '#FFFFFF14' : hovered ? '#FFFFFF0D' : 'transparent',
+        backgroundColor: pressed
+          ? '#FFFFFF14'
+          : hovered
+          ? (isUnread ? '#7AE5B90A' : '#FFFFFF0D')
+          : (isUnread ? '#7AE5B905' : 'transparent'),
+        borderLeft: isUnread ? '3px solid #7AE5B9' : '3px solid transparent',
+        paddingLeft: '10px',
+        transition: 'background-color 150ms, border-color 150ms',
       }}
       onClick={onOpenDetail}
       onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => {
-        setHovered(false);
-        setPressed(false);
-      }}
+      onMouseLeave={() => { setHovered(false); setPressed(false); }}
       onMouseDown={() => setPressed(true)}
       onMouseUp={() => setPressed(false)}
     >
       <div className="flex flex-col items-start gap-[4px] flex-1 min-w-0">
-        <div className="flex items-center gap-[8px] w-full min-w-0">
-          <div className="truncate font-['AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] font-medium text-sm leading-[18px] text-white">
+        <div className="flex items-center gap-[6px] w-full min-w-0">
+          <div
+            className="truncate text-sm leading-[18px]"
+            style={{
+              fontFamily: FONT_MEDIUM,
+              fontWeight: 500,
+              color: isUnread ? '#FFFFFF' : '#FFFFFFB3',
+              transition: 'color 150ms',
+            }}
+          >
             {item.title}
           </div>
-          {item.unread && (
+          {isUnread && (
             <span
-              className="shrink-0 w-[6px] h-[6px] rounded-full bg-[#7AE5B9]"
-              aria-hidden="true"
+              className="shrink-0 w-[5px] h-[5px] rounded-full"
+              style={{ backgroundColor: '#7AE5B9' }}
+              aria-label="未读"
             />
           )}
         </div>
         <div
-          className="self-stretch font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-sm leading-[20px] text-[#FFFFFF99]"
+          className="self-stretch text-sm leading-[20px]"
           style={{
+            fontFamily: FONT,
+            color: isUnread ? '#FFFFFF99' : '#FFFFFF4D',
             display: '-webkit-box',
             WebkitLineClamp: 2,
             WebkitBoxOrient: 'vertical',
             overflow: 'hidden',
+            transition: 'color 150ms',
           }}
         >
           {item.content}
         </div>
       </div>
-      <div className="shrink-0 font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-xs leading-[16px] text-[#FFFFFF66]">
+      <div
+        className="shrink-0 text-xs leading-[16px]"
+        style={{
+          fontFamily: FONT,
+          color: isUnread ? '#FFFFFF66' : '#FFFFFF33',
+          transition: 'color 150ms',
+        }}
+      >
         {item.time}
       </div>
     </button>
@@ -119,7 +143,7 @@ function NotificationDetailModal({ item, onClose }) {
       onClick={onClose}
     >
       <div
-        className="w-[400px] flex flex-col rounded-large bg-surface-modal overflow-hidden"
+        className="w-[400px] max-h-[80vh] flex flex-col rounded-large bg-surface-modal overflow-hidden"
         style={{ boxShadow: '0px 8px 32px rgba(0,0,0,0.6)' }}
         onClick={(e) => e.stopPropagation()}
       >
@@ -134,8 +158,8 @@ function NotificationDetailModal({ item, onClose }) {
         </div>
 
         {/* Body */}
-        <div className="flex flex-col items-start gap-[16px] py-[8px] bg-surface-modal px-[24px]">
-          <div className="text-[14px] leading-[175%] self-stretch font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFFCC]">
+        <div className="flex flex-col items-start gap-[16px] py-[8px] bg-surface-modal px-[24px] overflow-y-auto flex-1">
+          <div className="text-[14px] leading-[175%] self-stretch font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFFCC] break-words whitespace-pre-wrap">
             {item.content}
           </div>
         </div>

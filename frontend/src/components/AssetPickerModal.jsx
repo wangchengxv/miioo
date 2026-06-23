@@ -1,9 +1,11 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
 import { useCreationStore } from '../stores/creationStore';
+import Checkbox from './Checkbox';
 import { generationsToFlatList } from '../utils/creativeDaysAdapter';
 import { apiGetProjects } from '../api/project';
-import { apiGetAssets } from '../api/assets';
+import { apiGetAssetsPage, enrichWithStoryboards } from '../api/assets';
+import { apiListCreationImages, apiListCreationVideos, apiListCreationAudios } from '../api/creation';
 import { normalizeImageUrl } from '../utils/imageUrl';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
@@ -34,29 +36,24 @@ const SUB_TAB_KEY_MAP = {
   '配音': 'dubbing',
 };
 
-function Checkbox({ checked, hovered }) {
-  return (
-    <div style={{
-      position: 'relative', width: '14px', height: '14px', borderRadius: '3px', flexShrink: 0,
-      border: `1px solid ${hovered ? 'rgba(255,255,255,0.4)' : 'rgba(255,255,255,0.2)'}`,
-      outline: '1px solid #00000080',
-      background: checked ? '#2DC3E1' : '#090909',
-      transition: 'background 100ms, border-color 100ms',
-    }}>
-      {checked && (
-        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" style={{ position: 'absolute', left: '50%', top: '50%', translate: '-50% -50%' }}>
-          <path d="M3.333 8L6.667 11.333L13.333 4.667" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      )}
-    </div>
-  );
-}
+// 子 Tab → 后端 category / asset_type 过滤参数
+// 数组表示该 tab 需要拉取多个 category 的资产（如分镜图包含 storyboard + reference）
+const SUB_TAB_CATEGORY_MAP = {
+  '角色':   { category: 'character' },
+  '场景':   { category: 'scene' },
+  '道具':   { category: 'prop' },
+  '分镜图': { category: ['storyboard', 'reference'], asset_type: 'image' },
+  '分镜视频': { category: ['storyboard', 'reference'], asset_type: 'video' },
+  '音频':   { category: ['audio', 'reference'] },
+  '成片':   { category: 'film' },
+};
 
-function AssetCard({ asset, isSelected, isHovered, onMouseEnter, onMouseLeave, onClick, compact = false }) {
+function AssetCard({ asset, isSelected, isHovered, isDisabled, onMouseEnter, onMouseMove, onMouseLeave, onClick, compact = false }) {
   return (
     <div
-      onClick={onClick}
+      onClick={isDisabled ? undefined : onClick}
       onMouseEnter={onMouseEnter}
+      onMouseMove={onMouseMove}
       onMouseLeave={onMouseLeave}
       style={{
         width: compact ? 'calc((100% - 32px) / 3)' : '175px',
@@ -65,7 +62,9 @@ function AssetCard({ asset, isSelected, isHovered, onMouseEnter, onMouseLeave, o
         flexShrink: 0, display: 'flex', flexDirection: 'column',
         background: '#1C1C1C',
         border: `1px solid ${isSelected ? '#FFFFFF33' : isHovered ? 'rgba(255,255,255,0.2)' : '#FFFFFF0F'}`,
-        cursor: 'pointer', transition: 'border-color 100ms',
+        cursor: isDisabled ? 'not-allowed' : 'pointer',
+        transition: 'border-color 100ms',
+        opacity: isDisabled ? 0.6 : 1,
       }}
     >
       {/* 图片区 */}
@@ -74,13 +73,19 @@ function AssetCard({ asset, isSelected, isHovered, onMouseEnter, onMouseLeave, o
         background: asset.url ? 'transparent' : (asset.bgColor || '#252525'),
         display: 'flex', alignItems: 'center', justifyContent: 'center',
       }}>
-        {asset.asset_type === 'video' && asset.url ? (
-          <video
-            src={asset.url}
-            style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: isHovered && !isSelected ? 0.85 : 1, transition: 'opacity 100ms' }}
-            muted
-            playsInline
-          />
+        {asset.asset_type === 'video' && (asset.posterUrl || asset.url) ? (
+          // 视频卡片：优先用封面图显示（清晰、快速），无封面时回退到 video 标签加载首帧
+          asset.posterUrl ? (
+            <img src={asset.posterUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: isHovered && !isSelected ? 0.85 : 1, transition: 'opacity 100ms' }} />
+          ) : (
+            <video
+              src={asset.url}
+              style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: isHovered && !isSelected ? 0.85 : 1, transition: 'opacity 100ms' }}
+              muted
+              playsInline
+              preload="metadata"
+            />
+          )
         ) : asset.url ? (
           <img src={asset.url} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', opacity: isHovered && !isSelected ? 0.85 : 1, transition: 'opacity 100ms' }} />
         ) : asset.type === 'audio' ? (
@@ -98,7 +103,7 @@ function AssetCard({ asset, isSelected, isHovered, onMouseEnter, onMouseLeave, o
         )}
         {/* 复选框 */}
         <div style={{ position: 'absolute', top: '8px', left: '8px' }}>
-          <Checkbox checked={isSelected} hovered={isHovered} />
+          <Checkbox checked={isSelected} hovered={isHovered} disabled={isDisabled} />
         </div>
         {/* 收藏图标（仅创作资产有 starred 字段时显示） */}
         {asset.starred && (
@@ -147,14 +152,55 @@ export default function AssetPickerModal({
   projectId = null,
   // creativeAssets: { images: [], videos: [], dubbing: [] }  创作资产；未传时从 store 读取
   creativeAssets: creativeAssetsProp = null,
+  // preSelectedIds: string[]  已存在的资产ID，打开时默认选中且不可取消
+  preSelectedIds = [],
+  // preSelectedUrls: string[]  已存在资产的图片URL，打开时默认选中且不可取消（用于跨ID来源匹配，如主体参考图）
+  preSelectedUrls = [],
+  // preSelectedSubjectIds: string[]  已存在资产对应的主体ID，打开时默认选中且不可取消（最可靠的跨来源匹配键）
+  preSelectedSubjectIds = [],
 }) {
   const generationsByTab = useCreationStore((s) => s.generationsByTab);
   const favorites = useCreationStore((s) => s.favorites);
 
+  // 创作资产本地缓存（弹窗内懒加载，避免依赖 CreationPage 初始化）
+  const [localCreativeAssets, setLocalCreativeAssets] = useState(null);
+  const [creativeLoadedTabs, setCreativeLoadedTabs] = useState(new Set());
+  const [creativeLoading, setCreativeLoading] = useState(false);
+
+  // 将后端历史记录条目归一化为 picker 卡片格式
+  function normalizeCreativeItem(item, type) {
+    // 视频优先取 video_url，图片/音频取 original_url/file_url
+    const rawUrl = type === 'video'
+      ? (item.video_url || item.videoUrl || item.preview_video_url || item.previewVideoUrl || item.original_url || item.file_url || item.url || '')
+      : (item.original_url || item.file_url || item.url || item.thumbnail_url || item.thumbnailUrl || '');
+    const url = normalizeImageUrl(rawUrl) || null;
+
+    // 视频封面：poster_url / thumbnail_url，用于静态预览
+    const posterUrl = type === 'video'
+      ? (normalizeImageUrl(item.poster_url || item.posterUrl || item.thumbnail_url || item.thumbnailUrl || '') || null)
+      : null;
+
+    return {
+      id: item.id,
+      name: item.name || item.prompt?.slice(0, 20) || '未命名',
+      // AssetCard 渲染视频时优先用 posterUrl（封面图），无封面时 url 传视频地址让 <video> 加载
+      url,
+      posterUrl,
+      // 悬浮预览大图用 fullUrl（视频类型可以用 poster）
+      fullUrl: type === 'video' ? (posterUrl || url) : url,
+      fileUrl: url,
+      asset_type: type,
+      starred: item.is_favorite ?? item.is_liked ?? item.isLiked ?? false,
+      bgColor: '#252525',
+    };
+  }
+
   const creativeAssets = useMemo(() => {
     if (creativeAssetsProp) return creativeAssetsProp;
+    // 优先使用弹窗内加载的数据；如果还没加载，降级到 store 数据
+    if (localCreativeAssets) return localCreativeAssets;
 
-    // 从 store 转换数据格式
+    // 从 store 转换数据格式（store 由 CreationPage 初始化，可能为空）
     return {
       images: generationsToFlatList(generationsByTab.image || [], favorites).map(item => ({
         ...item,
@@ -162,6 +208,8 @@ export default function AssetPickerModal({
       })),
       videos: generationsToFlatList(generationsByTab.video || [], favorites).map(item => ({
         ...item,
+        // 视频卡片封面：posterUrl 字段（不是 poster）
+        url: item.posterUrl || item.url || null,
         bgColor: item.bgColor || '#1F2324',
       })),
       dubbing: generationsToFlatList(generationsByTab.dubbing || [], favorites).map(item => ({
@@ -170,7 +218,7 @@ export default function AssetPickerModal({
         type: 'audio',
       })),
     };
-  }, [creativeAssetsProp, generationsByTab, favorites]);
+  }, [creativeAssetsProp, localCreativeAssets, generationsByTab, favorites]);
 
   const projectSubTabsAvail = accept === 'video' ? PROJECT_SUB_TABS_VIDEO : accept === 'image' ? PROJECT_SUB_TABS_IMAGE : accept === 'audio' ? PROJECT_SUB_TABS_AUDIO : PROJECT_SUB_TABS_ALL;
   const creativeSubTabsAvail = accept === 'video' ? CREATIVE_SUB_TABS_VIDEO : accept === 'image' ? CREATIVE_SUB_TABS_IMAGE : accept === 'audio' ? CREATIVE_SUB_TABS_AUDIO : CREATIVE_SUB_TABS_ALL;
@@ -179,16 +227,64 @@ export default function AssetPickerModal({
   const [projectSubTab, setProjectSubTab] = useState(projectSubTabsAvail[0]);
   const [creativeSubTab, setCreativeSubTab] = useState(creativeSubTabsAvail[0]);
   const [favOnly, setFavOnly] = useState(false);
+  const [finalOnly, setFinalOnly] = useState(true);
   const [search, setSearch] = useState('');
   const [selected, setSelected] = useState(new Set());
+  const preSelectedSet = useMemo(() => new Set(preSelectedIds ?? []), [preSelectedIds]);
+  // 主体ID集合（最可靠的跨来源匹配键：主体参考图与资产库为不同记录ID，但同属一个 subject_id）
+  const preSelectedSubjectSet = useMemo(
+    () => new Set((preSelectedSubjectIds ?? []).filter(Boolean)),
+    [preSelectedSubjectIds]
+  );
+  // 预选URL → 文件名集合（兜底匹配：缩略图/原图协议或host不同，但文件名一致）
+  const urlKey = (u) => {
+    const n = normalizeImageUrl(u);
+    if (!n) return null;
+    // 取 path 最后一段（去掉 query），归一化协议/host/缩略图前缀差异
+    const noQuery = n.split('?')[0].split('#')[0];
+    const seg = noQuery.split('/').filter(Boolean).pop() || null;
+    return seg;
+  };
+  const preSelectedUrlSet = useMemo(
+    () => new Set((preSelectedUrls ?? []).map(urlKey).filter(Boolean)),
+    [preSelectedUrls]
+  );
+
+  // 判断某张资产卡片是否为预选（不可取消）：subject_id 命中 / ID 命中 / URL文件名 命中
+  const isPreSelected = (asset) => {
+    if (!asset) return false;
+    if (preSelectedSet.has(asset.id)) return true;
+    if (asset.subject_id && preSelectedSubjectSet.has(asset.subject_id)) return true;
+    const k1 = urlKey(asset.url);
+    if (k1 && preSelectedUrlSet.has(k1)) return true;
+    const k2 = urlKey(asset.fileUrl);
+    if (k2 && preSelectedUrlSet.has(k2)) return true;
+    return false;
+  };
+
+  // 每次弹窗打开时用 preSelectedIds 初始化选中状态，关闭时清空
+  useEffect(() => {
+    if (open) {
+      setSelected(new Set(preSelectedIds ?? []));
+    } else {
+      setSelected(new Set());
+      // 关闭时重置创作资产本地缓存，下次打开重新加载
+      setLocalCreativeAssets(null);
+      setCreativeLoadedTabs(new Set());
+    }
+  }, [open]);
   const [searchFocused, setSearchFocused] = useState(false);
   const [hoveredCard, setHoveredCard] = useState(null);
   const [closeHovered, setCloseHovered] = useState(false);
+  const [previewImage, setPreviewImage] = useState(null); // { url, x, y }
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+  const hoverTimerRef = useRef(null);
   const [cancelHovered, setCancelHovered] = useState(false);
   const [cancelPressed, setCancelPressed] = useState(false);
   const [confirmHovered, setConfirmHovered] = useState(false);
   const [confirmPressed, setConfirmPressed] = useState(false);
   const [favHovered, setFavHovered] = useState(false);
+  const [finalHovered, setFinalHovered] = useState(false);
   const [projectOpen, setProjectOpen] = useState(false);
   const [projectHovIdx, setProjectHovIdx] = useState(null);
   const [activeProjectId, setActiveProjectId] = useState(projectId || null);
@@ -199,6 +295,8 @@ export default function AssetPickerModal({
   const [apiAssetsMap, setApiAssetsMap] = useState(null);
   const [assetsLoading, setAssetsLoading] = useState(false);
   const [projectsLoading, setProjectsLoading] = useState(false);
+  // 已加载完成的 tab key 集合：key = `${projectId}__${tabKey}`
+  const [loadedTabKeys, setLoadedTabKeys] = useState(new Set());
 
   useEffect(() => {
     if (!open) return;
@@ -218,55 +316,125 @@ export default function AssetPickerModal({
     })();
   }, [open]);
 
-  // 拉取或切换项目资产
+  const pickerTabKey = (pid, tabKey) => `${pid}__${tabKey}`;
+
+  function normalizePickerAsset(a) {
+    return {
+      id: a.id,
+      name: a.name || '未命名',
+      url: normalizeImageUrl(a.thumbnail_url || a.file_url) || null,
+      fullUrl: normalizeImageUrl(a.file_url) || null,
+      fileUrl: normalizeImageUrl(a.file_url) || null,
+      subject_id: a.subject_id ?? null,
+      starred: a.is_starred ?? false,
+      is_primary: a.is_primary ?? false,
+      bgColor: '#252525',
+      category: a.category,
+      asset_type: a.asset_type,
+    };
+  }
+
+  // 切换 Tab 时一次性拉取该 Tab 的全部数据（循环翻页直到 hasMore=false）
   useEffect(() => {
-    if (!open) return;
-    const pullProjectId = projectId || activeProjectId;
+    if (!open || activeTab !== 'project') return;
+    const pullProjectId = activeProjectId || projectId;
     if (!pullProjectId) return;
+
+    const tabKey = SUB_TAB_KEY_MAP[projectSubTab];
+    const pKey = pickerTabKey(pullProjectId, tabKey);
+    // 已加载过该分类，跳过
+    if (loadedTabKeys.has(pKey)) return;
+
+    const categoryFilter = SUB_TAB_CATEGORY_MAP[projectSubTab];
+    if (!categoryFilter) return;
+
     (async () => {
       try {
         setAssetsLoading(true);
-        // 拉取当前项目的资产
-        const assetsData = await apiGetAssets({ project_id: pullProjectId, scope: 'project' });
-        const normalizedAssets = Array.isArray(assetsData) ? assetsData.map(a => ({
-          id: a.id,
-          name: a.name || '未命名',
-          url: normalizeImageUrl(a.thumbnail_url || a.file_url) || null,
-          starred: a.is_starred ?? false,
-          bgColor: '#252525',
-          category: a.category,
-          asset_type: a.asset_type,
-        })) : [];
+        const categories = Array.isArray(categoryFilter.category) ? categoryFilter.category : [categoryFilter.category];
+        const allItems = [];
 
-        // 按分类分组
-        const grouped = { chars: [], scenes: [], props: [], storyboard_img: [], storyboard_video: [], audio: [], final_cut: [] };
-        normalizedAssets.forEach(a => {
-          if (a.category === 'storyboard') {
-            if (a.asset_type === 'video') grouped.storyboard_video.push(a);
-            else grouped.storyboard_img.push(a);
-          } else if (a.category === 'character') {
-            grouped.chars.push(a);
-          } else if (a.category === 'scene') {
-            grouped.scenes.push(a);
-          } else if (a.category === 'prop') {
-            grouped.props.push(a);
-          } else if (a.category === 'audio') {
-            grouped.audio.push(a);
-          } else if (a.category === 'film') {
-            grouped.final_cut.push(a);
+        for (const cat of categories) {
+          let cursor = undefined;
+          let hasMore = true;
+
+          while (hasMore) {
+            const page = await apiGetAssetsPage({
+              project_id: pullProjectId,
+              scope: 'project',
+              limit: 100,
+              cursor,
+              category: cat,
+              ...(categoryFilter.asset_type ? { asset_type: categoryFilter.asset_type } : {}),
+            });
+            allItems.push(...page.list);
+            hasMore = page.hasMore;
+            cursor = page.nextCursor;
+            if (!cursor) break;
           }
-        });
+        }
 
-        const fullMap = { [pullProjectId]: grouped };
-        setApiAssetsMap(fullMap);
+        // 分镜 Tab 需要用分镜板数据交叉比对，补全 is_primary / ratio 字段
+        const isStoryboardTab = tabKey === 'storyboard_img' || tabKey === 'storyboard_video';
+        const enriched = await enrichWithStoryboards(pullProjectId, allItems, isStoryboardTab);
+        const normalized = enriched.map(normalizePickerAsset);
+        setApiAssetsMap(prev => ({
+          ...prev,
+          [pullProjectId]: { ...(prev?.[pullProjectId] ?? {}), [tabKey]: normalized },
+        }));
+        setLoadedTabKeys(prev => new Set([...prev, pKey]));
       } catch (err) {
         console.error('[AssetPickerModal] 拉取项目资产失败:', err);
-        setApiAssetsMap({});
       } finally {
         setAssetsLoading(false);
       }
     })();
-  }, [open, projectId, activeProjectId]);
+  }, [open, activeTab, projectId, activeProjectId, projectSubTab]);
+
+  // 切换到创作资产 tab 时，若 store 中对应数据未初始化则从后端拉取
+  useEffect(() => {
+    if (!open || activeTab !== 'creative' || creativeAssetsProp) return;
+
+    // 确定当前 sub-tab 对应需要加载的类型
+    const subTabTypeMap = { '图片': 'image', '视频': 'video', '配音': 'audio' };
+    const type = subTabTypeMap[creativeSubTab];
+    if (!type || creativeLoadedTabs.has(type)) return;
+
+    // 如果 store 里已有数据（由 CreationPage 初始化），直接跳过
+    const storeKey = type === 'audio' ? 'dubbing' : type;
+    const storeData = generationsByTab[storeKey];
+    if (storeData && storeData.length > 0) {
+      setCreativeLoadedTabs(prev => new Set([...prev, type]));
+      return;
+    }
+
+    (async () => {
+      try {
+        setCreativeLoading(true);
+        let resp;
+        if (type === 'image') {
+          resp = await apiListCreationImages({ page: 1, page_size: 100 });
+        } else if (type === 'video') {
+          resp = await apiListCreationVideos({ page: 1, page_size: 100 });
+        } else {
+          resp = await apiListCreationAudios({ page: 1, page_size: 100 });
+        }
+        const list = Array.isArray(resp) ? resp : (resp?.list ?? resp?.items ?? resp?.data ?? []);
+        const normalized = list.map(item => normalizeCreativeItem(item, type === 'audio' ? 'audio' : type));
+        setLocalCreativeAssets(prev => ({
+          images: prev?.images ?? [],
+          videos: prev?.videos ?? [],
+          dubbing: prev?.dubbing ?? [],
+          [type === 'audio' ? 'dubbing' : type === 'video' ? 'videos' : 'images']: normalized,
+        }));
+        setCreativeLoadedTabs(prev => new Set([...prev, type]));
+      } catch (err) {
+        console.error('[AssetPickerModal] 拉取创作资产失败:', err);
+      } finally {
+        setCreativeLoading(false);
+      }
+    })();
+  }, [open, activeTab, creativeSubTab, creativeAssetsProp]);
 
   const projects = apiProjects ?? [];
   const projectAssetsMap = apiAssetsMap ?? {};
@@ -293,11 +461,14 @@ export default function AssetPickerModal({
 
   const activeProjectName = projects.find(p => p.id === activeProjectId)?.name ?? '选择项目';
 
-  const toggle = (id) => setSelected((prev) => {
-    const next = new Set(prev);
-    next.has(id) ? next.delete(id) : next.add(id);
-    return next;
-  });
+  const toggle = (asset) => {
+    if (isPreSelected(asset)) return; // 预选项不可取消
+    setSelected((prev) => {
+      const next = new Set(prev);
+      next.has(asset.id) ? next.delete(asset.id) : next.add(asset.id);
+      return next;
+    });
+  };
 
   const handleConfirm = () => {
     // 构建全量 id→asset map，供按 ID 查完整对象
@@ -306,7 +477,11 @@ export default function AssetPickerModal({
       ...Object.values(creativeAssets).flat(),
     ];
     const assetMap = Object.fromEntries(allAssets.map(a => [a.id, a]));
-    const selectedAssets = Array.from(selected).map(id => assetMap[id]).filter(Boolean);
+    // 只返回本次新增选择的资产，排除上轮已存在的预选项（preSelectedIds），避免上游重复输入
+    const selectedAssets = Array.from(selected)
+      .filter(id => !preSelectedSet.has(id))
+      .map(id => assetMap[id])
+      .filter(Boolean);
     onConfirm?.(selectedAssets);
     onClose?.();
   };
@@ -334,11 +509,84 @@ export default function AssetPickerModal({
 
   const rawAssets = getCurrentAssets();
   const filteredAssets = rawAssets.filter(a => {
+    if (activeTab === 'project' && finalOnly && !a.is_primary) return false;
     if (favOnly && !a.starred) return false;
     if (search && !(a.name || '').includes(search)) return false;
     return true;
   });
 
+
+    // ── 资产卡片悬浮预览处理 ──────────────────────────────────────────────
+  function handlePreviewEnter(e, asset) {
+    if (!asset?.url) return;
+    const { clientX, clientY } = e;
+    setMousePos({ x: clientX, y: clientY });
+    hoverTimerRef.current = setTimeout(() => {
+      setPreviewImage({ url: asset.fullUrl || asset.url, x: clientX, y: clientY });
+    }, 500);
+  }
+
+  function handlePreviewMove(e) {
+    setMousePos({ x: e.clientX, y: e.clientY });
+  }
+
+  function handlePreviewLeave() {
+    clearTimeout(hoverTimerRef.current);
+    setPreviewImage(null);
+  }
+
+// ── 悬浮预览 ───────────────────────────────────────────────────────────────
+  function AssetHoverPreview({ url, mouseX, mouseY }) {
+    const [imgSize, setImgSize] = useState(null);
+    const GAP = 16;
+
+    useEffect(() => {
+      setImgSize(null);
+      const img = new Image();
+      img.onload = () => setImgSize({ w: img.naturalWidth, h: img.naturalHeight });
+      img.src = url;
+    }, [url]);
+
+    if (!imgSize) return null;
+
+    const maxW = window.innerWidth * 0.35;
+    const maxH = window.innerHeight * 0.35;
+    const ratio = imgSize.w / imgSize.h;
+
+    let previewW, previewH;
+    if (ratio >= 1) {
+      previewW = maxW;
+      previewH = previewW / ratio;
+      if (previewH > maxH) { previewH = maxH; previewW = previewH * ratio; }
+    } else {
+      previewH = maxH;
+      previewW = previewH * ratio;
+      if (previewW > maxW) { previewW = maxW; previewH = previewW / ratio; }
+    }
+
+    let left = mouseX + GAP;
+    let top = mouseY + GAP;
+    if (left + previewW > window.innerWidth - GAP) left = mouseX - previewW - GAP;
+    if (top + previewH > window.innerHeight - GAP) top = mouseY - previewH - GAP;
+    left = Math.max(GAP, left);
+    top = Math.max(GAP, top);
+
+    return (
+      <div
+        style={{
+          position: 'fixed', left, top,
+          width: previewW, height: previewH,
+          zIndex: 99999, pointerEvents: 'none',
+          borderRadius: '8px', overflow: 'hidden',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.7)',
+          border: '1px solid rgba(255,255,255,0.12)',
+          backgroundColor: '#111',
+        }}
+      >
+        <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
+      </div>
+    );
+  }
   return createPortal(
     <div
       style={{ position: 'fixed', inset: 0, zIndex: 1100, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)' }}
@@ -539,24 +787,41 @@ export default function AssetPickerModal({
             <EmptyState />
           ) : (
             <div style={{ display: 'flex', flexWrap: 'wrap', gap: '16px', paddingTop: '8px', paddingBottom: '8px', alignContent: 'flex-start' }}>
-              {filteredAssets.map((asset) => (
+              {filteredAssets.map((asset) => {
+                const disabled = isPreSelected(asset);
+                return (
                 <AssetCard
                   key={asset.id}
                   asset={asset}
-                  isSelected={selected.has(asset.id)}
+                  isSelected={selected.has(asset.id) || disabled}
                   isHovered={hoveredCard === asset.id}
-                  onMouseEnter={() => setHoveredCard(asset.id)}
-                  onMouseLeave={() => setHoveredCard(null)}
-                  onClick={() => toggle(asset.id)}
+                  isDisabled={disabled}
+                  onMouseEnter={(e) => { setHoveredCard(asset.id); handlePreviewEnter(e, asset); }}
+                  onMouseMove={handlePreviewMove}
+                  onMouseLeave={() => { setHoveredCard(null); handlePreviewLeave(); }}
+                  onClick={() => toggle(asset)}
                   compact={isCompactCard}
                 />
-              ))}
+                );
+              })}
             </div>
           )}
         </div>
 
         {/* ── Footer ── */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '16px', justifyContent: 'flex-end', padding: '16px 24px', flexShrink: 0, borderRadius: '0 0 16px 16px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 24px', flexShrink: 0, borderRadius: '0 0 16px 16px' }}>
+          {activeTab === 'project' && (
+            <div
+              onClick={() => setFinalOnly(v => !v)}
+              onMouseEnter={() => setFinalHovered(true)}
+              onMouseLeave={() => setFinalHovered(false)}
+              style={{ display: 'flex', alignItems: 'center', gap: '6px', cursor: 'pointer', flexShrink: 0 }}
+            >
+              <Checkbox checked={finalOnly} hovered={finalHovered} />
+              <span style={{ fontFamily: FONT, fontSize: '13px', lineHeight: '18px', color: finalHovered ? '#FFFFFF' : '#FFFFFF99', whiteSpace: 'nowrap' }}>仅显示定稿图</span>
+            </div>
+          )}
+          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flexShrink: 0, marginLeft: 'auto' }}>
           <button
             type="button"
             onClick={onClose}
@@ -581,8 +846,13 @@ export default function AssetPickerModal({
               <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF', whiteSpace: 'nowrap' }}>确定</span>
             </div>
           </button>
+          </div>
         </div>
       </div>
+      {previewImage && createPortal(
+        <AssetHoverPreview url={previewImage.url} mouseX={mousePos.x} mouseY={mousePos.y} />,
+        document.body
+      )}
     </div>,
     document.body
   );

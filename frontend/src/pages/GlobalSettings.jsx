@@ -2,6 +2,17 @@ import { useState, useRef, useCallback, useEffect } from 'react';
 import ScriptPage from './ScriptPage';
 import { apiUpdateProject, apiUploadProjectCover } from '../api/project';
 import { normalizeImageUrl } from '../utils/imageUrl';
+import styleXianxia from '../assets/styles/xianxia-3d.png';
+import styleSuspenseAnime from '../assets/styles/suspense-anime-2d.png';
+import styleCyberpunk from '../assets/styles/cyberpunk-3d.png';
+import stylePixar from '../assets/styles/pixar-style.png';
+import styleWuxia from '../assets/styles/wuxia-cg.png';
+import styleGhibli from '../assets/styles/ghibli-style.png';
+import styleShinkai from '../assets/styles/shinkai-style.png';
+import styleAncientChinese from '../assets/styles/ancient-chinese.png';
+import styleUrbanWorkplace from '../assets/styles/urban-workplace.png';
+import stylePostApocalyptic from '../assets/styles/post-apocalyptic.png';
+import styleLiveActionSuspense from '../assets/styles/live-action-suspense.png';
 
 // ─────────────────────────────────────────────────────────────────────────────
 
@@ -11,17 +22,17 @@ const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-u
 // 视觉风格映射
 const VISUAL_STYLES = {
   custom: { label: '自定义', coverImg: null },
-  'xianxia-3d': { label: '3D东方仙侠', coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF1YMA3KDCVA9GNPRN1912B.png' },
-  'suspense-anime-2d': { label: '2D悬疑动漫', coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF1ZTAX3W6NZKYMH0PYVYH7.png' },
-  'cyberpunk-3d': { label: '3D赛博朋克', coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF212REFTJS0T5TX853C6PV.png' },
-  'pixar-style': { label: '皮克斯风格', coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF21N68B569JWD37XGXMJHY.png' },
-  'wuxia-cg': { label: 'CG武侠', coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF261TC70JTZ75NHHN40S7B.png' },
-  'ghibli-style': { label: '宫崎骏风格', coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF26SR6DGWH3J83QYYG7YQ2.png' },
-  'shinkai-style': { label: '新海诚风格', coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/79F37XWHB4KFX7387QRVPJRGW2.png' },
-  'ancient-chinese-live-action': { label: '真人古风写实', coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF2JXQECN3C3V6A1RSK2NAQ.png' },
-  'urban-workplace': { label: '都市职场', coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/2PWDW8VRNFGH4RWESGMQD6FQ11.png' },
-  'post-apocalyptic-modern': { label: '末日废土', coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF2K6XQRPBT11ZHQ9E7GT2Q.png' },
-  'live-action-suspense': { label: '真人悬疑', coverImg: 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KSF2KG4DMWE4165JR2K270R7.png' },
+  'xianxia-3d': { label: '3D东方仙侠', coverImg: styleXianxia },
+  'suspense-anime-2d': { label: '2D悬疑动漫', coverImg: styleSuspenseAnime },
+  'cyberpunk-3d': { label: '3D赛博朋克', coverImg: styleCyberpunk },
+  'pixar-style': { label: '皮克斯风格', coverImg: stylePixar },
+  'wuxia-cg': { label: 'CG武侠', coverImg: styleWuxia },
+  'ghibli-style': { label: '宫崎骏风格', coverImg: styleGhibli },
+  'shinkai-style': { label: '新海诚风格', coverImg: styleShinkai },
+  'ancient-chinese-live-action': { label: '真人古风写实', coverImg: styleAncientChinese },
+  'urban-workplace': { label: '都市职场', coverImg: styleUrbanWorkplace },
+  'post-apocalyptic-modern': { label: '末日废土', coverImg: stylePostApocalyptic },
+  'live-action-suspense': { label: '真人悬疑', coverImg: styleLiveActionSuspense },
 };
 
 // ── Stat card ──────────────────────────────────────────────────────────────
@@ -118,11 +129,12 @@ const EPISODE_STATUS = {
   pending:   { bg: '#FFFFFF08', border: '#FFFFFF14', color: '#FFFFFF99', label: '未生成视频' },
 };
 
-function EpisodeCard({ index, status = 'pending' }) {
+function EpisodeCard({ index, status = 'pending', onClick }) {
   const [hovered, setHovered] = useState(false);
   const [tooltipPos, setTooltipPos] = useState({ x: 0, y: 0 });
   const s = EPISODE_STATUS[status] || EPISODE_STATUS.pending;
   const label = String(index + 1).padStart(2, '0');
+  const isClickable = status === 'generated' || status === 'edited';
 
   const handleMouseEnter = useCallback((e) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -135,6 +147,7 @@ function EpisodeCard({ index, status = 'pending' }) {
       <div
         onMouseEnter={handleMouseEnter}
         onMouseLeave={() => setHovered(false)}
+        onClick={isClickable ? onClick : undefined}
         style={{
           width: '100%',
           height: '32px',
@@ -144,9 +157,9 @@ function EpisodeCard({ index, status = 'pending' }) {
           borderRadius: '5px',
           background: s.bg,
           border: `1px solid ${s.border}`,
-          cursor: 'default',
+          cursor: isClickable ? 'pointer' : 'default',
           transition: 'opacity 0.12s',
-          opacity: hovered ? 0.8 : 1,
+          opacity: hovered && isClickable ? 0.7 : 1,
         }}
       >
         <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '100%', color: s.color }}>{label}</span>
@@ -166,7 +179,7 @@ function EpisodeCard({ index, status = 'pending' }) {
           whiteSpace: 'nowrap',
         }}>
           <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: '#FFFFFF99' }}>
-            第{index + 1}集 · {s.label}
+            第{index + 1}集 · {s.label}{isClickable ? ' · 点击跳转' : ''}
           </span>
         </div>
       )}
@@ -174,7 +187,7 @@ function EpisodeCard({ index, status = 'pending' }) {
   );
 }
 
-function EpisodeGrid({ episodes = [], statuses = {} }) {
+function EpisodeGrid({ episodes = [], statuses = {}, onEpisodeClick }) {
   const total = episodes.length;
   const isEmpty = total === 0;
 
@@ -224,7 +237,7 @@ function EpisodeGrid({ episodes = [], statuses = {} }) {
           paddingRight: '2px',
         }}>
           {episodes.map((_, i) => (
-            <EpisodeCard key={i} index={i} status={statuses[i] ?? 'pending'} />
+            <EpisodeCard key={i} index={i} status={statuses[i] ?? 'pending'} onClick={() => onEpisodeClick?.(i)} />
           ))}
         </div>
       )}
@@ -283,9 +296,9 @@ function TextInput({ value, onChange, placeholder, maxLength }) {
         <span
           style={{
             fontFamily: FONT,
-            fontSize: '14px',
+            fontSize: '12px',
             lineHeight: '18px',
-            color: '#FFFFFF66',
+            color: 'rgba(255, 255, 255, 0.4)',
             flexShrink: 0,
             whiteSpace: 'nowrap',
           }}
@@ -356,7 +369,7 @@ function CoverUpload({ coverUrl, onUpload, isSaving }) {
   const handleChange = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 5 * 1024 * 1024) { alert('抱歉，平台暂不支持上传5M以上的图片资源！'); e.target.value = ''; return; }
+    if (file.size > 20 * 1024 * 1024) { alert('抱歉，平台暂不支持上传20M以上的图片资源！'); e.target.value = ''; return; }
     e.target.value = '';
 
     setIsUploading(true);
@@ -542,7 +555,8 @@ export default function GlobalSettings({
   onScriptContentChange,
   scriptDraftContent,
   onScriptDraftContentChange,
-  episodeStatuses = {}
+  episodeStatuses = {},
+  onGoToStoryboard,
 }) {
   const [name, setName] = useState(projectName);
   const [description, setDescription] = useState(projectDescription);
@@ -728,7 +742,7 @@ export default function GlobalSettings({
                 onClick={tab ? (isSubjectUnlocked || count > 0 ? () => onGoToSubject?.(tab) : undefined) : undefined}
               />
             ))}
-            <EpisodeGrid episodes={episodes} statuses={episodeStatuses} />
+            <EpisodeGrid episodes={episodes} statuses={episodeStatuses} onEpisodeClick={onGoToStoryboard} />
           </div>
         </div>
 

@@ -1,9 +1,15 @@
-import { useState, useRef, useEffect } from 'react';
-import { apiGetAssetDetail, apiGetShotDetail, apiGetShotVideoDetail, apiGetProjectAssets, apiDeleteAsset, apiBatchDeleteAssets, apiUpdateAsset, apiDownloadAsset } from '../api/assets';
-import { apiDeleteCreationImage, apiDeleteCreationVideo, apiBatchDeleteImages, apiBatchDeleteVideos, apiToggleImageFavorite, apiToggleVideoFavorite } from '../api/creation';
+import { useState, useRef, useEffect, useCallback } from 'react';
+import { createPortal } from 'react-dom';
+import { useModalSize } from '../utils/useModalSize';
+import placeholderFlowers from '../assets/placeholder-flowers.webp';
+import { apiGetAssetDetail, apiGetShotDetail, apiGetShotVideoDetail, apiGetProjectAssets, apiGetProjectAssetsPage, groupByCategory, calcProjectAssetsLimit, apiDeleteAsset, apiBatchDeleteAssets, apiUpdateAsset, apiDownloadAsset } from '../api/assets';
+import { apiGetSubjects, apiDeleteSubject } from '../api/subject';
+import { apiDeleteCreationImage, apiDeleteCreationVideo, apiBatchDeleteImages, apiBatchDeleteVideos, apiToggleImageFavorite, apiToggleVideoFavorite, apiListCreationImages, apiListCreationVideos, apiListCreationAudios } from '../api/creation';
 import { useCreationStore } from '../stores/creationStore';
 import { generationsToDays } from '../utils/creativeDaysAdapter';
-import { apiGetProjects, apiGetProjectOverview, apiDeleteProject, apiUpdateProject, apiDownloadProjectAssets } from '../api/project';
+import { apiGetProjects, apiDeleteProject, apiUpdateProject, apiDownloadProjectAssets } from '../api/project';
+import { invalidate } from '../utils/cache';
+import { K } from '../utils/cacheKeys';
 import ImageDetailModal from '../components/ImageDetailModal';
 import CreationVideoDetailModal from '../components/CreationVideoDetailModal';
 import ConfirmDialog from '../components/ConfirmDialog';
@@ -166,13 +172,13 @@ function MoreMenu({ onDownload, onDelete }) {
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          backgroundColor: open ? 'rgba(255,255,255,0.15)' : '#00000080',
+          backgroundColor: open ? 'rgba(0,0,0,0.75)' : '#00000080',
           border: 'none',
           cursor: 'pointer',
           transition: 'background-color 0.12s',
           flexShrink: 0,
         }}
-        onMouseEnter={(e) => { if (!open) e.currentTarget.style.backgroundColor = '#FFFFFF1A'; }}
+        onMouseEnter={(e) => { if (!open) e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.65)'; }}
         onMouseLeave={(e) => { if (!open) e.currentTarget.style.backgroundColor = '#00000080'; }}
         onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
         aria-label="更多操作"
@@ -295,7 +301,7 @@ function AudioCard({ name, duration = '0:00', starred = false, selected = false,
         cursor: 'pointer',
         display: 'flex',
         alignItems: 'center',
-        gap: '16px',
+        gap: '8px',
         paddingTop: '14px',
         paddingBottom: '14px',
         paddingLeft: '16px',
@@ -421,9 +427,9 @@ const MOCK_DETAIL = {
   generatedAt: '2026-04-21 15:30:09',
   // index 0 is the finalized image
   images: [
-    { id: 'i1', src: 'https://app.paper.design/static/flowers.webp', finalized: true },
-    { id: 'i2', src: 'https://app.paper.design/static/flowers.webp', finalized: false },
-    { id: 'i3', src: 'https://app.paper.design/static/flowers.webp', finalized: false },
+    { id: 'i1', src: placeholderFlowers, finalized: true },
+    { id: 'i2', src: placeholderFlowers, finalized: false },
+    { id: 'i3', src: placeholderFlowers, finalized: false },
   ],
 };
 
@@ -434,9 +440,9 @@ const MOCK_SHOT_DETAIL = {
   resolution: '1920 × 1080',
   generatedAt: '2026-04-21 15:30:09',
   images: [
-    { id: 's1', src: 'https://app.paper.design/static/flowers.webp', finalized: true },
-    { id: 's2', src: 'https://app.paper.design/static/flowers.webp', finalized: false },
-    { id: 's3', src: 'https://app.paper.design/static/flowers.webp', finalized: false },
+    { id: 's1', src: placeholderFlowers, finalized: true },
+    { id: 's2', src: placeholderFlowers, finalized: false },
+    { id: 's3', src: placeholderFlowers, finalized: false },
   ],
 };
 
@@ -450,14 +456,15 @@ const MOCK_SHOT_VIDEO_DETAIL = {
   generatedAt: '2026-04-21 15:30:09',
   videoSrc: 'https://www.w3schools.com/html/mov_bbb.mp4',
   frames: [
-    { id: 'v1', src: 'https://app.paper.design/static/flowers.webp', finalized: true },
-    { id: 'v2', src: 'https://app.paper.design/static/flowers.webp', finalized: false },
-    { id: 'v3', src: 'https://app.paper.design/static/flowers.webp', finalized: false },
+    { id: 'v1', src: placeholderFlowers, finalized: true },
+    { id: 'v2', src: placeholderFlowers, finalized: false },
+    { id: 'v3', src: placeholderFlowers, finalized: false },
   ],
 };
 
 // 主体资产详情弹窗 — 图片列表（角色/场景/道具的多张图聚合）
-function SubjectAssetDetailModal({ onClose, onDownload, onDeleteImage, name, description, images }) {
+function SubjectAssetDetailModal({ onClose, onDownload, onDeleteImage, onShowToast, name, description, images }) {
+  const { width: modalW, height: modalH } = useModalSize();
   const imgs = images ?? [];
   const defaultIdx = imgs.findIndex((img) => img.is_primary);
   const [activeImg, setActiveImg] = useState(defaultIdx >= 0 ? defaultIdx : 0);
@@ -467,6 +474,13 @@ function SubjectAssetDetailModal({ onClose, onDownload, onDeleteImage, name, des
   const [pressDelete, setPressDelete] = useState(false);
   const [hovThumb, setHovThumb] = useState(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [copyToast, setCopyToast] = useState(false);
+  const copyToastTimer = useRef(null);
+  function showCopyToast() {
+    clearTimeout(copyToastTimer.current);
+    setCopyToast(true);
+    copyToastTimer.current = setTimeout(() => setCopyToast(false), 2000);
+  }
 
   const currentImg = imgs[activeImg];
   const isPrimary = currentImg?.is_primary ?? false;
@@ -491,8 +505,8 @@ function SubjectAssetDetailModal({ onClose, onDownload, onDeleteImage, name, des
         style={{
           display: 'flex',
           flexDirection: 'column',
-          width: '960px',
-          height: '600px',
+          width: `${modalW}px`,
+          height: `${modalH}px`,
           borderRadius: '16px',
           overflow: 'hidden',
           boxShadow: '#00000099 -10px 24px 64px',
@@ -532,19 +546,16 @@ function SubjectAssetDetailModal({ onClose, onDownload, onDeleteImage, name, des
         </div>
 
         {/* Body */}
-        <div style={{ display: 'flex', height: '500px', flex: 1 }}>
+        <div style={{ display: 'flex', height: `${modalH - 60}px`, flex: 1 }}>
           {/* Left: preview + thumbnails */}
           <div style={{ display: 'flex', flexDirection: 'column', flexGrow: 1, flexShrink: 1, flexBasis: '0%', minWidth: 0, minHeight: 0, backgroundColor: '#0D0D0D' }}>
             {/* Main image */}
             <div style={{ flexGrow: 1, flexShrink: 1, flexBasis: '0%', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 0, position: 'relative', backgroundColor: '#0A0A0A' }}>
-              <div style={{
-                position: 'absolute',
-                inset: '35px',
-                backgroundImage: `url(${currentImg?.fileUrl ?? currentImg?.url ?? 'https://app.paper.design/static/flowers.webp'})`,
-                backgroundSize: 'cover',
-                backgroundPosition: '50%',
-                transition: 'background-image 0.15s',
-              }} />
+              <img
+                src={currentImg?.fileUrl ?? currentImg?.url ?? placeholderFlowers}
+                alt=""
+                style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', display: 'block', padding: '16px', boxSizing: 'border-box', transition: 'opacity 0.15s' }}
+              />
             </div>
 
             {/* Ref images strip — if exist */}
@@ -606,7 +617,7 @@ function SubjectAssetDetailModal({ onClose, onDownload, onDeleteImage, name, des
                     >
                       <div style={{
                         width: '100%', height: '100%',
-                        backgroundImage: `url(${img.url ?? 'https://app.paper.design/static/flowers.webp'})`,
+                        backgroundImage: `url(${img.url ?? placeholderFlowers})`,
                         backgroundSize: 'cover', backgroundPosition: '50%',
                       }} />
                       {/* Primary badge */}
@@ -621,24 +632,6 @@ function SubjectAssetDetailModal({ onClose, onDownload, onDeleteImage, name, des
                           alignItems: 'center',
                         }}>
                           <span style={{ fontFamily: FONT, fontSize: '10px', lineHeight: '14px', color: '#0A0A0A', fontWeight: 500 }}>定稿</span>
-                        </div>
-                      )}
-                      {/* Hover overlay */}
-                      {isHov && (
-                        <div style={{
-                          position: 'absolute', bottom: 0, left: 0, right: 0,
-                          paddingTop: '8px', paddingBottom: '4px', paddingLeft: '4px', paddingRight: '4px',
-                          display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px',
-                          backgroundImage: 'linear-gradient(in oklab 180deg, oklab(0% 0 0 / 0%) 0%, oklab(0% 0 0 / 80%) 100%)',
-                        }}>
-                          <div style={{ display: 'flex', alignItems: 'center', padding: '2px', cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); setActiveImg(idx); }} title="切换">
-                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
-                              <path d="M5.333 2H2.667C2.298 2 2 2.298 2 2.667V5.333" stroke="#FFFFFF" strokeLinejoin="round" />
-                              <path d="M5.333 14H2.667C2.298 14 2 13.701 2 13.333V10.667" stroke="#FFFFFF" strokeLinejoin="round" />
-                              <path d="M10.667 14H13.333C13.701 14 14 13.701 14 13.333V10.667" stroke="#FFFFFF" strokeLinejoin="round" />
-                              <path d="M10.667 2H13.333C13.701 2 14 2.298 14 2.667V5.333" stroke="#FFFFFF" strokeLinejoin="round" />
-                            </svg>
-                          </div>
                         </div>
                       )}
                     </div>
@@ -704,6 +697,7 @@ function SubjectAssetDetailModal({ onClose, onDownload, onDeleteImage, name, des
                         onMouseLeave={(e) => e.currentTarget.style.opacity = '0.6'}
                         onClick={() => {
                           navigator.clipboard.writeText(currentImg.prompt);
+                          showCopyToast();
                         }}
                         title="复制提示词"
                       >
@@ -752,8 +746,7 @@ function SubjectAssetDetailModal({ onClose, onDownload, onDeleteImage, name, des
 
             {/* Sticky buttons */}
             <div style={{ flexShrink: 0, paddingTop: '12px', paddingBottom: '20px', paddingLeft: '20px', paddingRight: '20px', borderTop: '1px solid #FFFFFF0A', display: 'flex', gap: '8px' }}>
-              {imgs.length > 1 && (
-                <button
+              <button
                   type="button"
                   style={{
                     display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -777,7 +770,6 @@ function SubjectAssetDetailModal({ onClose, onDownload, onDeleteImage, name, des
                   </svg>
                   <span style={{ fontFamily: FONT, fontSize: '13px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FF6B6B' }}>删除</span>
                 </button>
-              )}
               <button
                 type="button"
                 style={{
@@ -809,10 +801,29 @@ function SubjectAssetDetailModal({ onClose, onDownload, onDeleteImage, name, des
           onCancel={() => setShowDeleteConfirm(false)}
           onConfirm={() => {
             setShowDeleteConfirm(false);
-            onDeleteImage?.(currentImg.id);
+            onShowToast?.('删除成功', 'success');
+            const deletedId = currentImg.id;
+            if (imgs.length === 1) {
+              // 最后一张：先关弹窗，再通知父组件删除
+              onDeleteImage?.(deletedId);
+            } else {
+              // 切换到上一张（若是第一张则切到下一张）
+              const nextIdx = activeImg > 0 ? activeImg - 1 : 0;
+              setActiveImg(nextIdx);
+              onDeleteImage?.(deletedId);
+            }
           }}
           zIndex={300}
         />
+      )}
+      {copyToast && createPortal(
+        <div style={{ position: 'fixed', top: '25vh', left: '50%', transform: 'translateX(-50%)', zIndex: 9999, pointerEvents: 'none' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '8px', background: 'rgba(30,30,30,0.92)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.1)', whiteSpace: 'nowrap' }}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}><path d="M8 14.667C11.682 14.667 14.667 11.682 14.667 8C14.667 4.318 11.682 1.333 8 1.333C4.318 1.333 1.333 4.318 1.333 8C1.333 11.682 4.318 14.667 8 14.667Z" fill="#52BF92" stroke="#52BF92" strokeWidth="1.333" strokeLinejoin="round"/><path d="M5.333 8L7.333 10L11.333 6" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            <span style={{ fontSize: '14px', color: '#FFFFFF', fontFamily: "'AlibabaPuHuiTi_2_55_Regular','Alibaba PuHuiTi 2.0',system-ui,sans-serif" }}>提示词复制成功</span>
+          </div>
+        </div>,
+        document.body
       )}
     </div>
   );
@@ -821,12 +832,20 @@ function SubjectAssetDetailModal({ onClose, onDownload, onDeleteImage, name, des
 // Props: name, description, prompt, model, ratio, resolution, images (array of {id, src, finalized})
 // images[0] should be the finalized image; default activeImg = index of first finalized image
 function AssetDetailModal({ onClose, onDownload, name, description, prompt, model, ratio, resolution, generatedAt, images }) {
+  const { width: modalW, height: modalH } = useModalSize();
   const imgs = images ?? MOCK_DETAIL.images;
   const defaultIdx = imgs.findIndex((img) => img.finalized);
   const [activeImg, setActiveImg] = useState(defaultIdx >= 0 ? defaultIdx : 0);
   const [hovClose, setHovClose] = useState(false);
   const [hovDownload, setHovDownload] = useState(false);
   const [hovThumb, setHovThumb] = useState(null);
+  const [copyToast, setCopyToast] = useState(false);
+  const copyToastTimer = useRef(null);
+  function showCopyToast() {
+    clearTimeout(copyToastTimer.current);
+    setCopyToast(true);
+    copyToastTimer.current = setTimeout(() => setCopyToast(false), 2000);
+  }
 
   const currentImg = imgs[activeImg];
   const isFinalized = currentImg?.finalized ?? false;
@@ -850,7 +869,7 @@ function AssetDetailModal({ onClose, onDownload, name, description, prompt, mode
         style={{
           display: 'flex',
           flexDirection: 'column',
-          width: '960px',
+          width: `${modalW}px`,
           borderRadius: '16px',
           overflow: 'hidden',
           boxShadow: '#00000099 -10px 24px 64px',
@@ -890,19 +909,16 @@ function AssetDetailModal({ onClose, onDownload, name, description, prompt, mode
         </div>
 
         {/* Body */}
-        <div style={{ display: 'flex', height: '540px' }}>
+        <div style={{ display: 'flex', height: `${modalH - 60}px` }}>
           {/* Left: preview */}
           <div style={{ display: 'flex', flexDirection: 'column', flexGrow: 1, flexShrink: 1, flexBasis: '0%', minWidth: 0, minHeight: 0, backgroundColor: '#0D0D0D' }}>
             {/* Main image */}
             <div style={{ flexGrow: 1, flexShrink: 1, flexBasis: '0%', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 0, position: 'relative', backgroundColor: '#0A0A0A' }}>
-              <div style={{
-                position: 'absolute',
-                top: '35px', bottom: '35px', left: 0, right: 0,
-                backgroundImage: `url(${currentImg?.src ?? 'https://app.paper.design/static/flowers.webp'})`,
-                backgroundSize: 'cover',
-                backgroundPosition: '50%',
-                transition: 'background-image 0.15s',
-              }} />
+              <img
+                src={currentImg?.src ?? placeholderFlowers}
+                alt=""
+                style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', display: 'block', padding: '16px', boxSizing: 'border-box', transition: 'opacity 0.15s' }}
+              />
             </div>
             {/* Thumbnails strip */}
             <div style={{
@@ -910,7 +926,7 @@ function AssetDetailModal({ onClose, onDownload, name, description, prompt, mode
               paddingTop: '14px', paddingBottom: '16px', paddingLeft: '16px', paddingRight: '16px',
               backgroundColor: '#111111',
             }}>
-              <div style={{ display: 'flex', gap: '12px' }}>
+              <div style={{ display: 'flex', gap: '12px', overflowX: 'auto' }}>
                 {imgs.map((img, idx) => {
                   const isActive = activeImg === idx;
                   const isHov = hovThumb === idx;
@@ -932,31 +948,9 @@ function AssetDetailModal({ onClose, onDownload, name, description, prompt, mode
                     >
                       <div style={{
                         width: '100%', height: '100%',
-                        backgroundImage: `url(${img.src ?? 'https://app.paper.design/static/flowers.webp'})`,
+                        backgroundImage: `url(${img.src ?? placeholderFlowers})`,
                         backgroundSize: 'cover', backgroundPosition: '50%',
                       }} />
-                      {/* Hover overlay: show "放大查看" icon in bottom-right */}
-                      {isHov && (
-                        <div style={{
-                          position: 'absolute', bottom: 0, left: 0, right: 0,
-                          paddingTop: '8px', paddingBottom: '4px', paddingLeft: '4px', paddingRight: '4px',
-                          display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px',
-                          backgroundImage: 'linear-gradient(in oklab 180deg, oklab(0% 0 0 / 0%) 0%, oklab(0% 0 0 / 80%) 100%)',
-                        }}>
-                          <div
-                            style={{ display: 'flex', alignItems: 'center', padding: '2px', cursor: 'pointer' }}
-                            onClick={(e) => { e.stopPropagation(); setActiveImg(idx); }}
-                            title="放大查看"
-                          >
-                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
-                              <path d="M5.333 2H2.667C2.298 2 2 2.298 2 2.667V5.333" stroke="#FFFFFF" strokeLinejoin="round" />
-                              <path d="M5.333 14H2.667C2.298 14 2 13.701 2 13.333V10.667" stroke="#FFFFFF" strokeLinejoin="round" />
-                              <path d="M10.667 14H13.333C13.701 14 14 13.701 14 13.333V10.667" stroke="#FFFFFF" strokeLinejoin="round" />
-                              <path d="M10.667 2H13.333C13.701 2 14 2.298 14 2.667V5.333" stroke="#FFFFFF" strokeLinejoin="round" />
-                            </svg>
-                          </div>
-                        </div>
-                      )}
                     </div>
                   );
                 })}
@@ -967,7 +961,7 @@ function AssetDetailModal({ onClose, onDownload, name, description, prompt, mode
           {/* Right: info panel — scrollable content + sticky download */}
           <div style={{
             width: '280px', display: 'flex', flexDirection: 'column',
-            height: '540px', flexShrink: 0,
+            height: `${modalH - 60}px`, flexShrink: 0,
             backgroundColor: '#161616', borderLeft: '1px solid #FFFFFF0F',
           }}>
             {/* Scrollable content */}
@@ -1050,21 +1044,42 @@ function AssetDetailModal({ onClose, onDownload, name, description, prompt, mode
           </div>
         </div>
       </div>
+      {copyToast && createPortal(
+        <div style={{ position: 'fixed', top: '25vh', left: '50%', transform: 'translateX(-50%)', zIndex: 9999, pointerEvents: 'none' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '8px', background: 'rgba(30,30,30,0.92)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.1)', whiteSpace: 'nowrap' }}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}><path d="M8 14.667C11.682 14.667 14.667 11.682 14.667 8C14.667 4.318 11.682 1.333 8 1.333C4.318 1.333 1.333 4.318 1.333 8C1.333 11.682 4.318 14.667 8 14.667Z" fill="#52BF92" stroke="#52BF92" strokeWidth="1.333" strokeLinejoin="round"/><path d="M5.333 8L7.333 10L11.333 6" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            <span style={{ fontSize: '14px', color: '#FFFFFF', fontFamily: "'AlibabaPuHuiTi_2_55_Regular','Alibaba PuHuiTi 2.0',system-ui,sans-serif" }}>提示词复制成功</span>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
 
 // Props: shotNumber, prompt, model, resolution, images (array of {id, src, finalized})
-function ShotDetailModal({ onClose, onDownload, shotNumber, prompt, model, resolution, generatedAt, images }) {
+function ShotDetailModal({ onClose, onDownload, onDelete, onShowToast, shotNumber, prompt, model, resolution, generatedAt, images, refImages }) {
+  const { width: modalW, height: modalH } = useModalSize();
   const imgs = images ?? MOCK_SHOT_DETAIL.images;
   const defaultIdx = imgs.findIndex((img) => img.finalized);
   const [activeImg, setActiveImg] = useState(defaultIdx >= 0 ? defaultIdx : 0);
   const [hovClose, setHovClose] = useState(false);
   const [hovDownload, setHovDownload] = useState(false);
+  const [hovDelete, setHovDelete] = useState(false);
+  const [pressDelete, setPressDelete] = useState(false);
   const [hovThumb, setHovThumb] = useState(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [copyToast, setCopyToast] = useState(false);
+  const copyToastTimer = useRef(null);
+  function showCopyToast() {
+    clearTimeout(copyToastTimer.current);
+    setCopyToast(true);
+    copyToastTimer.current = setTimeout(() => setCopyToast(false), 2000);
+  }
 
   const currentImg = imgs[activeImg];
   const isFinalized = currentImg?.finalized ?? false;
+  const refImgs = refImages ?? [];
 
   return (
     <div
@@ -1085,7 +1100,7 @@ function ShotDetailModal({ onClose, onDownload, shotNumber, prompt, model, resol
         style={{
           display: 'flex',
           flexDirection: 'column',
-          width: '960px',
+          width: `${modalW}px`,
           borderRadius: '16px',
           overflow: 'hidden',
           boxShadow: '#00000099 -10px 24px 64px',
@@ -1125,19 +1140,16 @@ function ShotDetailModal({ onClose, onDownload, shotNumber, prompt, model, resol
         </div>
 
         {/* Body */}
-        <div style={{ display: 'flex', height: '540px' }}>
+        <div style={{ display: 'flex', height: `${modalH - 60}px` }}>
           {/* Left: preview */}
           <div style={{ display: 'flex', flexDirection: 'column', flexGrow: 1, flexShrink: 1, flexBasis: '0%', minWidth: 0, minHeight: 0, backgroundColor: '#0D0D0D' }}>
             {/* Main image */}
             <div style={{ flexGrow: 1, flexShrink: 1, flexBasis: '0%', display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: 0, position: 'relative', backgroundColor: '#0A0A0A' }}>
-              <div style={{
-                position: 'absolute',
-                top: '35px', bottom: '35px', left: 0, right: 0,
-                backgroundImage: `url(${currentImg?.src ?? 'https://app.paper.design/static/flowers.webp'})`,
-                backgroundSize: 'cover',
-                backgroundPosition: '50%',
-                transition: 'background-image 0.15s',
-              }} />
+              <img
+                src={currentImg?.src ?? placeholderFlowers}
+                alt=""
+                style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain', display: 'block', padding: '16px', boxSizing: 'border-box', transition: 'opacity 0.15s' }}
+              />
             </div>
             {/* Thumbnails strip */}
             <div style={{
@@ -1145,7 +1157,7 @@ function ShotDetailModal({ onClose, onDownload, shotNumber, prompt, model, resol
               paddingTop: '14px', paddingBottom: '16px', paddingLeft: '16px', paddingRight: '16px',
               backgroundColor: '#111111',
             }}>
-              <div style={{ display: 'flex', gap: '12px' }}>
+              <div style={{ display: 'flex', gap: '12px', overflowX: 'auto' }}>
                 {imgs.map((img, idx) => {
                   const isActive = activeImg === idx;
                   const isHov = hovThumb === idx;
@@ -1167,28 +1179,19 @@ function ShotDetailModal({ onClose, onDownload, shotNumber, prompt, model, resol
                     >
                       <div style={{
                         width: '100%', height: '100%',
-                        backgroundImage: `url(${img.src ?? 'https://app.paper.design/static/flowers.webp'})`,
+                        backgroundImage: `url(${img.src ?? placeholderFlowers})`,
                         backgroundSize: 'cover', backgroundPosition: '50%',
                       }} />
-                      {isHov && (
+                      {/* 定稿标签 */}
+                      {img.finalized && (
                         <div style={{
-                          position: 'absolute', bottom: 0, left: 0, right: 0,
-                          paddingTop: '8px', paddingBottom: '4px', paddingLeft: '4px', paddingRight: '4px',
-                          display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px',
-                          backgroundImage: 'linear-gradient(in oklab 180deg, oklab(0% 0 0 / 0%) 0%, oklab(0% 0 0 / 80%) 100%)',
+                          position: 'absolute', top: '4px', left: '4px',
+                          paddingLeft: '4px', paddingRight: '4px',
+                          borderRadius: '2px', backgroundColor: '#4AC981',
+                          boxShadow: '#FFFFFF14 0px 0px 0px 1px inset',
+                          height: '18px', display: 'flex', alignItems: 'center',
                         }}>
-                          <div
-                            style={{ display: 'flex', alignItems: 'center', padding: '2px', cursor: 'pointer' }}
-                            onClick={(e) => { e.stopPropagation(); setActiveImg(idx); }}
-                            title="放大查看"
-                          >
-                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
-                              <path d="M5.333 2H2.667C2.298 2 2 2.298 2 2.667V5.333" stroke="#FFFFFF" strokeLinejoin="round" />
-                              <path d="M5.333 14H2.667C2.298 14 2 13.701 2 13.333V10.667" stroke="#FFFFFF" strokeLinejoin="round" />
-                              <path d="M10.667 14H13.333C13.701 14 14 13.701 14 13.333V10.667" stroke="#FFFFFF" strokeLinejoin="round" />
-                              <path d="M10.667 2H13.333C13.701 2 14 2.298 14 2.667V5.333" stroke="#FFFFFF" strokeLinejoin="round" />
-                            </svg>
-                          </div>
+                          <span style={{ fontFamily: FONT, fontSize: '10px', lineHeight: '14px', color: '#0A0A0A', fontWeight: 500 }}>定稿</span>
                         </div>
                       )}
                     </div>
@@ -1201,7 +1204,7 @@ function ShotDetailModal({ onClose, onDownload, shotNumber, prompt, model, resol
           {/* Right: info panel — scrollable content + sticky download */}
           <div style={{
             width: '280px', display: 'flex', flexDirection: 'column',
-            height: '540px', flexShrink: 0,
+            height: `${modalH - 60}px`, flexShrink: 0,
             backgroundColor: '#161616', borderLeft: '1px solid #FFFFFF0F',
           }}>
             {/* Scrollable content */}
@@ -1211,10 +1214,14 @@ function ShotDetailModal({ onClose, onDownload, shotNumber, prompt, model, resol
                 <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFF99' }}>是否定稿</span>
                 {isFinalized ? (
                   <div style={{
-                    paddingLeft: '8px', paddingRight: '8px', paddingTop: '2px', paddingBottom: '2px',
-                    borderRadius: '4px', boxShadow: '#FFFFFF14 0px 0px 0px 1px inset', backgroundColor: '#7AE5B91A',
+                    paddingLeft: '4px', paddingRight: '4px', paddingTop: '2px', paddingBottom: '2px',
+                    borderRadius: '2px', backgroundColor: '#4AC981',
+                    boxShadow: '#FFFFFF14 0px 0px 0px 1px inset',
+                    height: '18px',
+                    display: 'flex',
+                    alignItems: 'center',
                   }}>
-                    <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: '#7AE5B9' }}>定稿</span>
+                    <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '14px', color: '#0A0A0A', fontWeight: 500 }}>定稿</span>
                   </div>
                 ) : (
                   <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: '#FFFFFF66' }}>否</span>
@@ -1232,16 +1239,68 @@ function ShotDetailModal({ onClose, onDownload, shotNumber, prompt, model, resol
               <div style={{ height: '1px', backgroundColor: '#FFFFFF0A', marginLeft: '20px', marginRight: '20px' }} />
 
               {/* Prompt */}
-              <div style={{ display: 'flex', flexDirection: 'column', paddingTop: '16px', paddingBottom: '16px', paddingLeft: '20px', paddingRight: '20px', gap: '10px' }}>
-                <span style={{ fontFamily: FONT, fontSize: '11px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>提示词</span>
-                <p style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '20px', letterSpacing: '0.01em', color: '#FFFFFFCC', margin: 0 }}>{(currentImg?.prompt || prompt) ?? MOCK_SHOT_DETAIL.prompt}</p>
-              </div>
+              {((currentImg?.prompt || prompt) ?? MOCK_SHOT_DETAIL.prompt) && (
+                <>
+                  <div style={{ display: 'flex', flexDirection: 'column', paddingTop: '16px', paddingBottom: '16px', paddingLeft: '20px', paddingRight: '20px', gap: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                      <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>提示词</span>
+                      <button
+                        type="button"
+                        style={{
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          width: '24px', height: '24px', borderRadius: '4px',
+                          background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+                          opacity: 0.6, transition: 'opacity 0.12s',
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+                        onMouseLeave={(e) => e.currentTarget.style.opacity = '0.6'}
+                        onClick={() => {
+                          navigator.clipboard.writeText((currentImg?.prompt || prompt) ?? MOCK_SHOT_DETAIL.prompt);
+                          showCopyToast();
+                        }}
+                        title="复制提示词"
+                      >
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+                          <path d="M4.33337 4.14383V2.60413C4.33337 2.08636 4.75311 1.66663 5.27087 1.66663H13.3959C13.9136 1.66663 14.3334 2.08636 14.3334 2.60413V10.7291C14.3334 11.2469 13.9136 11.6666 13.3959 11.6666H11.8388" stroke="white" strokeOpacity="0.6" strokeLinecap="round" strokeLinejoin="round"/>
+                          <path d="M10.7291 4.33337H2.60413C2.08636 4.33337 1.66663 4.75311 1.66663 5.27087V13.3959C1.66663 13.9136 2.08636 14.3334 2.60413 14.3334H10.7291C11.2469 14.3334 11.6666 13.9136 11.6666 13.3959V5.27087C11.6666 4.75311 11.2469 4.33337 10.7291 4.33337Z" stroke="white" strokeOpacity="0.6" strokeLinejoin="round"/>
+                        </svg>
+                      </button>
+                    </div>
+                    <p style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '20px', letterSpacing: '0.01em', color: '#FFFFFFCC', margin: 0 }}>{(currentImg?.prompt || prompt) ?? MOCK_SHOT_DETAIL.prompt}</p>
+                  </div>
+                  <div style={{ height: '1px', backgroundColor: '#FFFFFF0A', marginLeft: '20px', marginRight: '20px' }} />
+                </>
+              )}
 
-              <div style={{ height: '1px', backgroundColor: '#FFFFFF0A', marginLeft: '20px', marginRight: '20px' }} />
+              {/* Ref images */}
+              {refImgs.length > 0 && (
+                <>
+                  <div style={{ display: 'flex', flexDirection: 'column', paddingTop: '16px', paddingBottom: '16px', paddingLeft: '20px', paddingRight: '20px', gap: '10px' }}>
+                    <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>参考图</span>
+                    <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', flex: 1, minWidth: 0 }}>
+                      {refImgs.map((ref, idx) => (
+                        <div
+                          key={idx}
+                          style={{
+                            borderRadius: '4px', overflow: 'hidden',
+                            width: '80px', height: '56px', flexShrink: 0,
+                            backgroundColor: '#FFFFFF14',
+                            border: '1px solid #FFFFFF33',
+                            backgroundImage: `url(${ref.url})`,
+                            backgroundSize: 'cover', backgroundPosition: '50%',
+                          }}
+                          title={ref.title}
+                        />
+                      ))}
+                    </div>
+                  </div>
+                  <div style={{ height: '1px', backgroundColor: '#FFFFFF0A', marginLeft: '20px', marginRight: '20px' }} />
+                </>
+              )}
 
               {/* Generation params */}
               <div style={{ display: 'flex', flexDirection: 'column', paddingTop: '16px', paddingBottom: '16px', paddingLeft: '20px', paddingRight: '20px', gap: '12px' }}>
-                <span style={{ fontFamily: FONT, fontSize: '11px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>生成参数</span>
+                <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>生成参数</span>
                 {[
                   { label: '模型', value: (currentImg?.model || model) ?? MOCK_SHOT_DETAIL.model },
                   { label: '分辨率', value: (currentImg?.resolution || resolution) ?? MOCK_SHOT_DETAIL.resolution },
@@ -1257,18 +1316,44 @@ function ShotDetailModal({ onClose, onDownload, shotNumber, prompt, model, resol
 
               {/* AI generated time */}
               <div style={{ display: 'flex', flexDirection: 'column', paddingTop: '16px', paddingBottom: '16px', paddingLeft: '20px', paddingRight: '20px', gap: '4px' }}>
-                <span style={{ fontFamily: FONT, fontSize: '11px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>AI 生成时间</span>
+                <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>AI 生成时间</span>
                 <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFF66' }}>{(currentImg?.generatedAt || generatedAt) ?? MOCK_SHOT_DETAIL.generatedAt}</span>
               </div>
             </div>
 
-            {/* Sticky download button */}
-            <div style={{ flexShrink: 0, paddingTop: '12px', paddingBottom: '20px', paddingLeft: '20px', paddingRight: '20px', borderTop: '1px solid #FFFFFF0A' }}>
+            {/* Sticky buttons */}
+            <div style={{ flexShrink: 0, paddingTop: '12px', paddingBottom: '20px', paddingLeft: '20px', paddingRight: '20px', borderTop: '1px solid #FFFFFF0A', display: 'flex', gap: '8px' }}>
+              {onDelete && (
+                <button
+                  type="button"
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    flex: 1, height: '40px', borderRadius: '8px', gap: '8px',
+                    backgroundColor: pressDelete ? '#FFFFFF26' : hovDelete ? '#FFFFFF1F' : '#FFFFFF14',
+                    border: '1px solid #FFFFFF1F', cursor: 'pointer', transition: 'background-color 0.12s',
+                    opacity: pressDelete ? 0.8 : 1,
+                  }}
+                  onMouseEnter={() => setHovDelete(true)}
+                  onMouseLeave={() => { setHovDelete(false); setPressDelete(false); }}
+                  onMouseDown={() => setPressDelete(true)}
+                  onMouseUp={() => setPressDelete(false)}
+                  onClick={() => setShowDeleteConfirm(true)}
+                >
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ flexShrink: 0 }}>
+                    <path d="M2.333 3.667V12.333C2.333 12.784 2.716 13.167 3.167 13.167H10.833C11.284 13.167 11.667 12.784 11.667 12.333V3.667" stroke="#FF6B6B" strokeLinejoin="round" />
+                    <path d="M5.333 6V10.667" stroke="#FF6B6B" strokeLinecap="round" />
+                    <path d="M8.667 6V10.667" stroke="#FF6B6B" strokeLinecap="round" />
+                    <path d="M1 3.667H13" stroke="#FF6B6B" strokeLinecap="round" />
+                    <path d="M4.333 3.667L5.15 1.333H8.85L9.667 3.667" stroke="#FF6B6B" strokeLinejoin="round" />
+                  </svg>
+                  <span style={{ fontFamily: FONT, fontSize: '13px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FF6B6B' }}>删除</span>
+                </button>
+              )}
               <button
                 type="button"
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  width: '100%', height: '40px', borderRadius: '8px', gap: '8px',
+                  flex: 1, height: '40px', borderRadius: '8px', gap: '8px',
                   backgroundColor: hovDownload ? '#FFFFFF1F' : '#FFFFFF14',
                   border: '1px solid #FFFFFF1F', cursor: 'pointer', transition: 'background-color 0.12s',
                 }}
@@ -1282,6 +1367,18 @@ function ShotDetailModal({ onClose, onDownload, shotNumber, prompt, model, resol
                 <span style={{ fontFamily: FONT, fontSize: '13px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFF99' }}>下载</span>
               </button>
             </div>
+
+            {/* Delete confirmation */}
+            {showDeleteConfirm && (
+              <ConfirmDialog
+                title="确定要删除吗？"
+                description="删除后，该资产将被清除且不可恢复。"
+                confirmText="删除"
+                onCancel={() => setShowDeleteConfirm(false)}
+                onConfirm={() => { setShowDeleteConfirm(false); onShowToast?.('删除成功', 'success'); onDelete?.(); }}
+                zIndex={300}
+              />
+            )}
           </div>
         </div>
       </div>
@@ -1289,7 +1386,62 @@ function ShotDetailModal({ onClose, onDownload, shotNumber, prompt, model, resol
   );
 }
 
-function ShotVideoDetailModal({ onClose, onDownload, shotNumber, prompt, model, resolution, duration, ratio, generatedAt, frames, videoSrc }) {
+function VideoFrameThumbnail({ frame, isActive, isHov, onSelect, onMouseEnter, onMouseLeave }) {
+  return (
+    <div
+      style={{
+        borderRadius: '6px', overflow: 'hidden',
+        width: '120px', height: '84px', flexShrink: 0,
+        boxShadow: isActive ? '#2DC3E166 0px 0px 10px 1px' : 'none',
+        backgroundColor: '#1A1A1A',
+        border: isActive ? '1px solid #2DC3E1' : '1px solid #FFFFFF33',
+        cursor: 'pointer', position: 'relative',
+        transition: 'border-color 0.15s, box-shadow 0.15s',
+      }}
+      onClick={onSelect}
+      onMouseEnter={onMouseEnter}
+      onMouseLeave={onMouseLeave}
+    >
+      {frame.src ? (
+        <video
+          src={frame.src}
+          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+          preload="metadata"
+          muted
+          playsInline
+        />
+      ) : (
+        <div style={{
+          width: '100%', height: '100%',
+          display: 'flex', alignItems: 'center', justifyContent: 'center',
+          background: 'linear-gradient(135deg, #2A2A2A 0%, #1F1F1F 100%)',
+        }}>
+          <svg width="24" height="24" viewBox="0 0 24 24" fill="none" style={{ flexShrink: 0 }}>
+            <rect x="2" y="2" width="20" height="20" rx="3" stroke="#FFFFFF33" strokeLinejoin="round" />
+            <path d="M9 8L16 12L9 16V8Z" fill="#FFFFFF33" />
+          </svg>
+        </div>
+      )}
+
+      {/* 定稿标签 */}
+      {frame.finalized && (
+        <div style={{
+          position: 'absolute', top: '4px', left: '4px',
+          paddingLeft: '4px', paddingRight: '4px',
+          borderRadius: '2px', backgroundColor: '#4AC981',
+          boxShadow: '#FFFFFF14 0px 0px 0px 1px inset',
+          height: '18px', display: 'flex', alignItems: 'center',
+        }}>
+          <span style={{ fontFamily: FONT, fontSize: '10px', lineHeight: '14px', color: '#0A0A0A', fontWeight: 500 }}>定稿</span>
+        </div>
+      )}
+
+    </div>
+  );
+}
+
+function ShotVideoDetailModal({ onClose, onDownload, onDelete, onShowToast, shotNumber, prompt, model, resolution, duration, ratio, generatedAt, frames, videoSrc, refMode, firstFrame, lastFrame, sound, refImages, refVideos }) {
+  const { width: modalW, height: modalH } = useModalSize();
   const frms = frames ?? MOCK_SHOT_VIDEO_DETAIL.frames;
   const defaultIdx = frms.findIndex((f) => f.finalized);
   const [activeFrame, setActiveFrame] = useState(defaultIdx >= 0 ? defaultIdx : 0);
@@ -1299,7 +1451,17 @@ function ShotVideoDetailModal({ onClose, onDownload, shotNumber, prompt, model, 
   const [volume, setVolume] = useState(0.7);
   const [hovClose, setHovClose] = useState(false);
   const [hovDownload, setHovDownload] = useState(false);
+  const [hovDelete, setHovDelete] = useState(false);
+  const [pressDelete, setPressDelete] = useState(false);
   const [hovThumb, setHovThumb] = useState(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [copyToast, setCopyToast] = useState(false);
+  const copyToastTimer = useRef(null);
+  function showCopyToast() {
+    clearTimeout(copyToastTimer.current);
+    setCopyToast(true);
+    copyToastTimer.current = setTimeout(() => setCopyToast(false), 2000);
+  }
   const videoRef = useRef(null);
   const progressBarRef = useRef(null);
   const volumeBarRef = useRef(null);
@@ -1308,7 +1470,18 @@ function ShotVideoDetailModal({ onClose, onDownload, shotNumber, prompt, model, 
   const currentFrame = frms[activeFrame];
   const isFinalized = currentFrame?.finalized ?? false;
   const sn = shotNumber ?? MOCK_SHOT_VIDEO_DETAIL.shotNumber;
-  const src = videoSrc ?? MOCK_SHOT_VIDEO_DETAIL.videoSrc;
+  // src 优先取当前缩略图对应的视频，无则 fallback 到主视频
+  const src = currentFrame?.src || videoSrc || MOCK_SHOT_VIDEO_DETAIL.videoSrc;
+
+  // 切换缩略图时重置播放状态并加载新视频
+  useEffect(() => {
+    const vid = videoRef.current;
+    if (!vid) return;
+    vid.pause();
+    setIsPlaying(false);
+    setCurrentTime(0);
+    vid.load();
+  }, [src]);
 
   function fmtTime(secs) {
     if (!isFinite(secs) || secs < 0) return '0:00';
@@ -1380,7 +1553,7 @@ function ShotVideoDetailModal({ onClose, onDownload, shotNumber, prompt, model, 
     >
       <div
         style={{
-          display: 'flex', flexDirection: 'column', width: '960px',
+          display: 'flex', flexDirection: 'column', width: `${modalW}px`,
           borderRadius: '16px', overflow: 'hidden',
           boxShadow: '#00000099 -10px 24px 64px',
           backgroundColor: '#161616', border: '1px solid #FFFFFF14',
@@ -1412,7 +1585,7 @@ function ShotVideoDetailModal({ onClose, onDownload, shotNumber, prompt, model, 
         </div>
 
         {/* Body */}
-        <div style={{ display: 'flex', height: '540px' }}>
+        <div style={{ display: 'flex', height: `${modalH - 60}px` }}>
           {/* Left: video player */}
           <div style={{ display: 'flex', flexDirection: 'column', flexGrow: 1, flexShrink: 1, flexBasis: '0%', minWidth: 0, minHeight: 0, backgroundColor: '#0D0D0D' }}>
             {/* Main video preview */}
@@ -1478,7 +1651,7 @@ function ShotVideoDetailModal({ onClose, onDownload, shotNumber, prompt, model, 
               gap: '10px', backgroundColor: '#111111',
             }}>
               {/* Play/pause small */}
-              <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <button
                   type="button"
                   style={{
@@ -1546,56 +1719,20 @@ function ShotVideoDetailModal({ onClose, onDownload, shotNumber, prompt, model, 
               paddingTop: '12px', paddingBottom: '16px', paddingLeft: '16px', paddingRight: '16px',
               backgroundColor: '#111111', borderTop: '1px solid #FFFFFF14',
             }}>
-              <div style={{ display: 'flex', gap: '10px' }}>
+              <div style={{ display: 'flex', gap: '10px', overflowX: 'auto' }}>
                 {frms.map((frm, idx) => {
                   const isActive = activeFrame === idx;
                   const isHov = hovThumb === idx;
                   return (
-                    <div
+                    <VideoFrameThumbnail
                       key={frm.id}
-                      style={{
-                        borderRadius: '6px', overflow: 'hidden',
-                        width: '120px', height: '84px', flexShrink: 0,
-                        boxShadow: isActive ? '#2DC3E166 0px 0px 10px 1px' : 'none',
-                        backgroundColor: '#FFFFFF14',
-                        border: isActive ? '1px solid #2DC3E1' : '1px solid #FFFFFF33',
-                        cursor: 'pointer', position: 'relative',
-                        transition: 'border-color 0.15s, box-shadow 0.15s',
-                      }}
-                      onClick={() => setActiveFrame(idx)}
+                      frame={frm}
+                      isActive={isActive}
+                      isHov={isHov}
+                      onSelect={() => setActiveFrame(idx)}
                       onMouseEnter={() => setHovThumb(idx)}
                       onMouseLeave={() => setHovThumb(null)}
-                    >
-                      <div style={{
-                        width: '100%', height: '100%',
-                        backgroundImage: `url(${frm.src ?? 'https://app.paper.design/static/flowers.webp'})`,
-                        backgroundSize: 'cover', backgroundPosition: '50%',
-                      }} />
-                      {isHov && (
-                        <div style={{
-                          position: 'absolute', bottom: 0, left: 0, right: 0,
-                          paddingTop: '8px', paddingBottom: '4px', paddingLeft: '4px', paddingRight: '4px',
-                          display: 'flex', alignItems: 'center', justifyContent: 'flex-end', gap: '4px',
-                          backgroundImage: 'linear-gradient(in oklab 180deg, oklab(0% 0 0 / 0%) 0%, oklab(0% 0 0 / 80%) 100%)',
-                        }}>
-                          <div style={{ display: 'flex', alignItems: 'center', padding: '2px', cursor: 'pointer' }} onClick={(e) => { e.stopPropagation(); setActiveFrame(idx); }} title="放大查看">
-                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
-                              <path d="M5.333 2H2.667C2.298 2 2 2.298 2 2.667V5.333" stroke="#FFFFFF" strokeLinejoin="round" />
-                              <path d="M5.333 14H2.667C2.298 14 2 13.701 2 13.333V10.667" stroke="#FFFFFF" strokeLinejoin="round" />
-                              <path d="M10.667 14H13.333C13.701 14 14 13.701 14 13.333V10.667" stroke="#FFFFFF" strokeLinejoin="round" />
-                              <path d="M10.667 2H13.333C13.701 2 14 2.298 14 2.667V5.333" stroke="#FFFFFF" strokeLinejoin="round" />
-                            </svg>
-                          </div>
-                          <div style={{ display: 'flex', alignItems: 'center', padding: '2px', cursor: 'pointer' }} title="下载">
-                            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ width: '16px', height: '16px', rotate: '180deg', flexShrink: 0, transformOrigin: '50% 50%' }}>
-                              <path d="M8.003 4.7V14" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
-                              <path d="M4 8.667L8 4.667L12 8.667" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
-                              <path d="M4 2H12" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
-                            </svg>
-                          </div>
-                        </div>
-                      )}
-                    </div>
+                    />
                   );
                 })}
               </div>
@@ -1605,7 +1742,7 @@ function ShotVideoDetailModal({ onClose, onDownload, shotNumber, prompt, model, 
           {/* Right: info panel */}
           <div style={{
             width: '280px', display: 'flex', flexDirection: 'column',
-            height: '540px', flexShrink: 0,
+            height: `${modalH - 60}px`, flexShrink: 0,
             backgroundColor: '#161616', borderLeft: '1px solid #FFFFFF0F',
           }}>
             <div style={{ flexGrow: 1, flexShrink: 1, flexBasis: '0%', overflowY: 'auto', minHeight: 0 }}>
@@ -1613,8 +1750,15 @@ function ShotVideoDetailModal({ onClose, onDownload, shotNumber, prompt, model, 
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 20px' }}>
                 <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFF99' }}>是否定稿</span>
                 {isFinalized ? (
-                  <div style={{ paddingLeft: '8px', paddingRight: '8px', paddingTop: '2px', paddingBottom: '2px', borderRadius: '4px', boxShadow: '#FFFFFF14 0px 0px 0px 1px inset', backgroundColor: '#7AE5B91A' }}>
-                    <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: '#7AE5B9' }}>定稿</span>
+                  <div style={{
+                    paddingLeft: '4px', paddingRight: '4px', paddingTop: '2px', paddingBottom: '2px',
+                    borderRadius: '2px', backgroundColor: '#4AC981',
+                    boxShadow: '#FFFFFF14 0px 0px 0px 1px inset',
+                    height: '18px',
+                    display: 'flex',
+                    alignItems: 'center',
+                  }}>
+                    <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '14px', color: '#0A0A0A', fontWeight: 500 }}>定稿</span>
                   </div>
                 ) : (
                   <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: '#FFFFFF66' }}>否</span>
@@ -1629,17 +1773,135 @@ function ShotVideoDetailModal({ onClose, onDownload, shotNumber, prompt, model, 
 
               <div style={{ height: '1px', backgroundColor: '#FFFFFF0A', marginLeft: '20px', marginRight: '20px' }} />
 
-              {/* AI Prompt */}
-              <div style={{ display: 'flex', flexDirection: 'column', paddingTop: '16px', paddingBottom: '16px', paddingLeft: '20px', paddingRight: '20px', gap: '10px' }}>
-                <span style={{ fontFamily: FONT, fontSize: '11px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>AI 提示词</span>
-                <p style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '20px', letterSpacing: '0.01em', color: '#FFFFFFCC', margin: 0 }}>{prompt ?? MOCK_SHOT_VIDEO_DETAIL.prompt}</p>
-              </div>
+              {/* Creation mode — if refMode provided */}
+              {refMode && (
+                <>
+                  <div style={{ display: 'flex', flexDirection: 'column', paddingTop: '16px', paddingBottom: '16px', paddingLeft: '20px', paddingRight: '20px', gap: '10px' }}>
+                    <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>创作模式</span>
+                    <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFFCC' }}>
+                      {refMode === 'full_ref' ? '全能参考' : refMode === 'frame_ref' ? '首尾帧' : refMode}
+                    </span>
+                  </div>
+                  <div style={{ height: '1px', backgroundColor: '#FFFFFF0A', marginLeft: '20px', marginRight: '20px' }} />
+                </>
+              )}
 
-              <div style={{ height: '1px', backgroundColor: '#FFFFFF0A', marginLeft: '20px', marginRight: '20px' }} />
+              {/* Reference items — show based on creation mode */}
+              {refMode === 'full_ref' && (
+                <>
+                  {/* Ref subjects */}
+                  {/* Ref images */}
+                  {(refImages || []).length > 0 && (
+                    <>
+                      <div style={{ display: 'flex', flexDirection: 'column', paddingTop: '16px', paddingBottom: '16px', paddingLeft: '20px', paddingRight: '20px', gap: '10px' }}>
+                        <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>参考图</span>
+                        <div style={{ display: 'flex', gap: '8px', overflowX: 'auto', flex: 1, minWidth: 0 }}>
+                          {refImages.map((ref, idx) => (
+                            <div
+                              key={idx}
+                              style={{
+                                borderRadius: '4px', overflow: 'hidden',
+                                width: '80px', height: '56px', flexShrink: 0,
+                                backgroundColor: '#FFFFFF14',
+                                border: '1px solid #FFFFFF33',
+                                backgroundImage: `url(${ref.url || ref})`,
+                                backgroundSize: 'cover', backgroundPosition: '50%',
+                              }}
+                              title={ref.title}
+                            />
+                          ))}
+                        </div>
+                      </div>
+                      <div style={{ height: '1px', backgroundColor: '#FFFFFF0A', marginLeft: '20px', marginRight: '20px' }} />
+                    </>
+                  )}
+                  {/* Ref videos */}
+                  {(refVideos || []).length > 0 && (
+                    <>
+                      <div style={{ display: 'flex', flexDirection: 'column', paddingTop: '16px', paddingBottom: '16px', paddingLeft: '20px', paddingRight: '20px', gap: '4px' }}>
+                        <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>参考视频</span>
+                        <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFFCC' }}>{(refVideos || []).length} 个</span>
+                      </div>
+                      <div style={{ height: '1px', backgroundColor: '#FFFFFF0A', marginLeft: '20px', marginRight: '20px' }} />
+                    </>
+                  )}
+                </>
+              )}
+
+              {refMode === 'frame_ref' && (firstFrame || lastFrame) && (
+                <>
+                  <div style={{ display: 'flex', flexDirection: 'column', paddingTop: '16px', paddingBottom: '16px', paddingLeft: '20px', paddingRight: '20px', gap: '10px' }}>
+                    <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>关键帧</span>
+                    <div style={{ display: 'flex', gap: '8px' }}>
+                      {firstFrame && (
+                        <div
+                          style={{
+                            borderRadius: '4px', overflow: 'hidden',
+                            width: '60px', height: '42px', flexShrink: 0,
+                            backgroundColor: '#FFFFFF14',
+                            border: '1px solid #FFFFFF33',
+                            backgroundImage: `url(${firstFrame})`,
+                            backgroundSize: 'cover', backgroundPosition: '50%',
+                          }}
+                          title="首帧"
+                        />
+                      )}
+                      {lastFrame && (
+                        <div
+                          style={{
+                            borderRadius: '4px', overflow: 'hidden',
+                            width: '60px', height: '42px', flexShrink: 0,
+                            backgroundColor: '#FFFFFF14',
+                            border: '1px solid #FFFFFF33',
+                            backgroundImage: `url(${lastFrame})`,
+                            backgroundSize: 'cover', backgroundPosition: '50%',
+                          }}
+                          title="尾帧"
+                        />
+                      )}
+                    </div>
+                  </div>
+                  <div style={{ height: '1px', backgroundColor: '#FFFFFF0A', marginLeft: '20px', marginRight: '20px' }} />
+                </>
+              )}
+
+              {/* AI Prompt */}
+              {(prompt ?? MOCK_SHOT_VIDEO_DETAIL.prompt) && (
+                <>
+                  <div style={{ display: 'flex', flexDirection: 'column', paddingTop: '16px', paddingBottom: '16px', paddingLeft: '20px', paddingRight: '20px', gap: '10px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '8px' }}>
+                      <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>AI 提示词</span>
+                      <button
+                        type="button"
+                        style={{
+                          display: 'flex', alignItems: 'center', justifyContent: 'center',
+                          width: '24px', height: '24px', borderRadius: '4px',
+                          background: 'none', border: 'none', cursor: 'pointer', padding: 0,
+                          opacity: 0.6, transition: 'opacity 0.12s',
+                        }}
+                        onMouseEnter={(e) => e.currentTarget.style.opacity = '1'}
+                        onMouseLeave={(e) => e.currentTarget.style.opacity = '0.6'}
+                        onClick={() => {
+                          navigator.clipboard.writeText(prompt ?? MOCK_SHOT_VIDEO_DETAIL.prompt);
+                          showCopyToast();
+                        }}
+                        title="复制提示词"
+                      >
+                        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+                          <path d="M4.33337 4.14383V2.60413C4.33337 2.08636 4.75311 1.66663 5.27087 1.66663H13.3959C13.9136 1.66663 14.3334 2.08636 14.3334 2.60413V10.7291C14.3334 11.2469 13.9136 11.6666 13.3959 11.6666H11.8388" stroke="white" strokeOpacity="0.6" strokeLinecap="round" strokeLinejoin="round"/>
+                          <path d="M10.7291 4.33337H2.60413C2.08636 4.33337 1.66663 4.75311 1.66663 5.27087V13.3959C1.66663 13.9136 2.08636 14.3334 2.60413 14.3334H10.7291C11.2469 14.3334 11.6666 13.9136 11.6666 13.3959V5.27087C11.6666 4.75311 11.2469 4.33337 10.7291 4.33337Z" stroke="white" strokeOpacity="0.6" strokeLinejoin="round"/>
+                        </svg>
+                      </button>
+                    </div>
+                    <p style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '20px', letterSpacing: '0.01em', color: '#FFFFFFCC', margin: 0 }}>{prompt ?? MOCK_SHOT_VIDEO_DETAIL.prompt}</p>
+                  </div>
+                  <div style={{ height: '1px', backgroundColor: '#FFFFFF0A', marginLeft: '20px', marginRight: '20px' }} />
+                </>
+              )}
 
               {/* Generation params */}
               <div style={{ display: 'flex', flexDirection: 'column', paddingTop: '16px', paddingBottom: '16px', paddingLeft: '20px', paddingRight: '20px', gap: '12px' }}>
-                <span style={{ fontFamily: FONT, fontSize: '11px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>生成参数</span>
+                <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>生成参数</span>
                 {[
                   { label: '模型', value: model ?? MOCK_SHOT_VIDEO_DETAIL.model },
                   { label: '分辨率', value: resolution ?? MOCK_SHOT_VIDEO_DETAIL.resolution },
@@ -1657,20 +1919,44 @@ function ShotVideoDetailModal({ onClose, onDownload, shotNumber, prompt, model, 
 
               {/* AI generated time */}
               <div style={{ display: 'flex', flexDirection: 'column', paddingTop: '16px', paddingBottom: '16px', paddingLeft: '20px', paddingRight: '20px', gap: '4px' }}>
-                <span style={{ fontFamily: FONT, fontSize: '11px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>AI 生成时间</span>
+                <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>AI 生成时间</span>
                 <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFF66' }}>{generatedAt ?? MOCK_SHOT_VIDEO_DETAIL.generatedAt}</span>
               </div>
-
-              <div style={{ flexGrow: 1 }} />
             </div>
 
-            {/* Sticky download button */}
-            <div style={{ flexShrink: 0, paddingTop: '16px', paddingBottom: '20px', paddingLeft: '20px', paddingRight: '20px' }}>
+            {/* Sticky buttons */}
+            <div style={{ flexShrink: 0, paddingTop: '12px', paddingBottom: '20px', paddingLeft: '20px', paddingRight: '20px', borderTop: '1px solid #FFFFFF0A', display: 'flex', gap: '8px' }}>
+              {onDelete && (
+                <button
+                  type="button"
+                  style={{
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    flex: 1, height: '40px', borderRadius: '8px', gap: '8px',
+                    backgroundColor: pressDelete ? '#FFFFFF26' : hovDelete ? '#FFFFFF1F' : '#FFFFFF14',
+                    border: '1px solid #FFFFFF1F', cursor: 'pointer', transition: 'background-color 0.12s',
+                    opacity: pressDelete ? 0.8 : 1,
+                  }}
+                  onMouseEnter={() => setHovDelete(true)}
+                  onMouseLeave={() => { setHovDelete(false); setPressDelete(false); }}
+                  onMouseDown={() => setPressDelete(true)}
+                  onMouseUp={() => setPressDelete(false)}
+                  onClick={() => setShowDeleteConfirm(true)}
+                >
+                  <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ flexShrink: 0 }}>
+                    <path d="M2.333 3.667V12.333C2.333 12.784 2.716 13.167 3.167 13.167H10.833C11.284 13.167 11.667 12.784 11.667 12.333V3.667" stroke="#FF6B6B" strokeLinejoin="round" />
+                    <path d="M5.333 6V10.667" stroke="#FF6B6B" strokeLinecap="round" />
+                    <path d="M8.667 6V10.667" stroke="#FF6B6B" strokeLinecap="round" />
+                    <path d="M1 3.667H13" stroke="#FF6B6B" strokeLinecap="round" />
+                    <path d="M4.333 3.667L5.15 1.333H8.85L9.667 3.667" stroke="#FF6B6B" strokeLinejoin="round" />
+                  </svg>
+                  <span style={{ fontFamily: FONT, fontSize: '13px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FF6B6B' }}>删除</span>
+                </button>
+              )}
               <button
                 type="button"
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center',
-                  width: '100%', height: '40px', borderRadius: '8px', gap: '8px',
+                  flex: 1, height: '40px', borderRadius: '8px', gap: '8px',
                   backgroundColor: hovDownload ? '#FFFFFF1F' : '#FFFFFF14',
                   border: '1px solid #FFFFFF1F', cursor: 'pointer', transition: 'background-color 0.12s',
                 }}
@@ -1681,12 +1967,33 @@ function ShotVideoDetailModal({ onClose, onDownload, shotNumber, prompt, model, 
                 <svg width="14" height="14" viewBox="0 0 14 14" fill="none" style={{ flexShrink: 0 }}>
                   <path d="M7 2V9M7 9L4 6.5M7 9L10 6.5M2 11H12" stroke="#FFFFFF99" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
                 </svg>
-                <span style={{ fontFamily: FONT, fontSize: '13px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFF99' }}>下载视频</span>
+                <span style={{ fontFamily: FONT, fontSize: '13px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFF99' }}>下载</span>
               </button>
             </div>
+
+            {/* Delete confirmation */}
+            {showDeleteConfirm && (
+              <ConfirmDialog
+                title="确定要删除吗？"
+                description="删除后，该资产将被清除且不可恢复。"
+                confirmText="删除"
+                onCancel={() => setShowDeleteConfirm(false)}
+                onConfirm={() => { setShowDeleteConfirm(false); onShowToast?.('删除成功', 'success'); onDelete?.(); }}
+                zIndex={300}
+              />
+            )}
           </div>
         </div>
       </div>
+      {copyToast && createPortal(
+        <div style={{ position: 'fixed', top: '25vh', left: '50%', transform: 'translateX(-50%)', zIndex: 9999, pointerEvents: 'none' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '8px', background: 'rgba(30,30,30,0.92)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.1)', whiteSpace: 'nowrap' }}>
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}><path d="M8 14.667C11.682 14.667 14.667 11.682 14.667 8C14.667 4.318 11.682 1.333 8 1.333C4.318 1.333 1.333 4.318 1.333 8C1.333 11.682 4.318 14.667 8 14.667Z" fill="#52BF92" stroke="#52BF92" strokeWidth="1.333" strokeLinejoin="round"/><path d="M5.333 8L7.333 10L11.333 6" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            <span style={{ fontSize: '14px', color: '#FFFFFF', fontFamily: "'AlibabaPuHuiTi_2_55_Regular','Alibaba PuHuiTi 2.0',system-ui,sans-serif" }}>提示词复制成功</span>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
@@ -1737,13 +2044,12 @@ function AssetCard({ name, bgColor = '#252525', url = null, starred = false, sel
     <>
     <div
       style={{
-        width: '320px',
-        height: '180px',
+        width: '100%',
+        aspectRatio: '16/9',
         borderRadius: '10px',
         backgroundColor: '#1C1C1C',
         border: selected ? '1px solid #2DC3E1' : hov ? '1px solid #FFFFFF33' : '1px solid #FFFFFF0F',
         overflow: 'hidden',
-        flexShrink: 0,
         transition: 'border-color 0.15s',
         cursor: 'pointer',
         position: 'relative',
@@ -1752,13 +2058,13 @@ function AssetCard({ name, bgColor = '#252525', url = null, starred = false, sel
       onMouseLeave={() => setHov(false)}
       onClick={() => { if (batchMode) onSelect?.(); else handleOpen(); }}
     >
-      <div style={{ width: '100%', height: '100%', backgroundColor: (url || asset.videoUrl) ? 'transparent' : bgColor, position: 'relative' }}>
+      <div style={{ width: '100%', height: '100%', backgroundColor: hov ? '#343434' : '#272727', transition: 'background-color 0.15s', position: 'relative' }}>
         {asset.videoUrl ? (
           <video ref={videoRef} src={asset.videoUrl} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} muted playsInline loop preload="metadata" />
         ) : asset.type === 'video' && asset.videoUrl ? (
           <video src={asset.videoUrl} poster={url} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} muted playsInline preload="metadata" />
         ) : url ? (
-          <img src={url} alt={name} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+          <img src={url} alt={name} style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
         ) : null}
         {batchMode ? (
           <div style={{
@@ -1780,44 +2086,57 @@ function AssetCard({ name, bgColor = '#252525', url = null, starred = false, sel
               </svg>
             )}
           </div>
-        ) : hov && (
+        ) : hov && !showStar && (
           <div style={{ position: 'absolute', top: '8px', right: '8px' }}>
             <MoreMenu onDownload={onDownload} onDelete={onDelete} />
           </div>
         )}
         {showStar && !batchMode && (
-          <button
-            type="button"
-            style={{
-              position: 'absolute',
-              top: '8px',
-              left: '8px',
-              background: 'none',
-              border: 'none',
-              cursor: 'pointer',
-              padding: 0,
-              display: hov || starred ? 'flex' : 'none',
-              transform: starAnim ? 'scale(1.4)' : 'scale(1)',
-              transition: 'transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1)',
-            }}
-            onClick={handleStar}
-          >
-            <StarIcon filled={starred} />
-          </button>
+          <div style={{ position: 'absolute', top: '8px', right: '8px', display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <div style={{ opacity: hov ? 1 : 0, transition: 'opacity 0.15s' }}>
+              <MoreMenu onDownload={onDownload} onDelete={onDelete} />
+            </div>
+            <button
+              type="button"
+              aria-label="收藏"
+              style={{
+                width: '24px',
+                height: '24px',
+                borderRadius: '6px',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                backgroundColor: '#00000080',
+                border: 'none',
+                cursor: 'pointer',
+                padding: 0,
+                flexShrink: 0,
+                opacity: hov || starred ? 1 : 0,
+                transform: starAnim ? 'scale(1.4)' : 'scale(1)',
+                transition: 'transform 0.15s cubic-bezier(0.34, 1.56, 0.64, 1), opacity 0.15s',
+              }}
+              onClick={handleStar}
+            >
+              <StarIcon filled={starred} />
+            </button>
+          </div>
         )}
       </div>
     </div>
     {detailOpen && assetType === 'shot_video' && (
-      <ShotVideoDetailModal onClose={() => setDetailOpen(false)} onDownload={onDownload}
+      <ShotVideoDetailModal onClose={() => setDetailOpen(false)} onDownload={onDownload} onDelete={() => { setDetailOpen(false); onDelete?.(); }}
         shotNumber={detailData?.shotNumber} prompt={detailData?.prompt} model={detailData?.model}
         resolution={detailData?.resolution} duration={detailData?.duration} ratio={detailData?.ratio}
         generatedAt={detailData?.generatedAt} frames={detailData?.frames} videoSrc={detailData?.videoSrc}
+        refMode={detailData?.refMode} firstFrame={detailData?.firstFrame} lastFrame={detailData?.lastFrame}
+        sound={detailData?.sound} refImages={detailData?.refImages} refVideos={detailData?.refVideos}
       />
     )}
     {detailOpen && assetType === 'shot' && (
-      <ShotDetailModal onClose={() => setDetailOpen(false)} onDownload={onDownload}
+      <ShotDetailModal onClose={() => setDetailOpen(false)} onDownload={onDownload} onDelete={() => { setDetailOpen(false); onDelete?.(); }}
         shotNumber={detailData?.shotNumber} prompt={detailData?.prompt} model={detailData?.model}
         resolution={detailData?.resolution} generatedAt={detailData?.generatedAt} images={detailData?.images}
+        refImages={detailData?.refImages}
       />
     )}
     {detailOpen && asset.type === 'video' && (
@@ -1884,14 +2203,31 @@ function AssetCard({ name, bgColor = '#252525', url = null, starred = false, sel
   );
 }
 
-const SUBJECT_CARD_CATEGORIES = new Set(['chars', 'scenes', 'props']);
+const SUBJECT_CARD_CATEGORIES = new Set(['chars', 'scenes', 'props', 'storyboard_img', 'storyboard_video']);
 
-function ProjectAssetCard({ name, desc, url, selected, batchMode, onDownload, onDelete, onSelect, asset = {} }) {
+function ProjectAssetCard({ name, desc, url, selected, batchMode, onDownload, onDelete, onSelect, onShowToast, asset = {}, category = '' }) {
   const [hov, setHov] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
 
   const images = asset.images ?? [];
   const imageCount = asset.imageCount ?? 1;
+  const isVideo = category === 'storyboard_video';
+  const videoRef = useRef(null);
+
+  const isStoryboard = category === 'storyboard_img' || category === 'storyboard_video';
+  const cardAspectRatio = isStoryboard ? '16/9' : '200/246';
+
+  // 视频悬停播放
+  useEffect(() => {
+    const vid = videoRef.current;
+    if (!vid) return;
+    if (hov && isVideo) {
+      vid.currentTime = 0;
+      vid.play().catch(() => {});
+    } else {
+      vid.pause();
+    }
+  }, [hov, isVideo]);
 
   function handleClick() {
     if (batchMode) { onSelect?.(); return; }
@@ -1902,11 +2238,10 @@ function ProjectAssetCard({ name, desc, url, selected, batchMode, onDownload, on
     <>
       <div
         style={{
-          width: '200px',
-          height: '246px',
+          width: '100%',
+          aspectRatio: cardAspectRatio,
           borderRadius: '12px',
           overflow: 'hidden',
-          flexShrink: 0,
           backgroundColor: '#1A1A1A',
           border: selected ? '1px solid #2DC3E1' : '1px solid #FFFFFF14',
           outline: hov && !selected ? '1px solid #FFFFFF26' : '1px solid transparent',
@@ -1920,45 +2255,46 @@ function ProjectAssetCard({ name, desc, url, selected, batchMode, onDownload, on
         onMouseLeave={() => setHov(false)}
         onClick={handleClick}
       >
-        {/* image area */}
+        {/* image/video area */}
         <div
           style={{
             flex: 1,
-            minHeight: '148px',
             position: 'relative',
-            backgroundImage: url
-              ? `url(${url})`
-              : 'linear-gradient(145deg, oklab(27.6% -0.014 -0.012) 0%, oklab(23.8% -0.010 -0.019) 100%)',
-            backgroundSize: 'cover',
-            backgroundPosition: '50%',
-            backgroundColor: '#252525',
+            backgroundColor: '#1A1A1A',
+            transition: 'background-color 0.15s',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'center',
+            overflow: 'hidden',
           }}
         >
-          {!url && (
+          {isVideo && asset.videoUrl ? (
+            <video
+              ref={videoRef}
+              src={asset.videoUrl}
+              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+              muted
+              playsInline
+              loop
+              preload="metadata"
+            />
+          ) : url ? (
+            <div
+              style={{
+                width: '100%',
+                height: '100%',
+                backgroundImage: `url(${url})`,
+                backgroundSize: 'cover',
+                backgroundPosition: '50%',
+              }}
+            />
+          ) : (
             <svg width="40" height="40" viewBox="0 0 40 40" fill="none" style={{ flexShrink: 0 }}>
               <circle cx="20" cy="20" r="20" fill="#FFFFFF0A" />
               <path d="M20 12C16.69 12 14 14.69 14 18C14 20.48 15.43 22.63 17.5 23.65V26C17.5 26.55 17.95 27 18.5 27H21.5C22.05 27 22.5 26.55 22.5 26V23.65C24.57 22.63 26 20.48 26 18C26 14.69 23.31 12 20 12Z" fill="#FFFFFF26" />
             </svg>
           )}
 
-          {/* Image count badge — if > 1 */}
-          {imageCount > 1 && (
-            <div style={{
-              position: 'absolute', bottom: '8px', right: '8px',
-              paddingLeft: '6px', paddingRight: '6px', paddingTop: '3px', paddingBottom: '3px',
-              borderRadius: '4px', backgroundColor: '#00000080',
-              display: 'flex', alignItems: 'center', gap: '4px',
-            }}>
-              <svg width="12" height="12" viewBox="0 0 12 12" fill="none" style={{ flexShrink: 0 }}>
-                <path d="M2 1H9C9.55228 1 10 1.44772 10 2V8C10 8.55228 9.55228 9 9 9H2C1.44772 9 1 8.55228 1 8V2C1 1.44772 1.44772 1 2 1Z" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" strokeWidth="0.8" />
-                <path d="M2 4H9C9.55228 4 10 4.44772 10 5V11C10 11.5523 9.55228 12 9 12H2C1.44772 12 1 11.5523 1 11V5C1 4.44772 1.44772 4 2 4Z" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" strokeWidth="0.8" />
-              </svg>
-              <span style={{ fontFamily: FONT, fontSize: '11px', lineHeight: '14px', color: '#FFFFFF' }}>{imageCount}</span>
-            </div>
-          )}
 
           {/* top-right: batch checkbox or more menu */}
           {batchMode ? (
@@ -2009,20 +2345,59 @@ function ProjectAssetCard({ name, desc, url, selected, batchMode, onDownload, on
         </div>
       </div>
 
-      {/* 多图聚合详情弹窗 */}
-      {detailOpen && images.length > 0 && (
+      {/* 分镜图详情弹窗 */}
+      {detailOpen && category === 'storyboard_img' && (
+        <ShotDetailModal
+          onClose={() => setDetailOpen(false)}
+          onDownload={() => onDownload?.()}
+          onDelete={() => { onDelete?.(); }}
+          onShowToast={onShowToast}
+          shotNumber={name}
+          prompt={asset.prompt}
+          model={asset.model}
+          resolution={asset.resolution}
+          generatedAt={asset.created_at}
+          images={images.map(img => ({ ...img, src: img.fileUrl ?? img.url, finalized: img.is_primary }))}
+          refImages={asset.refImages}
+        />
+      )}
+
+      {/* 分镜视频详情弹窗 */}
+      {detailOpen && category === 'storyboard_video' && (
+        <ShotVideoDetailModal
+          onClose={() => setDetailOpen(false)}
+          onDownload={() => onDownload?.()}
+          onDelete={() => { onDelete?.(); }}
+          onShowToast={onShowToast}
+          shotNumber={name}
+          prompt={asset.prompt}
+          model={asset.model}
+          resolution={asset.resolution}
+          ratio={asset.ratio}
+          generatedAt={asset.created_at}
+          videoSrc={asset.videoUrl}
+          frames={images.map(img => ({ ...img, src: img.fileUrl ?? img.url, finalized: img.is_primary }))}
+          refMode={asset.refMode}
+          firstFrame={asset.firstFrame}
+          lastFrame={asset.lastFrame}
+          refImages={asset.refImages}
+          refVideos={asset.refVideos}
+        />
+      )}
+
+      {/* 主体资产多图聚合详情弹窗（角色/场景/道具） */}
+      {detailOpen && category !== 'storyboard_img' && category !== 'storyboard_video' && images.length > 0 && (
         <SubjectAssetDetailModal
           onClose={() => setDetailOpen(false)}
           name={name}
           description={desc}
           images={images}
+          onShowToast={onShowToast}
           onDownload={(imageId, fileUrl) => {
-            // 下载单张图
             const img = images.find(i => i.id === imageId);
             if (img?.fileUrl || fileUrl) {
-              const url = fileUrl || img.fileUrl;
               const a = document.createElement('a');
-              a.href = url;
+              a.href = fileUrl || img.fileUrl;
               a.download = `${name}_${imageId}`;
               document.body.appendChild(a);
               a.click();
@@ -2030,21 +2405,18 @@ function ProjectAssetCard({ name, desc, url, selected, batchMode, onDownload, on
             }
           }}
           onDeleteImage={(imageId) => {
-            // 删除单张图
             if (images.length === 1) {
-              // 只有一张图，等同删除整个主体
+              setDetailOpen(false);
               onDelete?.();
             } else {
-              // 删除该图
               onDelete?.(imageId);
             }
-            setDetailOpen(false);
           }}
         />
       )}
 
       {/* 兼容旧逻辑：若无 images 则用原 ImageDetailModal */}
-      {detailOpen && (!images || images.length === 0) && (
+      {detailOpen && category !== 'storyboard_img' && category !== 'storyboard_video' && (!images || images.length === 0) && (
         <ImageDetailModal
           card={{
             imageUrl: asset.fileUrl || asset.url || url,
@@ -2310,15 +2682,8 @@ function ProjectListItem({ project, active, onClick }) {
         }}>{project.name}</span>
       </button>
 
-      {/* count + hover more button — button overlays count on hover */}
+      {/* hover more button */}
       <div ref={menuRef} style={{ position: 'relative', flexShrink: 0 }}>
-        <span style={{
-          fontFamily: FONT,
-          fontSize: '12px',
-          color: '#FFFFFF99',
-          flexShrink: 0,
-          visibility: hov ? 'hidden' : 'visible',
-        }}>{project.count}</span>
         {hov && (
           <button
             type="button"
@@ -2339,7 +2704,7 @@ function ProjectListItem({ project, active, onClick }) {
               transition: 'background-color 0.12s',
               flexShrink: 0,
             }}
-            onMouseEnter={(e) => { if (!menuOpen) e.currentTarget.style.backgroundColor = '#FFFFFF1A'; }}
+            onMouseEnter={(e) => { if (!menuOpen) e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.65)'; }}
             onMouseLeave={(e) => { if (!menuOpen) e.currentTarget.style.backgroundColor = '#00000080'; }}
             onClick={(e) => { e.stopPropagation(); setMenuOpen((v) => !v); }}
             aria-label="更多操作"
@@ -2496,6 +2861,11 @@ function EmptyCreativeAssets({ type }) {
   return <EmptyAssetState mediaType={mediaType} />;
 }
 
+function notifyProjectAssetsDeleted(projectId) {
+  if (!projectId) return;
+  window.dispatchEvent(new CustomEvent('project-assets:deleted', { detail: { projectId } }));
+}
+
 function ProjectAssetsPanel() {
   const [projects, setProjects] = useState([]);
   const [activeProject, setActiveProject] = useState(null);
@@ -2504,37 +2874,92 @@ function ProjectAssetsPanel() {
   const [selected, setSelected] = useState(new Set());
   const [favOnly, setFavOnly] = useState(false);
   const [assetsMap, setAssetsMap] = useState({});
+  // 每个 [projectId+category] 的分页状态：{ cursor, hasMore, loading, rawList }
+  const [pageMeta, setPageMeta] = useState({});
+  const sentinelRef = useRef(null);
+  const scrollContainerRef = useRef(null);
   const [renameTarget, setRenameTarget] = useState(null);
   const [renameValue, setRenameValue] = useState('');
   const [deleteTarget, setDeleteTarget] = useState(null);
   const [batchDeleteConfirm, setBatchDeleteConfirm] = useState(false);
+  const [toast, setToast] = useState(null);
+
+  function showToast(msg, type = 'success') {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 2500);
+  }
+
+  const pageKey = (projectId, category) => `${projectId}__${category}`;
+
+  // 首屏加载：切换项目或 tab 时触发
+  async function loadFirstPage(projectId, category) {
+    const key = pageKey(projectId, category);
+    // 清掉旧非分页接口写入的 localStorage 缓存，防止过期分组数据覆盖新结果
+    invalidate(K.projectAssets(projectId), 'local');
+    setPageMeta(prev => ({ ...prev, [key]: { cursor: null, hasMore: false, loading: true, rawList: [] } }));
+    try {
+      const limit = calcProjectAssetsLimit(category);
+      const result = await apiGetProjectAssetsPage(projectId, { category, limit });
+      setAssetsMap(prev => ({ ...prev, [category]: result.grouped[category] ?? [] }));
+      setPageMeta(prev => ({
+        ...prev,
+        [key]: { cursor: result.nextCursor, hasMore: result.hasMore, loading: false, rawList: result.rawList },
+      }));
+    } catch (err) {
+      console.error('[ProjectAssetsPanel] 加载失败:', err);
+      setPageMeta(prev => ({ ...prev, [key]: { cursor: null, hasMore: false, loading: false, rawList: [] } }));
+    }
+  }
+
+  // 加载更多
+  async function loadMorePage(projectId, category) {
+    const key = pageKey(projectId, category);
+    const meta = pageMeta[key];
+    if (!meta || meta.loading || !meta.hasMore) return;
+    setPageMeta(prev => ({ ...prev, [key]: { ...prev[key], loading: true } }));
+    try {
+      const limit = calcProjectAssetsLimit(category);
+      const result = await apiGetProjectAssetsPage(projectId, { category, limit, cursor: meta.cursor });
+      const accumulated = [...(meta.rawList || []), ...result.rawList];
+      const regrouped = groupByCategory(accumulated);
+      setAssetsMap(prev => ({ ...prev, [category]: regrouped[category] ?? [] }));
+      setPageMeta(prev => ({
+        ...prev,
+        [key]: { cursor: result.nextCursor, hasMore: result.hasMore, loading: false, rawList: accumulated },
+      }));
+    } catch (err) {
+      console.error('[ProjectAssetsPanel] 加载更多失败:', err);
+      setPageMeta(prev => ({ ...prev, [key]: { ...prev[key], loading: false } }));
+    }
+  }
 
   useEffect(() => {
-    apiGetProjects().then(async (list) => {
-      // 为每个项目获取资产数量
-      const projectsWithCounts = await Promise.all(
-        list.map(async (project) => {
-          try {
-            const overview = await apiGetProjectOverview(project.id);
-            const counts = overview.asset_counts || {};
-            const totalCount = (counts.character || 0) + (counts.prop || 0) + (counts.scene || 0) +
-                               (counts.storyboard || 0) + (counts.image || 0) + (counts.video || 0);
-            return { ...project, count: totalCount };
-          } catch (err) {
-            console.error(`Failed to get overview for project ${project.id}`, err);
-            return { ...project, count: 0 };
-          }
-        })
-      );
-      setProjects(projectsWithCounts);
-      setActiveProject((prev) => prev ?? projectsWithCounts[0]?.id ?? null);
+    apiGetProjects().then((list) => {
+      setProjects(list);
+      setActiveProject((prev) => prev ?? list[0]?.id ?? null);
     });
   }, []);
 
+  // 项目或 tab 切换时加载首屏
   useEffect(() => {
     if (activeProject == null) return;
-    apiGetProjectAssets(activeProject).then(setAssetsMap);
-  }, [activeProject]);
+    loadFirstPage(activeProject, activeCategory);
+  }, [activeProject, activeCategory]);
+
+  // IntersectionObserver 触底加载更多
+  useEffect(() => {
+    if (!sentinelRef.current || !scrollContainerRef.current) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && activeProject) {
+          loadMorePage(activeProject, activeCategory);
+        }
+      },
+      { root: scrollContainerRef.current, rootMargin: '120px', threshold: 0 }
+    );
+    observer.observe(sentinelRef.current);
+    return () => observer.disconnect();
+  }, [activeProject, activeCategory, pageMeta]);
 
   const categoryAssets = assetsMap[activeCategory] || [];
   const filtered = favOnly ? categoryAssets.filter((a) => a.starred) : categoryAssets;
@@ -2549,71 +2974,109 @@ function ProjectAssetsPanel() {
     }));
   }
 
-  function deleteAsset(id, singleImageId = null) {
+  async function deleteAsset(id, singleImageId = null) {
     // singleImageId 存在时表示删除单张图，否则删除整个主体
-    if (singleImageId) {
-      // 删除单张图：在该主体下移除这张图
-      apiDeleteAsset(singleImageId).catch(console.error);
-      setAssetsMap((prev) => ({
-        ...prev,
-        [activeCategory]: prev[activeCategory].map((asset) => {
-          if (asset.id === id && asset.images) {
-            const filtered = asset.images.filter((img) => img.id !== singleImageId);
-            if (filtered.length === 0) {
-              // 如果删完了该主体的所有图，则删除这个主体卡片
-              return null;
+    const SUBJECT_TYPE_MAP = { chars: 'character', scenes: 'scene', props: 'prop' };
+    const isSubjectCategory = !!SUBJECT_TYPE_MAP[activeCategory];
+    try {
+      if (singleImageId) {
+        await apiDeleteAsset(singleImageId, { projectId: activeProject });
+        const targetAsset = assetsMap[activeCategory]?.find((a) => a.id === id);
+        const remainingImages = (targetAsset?.images || []).filter((img) => img.id !== singleImageId);
+        if (isSubjectCategory && remainingImages.length === 0 && targetAsset?.subject_id) {
+          // 最后一张图删掉 → 删除主体实体本身
+          await apiDeleteSubject(activeProject, targetAsset.subject_id).catch(() => {});
+        }
+        setAssetsMap((prev) => ({
+          ...prev,
+          [activeCategory]: prev[activeCategory].map((asset) => {
+            if (asset.id === id && asset.images) {
+              const filtered = asset.images.filter((img) => img.id !== singleImageId);
+              if (filtered.length === 0) {
+                return null;
+              }
+              return {
+                ...asset,
+                images: filtered,
+                imageCount: filtered.length,
+                url: filtered[0]?.url || asset.url,
+              };
             }
-            // 否则更新主体卡片的 images 和 imageCount
-            return {
-              ...asset,
-              images: filtered,
-              imageCount: filtered.length,
-              // 如果被删除的是定稿图，重新取第一张作为卡片封面
-              url: filtered[0]?.url || asset.url,
-            };
-          }
-          return asset;
-        }).filter(Boolean),
-      }));
-    } else {
-      // 删除整个主体：删除 images 中所有图片
-      const asset = assetsMap[activeCategory]?.find((a) => a.id === id);
-      if (asset && asset.images) {
-        apiBatchDeleteAssets(asset.images.map((img) => img.id)).catch(console.error);
+            return asset;
+          }).filter(Boolean),
+        }));
+        // 触发主体页面更新：删除图后重新拉取该类型主体，notify 会推给 SubjectPage 的 subscribe
+        const subjectType = SUBJECT_TYPE_MAP[activeCategory];
+        if (subjectType && activeProject) {
+          apiGetSubjects(activeProject, { type: subjectType }).catch(() => {});
+        }
       } else {
-        apiDeleteAsset(id).catch(console.error);
+        const asset = assetsMap[activeCategory]?.find((a) => a.id === id);
+        if (asset && asset.images) {
+          await apiBatchDeleteAssets(asset.images.map((img) => img.id), { projectId: activeProject });
+        } else {
+          await apiDeleteAsset(id, { projectId: activeProject });
+        }
+        // 删除全部图片后，同步删除主体实体
+        if (isSubjectCategory && asset?.subject_id) {
+          await apiDeleteSubject(activeProject, asset.subject_id).catch(() => {});
+        }
+        setAssetsMap((prev) => ({
+          ...prev,
+          [activeCategory]: prev[activeCategory].filter((a) => a.id !== id),
+        }));
+        // 整个主体删除也同步更新
+        const subjectType = SUBJECT_TYPE_MAP[activeCategory];
+        if (subjectType && activeProject) {
+          apiGetSubjects(activeProject, { type: subjectType }).catch(() => {});
+        }
       }
-      setAssetsMap((prev) => ({
-        ...prev,
-        [activeCategory]: prev[activeCategory].filter((a) => a.id !== id),
-      }));
+      notifyProjectAssetsDeleted(activeProject);
+    } catch (err) {
+      console.error('删除资产失败', err);
     }
   }
 
-  function deleteSelected() {
+  async function deleteSelected() {
     const ids = [...selected];
-
-    // 对于主体卡片（chars/scenes/props），需要删除该主体下的所有图片
-    if (SUBJECT_CARD_CATEGORIES.has(activeCategory)) {
-      const allImageIds = [];
-      ids.forEach((cardId) => {
-        const card = assetsMap[activeCategory]?.find((a) => a.id === cardId);
-        if (card && card.images) {
-          allImageIds.push(...card.images.map((img) => img.id));
-        } else {
-          allImageIds.push(cardId);
+    const SUBJECT_TYPE_MAP = { chars: 'character', scenes: 'scene', props: 'prop' };
+    const isSubjectCategory = !!SUBJECT_TYPE_MAP[activeCategory];
+    try {
+      // 对于主体卡片（chars/scenes/props），需要删除该主体下的所有图片
+      if (SUBJECT_CARD_CATEGORIES.has(activeCategory)) {
+        const allImageIds = [];
+        const subjectIds = [];
+        ids.forEach((cardId) => {
+          const card = assetsMap[activeCategory]?.find((a) => a.id === cardId);
+          if (card && card.images) {
+            allImageIds.push(...card.images.map((img) => img.id));
+          } else {
+            allImageIds.push(cardId);
+          }
+          if (isSubjectCategory && card?.subject_id) subjectIds.push(card.subject_id);
+        });
+        await apiBatchDeleteAssets(allImageIds, { projectId: activeProject });
+        // 同步删除主体实体
+        for (const subjectId of subjectIds) {
+          await apiDeleteSubject(activeProject, subjectId).catch(() => {});
         }
-      });
-      apiBatchDeleteAssets(allImageIds).catch(console.error);
-    } else {
-      apiBatchDeleteAssets(ids).catch(console.error);
-    }
+        const subjectType = SUBJECT_TYPE_MAP[activeCategory];
+        if (subjectType && activeProject) {
+          apiGetSubjects(activeProject, { type: subjectType }).catch(() => {});
+        }
+      } else {
+        await apiBatchDeleteAssets(ids, { projectId: activeProject });
+      }
 
-    setAssetsMap((prev) => ({
-      ...prev,
-      [activeCategory]: prev[activeCategory].filter((a) => !selected.has(a.id)),
-    }));
-    setSelected(new Set());
+      setAssetsMap((prev) => ({
+        ...prev,
+        [activeCategory]: prev[activeCategory].filter((a) => !selected.has(a.id)),
+      }));
+      setSelected(new Set());
+      notifyProjectAssetsDeleted(activeProject);
+    } catch (err) {
+      console.error('批量删除资产失败', err);
+    }
   }
 
   function toggleSelect(id) {
@@ -2684,6 +3147,42 @@ function ProjectAssetsPanel() {
     }
   }
 
+  function getSelectedDownloadItems() {
+    const selectedIds = [...selected];
+    const items = [];
+
+    selectedIds.forEach((cardId) => {
+      const card = assetsMap[activeCategory]?.find((asset) => asset.id === cardId);
+      if (!card) return;
+
+      if (Array.isArray(card.images) && card.images.length > 0) {
+        card.images.forEach((image, index) => {
+          items.push({
+            id: image.id,
+            name: card.images.length > 1 ? `${card.name || 'asset'}-${index + 1}` : (card.name || 'asset'),
+          });
+        });
+        return;
+      }
+
+      items.push({
+        id: card.id,
+        name: card.name || 'asset',
+      });
+    });
+
+    return items;
+  }
+
+  async function downloadSelected() {
+    const items = getSelectedDownloadItems();
+    if (items.length === 0) return;
+
+    for (const item of items) {
+      await downloadAsset(item.id, item.name);
+    }
+  }
+
   return (
     <div style={{ display: 'flex', flex: 1, overflow: 'hidden' }}>
       <div style={{
@@ -2718,9 +3217,14 @@ function ProjectAssetsPanel() {
 
       <div style={{ flex: 1, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
-          <TabBar tabs={PROJECT_CATEGORY_TABS} active={activeCategory} onChange={(k) => { setActiveCategory(k); setFavOnly(false); exitBatch(); }} />
+          <TabBar tabs={PROJECT_CATEGORY_TABS} active={activeCategory} onChange={(k) => {
+            setActiveCategory(k);
+            setFavOnly(false);
+            exitBatch();
+            // useEffect([activeProject, activeCategory]) 会自动触发首屏加载
+          }} />
           {batchMode ? (
-            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingLeft: '24px', paddingRight: '24px', gap: '16px', flex: 1, height: '48px' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingLeft: '24px', paddingRight: '24px', gap: '8px', flex: 1, height: '48px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{ fontFamily: FONT, fontSize: '14px', color: '#FFFFFF99' }}>已选 {selected.size} 项</span>
               </div>
@@ -2732,7 +3236,7 @@ function ProjectAssetsPanel() {
                   </svg>
                   <span style={{ fontFamily: FONT, fontSize: '14px', color: '#FFFFFF', whiteSpace: 'nowrap' }}>全选</span>
                 </GhostBtn>
-                <GhostBtn onClick={() => {}}>
+                <GhostBtn onClick={downloadSelected}>
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0, rotate: '180deg', transformOrigin: '50% 50%' }}>
                     <path d="M8.003 4.7V14" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
                     <path d="M4 8.667L8 4.667L12 8.667" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
@@ -2750,7 +3254,7 @@ function ProjectAssetsPanel() {
               </div>
             </div>
           ) : (
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px', paddingLeft: '24px', paddingRight: '24px', height: '48px', flexShrink: 0 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingLeft: '24px', paddingRight: '24px', height: '48px', flexShrink: 0 }}>
               <GhostBtn onClick={() => setBatchMode(true)}>
                 <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
                   <path d="M11.333 1.667H2.667C2.114 1.667 1.667 2.114 1.667 2.667V11.333C1.667 11.886 2.114 12.333 2.667 12.333H11.333C11.886 12.333 12.333 11.886 12.333 11.333V2.667C12.333 2.114 11.886 1.667 11.333 1.667Z" stroke="#FFFFFF" strokeLinejoin="round" />
@@ -2763,20 +3267,30 @@ function ProjectAssetsPanel() {
           )}
         </div>
 
-        <div style={{
+        <div ref={scrollContainerRef} style={{
           flex: 1,
           overflowY: 'auto',
           paddingTop: '16px',
           paddingBottom: '24px',
           paddingLeft: '24px',
           paddingRight: '24px',
-          display: 'flex',
-          flexDirection: filtered.length === 0 ? 'column' : (activeCategory === 'audio' ? 'column' : 'row'),
-          flexWrap: filtered.length === 0 ? 'nowrap' : (activeCategory === 'audio' ? 'nowrap' : 'wrap'),
-          gap: '8px',
-          alignContent: filtered.length === 0 ? undefined : 'flex-start',
-          alignItems: filtered.length === 0 ? 'center' : undefined,
-          justifyContent: filtered.length === 0 ? 'center' : undefined,
+          ...(filtered.length === 0 ? {
+            display: 'flex',
+            flexDirection: 'column',
+            alignItems: 'center',
+            justifyContent: 'center',
+          } : activeCategory === 'audio' ? {
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+          } : {
+            display: 'grid',
+            gridTemplateColumns: SUBJECT_CARD_CATEGORIES.has(activeCategory) && !['storyboard_img', 'storyboard_video'].includes(activeCategory)
+              ? 'repeat(auto-fill, minmax(160px, 1fr))'
+              : 'repeat(auto-fill, minmax(240px, 1fr))',
+            gap: '8px',
+            alignContent: 'flex-start',
+          }),
         }}>
           {filtered.length === 0 ? (
             <EmptyProjectAssets category={activeCategory} />
@@ -2805,7 +3319,9 @@ function ProjectAssetsPanel() {
                 onSelect={() => toggleSelect(asset.id)}
                 onDownload={() => downloadAsset(asset.id, asset.name)}
                 onDelete={(imageId) => deleteAsset(asset.id, imageId)}
+                onShowToast={showToast}
                 asset={asset}
+                category={activeCategory}
               />
             ) : (
               <AssetCard
@@ -2825,6 +3341,13 @@ function ProjectAssetsPanel() {
               />
             )
           ))}
+          {/* 滚动加载哨兵 */}
+          <div ref={sentinelRef} style={{ width: '100%', height: '1px', flexShrink: 0 }} />
+          {pageMeta[pageKey(activeProject, activeCategory)]?.loading && (
+            <div style={{ width: '100%', display: 'flex', justifyContent: 'center', padding: '16px 0', flexShrink: 0 }}>
+              <span style={{ fontFamily: FONT, fontSize: '13px', color: '#FFFFFF40' }}>加载中…</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -2937,7 +3460,7 @@ function ProjectAssetsPanel() {
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'flex-end',
-                gap: '16px',
+                gap: '8px',
                 padding: '16px 24px',
                 background: '#161616',
               }}
@@ -3124,20 +3647,149 @@ function ProjectAssetsPanel() {
           zIndex={100}
         />
       )}
+      {toast && createPortal(
+        <div style={{
+          position: 'fixed', top: '25vh', left: '50%', transform: 'translateX(-50%)',
+          zIndex: 9999, pointerEvents: 'none',
+          animation: 'slideUpBounce 250ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '8px', background: 'rgba(30,30,30,0.92)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.1)', whiteSpace: 'nowrap' }}>
+            {toast.type === 'success' && (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}><path d="M8 14.667C11.682 14.667 14.667 11.682 14.667 8C14.667 4.318 11.682 1.333 8 1.333C4.318 1.333 1.333 4.318 1.333 8C1.333 11.682 4.318 14.667 8 14.667Z" fill="#52BF92" stroke="#52BF92" strokeWidth="1.333" strokeLinejoin="round"/><path d="M5.333 8L7.333 10L11.333 6" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            )}
+            {toast.type === 'error' && (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}><path d="M8 14.667C11.682 14.667 14.667 11.682 14.667 8C14.667 4.318 11.682 1.333 8 1.333C4.318 1.333 1.333 4.318 1.333 8C1.333 11.682 4.318 14.667 8 14.667Z" fill="#F75F5F" stroke="#F75F5F" strokeWidth="1.333" strokeLinejoin="round"/><path d="M5.333 5.333L10.667 10.667M10.667 5.333L5.333 10.667" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round"/></svg>
+            )}
+            <span style={{ fontSize: '14px', color: '#FFFFFF', fontFamily: FONT }}>{toast.msg}</span>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
 
-function CreativeAssetsPanel() {
+function CreativeAssetsPanel({ isLoggedIn }) {
   const [activeType, setActiveType] = useState('image');
   const [batchMode, setBatchMode] = useState(false);
   const [selected, setSelected] = useState(new Set());
+  const [toast, setToast] = useState(null);
 
+  function showToast(msg, type = 'success') {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 2500);
+  }
+
+  const [batchDeleteConfirm, setBatchDeleteConfirm] = useState(false);
   const generationsByTab = useCreationStore((s) => s.generationsByTab);
   const favorites = useCreationStore((s) => s.favorites);
   const storeDeleteCard = useCreationStore((s) => s.deleteCard);
   const storeDeleteSelectedCards = useCreationStore((s) => s.deleteSelectedCards);
   const storeToggleFavorite = useCreationStore((s) => s.toggleFavorite);
+  const historyMeta = useCreationStore((s) => s.historyMeta);
+  const mergeHistoryGenerations = useCreationStore((s) => s.mergeHistoryGenerations);
+  const updateHistoryMeta = useCreationStore((s) => s.updateHistoryMeta);
+  const storeSyncFavorites = useCreationStore((s) => s.syncFavorites);
+
+  // 与 CreationPage 共用同一套 normalizeHistoryItem 逻辑
+  function normalizeHistoryItem(item, type) {
+    const id = `history-${item.id}`;
+    const rawUrl = item.original_url || item.file_url || item.url || '';
+    return {
+      id,
+      backendId: item.id,
+      ratio: item.ratio || item.aspect_ratio || '16:9',
+      resolution: item.resolution || item.size || '',
+      duration: item.duration || undefined,
+      model: item.model || '',
+      prompt: item.prompt || '',
+      refImages: (item.reference_images || item.referenceImages || []).map((img) => {
+        const imgUrl = typeof img === 'string' ? img : (img?.url || img?.original_url || '');
+        return { url: imgUrl, previewUrl: imgUrl, isAsset: true, name: imgUrl.split('/').pop() || 'ref.png', size: 0 };
+      }),
+      createdAt: item.created_at || new Date().toISOString(),
+      cards: [{
+        id: item.id,
+        type,
+        status: 'done',
+        imageUrl: type === 'image' ? rawUrl : null,
+        videoUrl: type === 'video' ? rawUrl : null,
+        audioUrl: type === 'audio' ? rawUrl : null,
+        isFavorite: item.is_favorite ?? item.is_liked ?? item.isLiked ?? false,
+      }],
+    };
+  }
+
+  // 根据视口计算首屏所需条数
+  // 创作资产卡片：图片/视频 320×180，gap 16，左右 padding 32；配音列表布局直接给 50
+  function calcCreativePageSize(tab) {
+    if (tab === 'dubbing') return 50;
+    const NAV_W = 48;
+    const MODULE_TAB_H = 48; // 模块切换 tab 栏
+    const FILTER_TAB_H = 48; // 图片/视频/配音 tab 栏
+    const CARD_W = 320;
+    const CARD_H = 180;
+    const GAP = 16;
+    const PAD_X = 32;
+    const availW = window.innerWidth - NAV_W - PAD_X * 2;
+    const availH = window.innerHeight - MODULE_TAB_H - FILTER_TAB_H;
+    const cols = Math.max(1, Math.floor((availW + GAP) / (CARD_W + GAP)));
+    const rows = Math.max(1, Math.ceil(availH / (CARD_H + GAP))) + 1;
+    return cols * rows;
+  }
+
+  const loadHistoryPage = useCallback(async (tab) => {
+    if (!isLoggedIn) return;
+    const meta = useCreationStore.getState().historyMeta[tab];
+    if (meta.loading || !meta.hasMore) return;
+
+    updateHistoryMeta(tab, { loading: true });
+    const nextPage = meta.page + 1;
+    const pageSize = calcCreativePageSize(tab);
+
+    try {
+      let resp;
+      if (tab === 'image') {
+        resp = await apiListCreationImages({ page: nextPage, page_size: pageSize });
+      } else if (tab === 'video') {
+        resp = await apiListCreationVideos({ page: nextPage, page_size: pageSize });
+      } else {
+        resp = await apiListCreationAudios({ page: nextPage, page_size: pageSize });
+      }
+
+      const type = tab === 'dubbing' ? 'audio' : tab;
+      const list = Array.isArray(resp) ? resp : (resp?.list ?? resp?.items ?? resp?.data ?? []);
+      const hasMore = list.length >= pageSize;
+      const normalized = list.map((item) => normalizeHistoryItem(item, type));
+      mergeHistoryGenerations(tab, normalized);
+
+      // 同步收藏状态
+      const latestGens = useCreationStore.getState().generationsByTab[tab] ?? [];
+      const syncItems = [];
+      for (const gen of latestGens) {
+        for (let i = 0; i < gen.cards.length; i++) {
+          const card = gen.cards[i];
+          if (card.isFavorite !== undefined) {
+            syncItems.push({ key: `${gen.id}-${i}`, isFavorite: card.isFavorite });
+          }
+        }
+      }
+      if (syncItems.length > 0) storeSyncFavorites(syncItems);
+
+      updateHistoryMeta(tab, { page: nextPage, hasMore, loading: false, initialized: true });
+    } catch {
+      updateHistoryMeta(tab, { loading: false, initialized: true });
+    }
+  }, [isLoggedIn, mergeHistoryGenerations, updateHistoryMeta, storeSyncFavorites]);
+
+  // 登录后 / 切换 tab 时，若当前 tab 未初始化则拉第一页
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    const meta = useCreationStore.getState().historyMeta[activeType];
+    if (!meta.initialized && !meta.loading) {
+      loadHistoryPage(activeType);
+    }
+  }, [isLoggedIn, activeType, loadHistoryPage]);
 
   const generations = generationsByTab[activeType] ?? [];
   const days = generationsToDays(generations);
@@ -3165,11 +3817,16 @@ function CreativeAssetsPanel() {
     setSelected(new Set());
   }
 
-  function toggleStar(cardKey) {
+  function toggleStar(cardKey, backendId, cardType) {
     const isLiked = favorites.has(cardKey);
     storeToggleFavorite(cardKey);
-    if (activeType === 'image') apiToggleImageFavorite(cardKey, !isLiked);
-    else if (activeType === 'video') apiToggleVideoFavorite(cardKey);
+    showToast(isLiked ? '取消收藏' : '收藏成功');
+    if (!backendId) return;
+    const type = cardType || activeType;
+    const apiCall = type === 'video'
+      ? apiToggleVideoFavorite(backendId, !isLiked)
+      : apiToggleImageFavorite(backendId, !isLiked);
+    apiCall.catch(() => storeToggleFavorite(cardKey)); // rollback on failure
   }
 
   function deleteSingle(card) {
@@ -3188,7 +3845,7 @@ function CreativeAssetsPanel() {
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexShrink: 0 }}>
         <TabBar tabs={CREATIVE_TYPE_TABS} active={activeType} onChange={(k) => { setActiveType(k); exitBatch(); }} />
         {batchMode ? (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingLeft: '24px', paddingRight: '24px', gap: '16px', flex: 1, height: '48px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', paddingLeft: '24px', paddingRight: '24px', gap: '8px', flex: 1, height: '48px' }}>
             <span style={{ fontFamily: FONT, fontSize: '14px', color: '#FFFFFF99' }}>已选 {selected.size} 项</span>
             <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
               <GhostBtn onClick={selectAll}>
@@ -3206,7 +3863,7 @@ function CreativeAssetsPanel() {
                 </svg>
                 <span style={{ fontFamily: FONT, fontSize: '14px', color: '#FFFFFF', whiteSpace: 'nowrap' }}>下载</span>
               </GhostBtn>
-              <PlainBtn onClick={deleteSelected} danger>
+              <PlainBtn onClick={() => setBatchDeleteConfirm(true)} danger>
                 <TrashIcon color="#F75F5F" />
                 <span style={{ fontFamily: FONT, fontSize: '14px', color: '#F75F5F', whiteSpace: 'nowrap' }}>删除</span>
               </PlainBtn>
@@ -3216,7 +3873,7 @@ function CreativeAssetsPanel() {
             </div>
           </div>
         ) : (
-          <div style={{ display: 'flex', alignItems: 'center', gap: '16px', paddingLeft: '24px', paddingRight: '24px', height: '48px', flexShrink: 0 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', paddingLeft: '24px', paddingRight: '24px', height: '48px', flexShrink: 0 }}>
             <GhostBtn onClick={() => setBatchMode(true)}>
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}>
                 <path d="M11.333 1.667H2.667C2.114 1.667 1.667 2.114 1.667 2.667V11.333C1.667 11.886 2.114 12.333 2.667 12.333H11.333C11.886 12.333 12.333 11.886 12.333 11.333V2.667C12.333 2.114 11.886 1.667 11.333 1.667Z" stroke="#FFFFFF" strokeLinejoin="round" />
@@ -3245,11 +3902,11 @@ function CreativeAssetsPanel() {
         {days.length === 0 ? (
           <EmptyCreativeAssets type={activeType} />
         ) : days.map((day) => (
-          <div key={day.date} style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
+          <div key={day.date} style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
               <span style={{ fontFamily: FONT, fontSize: '14px', color: '#FFFFFF99', flexShrink: 0 }}>{day.date}</span>
             </div>
-            <div style={{ display: 'flex', flexDirection: activeType === 'dubbing' ? 'column' : 'row', flexWrap: activeType === 'dubbing' ? 'nowrap' : 'wrap', gap: activeType === 'dubbing' ? '8px' : '16px' }}>
+            <div style={activeType === 'dubbing' ? { display: 'flex', flexDirection: 'column', gap: '8px' } : { display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '16px' }}>
               {day.cards.map((card) => {
                 const isStarred = favorites.has(card.id);
                 return activeType === 'dubbing' ? (
@@ -3261,7 +3918,7 @@ function CreativeAssetsPanel() {
                     selected={batchMode && selected.has(card.id)}
                     batchMode={batchMode}
                     onSelect={() => toggleSelect(card.id)}
-                    onStar={() => toggleStar(card.id)}
+                    onStar={() => toggleStar(card.id, card.backendId, card.type)}
                     onDownload={() => {}}
                     onDelete={() => deleteSingle(card)}
                   />
@@ -3276,7 +3933,7 @@ function CreativeAssetsPanel() {
                     batchMode={batchMode}
                     showStar
                     onSelect={() => toggleSelect(card.id)}
-                    onStar={() => toggleStar(card.id)}
+                    onStar={() => toggleStar(card.id, card.backendId, card.type)}
                     onDownload={() => {}}
                     onDelete={() => deleteSingle(card)}
                     asset={card}
@@ -3287,6 +3944,39 @@ function CreativeAssetsPanel() {
           </div>
         ))}
       </div>
+      {/* 批量删除二次确认 */}
+      {batchDeleteConfirm && (
+        <ConfirmDialog
+          title="确定要删除吗？"
+          description={`将删除已选中的 ${selected.size} 项创作资产，删除后无法恢复。`}
+          confirmText="删除"
+          onCancel={() => setBatchDeleteConfirm(false)}
+          onConfirm={() => {
+            setBatchDeleteConfirm(false);
+            deleteSelected();
+            exitBatch();
+          }}
+          zIndex={100}
+        />
+      )}
+      {toast && createPortal(
+        <div style={{
+          position: 'fixed', top: '25vh', left: '50%', transform: 'translateX(-50%)',
+          zIndex: 9999, pointerEvents: 'none',
+          animation: 'slideUpBounce 250ms cubic-bezier(0.34, 1.56, 0.64, 1) forwards',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 16px', borderRadius: '8px', background: 'rgba(30,30,30,0.92)', backdropFilter: 'blur(20px)', WebkitBackdropFilter: 'blur(20px)', border: '1px solid rgba(255,255,255,0.1)', whiteSpace: 'nowrap' }}>
+            {toast.type === 'success' && (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}><path d="M8 14.667C11.682 14.667 14.667 11.682 14.667 8C14.667 4.318 11.682 1.333 8 1.333C4.318 1.333 1.333 4.318 1.333 8C1.333 11.682 4.318 14.667 8 14.667Z" fill="#52BF92" stroke="#52BF92" strokeWidth="1.333" strokeLinejoin="round"/><path d="M5.333 8L7.333 10L11.333 6" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" strokeLinejoin="round"/></svg>
+            )}
+            {toast.type === 'error' && (
+              <svg width="16" height="16" viewBox="0 0 16 16" fill="none" style={{ flexShrink: 0 }}><path d="M8 14.667C11.682 14.667 14.667 11.682 14.667 8C14.667 4.318 11.682 1.333 8 1.333C4.318 1.333 1.333 4.318 1.333 8C1.333 11.682 4.318 14.667 8 14.667Z" fill="#F75F5F" stroke="#F75F5F" strokeWidth="1.333" strokeLinejoin="round"/><path d="M5.333 5.333L10.667 10.667M10.667 5.333L5.333 10.667" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round"/></svg>
+            )}
+            <span style={{ fontSize: '14px', color: '#FFFFFF', fontFamily: FONT }}>{toast.msg}</span>
+          </div>
+        </div>,
+        document.body
+      )}
     </div>
   );
 }
@@ -3296,19 +3986,7 @@ const MODULE_TABS = [
   { key: 'creative', label: '创作资产' },
 ];
 
-export default function AssetsPage({ serverReachable }) {
-  if (serverReachable === false) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-3" style={{ flex: 1, paddingTop: '80px' }}>
-        <div className="flex items-center gap-2 px-16 py-2 rounded-lg text-sm" style={{ backgroundColor: 'rgba(255,77,79,0.1)', color: '#FF4D4F' }}>
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1L13 12H1L7 1Z" stroke="#FF4D4F" strokeLinejoin="round"/><path d="M7 5V8" stroke="#FF4D4F" strokeLinecap="round"/><circle cx="7" cy="10.5" r="0.5" fill="#FF4D4F"/></svg>
-          后端服务连接异常，部分功能不可用
-        </div>
-      </div>
-    );
-  }
-
-  const [activeModule, setActiveModule] = useState('project');
+export default function AssetsPage({ projects, isLoggedIn }) {  const [activeModule, setActiveModule] = useState('project');
 
   return (
     <div style={{
@@ -3330,7 +4008,7 @@ export default function AssetsPage({ serverReachable }) {
         overflow: 'hidden',
       }}>
         <ModuleTabBar tabs={MODULE_TABS} active={activeModule} onChange={setActiveModule} />
-        {activeModule === 'project' ? <ProjectAssetsPanel /> : <CreativeAssetsPanel />}
+        {activeModule === 'project' ? <ProjectAssetsPanel /> : <CreativeAssetsPanel isLoggedIn={isLoggedIn} />}
       </div>
     </div>
   );

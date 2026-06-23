@@ -1,10 +1,12 @@
 import { useState, useRef, useEffect, useMemo, useCallback } from 'react';
+import { useModalSize } from '../utils/useModalSize';
 import { createPortal } from 'react-dom';
 import { PulsingBorder } from '@paper-design/shaders-react';
-import { apiGenerateCreation, apiGetVideoLastFrame, apiDeleteCreationImage, apiDeleteCreationVideo, apiToggleImageFavorite, apiToggleVideoFavorite, apiBatchDeleteImages, apiBatchDeleteVideos, apiCreateSession, apiGetSession, apiListShots, apiCreateShot, apiUpdateShot } from '../api/creation';
+import { apiGenerateCreation, apiPollVideoTask, apiGetVideoLastFrame, apiDeleteCreationImage, apiDeleteCreationVideo, apiToggleImageFavorite, apiToggleVideoFavorite, apiBatchDeleteImages, apiBatchDeleteVideos, apiCreateSession, apiGetSession, apiListShots, apiCreateShot, apiUpdateShot, apiListCreationImages, apiListCreationVideos, apiListCreationAudios } from '../api/creation';
 import { useCreationStore } from '../stores/creationStore';
 import { apiListModels } from '../api/config';
 import { adaptModels, getModelParams } from '../utils/modelAdapter';
+import { normalizeImageUrl } from '../utils/imageUrl';
 import AssetPickerModal from '../components/AssetPickerModal';
 import DubbingVoiceModal, { DubbingVoiceFileCard } from './DubbingVoiceModal';
 import CreationVideoDetailModal from '../components/CreationVideoDetailModal';
@@ -31,8 +33,8 @@ function CopyPromptButton({ text, onCopy }) {
       }}
     >
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <rect x="5.5" y="5.5" width="7" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.2"/>
-        <path d="M3.5 10.5V3.5A1.5 1.5 0 0 1 5 2h6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+        <path d="M4.33337 4.14383V2.60413C4.33337 2.08636 4.75311 1.66663 5.27087 1.66663H13.3959C13.9136 1.66663 14.3334 2.08636 14.3334 2.60413V10.7291C14.3334 11.2469 13.9136 11.6666 13.3959 11.6666H11.8388" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round"/>
+        <path d="M10.7291 4.33337H2.60413C2.08636 4.33337 1.66663 4.75311 1.66663 5.27087V13.3959C1.66663 13.9136 2.08636 14.3334 2.60413 14.3334H10.7291C11.2469 14.3334 11.6666 13.9136 11.6666 13.3959V5.27087C11.6666 4.75311 11.2469 4.33337 10.7291 4.33337Z" stroke="currentColor" strokeLinejoin="round"/>
       </svg>
     </button>
   );
@@ -312,9 +314,9 @@ function UploadPlaceholder({ onFileSelect, onAssetPick, onDirectClick, disabled 
       e.target.value = '';
       return;
     }
-    const oversizedImg = selected.find((file) => isImageFile(file) && file.size > 5 * 1024 * 1024);
+    const oversizedImg = selected.find((file) => isImageFile(file) && file.size > 20 * 1024 * 1024);
     if (oversizedImg) {
-      alert('抱歉，平台暂不支持上传5M以上的图片资源！');
+      alert('抱歉，平台暂不支持上传20M以上的图片资源！');
       e.target.value = '';
       return;
     }
@@ -434,8 +436,8 @@ function FrameUploader({ firstFile, lastFile, onFirstChange, onLastChange, onSwa
       e.target.value = '';
       return;
     }
-    if (file.size > 5 * 1024 * 1024) {
-      alert('抱歉，平台暂不支持上传5M以上的图片资源！');
+    if (file.size > 20 * 1024 * 1024) {
+      alert('抱歉，平台暂不支持上传20M以上的图片资源！');
       e.target.value = '';
       return;
     }
@@ -646,7 +648,7 @@ function UploadMenuItem({ label, icon, onClick }) {
 }
 
 // ─── Image view modal ─────────────────────────────────────────────────────────
-function ImageViewModal({ imageUrl, onClose }) {
+function ImageViewModal({ imageUrl, onClose, isVideo = false }) {
   const [closeHovered, setCloseHovered] = useState(false);
   const [doneHovered, setDoneHovered] = useState(false);
   const [donePressed, setDonePressed] = useState(false);
@@ -673,7 +675,9 @@ function ImageViewModal({ imageUrl, onClose }) {
           </div>
         </div>
         <div style={{ flex: 1, display: 'flex', padding: '8px 24px', overflow: 'hidden', gap: '12px', flexDirection: 'column', background: '#161616', minHeight: 0 }}>
-          <img src={imageUrl} alt="" style={{ width: '100%', flex: 1, borderRadius: '8px', objectFit: 'contain', minHeight: 0 }} />
+          {isVideo
+            ? <video src={imageUrl} controls autoPlay muted style={{ width: '100%', flex: 1, borderRadius: '8px', objectFit: 'contain', minHeight: 0 }} />
+            : <img src={imageUrl} alt="" style={{ width: '100%', flex: 1, borderRadius: '8px', objectFit: 'contain', minHeight: 0 }} />}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px', justifyContent: 'flex-end', background: '#161616', borderRadius: '0 0 16px 16px', padding: '16px 24px', flexShrink: 0 }}>
           <div
@@ -695,11 +699,54 @@ function ImageViewModal({ imageUrl, onClose }) {
   );
 }
 
+// ─── File preview tooltip (hover) ───────────────────────────────────────────
+function FilePreviewTooltip({ isVideo, previewUrl, videoSrc, cardRect }) {
+  if (!cardRect) return null;
+  const maxW = Math.round(window.innerWidth * 0.35);
+  const gap = 12;
+  // Prefer right side, fallback to left
+  const rightSpace = window.innerWidth - cardRect.right - gap;
+  const leftSpace = cardRect.left - gap;
+  let left, right;
+  if (rightSpace >= maxW) {
+    left = cardRect.right + gap;
+  } else if (leftSpace >= maxW) {
+    right = window.innerWidth - cardRect.left + gap;
+    left = undefined;
+  } else {
+    left = Math.max(8, Math.min(window.innerWidth - maxW - 8, cardRect.right + gap));
+  }
+  // Vertical: align top to card top, clamp to viewport
+  let top = cardRect.top;
+  const estH = maxW; // guess square for now; browser will handle
+  if (top + estH > window.innerHeight - 8) top = Math.max(8, window.innerHeight - estH - 8);
+  return (
+    <div style={{
+      position: 'fixed',
+      zIndex: 9998,
+      top,
+      ...(left !== undefined ? { left } : { right }),
+      maxWidth: maxW,
+      borderRadius: '10px',
+      overflow: 'hidden',
+      boxShadow: '0 8px 32px #00000099',
+      pointerEvents: 'none',
+      background: '#1D1E1E',
+    }}>
+      {isVideo && videoSrc
+        ? <video src={videoSrc} autoPlay muted loop playsInline style={{ display: 'block', maxWidth: maxW, maxHeight: maxW }} />
+        : previewUrl && <img src={previewUrl} alt="" style={{ display: 'block', maxWidth: maxW, maxHeight: maxW, objectFit: 'contain' }} />
+      }
+    </div>
+  );
+}
+
 // ─── File card ────────────────────────────────────────────────────────────────
 const IMAGE_EXTS_SET = new Set(['.jpg', '.jpeg', '.png', '.webp', '.gif', '.bmp', '.tiff', '.tif', '.heic', '.heif']);
 const VIDEO_EXTS_SET = new Set(['.mp4', '.mov', '.avi', '.webm', '.mkv', '.wmv', '.flv']);
 
 function isImageFile(file) {
+  if (file.type && file.type.startsWith('image/')) return true;
   if (file.isAsset && file.url) {
     if (/\.(jpg|jpeg|png|webp|gif|bmp|tiff?|heic|heif)$/i.test(file.url)) return true;
     // URL has no extension (e.g. picsum.photos) — fall through to check file.name
@@ -709,6 +756,7 @@ function isImageFile(file) {
 }
 
 function isVideoFile(file) {
+  if (file.type && file.type.startsWith('video/')) return true;
   if (file.isAsset && file.url) {
     if (/\.(mp4|mov|avi|webm|mkv|wmv|flv)$/i.test(file.url)) return true;
   }
@@ -716,10 +764,15 @@ function isVideoFile(file) {
   return VIDEO_EXTS_SET.has(ext);
 }
 
-function FileCard({ file, onRemove, disabled = false }) {
+function FileCard({ file, onRemove, disabled = false, onInsert }) {
   const [hovered, setHovered] = useState(false);
   const [viewOpen, setViewOpen] = useState(false);
   const [previewUrl, setPreviewUrl] = useState(null);
+  const [videoSrc, setVideoSrc] = useState(null);
+  const [previewVisible, setPreviewVisible] = useState(false);
+  const [cardRect, setCardRect] = useState(null);
+  const hoverTimerRef = useRef(null);
+  const cardRef = useRef(null);
   const isImage = isImageFile(file);
   const isVideo = isVideoFile(file);
 
@@ -735,39 +788,43 @@ function FileCard({ file, onRemove, disabled = false }) {
     }
 
     if (isVideo) {
-      // 提取视频首帧作为缩略图
+      // 保留 src 供 hover 时内联播放
+      // 优先使用 handleFileSelect 中预建的 _objectUrl，避免 React Strict Mode
+      // 双执行 effect 时 revoke 旧 URL 导致 ERR_FILE_NOT_FOUND
+      let objectUrl = null;
+      let videoUrl;
+      if (file.isAsset && file.url) {
+        videoUrl = file.url;
+        setVideoSrc(file.url);
+      } else if (file._objectUrl) {
+        videoUrl = file._objectUrl;
+        setVideoSrc(file._objectUrl);
+      } else {
+        objectUrl = URL.createObjectURL(file);
+        videoUrl = objectUrl;
+        setVideoSrc(objectUrl);
+      }
+      // 提取首帧作为缩略图
       const video = document.createElement('video');
       video.preload = 'metadata';
       video.muted = true;
-
-      const handleLoadedData = () => {
-        video.currentTime = 0.1; // 跳到 0.1 秒处获取首帧
-      };
-
+      const handleLoadedData = () => { video.currentTime = 0.1; };
       const handleSeeked = () => {
         const canvas = document.createElement('canvas');
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         const ctx = canvas.getContext('2d');
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
-        const thumbnail = canvas.toDataURL('image/jpeg', 0.8);
-        setPreviewUrl(thumbnail);
-        URL.revokeObjectURL(video.src);
+        setPreviewUrl(canvas.toDataURL('image/jpeg', 0.8));
       };
-
       video.addEventListener('loadeddata', handleLoadedData);
       video.addEventListener('seeked', handleSeeked);
-
-      if (file.isAsset && file.url) {
-        video.src = file.url;
-      } else {
-        video.src = URL.createObjectURL(file);
-      }
-
+      video.src = videoUrl;
       return () => {
         video.removeEventListener('loadeddata', handleLoadedData);
         video.removeEventListener('seeked', handleSeeked);
-        if (video.src) URL.revokeObjectURL(video.src);
+        // 仅 revoke 在此 effect 内创建的 URL（_objectUrl 由 handleRemoveFile 统一管理）
+        if (objectUrl) URL.revokeObjectURL(objectUrl);
       };
     }
   }, [file, isImage, isVideo]);
@@ -789,29 +846,59 @@ function FileCard({ file, onRemove, disabled = false }) {
             position: 'relative',
             background: '#1D1E1E',
             border: '1px solid #FFFFFF14',
-            overflow: 'visible',
+            overflow: 'hidden',
             opacity: disabled ? 0.45 : 1,
             cursor: disabled ? 'default' : 'pointer',
           }}
-          onMouseEnter={() => !disabled && setHovered(true)}
-          onMouseLeave={() => setHovered(false)}
-          onClick={() => { if (!disabled && previewUrl) setViewOpen(true); }}
+ref={cardRef}
+          onMouseEnter={() => {
+            if (!disabled) {
+              setHovered(true);
+              hoverTimerRef.current = setTimeout(() => {
+                if (cardRef.current) setCardRect(cardRef.current.getBoundingClientRect());
+                setPreviewVisible(true);
+              }, 500);
+            }
+          }}
+          onMouseLeave={() => {
+            setHovered(false);
+            clearTimeout(hoverTimerRef.current);
+            setPreviewVisible(false);
+          }}
+          onClick={() => {
+            if (!disabled) {
+              if (onInsert) { onInsert(); }
+            }
+          }}
         >
-          <div
-            style={{
-              flex: 1,
-              borderRadius: '7px',
-              alignSelf: 'stretch',
-              ...(previewUrl
-                ? { backgroundImage: `url(${previewUrl})`, backgroundSize: 'cover', backgroundPosition: '50%' }
-                : { background: '#FFFFFF14' }),
-            }}
-          />
+          {/* 视频 hover 时切换为内联播放 */}
+          {isVideo && hovered && videoSrc ? (
+            <video
+              src={videoSrc}
+              autoPlay
+              muted
+              loop
+              playsInline
+              style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+              onClick={(e) => { e.stopPropagation(); if (!disabled && onInsert) onInsert(); }}
+            />
+          ) : (
+            <div
+              style={{
+                flex: 1,
+                borderRadius: '7px',
+                alignSelf: 'stretch',
+                ...(previewUrl
+                  ? { backgroundImage: `url(${previewUrl})`, backgroundSize: 'cover', backgroundPosition: '50%' }
+                  : { background: '#FFFFFF14' }),
+              }}
+            />
+          )}
           {hovered && !disabled && (
             <button
               type="button"
               onClick={(e) => { e.stopPropagation(); onRemove(); }}
-              style={{ position: 'absolute', display: 'flex', alignItems: 'center', justifyContent: 'center', top: '-7px', right: '-7px', width: '16px', height: '16px', borderRadius: '9999px', background: '#505151', border: 'none', cursor: 'pointer', padding: 0 }}
+              style={{ position: 'absolute', display: 'flex', alignItems: 'center', justifyContent: 'center', top: '4px', right: '4px', width: '16px', height: '16px', borderRadius: '9999px', background: '#505151', border: 'none', cursor: 'pointer', padding: 0, zIndex: 1 }}
             >
               <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                 <path d="M4.667 4.667L11.333 11.333" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
@@ -820,8 +907,13 @@ function FileCard({ file, onRemove, disabled = false }) {
             </button>
           )}
         </div>
-        {viewOpen && previewUrl && createPortal(
-          <ImageViewModal imageUrl={previewUrl} onClose={() => setViewOpen(false)} />,
+        {previewVisible && (previewUrl || videoSrc) && createPortal(
+          <FilePreviewTooltip
+            isVideo={isVideo}
+            previewUrl={previewUrl}
+            videoSrc={videoSrc}
+            cardRect={cardRect}
+          />,
           document.body
         )}
       </>
@@ -1760,13 +1852,50 @@ function SoundToggle({ enabled, onChange, disabled }) {
 }
 
 // ─── Send button ──────────────────────────────────────────────────────────────
-function SendButton({ onClick, disabled = false, loading = false }) {
+function SendButton({ onClick, disabled = false, loading = false, disabledTooltip = '' }) {
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
   const [focused, setFocused] = useState(false);
+  const [tooltipRect, setTooltipRect] = useState(null);
+  const wrapRef = useRef(null);
   const scale = pressed ? 'scale(0.9)' : hovered ? 'scale(1.1)' : 'scale(1)';
 
   return (
+    <div ref={wrapRef} style={{ position: 'relative', flexShrink: 0, display: 'inline-flex' }}
+      onMouseEnter={() => {
+        setHovered(true);
+        if (disabled && disabledTooltip && wrapRef.current) {
+          setTooltipRect(wrapRef.current.getBoundingClientRect());
+        }
+      }}
+      onMouseLeave={() => { setHovered(false); setPressed(false); setTooltipRect(null); }}
+    >
+      {disabled && hovered && disabledTooltip && tooltipRect && createPortal(
+        <div style={{
+          position: 'fixed',
+          zIndex: 9999,
+          background: '#2A2B2B',
+          border: '1px solid #FFFFFF14',
+          borderRadius: '8px',
+          padding: '8px 12px',
+          maxWidth: '180px',
+          fontFamily: FONT,
+          fontSize: '12px',
+          lineHeight: '18px',
+          color: '#FFFFFFCC',
+          pointerEvents: 'none',
+          boxShadow: '0 4px 16px #00000066',
+          // position above the button, centered
+          left: Math.min(
+            Math.max(8, tooltipRect.left + tooltipRect.width / 2 - 90),
+            window.innerWidth - 8 - 180
+          ),
+          bottom: window.innerHeight - tooltipRect.top + 8,
+        }}>
+          {disabledTooltip}
+        </div>,
+        document.body
+      )}
     <button
       type="button"
       disabled={disabled}
@@ -1834,6 +1963,7 @@ function SendButton({ onClick, disabled = false, loading = false }) {
         </svg>
       )}
     </button>
+    </div>
   );
 }
 
@@ -1956,7 +2086,7 @@ function DubbingAdjust({ speed, emotion, onSpeedChange, onEmotionChange, emotion
 }
 
 function InputCard({ onGenerate, width = '800px', disabled = false, genType, onGenTypeChange,
-  model, onModelChange, modelOptions = [], creationParams, prefillVersion = 0, prefillData = null, onBeforeModelOpen }) {
+  model, onModelChange, modelOptions = [], creationParams, prefillVersion = 0, prefillData = null, onBeforeModelOpen, showToast, activeCount = 0 }) {
   const [hovered, setHovered] = useState(false);
   const [focused, setFocused] = useState(false);
   const [hasContent, setHasContent] = useState(false);
@@ -1982,8 +2112,10 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
   const [mentionQuery, setMentionQuery] = useState('');
   const [mentionPos, setMentionPos] = useState({ top: 0, left: 0 });
   const [mentionAnchorRange, setMentionAnchorRange] = useState(null);
+  const [mentionIndex, setMentionIndex] = useState(0);
   const editorRef = useRef(null);
   const mentionFromTagRef = useRef(false);
+  const savedCursorRangeRef = useRef(null); // 失焦前保存的光标位置
 
 
   // Video: filter modelOptions by refMode
@@ -2001,6 +2133,18 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
 
   // Video: sync model when refMode changes
   const handleRefModeChange = useCallback((newRefMode) => {
+    // 切换到首尾帧：将 files 中的图片迁移到帧槽位，其余丢弃
+    if (newRefMode === 'frame') {
+      const imageFiles = files.filter(f => isImageFile(f));
+      setFirstFrameFile(imageFiles[0] || null);
+      setLastFrameFile(imageFiles[1] || null);
+      setFiles([]);
+    }
+    // 离开首尾帧：将帧槽位的图片合并回 files 作为普通参考图
+    if (refMode === 'frame' && newRefMode !== 'frame') {
+      const carried = [firstFrameFile, lastFrameFile].filter(Boolean);
+      if (carried.length > 0) setFiles(carried);
+    }
     setRefMode(newRefMode);
     const filtered = newRefMode === 'frame'
       ? modelOptions.filter(m => m.hasFrame)
@@ -2009,7 +2153,7 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
     if (!inList && filtered.length > 0) {
       onModelChange(filtered[0].value);
     }
-  }, [modelOptions, model, onModelChange]);
+  }, [files, refMode, firstFrameFile, lastFrameFile, modelOptions, model, onModelChange]);
   // Reset param selections when creationParams changes (model or genType changed)
   useEffect(() => {
     if (!creationParams) return;
@@ -2052,12 +2196,41 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
     if (!prefillVersion || !prefillData) return;
     if (prefillData.prompt !== undefined && editorRef.current) {
       editorRef.current.innerHTML = '';
-      if (prefillData.prompt) {
+      if (prefillData.promptHTML) {
+        editorRef.current.innerHTML = prefillData.promptHTML;
+        // innerHTML 恢复后事件监听器丢失，需用 buildTagElement 重建每个标签
+        const filesToUse = prefillData.files ?? [];
+        editorRef.current.querySelectorAll('[data-file-ref]').forEach((oldTag) => {
+          const fileName = oldTag.dataset.fileRef;
+          const file = filesToUse.find((f) => f.name === fileName) || { name: fileName, url: '', size: 0 };
+          const newTag = buildTagElement(file);
+          oldTag.parentNode?.replaceChild(newTag, oldTag);
+        });
+      } else if (prefillData.prompt) {
         editorRef.current.textContent = prefillData.prompt;
       }
       setHasContent((prefillData.prompt || '').trim().length > 0);
     }
-    if (prefillData.files !== undefined) setFiles(prefillData.files);
+    if (prefillData.files !== undefined) {
+      // 替换模式（onReEdit 等场景）
+      setFiles(prefillData.files);
+    } else if (prefillData.appendFiles !== undefined) {
+      // 追加模式（onUseAsRef 场景）：追加到已有列表，按 url 去重，最多20个
+      setFiles((prev) => {
+        if (prev.length >= MAX_FILES) {
+          showToast('error', '您添加的文件太多了，最多支持20个参考文件');
+          return prev;
+        }
+        const existingUrls = new Set((prev ?? []).map((f) => f.url).filter(Boolean));
+        const toAdd = prefillData.appendFiles.filter((f) => !f.url || !existingUrls.has(f.url));
+        const merged = [...(prev ?? []), ...toAdd];
+        if (merged.length > MAX_FILES) {
+          showToast('error', '您添加的文件太多了，最多支持20个参考文件');
+          return merged.slice(0, MAX_FILES);
+        }
+        return merged;
+      });
+    }
     if (prefillData.ratio !== undefined) setRatio(prefillData.ratio);
     if (prefillData.resolution !== undefined) setResolution(prefillData.resolution);
     if (prefillData.count !== undefined) setCount(prefillData.count);
@@ -2091,31 +2264,94 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
     : ALLOWED_EXTS;
   const uploadAcceptAttr = uploadAllowedExts.join(',');
 
+  const MAX_FILES = 20;
+
   const handleFileSelect = (newFiles) => {
-    const oversized = newFiles.filter((f) => isImageFile(f) && f.size > 5 * 1024 * 1024);
+    const oversized = newFiles.filter((f) => isImageFile(f) && f.size > 20 * 1024 * 1024);
     if (oversized.length > 0) {
-      alert('抱歉，平台暂不支持上传5M以上的图片资源！');
+      alert('抱歉，平台暂不支持上传20M以上的图片资源！');
       return;
     }
-    const enriched = newFiles.map((f) => {
-      if (isImageFile(f)) {
-        const previewUrl = URL.createObjectURL(f);
-        Object.defineProperty(f, 'previewUrl', { value: previewUrl, writable: true });
+    setFiles((prev) => {
+      if (prev.length >= MAX_FILES) {
+        showToast('error', '您添加的文件太多了，最多支持20个参考文件');
+        return prev;
       }
-      return f;
+      const enriched = newFiles.map((f) => {
+        if (isImageFile(f)) {
+          const previewUrl = URL.createObjectURL(f);
+          Object.defineProperty(f, 'previewUrl', { value: previewUrl, writable: true });
+        } else if (isVideoFile(f)) {
+          // 预先创建 blob URL，避免 FileCard effect 在 React Strict Mode 双执行时
+          // revoke 掉旧 URL 而新 URL 还未设置导致 ERR_FILE_NOT_FOUND
+          const objectUrl = URL.createObjectURL(f);
+          Object.defineProperty(f, '_objectUrl', { value: objectUrl, writable: true });
+        }
+        return f;
+      });
+      const merged = [...prev, ...enriched];
+      if (merged.length > MAX_FILES) {
+        showToast('error', '您添加的文件太多了，最多支持20个参考文件');
+        return merged.slice(0, MAX_FILES);
+      }
+      return merged;
     });
-    setFiles((prev) => [...prev, ...enriched]);
   };
+
+  const handlePaste = useCallback((e) => {
+    const items = e.clipboardData?.items;
+    if (!items) return;
+    const imageFiles = [];
+    const mediaFiles = []; // video/audio
+    for (const item of items) {
+      if (item.kind !== 'file') continue;
+      if (item.type.startsWith('image/')) {
+        const file = item.getAsFile();
+        if (file) imageFiles.push(file);
+      } else if (item.type.startsWith('video/') || item.type.startsWith('audio/')) {
+        const file = item.getAsFile();
+        if (file) mediaFiles.push(file);
+      }
+    }
+    // 有图片时阻止浏览器把 <img> 插入 contentEditable
+    if (imageFiles.length > 0) {
+      e.preventDefault();
+      handleFileSelect(imageFiles);
+      return;
+    }
+    // 视频/音频粘贴
+    if (mediaFiles.length > 0) {
+      e.preventDefault();
+      if (genType === 'image') {
+        showToast?.('error', '不支持的文件格式！');
+      } else {
+        handleFileSelect(mediaFiles);
+      }
+      return;
+    }
+    // 无文件：只插入纯文本，剥除富文本样式（粗体、颜色等）
+    e.preventDefault();
+    const text = e.clipboardData.getData('text/plain');
+    if (text) {
+      document.execCommand('insertText', false, text);
+    }
+  }, [genType, showToast]);
+
   const handleRemoveFile = (index) => {
     setFiles((prev) => {
       const file = prev[index];
-      if (file && editorRef.current) {
-        const tags = editorRef.current.querySelectorAll('[data-file-ref]');
-        tags.forEach((tag) => {
-          if (tag.dataset.fileRef === file.name) tag.remove();
-        });
-        const content = editorRef.current.innerText ?? '';
-        setHasContent(content.trim().length > 0);
+      if (file) {
+        // 释放预先创建的 blob URL
+        if (file._objectUrl) URL.revokeObjectURL(file._objectUrl);
+        if (file.previewUrl && file.previewUrl.startsWith('blob:')) URL.revokeObjectURL(file.previewUrl);
+        if (editorRef.current) {
+          const tags = editorRef.current.querySelectorAll('[data-file-ref]');
+          tags.forEach((tag) => {
+            if (tag.dataset.fileRef === file.name) tag.remove();
+          });
+          const content = editorRef.current.innerText ?? '';
+          setHasContent(content.trim().length > 0);
+        }
       }
       return prev.filter((_, i) => i !== index);
     });
@@ -2125,19 +2361,46 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
     setAssetPickerOpen(false);
     if (frameAssetTarget && selectedAssets.length > 0) {
       const asset = selectedAssets[0];
-      const assetFile = { name: asset.name || asset.id, size: 0, url: asset.url, isAsset: true };
+      // fileUrl 是真实文件地址（项目资产 normalize 后），url 可能是缩略图
+      const realUrl = asset.fileUrl || asset.url;
+      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const rawFrameId = asset.backendId || asset.asset_id;
+      const assetFile = {
+        name: asset.name || asset.id,
+        size: 0,
+        url: realUrl,
+        previewUrl: asset.url || realUrl,
+        assetId: rawFrameId && UUID_RE.test(rawFrameId) ? rawFrameId : undefined,
+        isAsset: true,
+      };
       if (frameAssetTarget === 'first') setFirstFrameFile(assetFile);
       else setLastFrameFile(assetFile);
       setFrameAssetTarget(null);
       return;
     }
-    const assetFiles = selectedAssets.map((asset) => ({
-      name: asset.name || asset.id,
-      size: 0,
-      url: asset.url,
-      assetId: asset.id || asset.asset_id || undefined,
-      isAsset: true,
-    }));
+    const assetFiles = selectedAssets.map((asset) => {
+      const isVideo = asset.type === 'video';
+      const isAudio = asset.type === 'audio';
+      let fileUrl;
+      if (isVideo) fileUrl = asset.videoUrl || asset.fileUrl || asset.url;
+      else if (isAudio) fileUrl = asset.audioUrl || asset.fileUrl || asset.url;
+      else fileUrl = asset.fileUrl || asset.url;
+      const previewUrl = asset.url || asset.thumbnailUrl || asset.thumbnail_url || fileUrl;
+      // 只传真实后端 UUID：backendId（创作资产回写的 card.id）或 asset_id（项目资产）
+      // 排除 composite id（如 "gen-xxx-0" / "history-xxx-0"），这些不是有效后端 ID
+      const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+      const rawId = asset.backendId || asset.asset_id;
+      const assetId = rawId && UUID_RE.test(rawId) ? rawId : undefined;
+      return {
+        name: asset.name || asset.id,
+        size: 0,
+        url: fileUrl,
+        previewUrl,
+        assetId,
+        isAsset: true,
+        type: isVideo ? 'video/mp4' : isAudio ? 'audio/mpeg' : 'image/jpeg',
+      };
+    });
     setFiles((prev) => [...prev, ...assetFiles]);
   };
 
@@ -2174,6 +2437,47 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
     });
 
     return tag;
+  };
+
+
+  // 点击 FileCard 直接插入 @ 标签（无需 @ 触发，插到光标位置或末尾）
+  const insertFromCard = (file) => {
+    const editor = editorRef.current;
+    if (!editor) return;
+
+    const sel = window.getSelection();
+    let range;
+
+    // 优先使用当前 selection（输入框处于焦点时）
+    if (sel && sel.rangeCount > 0 && editor.contains(sel.getRangeAt(0).startContainer)) {
+      range = sel.getRangeAt(0);
+    // 其次使用 onBlur 时保存的光标位置
+    } else if (savedCursorRangeRef.current && editor.contains(savedCursorRangeRef.current.startContainer)) {
+      range = savedCursorRangeRef.current;
+      sel.removeAllRanges();
+      sel.addRange(range);
+    } else {
+      // 没有历史光标位置 — 追加到末尾
+      range = document.createRange();
+      range.selectNodeContents(editor);
+      range.collapse(false);
+      sel.removeAllRanges();
+      sel.addRange(range);
+    }
+
+    editor.focus();
+
+    const tag = buildTagElement(file);
+    tag.addEventListener('click', (e) => handleTagClick(e, tag));
+    range.deleteContents();
+    range.insertNode(tag);
+    const afterRange = document.createRange();
+    afterRange.setStartAfter(tag);
+    afterRange.collapse(true);
+    sel.removeAllRanges();
+    sel.addRange(afterRange);
+    savedCursorRangeRef.current = null;
+    setHasContent(true);
   };
 
   const insertMention = (file) => {
@@ -2243,6 +2547,7 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
       const query = textBefore.slice(atIdx + 1);
       if (!query.includes(' ') && !query.includes('\n')) {
         setMentionQuery(query);
+        setMentionIndex(0);
         setMentionOpen(true);
         const rect = range.getBoundingClientRect();
         const editorRect = editorRef.current.getBoundingClientRect();
@@ -2254,11 +2559,20 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
     setMentionOpen(false);
   };
 
-  const canSend = !disabled && (hasContent || files.length > 0 || firstFrameFile || lastFrameFile || (genType === 'dubbing' && selectedVoiceId));
+  const atConcurrentLimit = activeCount >= 5;
+  const canSend = !disabled && !atConcurrentLimit && (hasContent || files.length > 0 || firstFrameFile || lastFrameFile || (genType === 'dubbing' && selectedVoiceId));
 
   const handleSend = async () => {
     if (!canSend) return;
-    const currentText = editorRef.current?.innerText?.trim() ?? '';
+    // 提取纯文字 prompt，剔除 @ 标签节点（data-file-ref），避免把 @文件名 混入发给后端的 prompt
+    let currentText = '';
+    if (editorRef.current) {
+      const clone = editorRef.current.cloneNode(true);
+      clone.querySelectorAll('[data-file-ref]').forEach((el) => el.remove());
+      currentText = clone.innerText?.trim() ?? '';
+    }
+    const savedFiles = files;
+    const savedHTML = editorRef.current?.innerHTML ?? '';
     // 立即清空输入框和附件
     if (editorRef.current) editorRef.current.innerHTML = '';
     setHasContent(false);
@@ -2281,6 +2595,7 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
     }
     const result = await onGenerate?.({
       prompt: currentText,
+      promptHTML: savedHTML,
       genType,
       model,
       ...(genType === 'image' ? { ratio, resolution, count } : {}),
@@ -2288,20 +2603,48 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
       ...(genType === 'dubbing' ? { speed: dubbingSpeed, emotion: dubbingEmotion, voiceId: selectedVoiceId, voiceName: selectedVoiceName } : {}),
       files,
       onFail: (fallbackPrompt) => {
-        // 失败时回退文本到输入框
-        if (editorRef.current && fallbackPrompt) {
-          editorRef.current.innerText = fallbackPrompt;
-          setHasContent(true);
+        // 失败时回退输入框内容（含标签 HTML）和附件
+        if (editorRef.current) {
+          if (savedHTML) {
+            editorRef.current.innerHTML = savedHTML;
+            setHasContent(true);
+          } else if (fallbackPrompt) {
+            editorRef.current.innerText = fallbackPrompt;
+            setHasContent(true);
+          }
+        }
+        if (savedFiles.length > 0) {
+          setFiles(savedFiles);
         }
       },
     });
   };
 
   const handleKeyDown = (e) => {
-    if (mentionOpen && e.key === 'Escape') {
-      e.preventDefault();
-      setMentionOpen(false);
-      return;
+    if (mentionOpen) {
+      const mentionFiles = files.filter(f =>
+        mentionQuery === '' || f.name.toLowerCase().includes(mentionQuery.toLowerCase())
+      );
+      if (e.key === 'Escape') {
+        e.preventDefault();
+        setMentionOpen(false);
+        return;
+      }
+      if (e.key === 'ArrowDown') {
+        e.preventDefault();
+        setMentionIndex(i => mentionFiles.length ? (i + 1) % mentionFiles.length : 0);
+        return;
+      }
+      if (e.key === 'ArrowUp') {
+        e.preventDefault();
+        setMentionIndex(i => mentionFiles.length ? (i - 1 + mentionFiles.length) % mentionFiles.length : 0);
+        return;
+      }
+      if (e.key === 'Enter' && mentionFiles.length > 0) {
+        e.preventDefault();
+        insertMention(mentionFiles[mentionIndex] || mentionFiles[0]);
+        return;
+      }
     }
     if (e.key === 'Backspace' || e.key === 'Delete') {
       const sel = window.getSelection();
@@ -2406,9 +2749,9 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
           }}
         >
           {files.length > 0 && (
-            <div style={{ position: 'absolute', left: 0, display: 'flex', alignItems: 'flex-start', gap: '8px', bottom: 'calc(100% + 24px)' }}>
+            <div style={{ position: 'absolute', left: 0, right: 0, display: 'flex', flexWrap: 'wrap', alignItems: 'flex-start', gap: '8px', bottom: 'calc(100% + 24px)' }}>
               {files.map((file, index) => (
-                <FileCard key={index} file={file} onRemove={() => handleRemoveFile(index)} disabled={disabled} />
+                <FileCard key={index} file={file} onRemove={() => handleRemoveFile(index)} disabled={disabled} onInsert={() => insertFromCard(file)} />
               ))}
             </div>
           )}
@@ -2502,9 +2845,15 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
               }}
               onInput={handleInput}
               onKeyDown={handleKeyDown}
+              onPaste={handlePaste}
               onFocus={() => setFocused(true)}
               onBlur={() => {
                 setFocused(false);
+                // 失焦前保存光标位置，供点击图片卡片插入时使用
+                const sel = window.getSelection();
+                if (sel && sel.rangeCount > 0) {
+                  savedCursorRangeRef.current = sel.getRangeAt(0).cloneRange();
+                }
                 if (mentionFromTagRef.current) {
                   mentionFromTagRef.current = false;
                 } else {
@@ -2535,13 +2884,14 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
                     <div
                       key={i}
                       onMouseDown={(e) => { e.preventDefault(); insertMention(file); }}
+                      onMouseEnter={() => setMentionIndex(i)}
                       style={{
                         display: 'flex',
                         alignItems: 'center',
                         gap: '8px',
                         padding: '8px 12px',
                         borderRadius: '6px',
-                        background: i === 0 ? '#FFFFFF0D' : 'transparent',
+                        background: i === mentionIndex ? '#FFFFFF0D' : 'transparent',
                         cursor: 'pointer',
                       }}
                     >
@@ -2560,7 +2910,7 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
                         fontFamily: FONT,
                         fontSize: '14px',
                         lineHeight: '18px',
-                        color: i === 0 ? '#FFFFFF' : '#FFFFFF99',
+                        color: i === mentionIndex ? '#FFFFFF' : '#FFFFFF99',
                         overflow: 'hidden',
                         textOverflow: 'ellipsis',
                         whiteSpace: 'nowrap',
@@ -2624,7 +2974,7 @@ function InputCard({ onGenerate, width = '800px', disabled = false, genType, onG
               </>
             )}
           </div>
-          <SendButton onClick={handleSend} disabled={!canSend} loading={disabled} />
+          <SendButton onClick={handleSend} disabled={!canSend} loading={disabled} disabledTooltip={atConcurrentLimit ? '当前有5个任务进行中，为了保证成功率，请稍等一会儿再发送创作请求' : ''} />
         </div>
       </div>
     </div>
@@ -2846,6 +3196,7 @@ const DETAIL_PANEL_DIVIDER = (
 );
 
 function ImageDetailModal({ card, onClose, onDelete, favorited, onToggleFavorite }) {
+  const { width: modalW, height: modalH } = useModalSize();
   const [starAnim, setStarAnim] = useState(false);
   const [closeHovered, setCloseHovered] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -2870,7 +3221,7 @@ function ImageDetailModal({ card, onClose, onDelete, favorited, onToggleFavorite
           onClick={onClose}
         >
           <div
-            style={{ width: '960px', borderRadius: '16px', border: '1px solid #FFFFFF14', backgroundColor: '#161616', boxShadow: '#00000099 -10px 24px 64px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
+            style={{ width: `${modalW}px`, borderRadius: '16px', border: '1px solid #FFFFFF14', backgroundColor: '#161616', boxShadow: '#00000099 -10px 24px 64px', display: 'flex', flexDirection: 'column', overflow: 'hidden' }}
             onClick={(e) => e.stopPropagation()}
           >
             {/* Header */}
@@ -2889,27 +3240,25 @@ function ImageDetailModal({ card, onClose, onDelete, favorited, onToggleFavorite
             </div>
 
             {/* Body */}
-            <div style={{ display: 'flex', height: '540px' }}>
+            <div style={{ display: 'flex', height: `${modalH - 60}px` }}>
               {/* Left: image viewer */}
               <div style={{ flex: 1, minWidth: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', backgroundColor: '#0A0A0A', position: 'relative', overflow: 'hidden' }}>
                 {card.imageUrl && (
-                  <div style={{
-                    position: 'absolute',
-                    left: 0,
-                    right: 0,
-                    top: '50%',
-                    transform: 'translateY(-50%)',
-                    height: '70%',
-                    backgroundImage: `url(${card.imageUrl})`,
-                    backgroundSize: 'contain',
-                    backgroundPosition: '50%',
-                    backgroundRepeat: 'no-repeat',
-                  }} />
+                  <img
+                    src={card.imageUrl}
+                    alt=""
+                    style={{
+                      maxWidth: '100%',
+                      maxHeight: '100%',
+                      objectFit: 'contain',
+                      display: 'block',
+                    }}
+                  />
                 )}
               </div>
 
               {/* Right: info panel */}
-              <div style={{ width: '280px', flexShrink: 0, backgroundColor: '#161616', borderLeft: '1px solid #FFFFFF0F', display: 'flex', flexDirection: 'column', height: '540px', position: 'relative' }}>
+              <div style={{ width: '280px', flexShrink: 0, backgroundColor: '#161616', borderLeft: '1px solid #FFFFFF0F', display: 'flex', flexDirection: 'column', height: `${modalH - 60}px`, position: 'relative' }}>
                 {/* Scrollable content area */}
                 <div style={{ flex: 1, overflowY: 'auto', minHeight: 0, paddingBottom: '76px' }}>
                   {DETAIL_PANEL_DIVIDER}
@@ -2917,10 +3266,15 @@ function ImageDetailModal({ card, onClose, onDelete, favorited, onToggleFavorite
                   {/* 提示词 */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', padding: '16px 20px', flexShrink: 0 }}>
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                      <div style={{ fontFamily: FONT, fontSize: '11px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>提示词</div>
+                      <div style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.6)' }}>提示词</div>
                       <CopyPromptButton text={card.prompt} onCopy={handleCopyPrompt} />
                     </div>
-                    <div style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '20px', letterSpacing: '0.01em', color: '#FFFFFFCC' }}>{card.prompt || '—'}</div>
+                    <div style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '20px', letterSpacing: '0.01em', color: '#FFFFFFCC' }}>
+                      {card.promptHTML
+                        ? <span dangerouslySetInnerHTML={{ __html: card.promptHTML }} />
+                        : (card.prompt || '—')
+                      }
+                    </div>
                   </div>
 
                   {/* 参考图 */}
@@ -2928,7 +3282,7 @@ function ImageDetailModal({ card, onClose, onDelete, favorited, onToggleFavorite
                     <>
                       {DETAIL_PANEL_DIVIDER}
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px 20px', flexShrink: 0 }}>
-                        <div style={{ fontFamily: FONT, fontSize: '11px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>参考图</div>
+                        <div style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.6)' }}>参考图</div>
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '12px' }}>
                           {card.refImages.map((img, i) => {
                             const imgUrl = img.url || img.previewUrl || '';
@@ -2956,10 +3310,10 @@ function ImageDetailModal({ card, onClose, onDelete, favorited, onToggleFavorite
 
                   {/* 生成参数 */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '12px', padding: '16px 20px', flexShrink: 0 }}>
-                    <div style={{ fontFamily: FONT, fontSize: '11px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: '#FFFFFF99' }}>生成参数</div>
+                    <div style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '14px', letterSpacing: '0.06em', textTransform: 'uppercase', color: 'rgba(255,255,255,0.6)' }}>生成参数</div>
                     {card.model && (
                       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                        <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFF99' }}>模型</span>
+                        <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: 'rgba(255,255,255,0.6)' }}>模型</span>
                         <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.01em', color: '#FFFFFFCC' }}>{card.model}</span>
                       </div>
                     )}
@@ -2981,8 +3335,8 @@ function ImageDetailModal({ card, onClose, onDelete, favorited, onToggleFavorite
 
                   {/* AI生成时间 */}
                   <div style={{ display: 'flex', flexDirection: 'column', gap: '4px', padding: '16px 20px', flexShrink: 0 }}>
-                    <div style={{ fontFamily: FONT, fontSize: '11px', lineHeight: '14px', letterSpacing: '0.66px', textTransform: 'uppercase', color: '#FFFFFF99' }}>AI 生成时间</div>
-                    <div style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.12px', color: '#FFFFFF66' }}>{formatCreationDate(card.createdAt)}</div>
+                    <div style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '14px', letterSpacing: '0.66px', textTransform: 'uppercase', color: 'rgba(255,255,255,0.6)' }}>AI 生成时间</div>
+                    <div style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', letterSpacing: '0.12px', color: 'rgba(255,255,255,0.8)' }}>{formatCreationDate(card.createdAt)}</div>
                   </div>
 
                   {DETAIL_PANEL_DIVIDER}
@@ -3106,12 +3460,12 @@ function VideoResultCard({ status, videoUrl, prompt, model, ratio, resolution, d
     <>
       <div
         style={{
-          width: '320px',
-          height: '180px',
-          flexShrink: 0,
+          width: '100%',
+          aspectRatio: '16/9',
           borderRadius: '8px',
           overflow: 'hidden',
-          backgroundColor: '#1A1A1A',
+          backgroundColor: hovered ? '#343434' : '#272727',
+          transition: 'background-color 0.15s',
           position: 'relative',
           cursor: isDone ? 'pointer' : 'default',
           outline: isSelected ? '2px solid #2DC3E1' : 'none',
@@ -3192,17 +3546,20 @@ function VideoResultCard({ status, videoUrl, prompt, model, ratio, resolution, d
                   </svg>
                 }
               />
-              <CardActionBtn
-                tooltip="尾帧用作首帧参考"
-                onClick={() => onUseAsFirstFrame?.()}
-                icon={
-                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ width: '16px', height: '16px' }}>
+             <CardActionBtn
+               tooltip="尾帧用作首帧参考"
+               onClick={() => onUseAsFirstFrame?.()}
+               icon={
+                  <svg width="24" height="24" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg" style={{ width: '16px', height: '16px', overflow: 'visible' }}>
                     <path d="M9.446 1.733C9.888 1.733 10.246 2.092 10.246 2.533V21.855C10.246 22.297 9.888 22.655 9.447 22.655C9.005 22.655 8.646 22.297 8.646 21.855V2.533C8.646 2.092 9.005 1.733 9.447 1.733H9.446Z" fill="#FFFFFF" />
                     <path d="M9.194 3.483V5.083H4.706C4.411 5.083 4.172 5.322 4.172 5.617V18.946C4.172 19.241 4.411 19.479 4.706 19.479H9.194V21.079H4.706C3.527 21.079 2.572 20.124 2.572 18.946V5.617C2.572 4.438 3.527 3.483 4.706 3.483H9.194Z" fill="#FFFFFF" />
-                    <path d="M3.814 8.787H9.446V7.187H3.814V8.787ZM3.814 17.402H9.446V15.802H3.814V17.402Z" fill="#FFFFFF" />
+                    <path d="M14.957 3.483V5.083H19.446C19.74 5.083 19.979 5.322 19.979 5.617V18.946C19.979 19.241 19.74 19.479 19.446 19.479H14.957V21.079H19.446C20.624 21.079 21.579 20.124 21.579 18.946V5.617C21.579 4.438 20.624 3.483 19.446 3.483H14.957Z" fill="#FFFFFF66" />
+                    <path d="M20.339 8.787H14.707V7.187H20.339V8.787ZM20.339 17.402H14.707V15.802H20.339V17.402Z" fill="#FFFFFF66" />
+                    <path d="M 3 9.1 L 8.632 9.1 L 8.632 7.5 L 3 7.5 L 3 9.1 Z M 3 17.715 L 8.632 17.715 L 8.632 16.115 L 3 16.115 L 3 17.715 Z" fill="#FFFFFF" />
+                    <path d="M 14.3 22.422 C 14.742 22.422 15.1 22.064 15.1 21.622 L 15.1 2.3 C 15.1 1.859 14.742 1.5 14.3 1.5 C 13.858 1.5 13.5 1.859 13.5 2.3 L 13.5 21.622 C 13.5 22.064 13.858 22.422 14.3 22.422 Z" fill="#FFFFFF66" />
                   </svg>
-                }
-              />
+               }
+             />
               <CardActionBtn
                 tooltip="下载"
                 onClick={() => downloadVideo(videoUrl)}
@@ -3246,10 +3603,12 @@ function VideoResultCard({ status, videoUrl, prompt, model, ratio, resolution, d
   );
 }
 
-function ImageResultCard({ status, imageUrl, prompt, model, ratio, resolution, refImages, createdAt, onReEdit, onUseAsRef, onDelete, onSave, batchMode = false, isSelected = false, onToggleSelect }) {
+function ImageResultCard({ status, imageUrl, originalUrl, prompt, promptHTML, model, ratio, resolution, refImages, createdAt, onReEdit, onUseAsRef, onDelete, onSave, batchMode = false, isSelected = false, onToggleSelect, favorited = false, onToggleFavorite }) {
+  // 下载和详情弹窗使用原图；缩略图仅用于卡片显示
+  const displayUrl = imageUrl;
+  const downloadUrl = originalUrl || imageUrl;
   const [hovered, setHovered] = useState(false);
   const [detailOpen, setDetailOpen] = useState(false);
-  const [favorited, setFavorited] = useState(false);
   const [starAnim, setStarAnim] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
   useEffect(() => { ensureShimmerStyle(); }, []);
@@ -3260,19 +3619,19 @@ function ImageResultCard({ status, imageUrl, prompt, model, ratio, resolution, r
     e.stopPropagation();
     setStarAnim(true);
     setTimeout(() => setStarAnim(false), 300);
-    setFavorited((v) => !v);
+    onToggleFavorite?.();
   }
 
   return (
     <>
       <div
         style={{
-          width: '320px',
-          height: '180px',
-          flexShrink: 0,
+          width: '100%',
+          aspectRatio: '16/9',
           borderRadius: '8px',
           overflow: 'hidden',
-          backgroundColor: '#1A1A1A',
+          backgroundColor: hovered ? '#343434' : '#272727',
+          transition: 'background-color 0.15s',
           position: 'relative',
           cursor: isDone ? 'pointer' : 'default',
           outline: isSelected ? '2px solid #2DC3E1' : 'none',
@@ -3288,7 +3647,7 @@ function ImageResultCard({ status, imageUrl, prompt, model, ratio, resolution, r
         {status === 'loading' ? (
           <div className="creation-shimmer" style={{ width: '100%', height: '100%' }} />
         ) : isDone ? (
-          <img src={imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+          <img src={imageUrl} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block' }} />
         ) : (
           <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <span style={{ color: '#FFFFFF33', fontSize: '12px', fontFamily: FONT }}>生成失败</span>
@@ -3360,7 +3719,7 @@ function ImageResultCard({ status, imageUrl, prompt, model, ratio, resolution, r
               />
               <CardActionBtn
                 tooltip="下载"
-                onClick={() => downloadImage(imageUrl)}
+                onClick={() => downloadImage(downloadUrl)}
                 icon={
                   <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
                     <path d="M8.003 11.3V2" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
@@ -3401,8 +3760,9 @@ function ImageResultCard({ status, imageUrl, prompt, model, ratio, resolution, r
       {detailOpen && (
         <ImageDetailModal
           card={{
-            imageUrl,
+            imageUrl: downloadUrl,   // 详情弹窗和下载都用原图
             prompt,
+            promptHTML,
             model,
             ratio,
             resolution,
@@ -3412,7 +3772,7 @@ function ImageResultCard({ status, imageUrl, prompt, model, ratio, resolution, r
           onClose={() => setDetailOpen(false)}
           onDelete={onDelete}
           favorited={favorited}
-          onToggleFavorite={() => setFavorited(v => !v)}
+          onToggleFavorite={() => onToggleFavorite?.()}
         />
       )}
     </>
@@ -3459,9 +3819,8 @@ function AudioResultCard({ status, audioUrl, prompt, model, createdAt, onDelete,
     <>
       <div
         style={{
-          width: '320px',
-          height: '180px',
-          flexShrink: 0,
+          width: '100%',
+          aspectRatio: '16/9',
           borderRadius: '8px',
           overflow: 'hidden',
           backgroundColor: '#1A1A1A',
@@ -3598,8 +3957,9 @@ function AudioResultCard({ status, audioUrl, prompt, model, createdAt, onDelete,
   );
 }
 
-function CreationResultState({ generations, onGenerate, genType, onGenTypeChange, model, onModelChange, modelOptions, creationParams, onDeleteCard, batchMode = false, selected, onToggleSelect, onSwitchToFrameMode, onVideoCardClick, favorites, toggleFavorite, showToast, onBeforeModelOpen, isGenerating = false }) {
+function CreationResultState({ generations, onGenerate, genType, onGenTypeChange, model, onModelChange, modelOptions, creationParams, onDeleteCard, batchMode = false, selected, onToggleSelect, onSwitchToFrameMode, onVideoCardClick, favorites, toggleFavorite, showToast, onBeforeModelOpen, isGenerating = false, historyLoading = false, historyHasMore = false, onLoadMore, activeCount = 0 }) {
   const scrollRef = useRef(null);
+  const sentinelRef = useRef(null);
   const [prefillVersion, setPrefillVersion] = useState(0);
   const [prefillData, setPrefillData] = useState(null);
 
@@ -3611,6 +3971,7 @@ function CreationResultState({ generations, onGenerate, genType, onGenTypeChange
       genId: gen.id,
       cardIndex: i,
       prompt: gen.prompt,
+      promptHTML: gen.promptHTML || '',
       model: gen.model,
       ratio: gen.ratio,
       resolution: gen.resolution,
@@ -3624,7 +3985,36 @@ function CreationResultState({ generations, onGenerate, genType, onGenTypeChange
     if (scrollRef.current) {
       scrollRef.current.scrollTop = 0;
     }
-  }, [generations.length]);
+  }, [genType]); // tab 切换时重置，历史追加不重置
+
+  // ── 滚动到底加载更多（IntersectionObserver） ─────────────────────────────────
+  useEffect(() => {
+    if (!sentinelRef.current || !onLoadMore) return;
+    const observer = new IntersectionObserver(
+      (entries) => {
+        if (entries[0].isIntersecting && historyHasMore && !historyLoading) {
+          onLoadMore();
+        }
+      },
+      { root: scrollRef.current, rootMargin: '120px', threshold: 0 }
+    );
+    observer.observe(sentinelRef.current);
+    return () => observer.disconnect();
+  }, [historyHasMore, historyLoading, onLoadMore]);
+
+  // ── 视口未满时自动加载下一页 ─────────────────────────────────────────────────
+  useEffect(() => {
+    if (!historyHasMore || historyLoading || !onLoadMore) return;
+    const container = scrollRef.current;
+    if (!container) return;
+    // 等 DOM 更新后再检测
+    const raf = requestAnimationFrame(() => {
+      if (container.scrollHeight <= container.clientHeight + 1) {
+        onLoadMore();
+      }
+    });
+    return () => cancelAnimationFrame(raf);
+  }, [generations.length, historyHasMore, historyLoading, onLoadMore]);
 
   const isAudio = genType === 'dubbing';
 
@@ -3644,25 +4034,25 @@ function CreationResultState({ generations, onGenerate, genType, onGenTypeChange
         style={{
           position: 'absolute',
           inset: 0,
+          padding: '8px 24px 220px',
           overflowY: 'auto',
-          paddingTop: '16px',
-          paddingLeft: '32px',
-          paddingRight: '32px',
-          paddingBottom: '220px',
+          overflowX: 'hidden',
         }}
       >
         <div
           style={{
-            display: 'flex',
-            flexDirection: isAudio ? 'column' : 'row',
-            flexWrap: isAudio ? 'nowrap' : 'wrap',
-            gap: '16px',
+            display: isAudio ? 'flex' : 'grid',
+            gridTemplateColumns: isAudio ? undefined : 'repeat(auto-fill, minmax(240px, 1fr))',
+            flexDirection: isAudio ? 'column' : undefined,
+            width: '100%',
+            rowGap: '16px',
+            columnGap: '16px',
             alignContent: 'flex-start',
           }}
         >
           {isGenerating && allCards.length === 0 && (
             <div style={{
-              width: isAudio ? '100%' : '320px', height: isAudio ? '72px' : '180px', borderRadius: '8px',
+              width: '100%', height: isAudio ? '72px' : undefined, aspectRatio: isAudio ? undefined : '16/9', borderRadius: '8px',
               background: 'rgba(255,255,255,0.04)',
               border: '1px solid rgba(255,255,255,0.06)',
               display: 'flex', alignItems: 'center', justifyContent: 'center',
@@ -3710,6 +4100,7 @@ function CreationResultState({ generations, onGenerate, genType, onGenTypeChange
                   onReEdit={() => {
                     setPrefillData({
                       prompt: card.prompt,
+                      promptHTML: card.promptHTML || '',
                       files: (card.refImages || []).map((img) => ({
                         name: img.name || 'ref.png',
                         url: img.url || img.previewUrl || '',
@@ -3765,6 +4156,7 @@ function CreationResultState({ generations, onGenerate, genType, onGenTypeChange
                 onReEdit={() => {
                   setPrefillData({
                     prompt: card.prompt,
+                    promptHTML: card.promptHTML || '',
                     files: (card.refImages || []).map((img) => ({
                       name: img.name || 'ref.png',
                       url: img.url || img.previewUrl || '',
@@ -3779,16 +4171,27 @@ function CreationResultState({ generations, onGenerate, genType, onGenTypeChange
                   setPrefillVersion((v) => v + 1);
                 }}
                 onUseAsRef={() => {
+                  const newFile = { name: 'creation.png', url: card.imageUrl, previewUrl: card.imageUrl, assetId: card.assetId || card.id || undefined, isAsset: true, size: 0 };
                   setPrefillData({
-                    files: [{ name: 'creation.png', url: card.imageUrl, previewUrl: card.imageUrl, assetId: card.assetId || card.id || undefined, isAsset: true, size: 0 }],
+                    appendFiles: [newFile],
                   });
                   setPrefillVersion((v) => v + 1);
                 }}
+                favorited={favorites?.has(key)}
+                onToggleFavorite={() => toggleFavorite?.(key)}
                 onDelete={() => onDeleteCard?.(card.genId, card.cardIndex)}
               />
             );
           })}
         </div>
+        {/* 底部 sentinel：滚动到底时触发加载更多 */}
+        <div ref={sentinelRef} style={{ height: '1px', flexShrink: 0 }} />
+        {historyLoading && (
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', padding: '24px 0', gap: '8px' }}>
+            <div style={{ width: '16px', height: '16px', borderRadius: '50%', border: '2px solid rgba(255,255,255,0.1)', borderTopColor: '#2DC3E1', animation: 'spin 1s linear infinite', flexShrink: 0 }} />
+            <span style={{ fontFamily: "'AlibabaPuHuiTi_2_55_Regular',system-ui,sans-serif", fontSize: '13px', color: 'rgba(255,255,255,0.4)' }}>加载中…</span>
+          </div>
+        )}
       </div>
 
       {/* Gradient fade: bridges images and InputCard, does not intercept clicks */}
@@ -3824,7 +4227,7 @@ function CreationResultState({ generations, onGenerate, genType, onGenTypeChange
         <div style={{ width: 'min(800px, 100%)' }}>
           <InputCard onGenerate={onGenerate} width="100%" genType={genType} onGenTypeChange={onGenTypeChange}
             model={model} onModelChange={onModelChange} modelOptions={modelOptions} creationParams={creationParams}
-            prefillVersion={prefillVersion} prefillData={prefillData} onBeforeModelOpen={onBeforeModelOpen} />
+            prefillVersion={prefillVersion} prefillData={prefillData} onBeforeModelOpen={onBeforeModelOpen} showToast={showToast} activeCount={activeCount} />
         </div>
       </div>
     </div>
@@ -3832,7 +4235,7 @@ function CreationResultState({ generations, onGenerate, genType, onGenTypeChange
 }
 
 // ─── Empty state ──────────────────────────────────────────────────────────────
-function CreationEmptyState({ onGenerate, genType, onGenTypeChange, model, onModelChange, modelOptions, creationParams, onBeforeModelOpen }) {
+function CreationEmptyState({ onGenerate, genType, onGenTypeChange, model, onModelChange, modelOptions, creationParams, onBeforeModelOpen, showToast, activeCount = 0 }) {
   const EmptyIcon = EMPTY_ICON_MAP[genType] ?? CreationEmptyIconImage;
   return (
     <div
@@ -3868,7 +4271,7 @@ function CreationEmptyState({ onGenerate, genType, onGenTypeChange, model, onMod
       {/* InputCard: absolute, centered horizontally, 16px from bottom */}
       <div style={{ position: 'absolute', left: '50%', bottom: '16px', translate: '-50% 0', width: 'min(800px, 100%)' }}>
         <InputCard onGenerate={onGenerate} width="100%" genType={genType} onGenTypeChange={onGenTypeChange}
-          model={model} onModelChange={onModelChange} modelOptions={modelOptions} creationParams={creationParams} onBeforeModelOpen={onBeforeModelOpen} />
+          model={model} onModelChange={onModelChange} modelOptions={modelOptions} creationParams={creationParams} onBeforeModelOpen={onBeforeModelOpen} showToast={showToast} activeCount={activeCount} />
       </div>
     </div>
   );
@@ -3883,7 +4286,7 @@ const CREATION_TABS = [
 
 function CreationTabBar({ activeTab, onChange }) {
   return (
-    <div style={{ display: 'flex', alignItems: 'baseline', gap: '24px', paddingTop: '16px', paddingLeft: '32px', flex: 1, alignSelf: 'stretch' }}>
+    <div style={{ display: 'flex', alignItems: 'baseline', gap: '24px', paddingTop: '16px', paddingLeft: '24px', flex: 1, alignSelf: 'stretch' }}>
       {CREATION_TABS.map(({ key, label }) => {
         const isActive = key === activeTab;
         return (
@@ -4090,24 +4493,26 @@ function CreationLoginEmptyState({ onLoginClick }) {
   );
 }
 
-export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick, apiConfigured = true, onShowNoModelNotice }) {
-  if (serverReachable === false) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-3" style={{ flex: 1, paddingTop: '80px' }}>
-        <div className="flex items-center gap-2 px-16 py-2 rounded-lg text-sm" style={{ backgroundColor: 'rgba(255,77,79,0.1)', color: '#FF4D4F' }}>
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1L13 12H1L7 1Z" stroke="#FF4D4F" strokeLinejoin="round"/><path d="M7 5V8" stroke="#FF4D4F" strokeLinecap="round"/><circle cx="7" cy="10.5" r="0.5" fill="#FF4D4F"/></svg>
-          后端服务连接异常，部分功能不可用
-        </div>
-      </div>
-    );
-  }
+// 模块级常量和 ref：组件卸载重挂载不重置，避免 session 重复恢复导致数据叠加
+const SESSION_KEY = 'miioo_creation_session_id';
+const PENDING_VIDEO_TASKS_KEY = 'miioo_pending_video_tasks';
+const _sessionIdRef = { current: localStorage.getItem(SESSION_KEY) };
+const _sessionInitRef = { current: false };
+const _restoredShotIdsRef = { current: new Set() };
 
-  const [activeTab, setActiveTab] = useState('image');
+export default function CreationPage({ isLoggedIn, onLoginClick, apiConfigured = true, onShowNoModelNotice }) {  const [activeTab, setActiveTab] = useState('image');
   const [genType, setGenType] = useState('image');
-  const [generating, setGenerating] = useState(false);
+  const [generating, setGenerating] = useState(false); // kept for isGenerating prop (skeleton)
+  const [activeCountByTab, setActiveCountByTab] = useState({ image: 0, video: 0, dubbing: 0 });
+  const incrementActive = (tab) => setActiveCountByTab(prev => ({ ...prev, [tab]: (prev[tab] || 0) + 1 }));
+  const decrementActive = (tab) => setActiveCountByTab(prev => ({ ...prev, [tab]: Math.max(0, (prev[tab] || 0) - 1) }));
   const {
-    generationsByTab, addGeneration, deleteCard: storeDeleteCard, deleteSelectedCards,
+    generationsByTab, addGeneration, deleteCard: storeDeleteCard, deleteGeneration: storeDeleteGeneration, deleteSelectedCards,
+    updateCardIds: storeUpdateCardIds, syncFavorites: storeSyncFavorites,
     favorites, toggleFavorite: storeToggleFavorite,
+    confirmFavoriteToggle: storeConfirmFavoriteToggle,
+    rollbackFavoriteToggle: storeRollbackFavoriteToggle,
+    historyMeta, mergeHistoryGenerations, updateHistoryMeta,
   } = useCreationStore();
   const generations = generationsByTab[activeTab] ?? [];
 
@@ -4122,13 +4527,136 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
 
   // Session state for backend persistence
   const SESSION_KEY = 'miioo_creation_session_id';
-  const sessionIdRef = useRef(localStorage.getItem(SESSION_KEY));
-  const sessionInitRef = useRef(false);
+  const sessionIdRef = _sessionIdRef;
+  const sessionInitRef = _sessionInitRef;
   // Prevent duplicate restored shots on re-mount
-  const restoredShotIdsRef = useRef(new Set());
+  const restoredShotIdsRef = _restoredShotIdsRef;
+
+  // ── 历史数据加载 ──────────────────────────────────────────────────────────────
+  // 将后端返回的 image/video/audio 列表项转换为 generation 格式
+  function normalizeHistoryItem(item, type) {
+    const id = `history-${item.id}`;
+
+    // video 类型优先取 video_url/videoUrl，图片/音频沿用 original_url/file_url/url
+    const rawUrl =
+      type === 'video'
+        ? (item.video_url || item.videoUrl || item.preview_video_url || item.previewVideoUrl || item.original_url || item.file_url || item.url || '')
+        : (item.original_url || item.file_url || item.url || item.thumbnail_url || item.thumbnailUrl || '');
+    const url = normalizeImageUrl(rawUrl) || '';
+
+    // 图片类型单独保存缩略图（仅用于低流量预览），原图用于展示和下载
+    const rawThumbUrl = type === 'image'
+      ? (item.thumbnail_url || item.thumbnailUrl || rawUrl)
+      : '';
+    const thumbnailUrl = normalizeImageUrl(rawThumbUrl) || url;
+
+    // video 类型从 asset_bindings 提取参考图（首帧/尾帧等），其他类型沿用 reference_images
+    const assetBindings = item.asset_bindings || item.assetBindings || [];
+    const refImages =
+      type === 'video'
+        ? assetBindings
+            .filter((b) => b.asset_type === 'image')
+            .map((b) => {
+              const imgUrl = b.preview_url || b.previewUrl || b.url || '';
+              const normalized = normalizeImageUrl(imgUrl) || imgUrl;
+              return { url: normalized, previewUrl: normalized, isAsset: true, name: b.asset_name || 'ref.png', size: 0 };
+            })
+        : (item.reference_images || item.referenceImages || []).map((img) => {
+            const imgUrl = typeof img === 'string' ? img : (img?.url || img?.original_url || '');
+            const normalized = normalizeImageUrl(imgUrl) || imgUrl;
+            return { url: normalized, previewUrl: normalized, isAsset: true, name: normalized.split('/').pop() || 'ref.png', size: 0 };
+          });
+
+    // poster：视频封面图
+    const posterUrl = normalizeImageUrl(item.poster_url || item.posterUrl || '') || undefined;
+
+    return {
+      id,
+      backendId: item.id,
+      ratio: item.ratio || item.aspect_ratio || '16:9',
+      resolution: item.resolution || item.size || '',
+      duration: item.duration || undefined,
+      model: item.model || '',
+      prompt: item.prompt || '',
+      refImages,
+      createdAt: item.created_at || new Date().toISOString(),
+      cards: [{
+        id: item.id,
+        type,
+        status: 'done',
+        imageUrl: type === 'image' ? url : null,
+        originalUrl: type === 'image' ? url : null,      // 原图，用于展示和下载
+        thumbnailUrl: type === 'image' ? thumbnailUrl : null, // 缩略图（备用）
+        videoUrl: type === 'video' ? url : null,
+        audioUrl: type === 'audio' ? url : null,
+        posterUrl: type === 'video' ? posterUrl : undefined,
+        isFavorite: item.is_favorite ?? item.is_liked ?? item.isLiked ?? false,
+      }],
+    };
+  }
+
+  // 拉取一页历史数据，自动填满视口逻辑由 CreationResultState 触发
+  const loadHistoryPage = useCallback(async (tab) => {
+    if (!isLoggedIn) return;
+    const meta = useCreationStore.getState().historyMeta[tab];
+    if (meta.loading || !meta.hasMore) return;
+
+    updateHistoryMeta(tab, { loading: true });
+    const nextPage = meta.page + 1;
+    const PAGE_SIZE = 18; // 比默认9大，保证大屏填满
+
+    try {
+      let resp;
+      if (tab === 'image') {
+        resp = await apiListCreationImages({ page: nextPage, page_size: PAGE_SIZE });
+      } else if (tab === 'video') {
+        resp = await apiListCreationVideos({ page: nextPage, page_size: PAGE_SIZE });
+      } else {
+        resp = await apiListCreationAudios({ page: nextPage, page_size: PAGE_SIZE });
+      }
+
+      const type = tab === 'dubbing' ? 'audio' : tab;
+      const list = Array.isArray(resp) ? resp : (resp?.list ?? resp?.items ?? resp?.data ?? []);
+      const hasMore = list.length >= PAGE_SIZE;
+
+     const normalized = list.map((item) => normalizeHistoryItem(item, type));
+     mergeHistoryGenerations(tab, normalized);
+
+      // 同步后端收藏状态到本地 favorites Set
+      const latestGens = useCreationStore.getState().generationsByTab[tab] ?? [];
+      const syncItems = [];
+      for (const gen of latestGens) {
+        for (let i = 0; i < gen.cards.length; i++) {
+          const card = gen.cards[i];
+          if (card.isFavorite !== undefined) {
+            syncItems.push({ key: `${gen.id}-${i}`, isFavorite: card.isFavorite });
+          }
+        }
+      }
+      if (syncItems.length > 0) {
+        storeSyncFavorites(syncItems);
+      }
+
+     updateHistoryMeta(tab, { page: nextPage, hasMore, loading: false, initialized: true });
+    } catch (err) {
+      console.error('[CreationPage] 历史数据加载失败:', err);
+      updateHistoryMeta(tab, { loading: false, initialized: true });
+    }
+  }, [isLoggedIn, mergeHistoryGenerations, updateHistoryMeta, storeSyncFavorites]);
+
+  // 登录后 / 切换 tab 时，若当前 tab 未初始化则拉第一页
+  useEffect(() => {
+    if (!isLoggedIn) return;
+    const meta = historyMeta[activeTab];
+    if (!meta.initialized && !meta.loading) {
+      loadHistoryPage(activeTab);
+    }
+  }, [isLoggedIn, activeTab]);
+
   // Video detail modal state
 
   // Session init: create or resume backend session when logged in
+  // 注意：shot 历史数据现在由 apiListCreationImages/Videos/Audios 提供，不再从 apiListShots 恢复
   useEffect(() => {
     if (!isLoggedIn || sessionInitRef.current) return;
     sessionInitRef.current = true;
@@ -4151,48 +4679,91 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
           sessionIdRef.current = sid;
           localStorage.setItem(SESSION_KEY, sid);
         }
-
-        // Restore shots from backend
-        const shotList = await apiListShots(sid);
-        const shots = Array.isArray(shotList) ? shotList : (shotList.shots || shotList.list || []);
-        for (const shot of shots) {
-          if (restoredShotIdsRef.current.has(shot.id)) continue;
-          const hasImage = shot.image_url;
-          const hasVideo = shot.video_url;
-          if (!hasImage && !hasVideo) continue;
-          restoredShotIdsRef.current.add(shot.id);
-          const tab = hasVideo ? 'video' : 'image';
-          const genId = `shot-${shot.id}`;
-          const meta = shot.metadata_json || {};
-          addGeneration(tab, {
-            id: genId,
-            shot_id: shot.id,
-            ratio: meta.ratio || shot.aspect_ratio || '16:9',
-            resolution: meta.resolution || '',
-            duration: shot.duration,
-            model: meta.model || '',
-            prompt: shot.prompt || '',
-            refImages: [],
-            createdAt: shot.created_at || new Date().toISOString(),
-            cards: [{
-              id: shot.id,
-              type: hasVideo ? 'video' : 'image',
-              status: 'done',
-              imageUrl: hasImage ? shot.image_url : null,
-              videoUrl: hasVideo ? shot.video_url : null,
-            }],
-          });
-        }
       } catch { /* session init fails silently; local-only mode */ }
     };
     initSession();
   }, [isLoggedIn]);
+
+  // 刷新恢复：检测 localStorage 中未完成的视频任务，重建占位卡片并继续轮询
+  useEffect(() => {
+    let pending;
+    try {
+      pending = JSON.parse(localStorage.getItem(PENDING_VIDEO_TASKS_KEY) || '[]');
+    } catch {
+      pending = [];
+    }
+    if (!pending.length) return;
+
+    // 清掉已恢复的，避免重复
+    localStorage.setItem(PENDING_VIDEO_TASKS_KEY, JSON.stringify([]));
+
+    pending.forEach((task) => {
+      const { taskId, genId, shotId, tab, prompt, promptHTML, model, ratio, resolution, duration, createdAt } = task;
+
+      // 先删除 store 中可能残留的同 genId 旧条目（Zustand store 是内存单例，页面导航不清空）
+      storeDeleteGeneration(tab, genId);
+
+      // 重建占位卡片
+      addGeneration(tab, {
+        id: genId,
+        shot_id: shotId || undefined,
+        ratio,
+        resolution,
+        duration,
+        model,
+        prompt,
+        promptHTML: promptHTML || '',
+        refImages: [],
+        createdAt,
+        cards: [{ id: null, type: 'video', status: 'loading', imageUrl: null, videoUrl: null, audioUrl: null }],
+      });
+      incrementActive('video');
+
+      // 重新轮询
+      apiPollVideoTask(taskId)
+        .then(({ videos, cardIds }) => {
+          const mediaUrls = (videos || []).map((u) => normalizeImageUrl(u) || u);
+          if (!mediaUrls.length) {
+            showToast('error', '生成失败，请稍后重试');
+            storeDeleteGeneration(tab, genId);
+            return;
+          }
+          storeDeleteGeneration(tab, genId);
+          addGeneration(tab, {
+            id: genId,
+            shot_id: shotId || undefined,
+            ratio, resolution, duration, model, prompt,
+            promptHTML: promptHTML || '',
+            refImages: [],
+            createdAt,
+            cards: mediaUrls.map((url) => ({
+              id: null, type: 'video', status: 'done',
+              imageUrl: null, videoUrl: url, audioUrl: null,
+            })),
+          });
+          if (cardIds?.length) storeUpdateCardIds(tab, genId, cardIds);
+          // 写回 localStorage（此时任务已完成，不需要重新存）
+        })
+        .catch((err) => {
+          showToast('error', err?.message || '生成失败，请稍后重试');
+          storeDeleteGeneration(tab, genId);
+        })
+        .finally(() => {
+          decrementActive('video');
+        });
+    });
+  // 只在挂载时执行一次
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   const [videoDetailModal, setVideoDetailModal] = useState(null);
 
-  // Toggle favorite with API linkage
+  // Toggle favorite with API linkage (optimistic update + rollback on failure)
   function handleToggleFavorite(cardKey) {
     const wasFav = favorites.has(cardKey);
+    // Optimistically update local state first
     storeToggleFavorite(cardKey);
+    showToast('success', wasFav ? '取消收藏' : '收藏成功');
     // Find the card to get its backend ID and type
     const lastDash = cardKey.lastIndexOf('-');
     const genId = cardKey.slice(0, lastDash);
@@ -4200,11 +4771,14 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
     const gen = generationsByTab[activeTab]?.find((g) => g.id === genId);
     const card = gen?.cards?.[cardIdx];
     if (card?.id) {
-      if (card.type === 'video') {
-        apiToggleVideoFavorite(card.id).catch(() => {});
-      } else {
-        apiToggleImageFavorite(card.id, !wasFav).catch(() => {});
-      }
+      const apiCall = card.type === 'video'
+        ? apiToggleVideoFavorite(card.id, !wasFav)
+        : apiToggleImageFavorite(card.id, !wasFav);
+      apiCall
+        .then(() => storeConfirmFavoriteToggle(cardKey))
+        .catch(() => storeRollbackFavoriteToggle(cardKey));
+    } else {
+      storeConfirmFavoriteToggle(cardKey);
     }
   }
 
@@ -4228,7 +4802,12 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
         if (cancelled) return;
         capabilitiesMapRef.current = capabilitiesMap;
         setModelOptions(opts);
-        setModel(opts[0]?.value ?? '');
+        // 优先使用用户在 API 配置中设置的默认模型（is_default: true），
+        // 若未设置则回退到列表第一个
+        const defaultFromConfig = Array.isArray(models)
+          ? models.find((m) => m.is_default && m.is_enabled && opts.some((o) => o.value === m.model_id))
+          : null;
+        setModel(defaultFromConfig?.model_id ?? opts[0]?.value ?? '');
       } catch {
         if (cancelled) return;
         const { modelOptions: opts, capabilitiesMap } = adaptModels([], genType);
@@ -4317,7 +4896,15 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
       gen.cards.forEach((card, i) => {
         const key = `${gen.id}-${i}`;
         if (selected.has(key)) {
-          if (card.imageUrl) downloadImage(card.imageUrl);
+          if (card.imageUrl) downloadImage(card.originalUrl || card.imageUrl);
+          if (card.audioUrl && !card.imageUrl && !card.videoUrl) {
+            const a = document.createElement('a');
+            a.href = card.audioUrl;
+            a.download = 'dubbing.wav';
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+          }
           if (card.videoUrl) {
             // 下载视频
             fetch(card.videoUrl)
@@ -4362,6 +4949,7 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
 
   const handleGenerate = async (params) => {
     setGenerating(true);
+    incrementActive(params.genType === 'video' ? 'video' : params.genType === 'dubbing' ? 'dubbing' : 'image');
     // Parse count: '2张' → 2, fallback to 1
     const countNum = parseInt(params.count) || 1;
     let shotId = null;
@@ -4387,7 +4975,7 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
     const isVideoGen = params.genType === 'video';
     const isDubbingGen = params.genType === 'dubbing';
 
-    // 立即添加 loading 占位卡片
+    // 立即添加 loading 占位卡片（按数量生成）
     const placeholderCardId = `placeholder-${Date.now()}`;
     addGeneration(currentTab, {
       id: genId,
@@ -4397,31 +4985,55 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
       duration: isVideoGen ? params.videoDuration : undefined,
       model: params.model || '',
       prompt: params.prompt || '',
+      promptHTML: params.promptHTML || '',
       refImages: [],
       createdAt: new Date().toISOString(),
-      cards: [{
+      cards: Array.from({ length: isVideoGen || isDubbingGen ? 1 : countNum }, (_, i) => ({
         id: null,
         type: isVideoGen ? 'video' : isDubbingGen ? 'audio' : 'image',
         status: 'loading',
         imageUrl: null,
         videoUrl: null,
         audioUrl: null,
-        placeholderId: placeholderCardId,
-      }],
+        placeholderId: `${placeholderCardId}-${i}`,
+      })),
     });
 
     try {
-      const result = await apiGenerateCreation(params);
-      const mediaUrls = isVideoGen ? (result.videos ?? []) : isDubbingGen ? (result.audios ?? []) : (result.images ?? []);
+      const result = await apiGenerateCreation(params, {
+        onTaskCreated: ({ taskId }) => {
+          if (params.genType !== 'video') return;
+          try {
+            const pending = JSON.parse(localStorage.getItem(PENDING_VIDEO_TASKS_KEY) || '[]');
+            pending.push({
+              taskId,
+              genId,
+              shotId: shotId || null,
+              tab: currentTab,
+              prompt: params.prompt || '',
+              promptHTML: params.promptHTML || '',
+              model: params.model || '',
+              ratio: params.ratio || params.videoRatio || '16:9',
+              resolution: params.resolution || params.videoResolution || '',
+              duration: params.videoDuration || '5s',
+              createdAt: new Date().toISOString(),
+            });
+            localStorage.setItem(PENDING_VIDEO_TASKS_KEY, JSON.stringify(pending));
+          } catch {}
+        },
+      });
+      const rawMediaUrls = isVideoGen ? (result.videos ?? []) : isDubbingGen ? (result.audios ?? []) : (result.images ?? []);
+      const mediaUrls = rawMediaUrls.map((u) => normalizeImageUrl(u) || u);
 
       // 如果生成失败，删除占位卡片并回退文本
       if (!mediaUrls || mediaUrls.length === 0) {
         showToast('error', '生成失败，请稍后重试');
         // 删除刚添加的占位卡片
-        storeDeleteCard(currentTab, genId, 0);
+        storeDeleteGeneration(currentTab, genId);
         // 通知 InputCard 回退文本
         params.onFail?.(params.prompt);
         setGenerating(false);
+        decrementActive(params.genType === 'video' ? 'video' : params.genType === 'dubbing' ? 'dubbing' : 'image');
         return { success: false };
       }
 
@@ -4437,7 +5049,7 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
 
       // 更新占位卡片为实际结果（替换而不是新增）
       // 先删除占位卡片
-      storeDeleteCard(currentTab, genId, 0);
+      storeDeleteGeneration(currentTab, genId);
       // 再添加实际结果卡片
       addGeneration(currentTab, {
         id: genId,
@@ -4447,11 +5059,12 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
         duration: genMeta.duration,
         model: genMeta.model,
         prompt: genMeta.prompt,
+        promptHTML: params.promptHTML || '',
         refImages: (result.referenceImages || []).map((url) => ({
-          url,
-          previewUrl: url,
+          url: normalizeImageUrl(url) || url,
+          previewUrl: normalizeImageUrl(url) || url,
           isAsset: true,
-          name: url.split('/').pop() || 'ref.png',
+          name: (url || '').split('/').pop() || 'ref.png',
           size: 0,
         })),
         createdAt: genMeta.createdAt,
@@ -4462,10 +5075,15 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
           imageUrl: isDubbingGen ? null : (isVideoGen ? null : url),
           videoUrl: isVideoGen ? url : null,
           audioUrl: isDubbingGen ? url : null,
-        })),
-      });
+       })),
+     });
 
-      // Update backend shot with result URLs
+      // 回写后端卡片 ID，使收藏功能可用
+      if (!isDubbingGen && result.cardIds && result.cardIds.length > 0) {
+        storeUpdateCardIds(currentTab, genId, result.cardIds);
+      }
+
+     // Update backend shot with result URLs
       if (shotId) {
         try {
           const updateData = {};
@@ -4479,16 +5097,28 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
           }
         } catch { /* shot update fails silently */ }
       }
+      // 清除 pending task 记录
+      try {
+        const pending = JSON.parse(localStorage.getItem(PENDING_VIDEO_TASKS_KEY) || '[]');
+        const filtered = pending.filter((t) => t.genId !== genId);
+        localStorage.setItem(PENDING_VIDEO_TASKS_KEY, JSON.stringify(filtered));
+      } catch {}
       return { success: true };
     } catch (error) {
-      showToast('error', '生成失败，请稍后重试');
+      try {
+        const pending = JSON.parse(localStorage.getItem(PENDING_VIDEO_TASKS_KEY) || '[]');
+        const filtered = pending.filter((t) => t.genId !== genId);
+        localStorage.setItem(PENDING_VIDEO_TASKS_KEY, JSON.stringify(filtered));
+      } catch {}
+      showToast('error', error?.message || '生成失败，请稍后重试');
       // 删除占位卡片
-      storeDeleteCard(currentTab, genId, 0);
+      storeDeleteGeneration(currentTab, genId);
       // 通知 InputCard 回退文本
       params.onFail?.(params.prompt);
       return { success: false };
     } finally {
       setGenerating(false);
+      decrementActive(params.genType === 'video' ? 'video' : params.genType === 'dubbing' ? 'dubbing' : 'image');
     }
   };
 
@@ -4612,7 +5242,7 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
               </div>
 
             ) : (
-              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flex: 1, justifyContent: 'flex-end', paddingRight: '32px', paddingTop: '6px', paddingBottom: '6px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '16px', flex: 1, justifyContent: 'flex-end', paddingRight: '24px', paddingTop: '6px', paddingBottom: '6px' }}>
                 <BatchButton onClick={() => setBatchMode(true)} />
               </div>
             )}
@@ -4634,7 +5264,7 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
         >
           {isLoggedIn === false ? (
             <CreationLoginEmptyState onLoginClick={onLoginClick} />
-          ) : generations.length > 0 ? (
+          ) : generations.length > 0 || historyMeta[activeTab]?.loading ? (
             <CreationResultState
               generations={generations}
               onGenerate={handleGenerate}
@@ -4653,12 +5283,16 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
               favorites={favorites}
               toggleFavorite={handleToggleFavorite}
               showToast={showToast}
+              historyLoading={historyMeta[activeTab]?.loading}
+              historyHasMore={historyMeta[activeTab]?.hasMore}
+              onLoadMore={() => loadHistoryPage(activeTab)}
+              activeCount={activeCountByTab[genType] ?? 0}
               onBeforeModelOpen={() => {
                 if (!apiConfigured) { onShowNoModelNotice?.(); return false; }
               }}
             />
           ) : (
-            <CreationEmptyState onGenerate={handleGenerate} genType={genType} onGenTypeChange={handleGenTypeChange}
+            <CreationEmptyState onGenerate={handleGenerate} genType={genType} onGenTypeChange={handleGenTypeChange} showToast={showToast} activeCount={activeCountByTab[genType] ?? 0}
               model={model} onModelChange={setModel} modelOptions={modelOptions} creationParams={creationParams}
               onBeforeModelOpen={() => {
                 if (!apiConfigured) { onShowNoModelNotice?.(); return false; }
@@ -4672,6 +5306,7 @@ export default function CreationPage({ serverReachable, isLoggedIn, onLoginClick
       <CreationVideoDetailModal
         videoUrl={videoDetailModal.videoUrl}
         prompt={videoDetailModal.prompt}
+        promptHTML={videoDetailModal.promptHTML}
         model={videoDetailModal.model}
         ratio={videoDetailModal.ratio}
         resolution={videoDetailModal.resolution}

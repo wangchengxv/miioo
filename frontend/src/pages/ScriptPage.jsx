@@ -101,6 +101,13 @@ function Toast({ toasts }) {
               <path d="M8 4V9.333" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" strokeLinejoin="round" />
             </svg>
           )}
+          {t.type === 'info' && (
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+              <path d="M8 14.667C9.841 14.667 11.508 13.921 12.714 12.714C13.921 11.508 14.667 9.841 14.667 8C14.667 6.159 13.921 4.492 12.714 3.286C11.508 2.08 9.841 1.333 8 1.333C6.159 1.333 4.492 2.08 3.286 3.286C2.08 4.492 1.333 6.159 1.333 8C1.333 9.841 2.08 11.508 3.286 12.714C4.492 13.921 6.159 14.667 8 14.667Z" fill="#2DC3E1" stroke="#2DC3E1" strokeWidth="1.333" strokeLinejoin="round" />
+              <path d="M8 7.333V11.333" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" />
+              <circle cx="8" cy="5" r="0.667" fill="#FFFFFF" />
+            </svg>
+          )}
           {t.type === 'error' && (
             <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
               <path d="M8 14.667C9.841 14.667 11.508 13.921 12.714 12.714C13.921 11.508 14.667 9.841 14.667 8C14.667 6.159 13.921 4.492 12.714 3.286C11.508 2.08 9.841 1.333 8 1.333C6.159 1.333 4.492 2.08 3.286 3.286C2.08 4.492 1.333 6.159 1.333 8C1.333 9.841 2.08 11.508 3.286 12.714C4.492 13.921 6.159 14.667 8 14.667Z" fill="#F75F5F" stroke="#F75F5F" strokeWidth="1.333" strokeLinejoin="round" />
@@ -1177,7 +1184,7 @@ const CHAR_INTERVAL = 15;
 // 流式内容渲染组件：逐字打字动画 + 自动滚动到底部
 // content 由 SSE 实时推送逐步增长，组件负责以打字机效果逐字展示
 // 当浏览器标签页切到后台时，跳过打字动画直接展示全部内容，避免 setTimeout 被浏览器节流导致卡顿
-function AiStreamingContent({ content, onDone }) {
+function AiStreamingContent({ content, onDone, paused = false, onPause }) {
   const allChars = useMemo(() => [...content], [content]);
   const [renderIndex, setRenderIndex] = useState(0);
   const [pageVisible, setPageVisible] = useState(true);
@@ -1185,6 +1192,10 @@ function AiStreamingContent({ content, onDone }) {
   const shouldStickToBottomRef = useRef(true);
   const onDoneRef = useRef(onDone);
   onDoneRef.current = onDone;
+  const onPauseRef = useRef(onPause);
+  onPauseRef.current = onPause;
+  // 防止 onPause 重复触发
+  const hasFiredPauseRef = useRef(false);
 
   // 监听标签页可见性
   useEffect(() => {
@@ -1200,9 +1211,21 @@ function AiStreamingContent({ content, onDone }) {
     }
   }, [pageVisible, allChars.length, renderIndex]);
 
-  // 逐字渲染定时器 —— 仅在标签页可见时运行
+  // 暂停时：停止 timer，回调当前已渲染文字
   useEffect(() => {
-    if (!pageVisible) return undefined;
+    if (paused && !hasFiredPauseRef.current) {
+      hasFiredPauseRef.current = true;
+      const displayed = allChars.slice(0, renderIndex).join('');
+      onPauseRef.current?.(displayed);
+    }
+    if (!paused) {
+      hasFiredPauseRef.current = false;
+    }
+  }, [paused, allChars, renderIndex]);
+
+  // 逐字渲染定时器 —— 仅在标签页可见且未暂停时运行
+  useEffect(() => {
+    if (!pageVisible || paused) return undefined;
 
     if (renderIndex >= allChars.length) {
       if (allChars.length > 0) {
@@ -1216,7 +1239,7 @@ function AiStreamingContent({ content, onDone }) {
     }, CHAR_INTERVAL);
 
     return () => window.clearTimeout(timer);
-  }, [pageVisible, allChars.length, renderIndex]);
+  }, [pageVisible, paused, allChars.length, renderIndex]);
 
   // 自动滚动到底部
   useEffect(() => {
@@ -1255,19 +1278,91 @@ function AiStreamingContent({ content, onDone }) {
 }
 
 function ScriptRendered({ content, contentRef, onActiveIndexChange }) {
-  const handleScroll = useCallback(() => {
+  const paddingRef = useRef(null);
+
+  // 每次内容变化后，重新计算底部 padding，确保最后一集也能滚到顶部
+  useEffect(() => {
+    const container = contentRef?.current;
+    const paddingEl = paddingRef.current;
+    if (!container || !paddingEl) return;
+
+    // 先清零，避免旧 padding 干扰 scrollHeight 的计算
+    paddingEl.style.height = '0px';
+
+    const headings = container.querySelectorAll('h2');
+    if (headings.length === 0) return;
+
+    const lastHeading = headings[headings.length - 1];
+
+    // 用 scrollTop + getBoundingClientRect 算绝对偏移，不依赖 offsetParent 的定位关系
+    const lastHeadingOffset =
+      container.scrollTop +
+      lastHeading.getBoundingClientRect().top -
+      container.getBoundingClientRect().top;
+
+    const clientHeight = container.clientHeight;
+    const scrollHeight = container.scrollHeight; // padding 已清零，值准确
+
+    // 要让最后一集标题能滚到顶部，需要 maxScrollTop >= lastHeadingOffset
+    // maxScrollTop = scrollHeight - clientHeight
+    // 所以补足：lastHeadingOffset - (scrollHeight - clientHeight)
+    const needed = lastHeadingOffset - (scrollHeight - clientHeight);
+    if (needed > 0) {
+      paddingEl.style.height = `${needed}px`;
+    }
+  }, [content, contentRef]);
+
+  const calcActiveIndex = useCallback(() => {
     const container = contentRef?.current;
     if (!container) return;
-    const containerTop = container.getBoundingClientRect().top;
+    const containerRect = container.getBoundingClientRect();
+    const containerTop = containerRect.top;
+    const containerBottom = containerRect.bottom;
+    const containerHeight = containerRect.height;
     const headings = container.querySelectorAll('h2');
+
+    if (headings.length === 0) { onActiveIndexChange?.(0); return; }
+
+    // 阈值：某集标题进入可视区域顶部 30% 以内，直接高亮该集（解决短内容集永远抢不到高亮的问题）
+    const threshold = containerHeight * 0.3;
+
     let activeIndex = 0;
+
+    // 优先判断：从后往前找，第一个标题进入顶部阈值以内的集
+    let foundByThreshold = false;
     for (let i = headings.length - 1; i >= 0; i--) {
-      const rect = headings[i].getBoundingClientRect();
-      if (rect.top - containerTop <= 24) {
+      const headingTop = headings[i].getBoundingClientRect().top - containerTop;
+      if (headingTop >= 0 && headingTop <= threshold) {
         activeIndex = i;
+        foundByThreshold = true;
+        break;
+      }
+      // 标题已滚过顶部（为负），也算进入了该集
+      if (headingTop < 0) {
+        activeIndex = i;
+        foundByThreshold = true;
         break;
       }
     }
+
+    // 兜底：如果阈值法没有命中（比如内容刚加载还没滚动），用占比最大法
+    if (!foundByThreshold) {
+      let maxVisible = -1;
+      for (let i = 0; i < headings.length; i++) {
+        const sectionTop = headings[i].getBoundingClientRect().top;
+        const sectionBottom = i + 1 < headings.length
+          ? headings[i + 1].getBoundingClientRect().top
+          : containerBottom + 99999;
+        const visibleTop = Math.max(sectionTop, containerTop);
+        const visibleBottom = Math.min(sectionBottom, containerBottom);
+        const visibleHeight = Math.max(0, visibleBottom - visibleTop);
+        if (visibleHeight > maxVisible) {
+          maxVisible = visibleHeight;
+          activeIndex = i;
+        }
+      }
+    }
+
     onActiveIndexChange?.(activeIndex);
   }, [contentRef, onActiveIndexChange]);
 
@@ -1276,7 +1371,7 @@ function ScriptRendered({ content, contentRef, onActiveIndexChange }) {
       ref={contentRef}
       className="script-md"
       style={{ alignSelf: 'stretch', flex: 1, minHeight: 0, overflowY: 'auto' }}
-      onScroll={handleScroll}
+      onScroll={calcActiveIndex}
     >
       <ReactMarkdown
         components={{
@@ -1286,6 +1381,8 @@ function ScriptRendered({ content, contentRef, onActiveIndexChange }) {
       >
         {content}
       </ReactMarkdown>
+      {/* 底部占位块：动态高度，确保最后一集内容短时也能滚到顶部 */}
+      <div ref={paddingRef} aria-hidden="true" />
     </div>
   );
 }
@@ -1530,6 +1627,8 @@ function ScriptPanel({
   isExtractingSubjects,
   isSubjectUnlocked,
   onStreamingDone,
+  onStreamingPause,
+  streamingPaused,
   onActiveIndexChange,
   renderedContentRef,
   editorContentRef,
@@ -1571,7 +1670,7 @@ function ScriptPanel({
             <AiThinkingMessage />
           </div>
         ) : isStreaming ? (
-          <AiStreamingContent content={scriptContent} onDone={onStreamingDone} />
+          <AiStreamingContent content={scriptContent} onDone={onStreamingDone} paused={streamingPaused} onPause={onStreamingPause} />
         ) : isEditing ? (
           <ScriptEditor initialContent={draftContent} onContentChange={onDraftChange} containerRef={editorContentRef} />
         ) : (
@@ -1666,6 +1765,8 @@ export default function ScriptPage({ projectId, onGoToSubject, onScriptFinalized
   const [backendEpisodes, setBackendEpisodes] = useState(null);
   const [toasts, setToasts] = useState([]);
   const [isSaving, setIsSaving] = useState(false);
+  const [streamingPaused, setStreamingPaused] = useState(false);
+  const stopReasonRef = useRef(null); // 'user-thinking' | 'user-streaming' | null
   const renderedContentRef = useRef(null);
   const editorContentRef = useRef(null);
   const abortControllerRef = useRef(null); // 用于取消进行中的流式请求
@@ -1719,9 +1820,15 @@ export default function ScriptPage({ projectId, onGoToSubject, onScriptFinalized
 
   const episodeRailLoading = hasStarted && (phase === "thinking" || phase === "streaming");
   const handleStop = useCallback(() => {
-    // 中止流式请求，后续状态由 handleSend 的 catch(AbortError) 分支处理
+    // 用 ref 记录停止原因，避免 handleSend 闭包里 phase 是旧快照的问题
+    if (phase === 'streaming') {
+      stopReasonRef.current = 'user-streaming';
+      setStreamingPaused(true);
+    } else {
+      stopReasonRef.current = 'user-thinking';
+    }
     abortControllerRef.current?.abort();
-  }, []);
+  }, [phase]);
 
   useEffect(() => {
     const onKeyDown = (e) => {
@@ -1742,6 +1849,7 @@ export default function ScriptPage({ projectId, onGoToSubject, onScriptFinalized
     // 每次发送前清除上次的恢复内容（成功时不恢复）
     setInputRestoreText('');
     setInputRestoreFiles([]);
+    setStreamingPaused(false);
 
     // 取消上一次未完成的请求
     abortControllerRef.current?.abort();
@@ -1865,17 +1973,21 @@ export default function ScriptPage({ projectId, onGoToSubject, onScriptFinalized
         if (isClientTimeout) {
           // 客户端兜底超时触发
           handleTimeout();
+        } else if (stopReasonRef.current === 'user-streaming') {
+          // streaming 阶段用户主动暂停：交给 onStreamingPause 回调处理，此处只提示
+          stopReasonRef.current = null;
+          showToast('剧本创作已暂停', 'info');
         } else {
-          // 用户主动点击停止
-          if (receivedContent) {
-            setScriptContent(receivedContent);
-            setPhase('view');
-        } else {
+          // thinking 阶段用户主动暂停：尚未收到任何内容，恢复输入框并清空后端剧本
+          stopReasonRef.current = null;
           setInputRestoreText(text);
           setInputRestoreFiles(files);
-          setPhase('initial');
-          setHasStarted(false);
-        }
+          setScriptContent(prevContent);
+          setPhase(prevContent ? 'view' : 'initial');
+          setHasStarted(!!prevContent);
+          showToast('剧本创作已暂停', 'info');
+          // 清空后端保存的内容，确保刷新后不显示未完成的剧本
+          apiSaveScriptWorkspace(projectId, { content: prevContent || '' }).catch(() => {});
         }
         return;
       }
@@ -1909,8 +2021,26 @@ export default function ScriptPage({ projectId, onGoToSubject, onScriptFinalized
   };
 
   const handleStreamingDone = useCallback(() => {
+    setStreamingPaused(false);
     setPhase('view');
   }, []);
+
+  // 打字动画暂停回调：用已渲染的文字作为最终内容，切到 view 阶段
+  const handleStreamingPause = useCallback((displayedText) => {
+    setStreamingPaused(false);
+    if (displayedText) {
+      setScriptContent(displayedText);
+      setPhase('view');
+      // 把已渲染的部分内容同步到后端，刷新后显示实际播放到的位置
+      apiSaveScriptWorkspace(projectId, { content: displayedText }).catch(() => {});
+    } else {
+      // 动画还没开始播放，退回到发送前的状态，清空后端内容
+      setScriptContent('');
+      setPhase('initial');
+      setHasStarted(false);
+      apiSaveScriptWorkspace(projectId, { content: '' }).catch(() => {});
+    }
+  }, [projectId, setScriptContent, setPhase, setHasStarted]);
 
   const handleEdit = () => {
     setDraftContent(scriptContent);
@@ -2075,8 +2205,9 @@ export default function ScriptPage({ projectId, onGoToSubject, onScriptFinalized
                   onSave={handleSave}
                   onCancelEdit={handleCancelEdit}
                   onExtractRequest={handleExtractRequest}
-
                   onStreamingDone={handleStreamingDone}
+                  onStreamingPause={handleStreamingPause}
+                  streamingPaused={streamingPaused}
                   onActiveIndexChange={setSelectedEpisode}
                   renderedContentRef={renderedContentRef}
                   editorContentRef={editorContentRef}

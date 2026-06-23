@@ -46,10 +46,12 @@ function PencilIcon() {
 
 function TrashIcon() {
   return (
-    <svg width="14" height="14" viewBox="0 0 14 14" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
-      <path d="M2.333 3.5H11.667" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" />
-      <path d="M5.25 3.5V2.333H8.75V3.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
-      <path d="M3.5 3.5L4.083 11.083H9.917L10.5 3.5" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round" strokeLinejoin="round" />
+    <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+      <path d="M3 3.33337V14.6667H13V3.33337H3Z" stroke="currentColor" strokeLinejoin="round"/>
+      <path d="M6.66663 6.66663V11" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M9.33337 6.66663V11" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M1.33337 3.33337H14.6667" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round"/>
+      <path d="M5.33337 3.33337L6.42971 1.33337H9.59241L10.6667 3.33337H5.33337Z" stroke="currentColor" strokeLinejoin="round"/>
     </svg>
   );
 }
@@ -116,16 +118,16 @@ function MoreMenuItem({ icon, label, danger, onClick }) {
         borderRadius: '6px',
         border: 'none',
         background: hovered
-          ? danger ? 'rgba(247,95,95,0.08)' : 'rgba(255,255,255,0.06)'
+          ? 'rgba(255,255,255,0.05)'
           : 'transparent',
         cursor: 'pointer',
         fontFamily: FONT,
         fontSize: '13px',
         lineHeight: '18px',
         color: danger
-          ? hovered ? 'rgba(247,95,95,1)' : 'rgba(247,95,95,0.8)'
+          ? '#F75F5F'
           : 'rgba(255,255,255,0.8)',
-        transition: 'background 120ms, color 120ms',
+        transition: 'background 120ms',
       }}
     >
       <span style={{ color: 'inherit', display: 'flex', alignItems: 'center' }}>{icon}</span>
@@ -474,8 +476,8 @@ function NewProjectCard({ onClick }) {
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
-        width: '300px',
-        height: '200px',
+        width: '100%',
+        aspectRatio: '3/2',
         borderRadius: '8px',
         background: hovered ? '#252626' : '#1D1E1E',
         border: '1.5px dashed #FFFFFF33',
@@ -486,7 +488,6 @@ function NewProjectCard({ onClick }) {
         gap: '8px',
         cursor: 'pointer',
         transition: 'background 150ms',
-        flexShrink: 0,
       }}
     >
       <div
@@ -530,15 +531,14 @@ function ProjectCard({ project, onRename, onDelete, onOpen }) {
       onMouseUp={() => setPressed(false)}
       onClick={handleCardClick}
       style={{
-        width: '300px',
-        height: '200px',
+        width: '100%',
+        aspectRatio: '3/2',
         borderRadius: '8px',
         background: '#1D1E1E',
         border: `1px solid ${hovered ? 'rgba(255,255,255,0.22)' : '#FFFFFF14'}`,
         position: 'relative',
         overflow: 'visible',
         cursor: 'pointer',
-        flexShrink: 0,
         transform: pressed ? 'scale(0.985)' : 'scale(1)',
         transition: 'border-color 150ms, transform 120ms cubic-bezier(0.4, 0, 0.2, 1)',
       }}
@@ -604,11 +604,13 @@ function ProjectCard({ project, onRename, onDelete, onOpen }) {
           <div ref={moreRef} style={{ position: 'relative', flexShrink: 0, marginLeft: '8px' }}>
             <div
               onClick={handleMoreClick}
+              onMouseEnter={(e) => { if (!menuOpen) e.currentTarget.style.background = 'rgba(0,0,0,0.55)'; }}
+              onMouseLeave={(e) => { if (!menuOpen) e.currentTarget.style.background = 'rgba(0,0,0,0.40)'; }}
               style={{
                 width: '28px',
                 height: '28px',
                 borderRadius: '6px',
-                background: menuOpen ? 'rgba(255,255,255,0.18)' : '#FFFFFF14',
+                background: menuOpen ? 'rgba(0,0,0,0.65)' : 'rgba(0,0,0,0.40)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
@@ -634,18 +636,7 @@ function ProjectCard({ project, onRename, onDelete, onOpen }) {
 
 // ── Main Component ─────────────────────────────────────────────────────────
 
-export default function ProjectList({ serverReachable, projects = [], onNewProject, onRenameProject, onDeleteProject, onOpenProject }) {
-  if (serverReachable === false) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-3" style={{ flex: 1, paddingTop: '80px' }}>
-        <div className="flex items-center gap-2 px-16 py-2 rounded-lg text-sm" style={{ backgroundColor: 'rgba(255,77,79,0.1)', color: '#FF4D4F' }}>
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1L13 12H1L7 1Z" stroke="#FF4D4F" strokeLinejoin="round"/><path d="M7 5V8" stroke="#FF4D4F" strokeLinecap="round"/><circle cx="7" cy="10.5" r="0.5" fill="#FF4D4F"/></svg>
-          后端服务连接异常，部分功能不可用
-        </div>
-      </div>
-    );
-  }
-
+export default function ProjectList({ projects = [], onNewProject, onRenameProject, onDeleteProject, onOpenProject }) {
   const [searchValue, setSearchValue] = useState('');
   const [searchFocused, setSearchFocused] = useState(false);
   const [searchHovered, setSearchHovered] = useState(false);
@@ -724,7 +715,7 @@ export default function ProjectList({ serverReachable, projects = [], onNewProje
         </div>
 
         {/* Card grid */}
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '20px' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(240px, 1fr))', gap: '16px' }}>
           <NewProjectCard onClick={onNewProject} />
           {filtered.map((project) => (
             <ProjectCard

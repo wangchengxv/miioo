@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
+import { useModalSize } from '../utils/useModalSize';
 import ConfirmDialog from './ConfirmDialog';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
@@ -9,24 +10,25 @@ const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba PuHuiTi 2.0',system-u
 
 // Confirm delete modal component
 function CopyPromptButton({ text, onCopy }) {
-  const [hovered, setHovered] = useState(false);
-  const [pressed, setPressed] = useState(false);
+  const [hovCopy, setHovCopy] = useState(false);
+  const [pressCopy, setPressCopy] = useState(false);
+  const copyColor = pressCopy ? '#FFFFFF99' : hovCopy ? '#FFFFFFCC' : '#FFFFFF66';
   return (
     <button
       type="button"
-      className={`p-0 m-0 border-0 bg-transparent cursor-pointer flex items-center shrink-0 transition-colors duration-[120ms] ease-linear ${pressed ? 'text-[#FFFFFF99]' : hovered ? 'text-[#FFFFFFCC]' : 'text-[#FFFFFF66]'}`}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => { setHovered(false); setPressed(false); }}
-      onMouseDown={() => setPressed(true)}
-      onMouseUp={() => setPressed(false)}
+      style={{ padding: 0, margin: 0, border: 0, background: 'transparent', cursor: 'pointer', display: 'flex', alignItems: 'center', color: copyColor, transition: 'color 120ms ease', flexShrink: 0 }}
+      onMouseEnter={() => setHovCopy(true)}
+      onMouseLeave={() => { setHovCopy(false); setPressCopy(false); }}
+      onMouseDown={() => setPressCopy(true)}
+      onMouseUp={() => setPressCopy(false)}
       onClick={() => {
         navigator.clipboard.writeText(text || '');
         onCopy?.();
       }}
     >
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
-        <rect x="5.5" y="5.5" width="7" height="9" rx="1.5" stroke="currentColor" strokeWidth="1.2"/>
-        <path d="M3.5 10.5V3.5A1.5 1.5 0 0 1 5 2h6" stroke="currentColor" strokeWidth="1.2" strokeLinecap="round"/>
+        <path d="M4.33337 4.14383V2.60413C4.33337 2.08636 4.75311 1.66663 5.27087 1.66663H13.3959C13.9136 1.66663 14.3334 2.08636 14.3334 2.60413V10.7291C14.3334 11.2469 13.9136 11.6666 13.3959 11.6666H11.8388" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round"/>
+        <path d="M10.7291 4.33337H2.60413C2.08636 4.33337 1.66663 4.75311 1.66663 5.27087V13.3959C1.66663 13.9136 2.08636 14.3334 2.60413 14.3334H10.7291C11.2469 14.3334 11.6666 13.9136 11.6666 13.3959V5.27087C11.6666 4.75311 11.2469 4.33337 10.7291 4.33337Z" stroke="currentColor" strokeLinejoin="round"/>
       </svg>
     </button>
   );
@@ -60,6 +62,7 @@ export default function CreationVideoDetailModal({
   onClose,
   videoUrl,
   prompt = '',
+  promptHTML = '',
   model = '',
   ratio = '16:9',
   resolution = '',
@@ -83,6 +86,7 @@ export default function CreationVideoDetailModal({
     console.error('CreationVideoDetailModal: videoUrl is missing!');
   }
 
+  const { width: modalW } = useModalSize();
   const [isPlaying, setIsPlaying] = useState(false);
   const [starAnim, setStarAnim] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
@@ -187,7 +191,7 @@ export default function CreationVideoDetailModal({
       onClick={onClose}
     >
       <div
-        className="flex flex-col w-[960px] rounded-2xl h-fit [box-shadow:#00000099_-10px_24px_64px] bg-[#161616] border border-solid border-[#FFFFFF14]"
+        className="flex flex-col rounded-2xl h-fit [box-shadow:#00000099_-10px_24px_64px] bg-[#161616] border border-solid border-[#FFFFFF14]" style={{ width: `${modalW}px` }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -223,9 +227,10 @@ export default function CreationVideoDetailModal({
                   <video
                     ref={videoRef}
                     src={videoUrl}
-                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain' }}
+                    style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'contain', cursor: 'pointer' }}
                     preload="metadata"
                     playsInline
+                    onClick={togglePlay}
                   />
                 ) : (
                   <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#FFFFFF66', fontFamily: FONT, fontSize: '14px' }}>
@@ -233,23 +238,18 @@ export default function CreationVideoDetailModal({
                   </div>
                 )}
                 <div className="absolute inset-0" style={{ backgroundImage: 'linear-gradient(in oklab 180deg, oklab(0% 0 0 / 0%) 40%, oklab(0% 0 0 / 40%) 100%)' }} />
+                {!isPlaying && (
                 <button
                   type="button"
                   className="flex items-center justify-center rounded-[50%] relative shrink-0 [backdrop-filter:blur(8px)] bg-[#FFFFFF1F] border border-solid border-[#FFFFFF33] size-[56px]"
                   style={{ cursor: 'pointer' }}
                   onClick={togglePlay}
                 >
-                  {isPlaying ? (
-                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" style={{ flexShrink: 0 }}>
-                      <rect x="4" y="4" width="4" height="12" rx="1" fill="#FFFFFF" />
-                      <rect x="12" y="4" width="4" height="12" rx="1" fill="#FFFFFF" />
-                    </svg>
-                  ) : (
-                    <svg width="20" height="20" viewBox="0 0 20 20" fill="none" style={{ flexShrink: '0' }}>
-                      <path d="M7 5L16 10L7 15V5Z" fill="#FFFFFF" />
-                    </svg>
-                  )}
+                  <svg width="20" height="20" viewBox="0 0 20 20" fill="none" style={{ flexShrink: '0' }}>
+                    <path d="M7 5L16 10L7 15V5Z" fill="#FFFFFF" />
+                  </svg>
                 </button>
+                )}
               </div>
             </div>
             {/* Controls bar */}
@@ -324,7 +324,10 @@ export default function CreationVideoDetailModal({
                 <CopyPromptButton text={prompt} onCopy={handleCopyPrompt} />
               </div>
               <div className="tracking-[0.12px] font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-[#FFFFFFCC] text-xs/5 m-0">
-                {prompt || '无'}
+                {promptHTML
+                  ? <span dangerouslySetInnerHTML={{ __html: promptHTML }} />
+                  : (prompt || '无')
+                }
               </div>
             </div>
 
@@ -370,8 +373,8 @@ export default function CreationVideoDetailModal({
                     {refImages.map((img, i) => {
                       const imgUrl = typeof img === 'string' ? img : (img.url || img.previewUrl || '');
                       return (
-                        <div key={i} className="rounded-md overflow-clip flex flex-col items-center gap-0 justify-center h-[84px] w-[calc(47.49%)] bg-[#FFFFFF14] border border-solid border-[#FFFFFF14] p-0">
-                          <div className="w-[93px] h-[144px] shrink-0 bg-cover bg-[center]" style={{ backgroundImage: `url(${imgUrl})` }} />
+                        <div key={i} className="rounded-md overflow-clip h-[84px] w-[calc(47.49%)] bg-[#FFFFFF14] border border-solid border-[#FFFFFF14]">
+                          <div className="w-full h-full bg-cover bg-center" style={{ backgroundImage: `url(${imgUrl})` }} />
                         </div>
                       );
                     })}

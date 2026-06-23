@@ -3,12 +3,15 @@ import { createPortal } from 'react-dom';
 import { PulsingBorder } from '@paper-design/shaders-react';
 import { apiGetProjects, apiUpdateProject, apiDeleteProject, apiGetProject, apiGetProjectOverview } from '../api/project';
 import { getToken, getRefreshToken, refreshAccessToken } from '../api/request';
-import { clearTokens, apiLogout } from '../api/auth';
+import { clearTokens, apiLogout, apiCompleteWechatCallback } from '../api/auth';
 import { apiListProviders } from '../api/config';
 import { apiGetCurrentUser, apiGetNotifications } from '../api/user';
-import { apiGetSubjects, apiGetEpisodes, apiGetScriptWorkspace, apiFinalizeScriptWorkspace, apiExtractSubjectsFromScript } from '../api/subject';
-import { apiGetStoryboards, apiGenerateStoryboardsFromFinalScript } from '../api/storyboard';
+import { apiGetSubjects, apiGetSubjectsPage, apiGetEpisodes, apiGetScriptWorkspace, apiFinalizeScriptWorkspace, apiExtractSubjectsFromScript } from '../api/subject';
+import { apiGetStoryboards, apiGenerateStoryboardsFromFinalScript, apiGetTask } from '../api/storyboard';
+import { invalidate } from '../utils/cache';
 import { normalizeImageUrl } from '../utils/imageUrl';
+import { subscribe, peekCache } from '../utils/cache';
+import { K, MEDIUM } from '../utils/cacheKeys';
 import wechatQR from '../assets/wechat.jpg';
 import PrimaryNav from '../components/PrimaryNav';
 import LoginModal from '../components/LoginModal';
@@ -26,6 +29,7 @@ import StoryboardPage from './StoryboardPage';
 import DotsLoading from '../components/DotsLoading';
 import AssetsPage from './AssetsPage';
 import CreationPage from './CreationPage';
+import bizQrCodeImg from '../assets/biz-qr-code.png';
 
 const ICON_STYLE = { flexShrink: '0' };
 
@@ -80,16 +84,18 @@ const NAV_ITEMS = [
   },
 ];
 
-function MenuPopupItem({ label, onClick }) {
+function MenuPopupItem({ label, onClick, showExternalIcon = false }) {
   const [hovered, setHovered] = useState(false);
   const [pressed, setPressed] = useState(false);
 
   return (
     <button
       type="button"
-      className="flex items-center gap-[4px] w-full rounded-[6px] border-0 bg-transparent text-left cursor-pointer"
+      className="flex items-center w-full rounded-[6px] border-0 bg-transparent text-left cursor-pointer"
       style={{
         padding: '8px 12px',
+        gap: '4px',
+        justifyContent: showExternalIcon ? 'space-between' : 'flex-start',
         backgroundColor: pressed ? '#FFFFFF14' : hovered ? '#FFFFFF0D' : 'transparent',
         transition: 'background-color 120ms ease, color 120ms ease',
       }}
@@ -103,17 +109,23 @@ function MenuPopupItem({ label, onClick }) {
       onMouseUp={() => setPressed(false)}
     >
       <div
-        className="w-fit shrink-0 font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif] text-font-size-14"
-        style={{ color: pressed || hovered ? '#FFFFFF' : '#FFFFFF99' }}
+        className="w-fit shrink-0 font-['AlibabaPuHuiTi_2_55_Regular','Alibaba_PuHuiTi_2.0',system-ui,sans-serif]"
+        style={{ fontSize: '14px', lineHeight: '18px', color: pressed || hovered ? '#FFFFFF' : '#FFFFFFCC' }}
       >
         {label}
       </div>
+      {showExternalIcon && (
+        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ flexShrink: 0 }}>
+          <path d="M4.5 11.5L11.5 4.5" stroke="#FFFFFF80" strokeLinecap="round" strokeLinejoin="round" />
+          <path d="M7 4.5H11.5V9" stroke="#FFFFFF80" strokeLinecap="round" strokeLinejoin="round" />
+        </svg>
+      )}
     </button>
   );
 }
 
 const COMMUNITY_QR_CODE_URL = wechatQR;
-const BIZ_QR_CODE_URL = 'https://app.paper.design/file-assets/01KQYRKV5GAPKWF7X9K33912CS/01KT856M9JGFA1FF8DBG9699ZM.png';
+const BIZ_QR_CODE_URL = bizQrCodeImg;
 
 const CREATION_MANUAL_URL = 'https://gcn0je6sgrhe.feishu.cn/wiki/QaKLwOx0ii2qWakn4cXcybbMnrf?from=from_copylink';
 
@@ -131,49 +143,96 @@ function QRCodePopup({ anchorLeft }) {
 function MoreOptionsMenu({ close, setWatermarkSettingsOpen }) {
   const [bizQrVisible, setBizQrVisible] = useState(false);
   const bizItemRef = useRef(null);
+  const containerRef = useRef(null);
 
   const handleMenuClick = (label) => {
-    if (label === '创作手册' && CREATION_MANUAL_URL) {
+    if (label === '创作手册') {
       window.open(CREATION_MANUAL_URL, '_blank');
+    } else if (label === '更新日志') {
+      // 链接待补充
+    } else if (label === '开源社区') {
+      window.open('https://github.com/wangchengxv/miioo', '_blank');
     } else if (label === '用户协议') {
       window.open('https://gcn0je6sgrhe.feishu.cn/wiki/FIspwGURtikxiwk28svc4thOn9c?from=from_copylink', '_blank');
     } else if (label === '隐私政策') {
       window.open('https://gcn0je6sgrhe.feishu.cn/wiki/LKlewdQJ0iaYVmkOPXVc4PWgnoc?from=from_copylink', '_blank');
-    } else if (label === '水印设置') {
-      close();
-      setWatermarkSettingsOpen(true);
     } else if (label === '商务合作') {
       setBizQrVisible((v) => !v);
+    } else if (label === 'AI生成水印设置') {
+      close();
+      setWatermarkSettingsOpen(true);
     }
   };
-
-  const containerRef = useRef(null);
 
   const getBizQrTop = () => {
     if (!bizItemRef.current || !containerRef.current) return 0;
     const itemTop = bizItemRef.current.offsetTop;
-    // 浮窗高度：padding(16+16) + 图片(120) + gap(9) + 文字(16) = 177px
     const popupHeight = 177;
     const containerRect = containerRef.current.getBoundingClientRect();
     const maxTop = window.innerHeight - 24 - popupHeight - containerRect.top;
     return Math.min(itemTop, maxTop);
   };
 
+  const FONT = "'AlibabaPuHuiTi_2_55_Regular', 'Alibaba PuHuiTi 2.0', system-ui, sans-serif";
+
   return (
     <div
       ref={containerRef}
-      className="flex flex-col items-start w-max rounded-medium absolute left-[40px] bottom-0 [box-shadow:#00000066_0px_4px_16px] bg-neutral-200 border border-solid border-[#FFFFFF0D] p-[4px]"
-      style={{ zIndex: 50 }}
+      style={{
+        position: 'absolute',
+        left: '40px',
+        bottom: '0',
+        zIndex: 50,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'stretch',
+        width: '150px',
+        borderRadius: '8px',
+        boxShadow: '#00000066 0px 4px 16px',
+        backgroundColor: '#161616',
+        border: '1px solid #FFFFFF0D',
+        padding: '4px',
+      }}
     >
-      {['创作手册', '更新日志', '用户协议', '隐私政策', '商务合作', '水印设置'].map((label) =>
-        label === '商务合作' ? (
-          <div key={label} ref={bizItemRef} style={{ width: '100%' }}>
-            <MenuPopupItem label={label} onClick={() => handleMenuClick(label)} />
-          </div>
-        ) : (
-          <MenuPopupItem key={label} label={label} onClick={() => handleMenuClick(label)} />
-        )
-      )}
+      {/* 外链类：创作手册、更新日志、开源社区 */}
+      {['创作手册', '更新日志', '开源社区'].map((label) => (
+        <MenuPopupItem key={label} label={label} showExternalIcon onClick={() => handleMenuClick(label)} />
+      ))}
+
+      {/* 内页类：用户协议、隐私政策、商务合作 */}
+      {['用户协议', '隐私政策'].map((label) => (
+        <MenuPopupItem key={label} label={label} onClick={() => handleMenuClick(label)} />
+      ))}
+      <div ref={bizItemRef} style={{ width: '100%' }}>
+        <MenuPopupItem label="商务合作" onClick={() => handleMenuClick('商务合作')} />
+      </div>
+
+      {/* AI生成水印设置 */}
+      <MenuPopupItem label="AI生成水印设置" onClick={() => handleMenuClick('AI生成水印设置')} />
+
+      {/* 备案信息 */}
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          alignItems: 'flex-start',
+          gap: '4px',
+          padding: '8px 12px',
+          borderRadius: '6px',
+        }}
+      >
+        <span style={{ fontFamily: FONT, fontSize: '10px', lineHeight: '12px', color: '#FFFFFF80' }}>
+          ©2026 Miioo AI
+        </span>
+        <span style={{ fontFamily: FONT, fontSize: '10px', lineHeight: '12px', color: '#FFFFFF80' }}>
+          济南三脚猫科技有限公司
+        </span>
+        <span style={{ fontFamily: FONT, fontSize: '10px', lineHeight: '12px', color: '#FFFFFF80' }}>
+          鲁ICP备2026030778号
+        </span>
+      </div>
+
+      {/* 商务合作二维码浮层 */}
       {bizQrVisible && (
         <div
           style={{
@@ -202,14 +261,7 @@ function MoreOptionsMenu({ close, setWatermarkSettingsOpen }) {
               flexShrink: 0,
             }}
           />
-          <div
-            style={{
-              fontFamily: "'AlibabaPuHuiTi_2_55_Regular', 'Alibaba PuHuiTi 2.0', system-ui, sans-serif",
-              color: '#FFFFFFCC',
-              fontSize: '12px',
-              lineHeight: '16px',
-            }}
-          >
+          <div style={{ fontFamily: FONT, color: '#FFFFFFCC', fontSize: '12px', lineHeight: '16px' }}>
             扫码添加客服
           </div>
         </div>
@@ -241,7 +293,7 @@ const BOTTOM_NAV_ITEMS = [
   {
     key: 'notifications',
     label: '通知',
-    tooltip: '通知',
+    tooltip: '消息中心',
     icon: (
       <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={ICON_STYLE}>
         <path d="M3.8 12.2H3.3V12.7H3.8V12.2ZM12.2 12.2V12.7H12.7V12.2H12.2ZM2 11.7C1.724 11.7 1.5 11.924 1.5 12.2C1.5 12.476 1.724 12.7 2 12.7V12.2V11.7ZM14 12.7C14.276 12.7 14.5 12.476 14.5 12.2C14.5 11.924 14.276 11.7 14 11.7V12.2V12.7ZM9.5 12.2H10C10 11.924 9.776 11.7 9.5 11.7V12.2ZM6.5 12.2V11.7C6.224 11.7 6 11.924 6 12.2H6.5ZM8 2V1.5C5.404 1.5 3.3 3.604 3.3 6.2H3.8H4.3C4.3 4.157 5.957 2.5 8 2.5V2ZM3.8 6.2H3.3V12.2H3.8H4.3V6.2H3.8ZM3.8 12.2V12.7H12.2V12.2V11.7H3.8V12.2ZM12.2 12.2H12.7V6.2H12.2H11.7V12.2H12.2ZM12.2 6.2H12.7C12.7 3.604 10.596 1.5 8 1.5V2V2.5C10.043 2.5 11.7 4.157 11.7 6.2H12.2ZM2 12.2V12.7H14V12.2V11.7H2V12.2ZM8 14V14.5C9.105 14.5 10 13.605 10 12.5H9.5H9C9 13.052 8.552 13.5 8 13.5V14ZM9.5 12.5H10V12.2H9.5H9V12.5H9.5ZM9.5 12.2V11.7H6.5V12.2V12.7H9.5V12.2ZM6.5 12.2H6V12.5H6.5H7V12.2H6.5ZM6.5 12.5H6C6 13.605 6.895 14.5 8 14.5V14V13.5C7.448 13.5 7 13.052 7 12.5H6.5Z" fill="#FFFFFF" />
@@ -366,6 +418,121 @@ function LoginButton({ onClick }) {
 }
 
 const SECONDARY_TEXT = 'rgba(255, 255, 255, 0.60)';
+
+// ── HomeSloganText: soft-blur-in per-character (animate-text / soft-blur-in) ──
+const SLOGAN_LINES = ['无订阅费用', '一键配置API，开启漫剧创作之旅'];
+const SOFT_BLUR_EASING = 'cubic-bezier(0.22, 1, 0.36, 1)';
+const SOFT_BLUR_DURATION = 900;
+const SOFT_BLUR_STAGGER = 25;
+const SOFT_BLUR_LINE_DELAY = 400;
+
+function HomeSloganText() {
+  const ref0 = useRef(null);
+  const ref1 = useRef(null);
+
+  useEffect(() => {
+    const refs = [ref0, ref1];
+    refs.forEach((ref, lineIdx) => {
+      const container = ref.current;
+      if (!container) return;
+      const units = Array.from(container.querySelectorAll('[data-char]'));
+      const lineStart = lineIdx * SOFT_BLUR_LINE_DELAY;
+      units.forEach((span, i) => {
+        span.animate(
+          [
+            { opacity: 0, transform: 'translateY(16px)', filter: 'blur(12px)' },
+            { opacity: 1, transform: 'translateY(0px)',  filter: 'blur(0px)'  },
+          ],
+          {
+            duration: SOFT_BLUR_DURATION,
+            delay: lineStart + i * SOFT_BLUR_STAGGER,
+            easing: SOFT_BLUR_EASING,
+            fill: 'both',
+          }
+        );
+      });
+    });
+  }, []);
+
+  const outerCharStyle = {
+    display: 'inline-block',
+    willChange: 'transform, opacity, filter',
+  };
+
+  const lineStyles = [
+    {
+      // 第一行
+      opacity: 0.7,
+      fontFamily: '"Source Sans 3",system-ui,sans-serif',
+      fontWeight: 200,
+      fontSize: '52px',
+      lineHeight: '64px',
+      whiteSpace: 'nowrap',
+    },
+    {
+      // 第二行
+      opacity: 0.7,
+      fontFamily: '"Source Sans 3",system-ui,sans-serif',
+      fontWeight: 200,
+      fontSize: '52px',
+      lineHeight: '64px',
+      whiteSpace: 'nowrap',
+    },
+  ];
+
+  const innerCharStyles = [
+    {
+      display: 'inline-block',
+      backgroundImage: 'linear-gradient(in oklab 180deg, oklab(100% 0 0) 50%, oklab(70.1% 0.003 -0.043 / 10%) 115.99%)',
+      WebkitBackgroundClip: 'text',
+      backgroundClip: 'text',
+      WebkitTextFillColor: 'transparent',
+      WebkitTextStroke: '1px #FFFFFF80',
+    },
+    {
+      display: 'inline-block',
+      backgroundImage: 'linear-gradient(in oklab 180deg, oklab(100% 0 0) 50%, oklab(70.1% 0.003 -0.043 / 20%) 115.99%)',
+      WebkitBackgroundClip: 'text',
+      backgroundClip: 'text',
+      WebkitTextFillColor: 'transparent',
+      WebkitTextStroke: '1px #FFFFFF80',
+    },
+  ];
+
+  return (
+    <div
+      style={{
+        position: 'fixed',
+        left: '50%',
+        top: '33.333%',
+        transform: 'translate(-50%, -50%)',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: '16px',
+        pointerEvents: 'none',
+        zIndex: 1,
+        whiteSpace: 'nowrap',
+        overflow: 'visible',
+      }}
+    >
+      <div ref={ref0} style={lineStyles[0]}>
+        {Array.from(SLOGAN_LINES[0]).map((char, i) => (
+          <span key={i} data-char style={outerCharStyle}>
+            <span style={innerCharStyles[0]}>{char}</span>
+          </span>
+        ))}
+      </div>
+      <div ref={ref1} style={{ ...lineStyles[1], marginLeft: '-38px' }}>
+        {Array.from(SLOGAN_LINES[1]).map((char, i) => (
+          <span key={i} data-char style={outerCharStyle}>
+            <span style={innerCharStyles[1]}>{char}</span>
+          </span>
+        ))}
+      </div>
+    </div>
+  );
+}
 
 function StartCreationButton({ onClick }) {
   const [hovered, setHovered] = useState(false);
@@ -735,7 +902,7 @@ function normalizeSubjects(items) {
   return list;
 }
 
-const BG_VIDEOS = ["/video/bg-video-01.mp4", "/video/bg-video-02.mp4", "/video/bg-video-03.mp4"];
+const BG_VIDEOS = ["/video/bg-video-01.mp4", "/video/bg-video-02.mp4", "/video/bg-video-03.mp4", "/video/bg-video-04.mp4", "/video/bg-video-05.mp4", "/video/bg-video-06.mp4", "/video/bg-video-07.mp4", "/video/bg-video-08.mp4"];
 const BG_VIDEO_POSTER = "/video/bg-video-poster.png";
 
 export default function Home({ onProjectCreated }) {
@@ -751,7 +918,6 @@ export default function Home({ onProjectCreated }) {
   const [notificationCenterOpen, setNotificationCenterOpen] = useState(false);
   // mock 模式下也需要检查 token，退出登录后应该显示未登录状态
   const [isLoggedIn, setIsLoggedIn] = useState(false);
-  const [serverReachable, setServerReachable] = useState(null); // null=检测中, true=可达, false=降级
   const [apiConfigured, setApiConfigured] = useState(false);
   const [profileOpen, setProfileOpen] = useState(false);
   const [newProjectOpen, setNewProjectOpen] = useState(false);
@@ -766,11 +932,18 @@ export default function Home({ onProjectCreated }) {
   const [sharedChars, setSharedChars] = useState(null);
   const [sharedScenes, setSharedScenes] = useState(null);
   const [sharedProps, setSharedProps] = useState(null);
+  // 主体分页 meta：{ cursor, hasMore, loading, rawList }
+  const [subjectPageMeta, setSubjectPageMeta] = useState({
+    chars:  { cursor: null, hasMore: false, loading: false, rawList: [] },
+    scenes: { cursor: null, hasMore: false, loading: false, rawList: [] },
+    props:  { cursor: null, hasMore: false, loading: false, rawList: [] },
+  });
   const [extractError, setExtractError] = useState(null);
   const [extractErrorProjectId, setExtractErrorProjectId] = useState(null);
   const [generateError, setGenerateError] = useState(null);
   const [generateErrorProjectId, setGenerateErrorProjectId] = useState(null);
   const [isGeneratingStoryboards, setIsGeneratingStoryboards] = useState(false);
+  const [completedEpisodesCount, setCompletedEpisodesCount] = useState(0);
   const generatingStoryboardsRef = useRef(false); // 同步锁，防止并发调用
   // 自上次提取主体后，剧本是否又重新定稿过（用于控制"开始提取主体"按钮行为）
   const [scriptFinalizedSinceExtraction, setScriptFinalizedSinceExtraction] = useState(false);
@@ -780,6 +953,7 @@ export default function Home({ onProjectCreated }) {
   const [scriptContent, setScriptContent] = useState('');
   const [scriptDraftContent, setScriptDraftContent] = useState('');
   const [episodeStatuses, setEpisodeStatuses] = useState({});
+  const [storyboardInitialEpisodeIndex, setStoryboardInitialEpisodeIndex] = useState(null);
   // Tracks which non-alwaysEnabled steps have ever had content — once unlocked, stays unlocked
   const [unlockedSteps, setUnlockedSteps] = useState(new Set());
   const [currentUser, setCurrentUser] = useState({});
@@ -795,11 +969,8 @@ export default function Home({ onProjectCreated }) {
   // 跨项目异步操作的 pending 结果暂存
   const pendingExtractionsRef = useRef({}); // { projectId: { chars, scenes, props } }
   const currentProjectIdRef = useRef(null);  // 同步跟踪当前项目
-  const [currentVideoIndex, setCurrentVideoIndex] = useState(0);
   const bgVideoRef = useRef(null);
-  const [videoReady, setVideoReady] = useState(false);
-
-
+  const currentVideoIndexRef = useRef(0);
 
   const showToast = (msg, type = 'warning') => {
     if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
@@ -807,11 +978,15 @@ export default function Home({ onProjectCreated }) {
     toastTimerRef.current = setTimeout(() => setToast(null), 2500);
   };
 
-  // 背景视频循环：播完当前视频后切换到下一个
+  // 背景视频循环：播完当前视频后切换到下一个（纯 ref 操作，不触发 React 重渲染）
   const handleVideoEnded = () => {
-    setVideoReady(false);
-
-    setCurrentVideoIndex((prev) => (prev + 1) % BG_VIDEOS.length);
+    const next = (currentVideoIndexRef.current + 1) % BG_VIDEOS.length;
+    currentVideoIndexRef.current = next;
+    const video = bgVideoRef.current;
+    if (!video) return;
+    video.src = BG_VIDEOS[next];
+    video.load();
+    video.play().catch(() => {});
   };
 
   // 统一的退出登录处理函数
@@ -879,6 +1054,9 @@ export default function Home({ onProjectCreated }) {
   // 统一的项目数据加载函数
   const loadProjectDetails = async (projectId) => {
     setIsLoadingProject(true);
+    // 每次进入项目时主动失效 episodes 和 overview 缓存，确保拿到后端最新数据
+    invalidate(K.episodes(projectId));
+    invalidate(K.projectOverview(projectId));
     try {
       // 0. 切换项目前先清空旧项目所有数据状态，避免闪现旧数据
       setActiveProject(null);
@@ -902,6 +1080,42 @@ export default function Home({ onProjectCreated }) {
         setGenerateErrorProjectId(null);
       }
       setSubjectInitialTab('char');
+
+      // ── 缓存快速路径：如果核心数据都有缓存，立即填充并关掉 loading ──────────
+      const cachedProject = peekCache(K.project(projectId), MEDIUM.CONTENT);
+      const cachedEpisodes = peekCache(K.episodes(projectId), MEDIUM.CONTENT);
+      const cachedScript = peekCache(K.script(projectId), MEDIUM.CONTENT);
+      const cachedChars = peekCache(K.subjects(projectId, 'character'), MEDIUM.CONTENT);
+      const cachedScenes = peekCache(K.subjects(projectId, 'scene'), MEDIUM.CONTENT);
+      const cachedProps = peekCache(K.subjects(projectId, 'prop'), MEDIUM.CONTENT);
+
+      if (cachedProject && cachedEpisodes) {
+        // 从缓存填充状态，立即关掉 loading → StoryboardPage 秒挂载
+        setActiveProject(cachedProject);
+        setScriptEpisodes(cachedEpisodes);
+        if (cachedScript) {
+          const scriptContent = cachedScript.script?.content || cachedScript.content || '';
+          setScriptContent(scriptContent);
+          setScriptPhase(scriptContent ? 'view' : 'initial');
+          setScriptHasStarted(!!scriptContent);
+        }
+        // 确保缓存数据是数组（兼容旧缓存存的 SubjectListResponse 对象）
+        const ensureArray = (data) => Array.isArray(data) ? data : (data?.list || data?.items || data?.data || []);
+        if (cachedChars) setSharedChars(normalizeSubjects(ensureArray(cachedChars)));
+        if (cachedScenes) setSharedScenes(normalizeSubjects(ensureArray(cachedScenes)));
+        if (cachedProps) setSharedProps(normalizeSubjects(ensureArray(cachedProps)));
+        // 恢复步骤
+        const savedStep = localStorage.getItem(`miioo_active_step_${projectId}`);
+        setActiveStep(savedStep || 'script');
+        const savedUnlocked = localStorage.getItem(`miioo_unlocked_steps_${projectId}`);
+        if (savedUnlocked) setUnlockedSteps(new Set(JSON.parse(savedUnlocked)));
+        const savedFinalized = localStorage.getItem(`miioo_finalized_since_extraction_${projectId}`);
+        setScriptFinalizedSinceExtraction(savedFinalized === 'true');
+        // 立即关掉 loading，让 StoryboardPage 先渲染缓存数据
+        setIsLoadingProject(false);
+        // 后台继续刷新（不阻塞 UI）
+      }
+      // ── 结束缓存快速路径 ────────────────────────────────────────────────────
       // 1. 加载项目基本信息
       const projectData = await apiGetProject(projectId);
       setActiveProject(projectData);
@@ -939,42 +1153,53 @@ export default function Home({ onProjectCreated }) {
       setActiveStep(savedStep || 'script');
 
       // 3. 并行加载所有数据
-      const [scriptData, charsData, scenesData, propsData, episodesData, overviewData] = await Promise.all([
+      const SUBJECT_LIMIT = 20;
+      const [scriptData, charsPage, scenesPage, propsPage, episodesData, overviewData] = await Promise.all([
         apiGetScriptWorkspace(projectId).catch(err => {
           console.error('加载剧本数据失败:', err);
           return { content: '', episodes: [], phase: 'initial' };
         }),
-        apiGetSubjects(projectId, { type: 'character' }).catch(() => []),
-        apiGetSubjects(projectId, { type: 'scene' }).catch(() => []),
-        apiGetSubjects(projectId, { type: 'prop' }).catch(() => []),
+        apiGetSubjectsPage(projectId, { type: 'character', limit: SUBJECT_LIMIT }).catch(() => ({ list: [], nextCursor: null, hasMore: false })),
+        apiGetSubjectsPage(projectId, { type: 'scene', limit: SUBJECT_LIMIT }).catch(() => ({ list: [], nextCursor: null, hasMore: false })),
+        apiGetSubjectsPage(projectId, { type: 'prop', limit: SUBJECT_LIMIT }).catch(() => ({ list: [], nextCursor: null, hasMore: false })),
         apiGetEpisodes(projectId).catch(() => []),
         apiGetProjectOverview(projectId).catch(() => null),
       ]);
 
       // 4. 更新状态
-      // API 返回结构: { script: { content, status, ... }, messages: [...] }
       const scriptContent = scriptData.script?.content || scriptData.content || '';
       setScriptContent(scriptContent);
       setScriptEpisodes(episodesData || []);
       setScriptPhase(scriptContent ? 'view' : 'initial');
       setScriptHasStarted(!!scriptContent);
 
-      // 归一化：后端 API 返回 snake_case -> 前端 camelCase/shorthand
-      setSharedChars(normalizeSubjects(charsData));
-      setSharedScenes(normalizeSubjects(scenesData));
-      setSharedProps(normalizeSubjects(propsData));
+      setSharedChars(normalizeSubjects(charsPage.list));
+      setSharedScenes(normalizeSubjects(scenesPage.list));
+      setSharedProps(normalizeSubjects(propsPage.list));
+      setSubjectPageMeta({
+        chars:  { cursor: charsPage.nextCursor,  hasMore: charsPage.hasMore,  loading: false, rawList: charsPage.list },
+        scenes: { cursor: scenesPage.nextCursor, hasMore: scenesPage.hasMore, loading: false, rawList: scenesPage.list },
+        props:  { cursor: propsPage.nextCursor,  hasMore: propsPage.hasMore,  loading: false, rawList: propsPage.list },
+      });
+      // setSharedProps already set above from propsPage.list
 
       // 从后端数据中提取剧集状态，优先用 overview 的 episode_progress（状态更精准）
-      // 只接受 edited / generated / pending，其他值统一回退为 pending
-      const VALID_STATUSES = ['edited', 'generated', 'pending'];
-      const normalizeStatus = (s) => VALID_STATUSES.includes(s) ? s : 'pending';
+      // 不依赖后端 status 字符串（实际值与文档不符），直接用计数字段判断：
+      // - video_generated_count > 0 → 'generated'（蓝色，已生成分镜视频）
+      // - 否则 → 'pending'（灰色）
       if (overviewData?.episode_progress?.length > 0) {
         const statusMap = {};
         overviewData.episode_progress.forEach((ep, index) => {
-          statusMap[index] = normalizeStatus(ep.status);
+          if (ep.video_generated_count > 0) {
+            statusMap[index] = 'generated';
+          } else {
+            statusMap[index] = 'pending';
+          }
         });
         setEpisodeStatuses(statusMap);
       } else if (episodesData.length > 0) {
+        const VALID_STATUSES = ['edited', 'generated', 'pending'];
+        const normalizeStatus = (s) => VALID_STATUSES.includes(s) ? s : 'pending';
         const statusMap = {};
         episodesData.forEach((episode, index) => {
           statusMap[index] = normalizeStatus(episode.status);
@@ -982,8 +1207,10 @@ export default function Home({ onProjectCreated }) {
         setEpisodeStatuses(statusMap);
       }
 
-      // 5. 加载分镜数据（需要剧集 ID）
+      // 5. 加载分镜数据（需要剧集 ID）并用最新 episodesData 的 ID 写入缓存
       if (episodesData.length > 0) {
+        // 先清空所有旧的分镜缓存（包含旧 episode ID 的 key），避免 StoryboardPage 用错 ID
+        invalidate(K.storyboardsPrefix(projectId));
         const storyboardsData = await apiGetStoryboards(projectId, {
           episode_id: episodesData[0].id
         }).catch(() => []);
@@ -1007,11 +1234,71 @@ export default function Home({ onProjectCreated }) {
     }
   };
 
+  // 处理微信回调（根路径 ?code=&state=）
+  useEffect(() => {
+    const handleWechatCallback = async () => {
+      const params = new URLSearchParams(window.location.search);
+      const code = params.get('code');
+      const state = params.get('state');
+
+      if (!code || !state) return; // 没有微信参数，继续正常流程
+
+      try {
+        // 调用后端完成回调
+        const result = await apiCompleteWechatCallback({ code, state });
+        console.log('[Home] 微信回调完成:', result);
+
+        // 如果是 iframe 内，通知父窗口
+        if (window.self !== window.top) {
+          try {
+            window.parent.postMessage({
+              type: 'wechat-callback-complete',
+              payload: result,
+            }, '*');
+          } catch (err) {
+            console.error('[Home] postMessage 失败:', err);
+          }
+        } else {
+          // 顶层窗口直接处理回调结果
+          if (result?.status === 'confirmed' && result?.access_token) {
+            // token 已由 apiCompleteWechatCallback 写入，触发页面刷新完成登录
+            window.location.replace('/');
+          } else if (result?.status === 'need_bind_mobile') {
+            // 通知自身（LoginModal 监听同一个 message 事件）
+            window.dispatchEvent(new MessageEvent('message', {
+              data: { type: 'wechat-callback-complete', payload: result },
+            }));
+          }
+        }
+
+        // 清理 URL 中的微信参数（避免刷新重复执行）
+        const cleanUrl = window.location.pathname;
+        window.history.replaceState({}, document.title, cleanUrl);
+      } catch (err) {
+        console.error('[Home] 微信回调处理失败:', err);
+        // 无论 iframe 还是顶层，均通知 LoginModal 显示错误
+        const errorPayload = {
+          type: 'wechat-callback-complete',
+          payload: { status: 'error', message: err?.message || '微信登录失败，请稍后重试' },
+        };
+        if (window.self !== window.top) {
+          try { window.parent.postMessage(errorPayload, '*'); } catch {}
+        } else {
+          window.dispatchEvent(new MessageEvent('message', { data: errorPayload }));
+        }
+        // 清理 URL（即使失败也要清理，避免重复尝试）
+        const cleanUrl = window.location.pathname;
+        window.history.replaceState({}, document.title, cleanUrl);
+      }
+    };
+
+    handleWechatCallback();
+  }, []);
+
   useEffect(() => {
     // 没有 token → 跳过所有鉴权请求，避免 401
     if (!getToken()) {
       setProjectsLoaded(true);
-      setServerReachable(null);
       return;
     }
 
@@ -1025,20 +1312,14 @@ export default function Home({ onProjectCreated }) {
       // token 刷新后仍然无效 → 跳过 API 请求，避免无意义的 401
       if (!getToken()) {
         setProjectsLoaded(true);
-        setServerReachable(null);
         return;
       }
 
       try {
         const user = await apiGetCurrentUser();
-        setServerReachable(true);
         setIsLoggedIn(true);
-        setCurrentUser(user);
+        setCurrentUser({ ...user, avatar_url: normalizeImageUrl(user.avatar_url) ?? '' });
       } catch (err) {
-        if (err.isNetworkError) {
-          setServerReachable(false);
-          showToast('后端服务连接异常，部分功能不可用', 'error');
-        }
         // 401 / 其他鉴权错误 → authFetch 已清 token + 触发 logout 事件
         setProjectsLoaded(true);
         return; // 阻止后续加载
@@ -1085,6 +1366,22 @@ export default function Home({ onProjectCreated }) {
       doAuth(); // 启动鉴权流程
   }, []);
 
+  // 订阅项目列表后台更新
+  useEffect(() => {
+    const unsubscribe = subscribe(K.projects(), (data) => {
+      if (Array.isArray(data)) {
+        const normalized = data.map((p) => ({ ...p, cover: p.cover ?? p.cover_url }));
+        const sorted = [...normalized].sort((a, b) => {
+          const timeA = new Date(a.created_at || 0).getTime();
+          const timeB = new Date(b.created_at || 0).getTime();
+          return timeB - timeA;
+        });
+        setProjects(sorted);
+      }
+    });
+    return unsubscribe;
+  }, []);
+
   useEffect(() => {
     const handleForceLogout = () => {
       if (!localStorage.getItem('token')) return;
@@ -1092,25 +1389,46 @@ export default function Home({ onProjectCreated }) {
       setLoginOpen(true);
     };
 
-    const handleBackendUnreachable = () => {
-      if (!getToken()) return;
-      setServerReachable(false);
-      showToast('后端服务连接异常，部分功能不可用', 'error');
+    // 微信回调 need_bind_mobile：确保登录弹窗打开，再让 LoginModal 内部切换到绑定手机步骤
+    const handleWechatNeedBind = (event) => {
+      if (event.data?.type === 'wechat-callback-complete' &&
+          event.data?.payload?.status === 'need_bind_mobile') {
+        setLoginOpen(true);
+      }
     };
 
-    const handleBackendReachable = () => {
-      setServerReachable(true);
+    const handleProjectAssetsDeleted = (event) => {
+      const projectId = event?.detail?.projectId;
+      if (!projectId || projectId !== activeProject?.id) return;
+
+      const SUBJECT_LIMIT = 20;
+      Promise.all([
+        apiGetSubjectsPage(projectId, { type: 'character', limit: SUBJECT_LIMIT }).catch(() => ({ list: [], nextCursor: null, hasMore: false })),
+        apiGetSubjectsPage(projectId, { type: 'scene', limit: SUBJECT_LIMIT }).catch(() => ({ list: [], nextCursor: null, hasMore: false })),
+        apiGetSubjectsPage(projectId, { type: 'prop', limit: SUBJECT_LIMIT }).catch(() => ({ list: [], nextCursor: null, hasMore: false })),
+      ]).then(([charsPage, scenesPage, propsPage]) => {
+        setSharedChars(normalizeSubjects(charsPage.list));
+        setSharedScenes(normalizeSubjects(scenesPage.list));
+        setSharedProps(normalizeSubjects(propsPage.list));
+        setSubjectPageMeta({
+          chars:  { cursor: charsPage.nextCursor,  hasMore: charsPage.hasMore,  loading: false, rawList: charsPage.list },
+          scenes: { cursor: scenesPage.nextCursor, hasMore: scenesPage.hasMore, loading: false, rawList: scenesPage.list },
+          props:  { cursor: propsPage.nextCursor,  hasMore: propsPage.hasMore,  loading: false, rawList: propsPage.list },
+        });
+      }).catch((err) => {
+        console.error('资产删除后刷新主体数据失败:', err);
+      });
     };
 
     window.addEventListener('auth:logout', handleForceLogout);
-    window.addEventListener('backend:unreachable', handleBackendUnreachable);
-    window.addEventListener('backend:reachable', handleBackendReachable);
+    window.addEventListener('message', handleWechatNeedBind);
+    window.addEventListener('project-assets:deleted', handleProjectAssetsDeleted);
     return () => {
       window.removeEventListener('auth:logout', handleForceLogout);
-      window.removeEventListener('backend:unreachable', handleBackendUnreachable);
-      window.removeEventListener('backend:reachable', handleBackendReachable);
+      window.removeEventListener('message', handleWechatNeedBind);
+      window.removeEventListener('project-assets:deleted', handleProjectAssetsDeleted);
     };
-  }, []);
+  }, [activeProject?.id]);
 
   const handleUnlockStep = (stepKey) => {
     setUnlockedSteps((prev) => {
@@ -1119,6 +1437,28 @@ export default function Home({ onProjectCreated }) {
       next.add(stepKey);
       return next;
     });
+  };
+
+  // 加载更多主体（滚动触底时调用）
+  const loadMoreSubjects = async (type) => {
+    const key = type === 'character' ? 'chars' : type === 'scene' ? 'scenes' : 'props';
+    const meta = subjectPageMeta[key];
+    if (!meta || meta.loading || !meta.hasMore) return;
+    setSubjectPageMeta(prev => ({ ...prev, [key]: { ...prev[key], loading: true } }));
+    try {
+      const page = await apiGetSubjectsPage(activeProject.id, { type, limit: 20, cursor: meta.cursor });
+      const newItems = normalizeSubjects(page.list);
+      if (key === 'chars') setSharedChars(prev => [...(prev || []), ...newItems]);
+      else if (key === 'scenes') setSharedScenes(prev => [...(prev || []), ...newItems]);
+      else setSharedProps(prev => [...(prev || []), ...newItems]);
+      setSubjectPageMeta(prev => ({
+        ...prev,
+        [key]: { cursor: page.nextCursor, hasMore: page.hasMore, loading: false, rawList: [...meta.rawList, ...page.list] },
+      }));
+    } catch (err) {
+      console.error(`[Home] 加载更多主体失败 (${type}):`, err);
+      setSubjectPageMeta(prev => ({ ...prev, [key]: { ...prev[key], loading: false } }));
+    }
   };
 
   // 提取主体回调（由 SubjectPage 在挂载时调用）
@@ -1191,6 +1531,7 @@ export default function Home({ onProjectCreated }) {
     if (generatingStoryboardsRef.current) return;
     generatingStoryboardsRef.current = true;
     setIsGeneratingStoryboards(true);
+    setCompletedEpisodesCount(0);
     setGenerateError(null);
     setGenerateErrorProjectId(null);
     try {
@@ -1205,13 +1546,98 @@ export default function Home({ onProjectCreated }) {
           setScriptEpisodes(freshEpisodes);
         }
       }
-      await apiGenerateStoryboardsFromFinalScript(activeProject.id);
+
+      // episode_number → episode_id 映射，用于按集失效缓存
+      const episodeNumberToId = {};
+      freshEpisodes.forEach(ep => {
+        if (ep.episode_number != null && ep.id) {
+          episodeNumberToId[ep.episode_number] = ep.id;
+        }
+      });
+
+      // 1. 启动任务，拿到 taskId
+      const taskResp = await apiGenerateStoryboardsFromFinalScript(activeProject.id);
+      const taskId = taskResp?.id;
+      if (!taskId) throw new Error('未获取到任务 ID');
+
+      // 2. 轮询任务，每完成一集立即失效对应缓存，让 StoryboardPage 实时看到结果
+      const TIMEOUT_MS = 500 * 1000; // 500 秒超时
+      const INTERVAL = 3000;
+      let finalTask = null;
+      const notifiedEpisodeNumbers = new Set(); // 已通知过的分集，避免重复失效
+      let prevCurrentEpisodeNumber = null; // 上次轮询时的 current_episode_number
+      const pollStartTime = Date.now();
+
+      const flushEpisode = (num) => {
+        if (notifiedEpisodeNumbers.has(num)) return;
+        notifiedEpisodeNumbers.add(num);
+        setCompletedEpisodesCount(notifiedEpisodeNumbers.size);
+        const epId = episodeNumberToId[num];
+        if (!epId) return;
+        invalidate(K.storyboards(activeProject.id, epId));
+        invalidate(K.storyboards(activeProject.id));
+        apiGetStoryboards(activeProject.id, { episode_id: epId }).catch(() => {});
+      };
+
+      while (Date.now() - pollStartTime < TIMEOUT_MS) {
+        await new Promise(r => setTimeout(r, INTERVAL));
+        if (Date.now() - pollStartTime >= TIMEOUT_MS) break;
+        const t = await apiGetTask(taskId).catch(() => null);
+        if (!t) continue;
+        console.log('[poll] task status:', t.status, 'params:', JSON.stringify(t.params));
+
+        // 路径1：completed_episode_numbers 字段（后端明确告知哪些集已完成）
+        const completedNums = t.params?.completed_episode_numbers;
+        if (Array.isArray(completedNums)) {
+          completedNums.forEach(num => flushEpisode(num));
+        }
+
+        // 路径2：current_episode_number 变化 → 说明上一集已完成
+        const currentNum = t.params?.current_episode_number;
+        if (currentNum != null && prevCurrentEpisodeNumber != null && currentNum !== prevCurrentEpisodeNumber) {
+          flushEpisode(prevCurrentEpisodeNumber);
+        }
+        if (currentNum != null) prevCurrentEpisodeNumber = currentNum;
+
+        // 终态判断
+        const status = t.status;
+        if (status !== 'pending' && status !== 'running') {
+          finalTask = t;
+          break;
+        }
+      }
+
+      if (!finalTask) throw new Error('POLL_TIMEOUT');
+      if (finalTask.status === 'failed') {
+        const msg = finalTask.params?.status_message || finalTask.params?.error || '分镜生成失败';
+        throw new Error(msg);
+      }
+
+      // 3. 任务完成，重新拉取最新 episodes（后端可能已创建新 UUID）
+      const latestEpisodes = await apiGetEpisodes(activeProject.id).catch(() => freshEpisodes);
+      if (Array.isArray(latestEpisodes) && latestEpisodes.length > 0) {
+        setScriptEpisodes(latestEpisodes);
+      }
+
+      // 4. 用最新 episodes 做兜底刷新分镜（确保用正确的 episode ID）
+      const finalEpisodes = (Array.isArray(latestEpisodes) && latestEpisodes.length > 0)
+        ? latestEpisodes : freshEpisodes;
+      finalEpisodes.forEach(ep => {
+        if (!ep.id) return;
+        invalidate(K.storyboards(activeProject.id, ep.id));
+        apiGetStoryboards(activeProject.id, { episode_id: ep.id }).catch(() => {});
+      });
+      invalidate(K.storyboards(activeProject.id));
+      apiGetStoryboards(activeProject.id).catch(() => {});
+
     } catch (err) {
       console.error('智能分镜生成失败:', err);
       const status = err?.status;
       const msg = err?.message || String(err);
       let errorMsg;
-      if (status === 502) {
+      if (msg === 'POLL_TIMEOUT') {
+        errorMsg = '剧本生成超时，请重新生成';
+      } else if (status === 502) {
         errorMsg = '服务器繁忙，请稍后重试';
       } else if (status === 504 || msg.includes('timeout') || msg.includes('Timeout') || msg.includes('abort')) {
         errorMsg = '请求超时，请重试！';
@@ -1343,35 +1769,47 @@ export default function Home({ onProjectCreated }) {
     // 新项目插入到列表最前面，统一字段映射：cover_url -> cover
     const normalized = { ...project, cover: project.cover ?? project.cover_url };
     setProjects((prev) => [normalized, ...prev]);
+    // 清空旧项目的残留状态，避免闪现旧数据
+    setScriptContent('');
+    setScriptEpisodes([]);
+    setScriptPhase('initial');
+    setScriptHasStarted(false);
+    setScriptFinalizedSinceExtraction(false);
+    setSharedChars([]);
+    setSharedScenes([]);
+    setSharedProps([]);
+    setEpisodeStatuses({});
+    setUnlockedSteps(new Set());
+    // 直接用创建接口返回的项目数据，无需再调一次 apiGetProject
+    setActiveProject(normalized);
+    setActiveProjectId(normalized.id);
+    setActiveStep('script');
     setActiveKey('project');
   };
+
+  // 在 iframe 内（微信 redirect 回调）不渲染完整 UI，只执行 useEffect 回调逻辑
+  if (window.self !== window.top) {
+    return null;
+  }
 
   return (
     <div className="[font-synthesis:none] overflow-clip w-screen h-screen relative bg-neutral-400 antialiased">
       {/* background — only visible on home page */}
       {activeKey === 'home' && (
         <>
-          <img
-            src={BG_VIDEO_POSTER}
-            alt=""
-            className="absolute inset-0 object-cover"
-            style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center center' }}
-          />
           <video
             ref={bgVideoRef}
-            key={currentVideoIndex}
-            src={BG_VIDEOS[currentVideoIndex]}
+            src={BG_VIDEOS[0]}
             autoPlay
             muted
             playsInline
-            onCanPlay={() => setVideoReady(true)}
             onEnded={handleVideoEnded}
             className="absolute inset-0 object-cover"
-            style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center center', opacity: videoReady ? 1 : 0, transition: 'opacity 500ms ease' }}
+            style={{ width: '100%', height: '100%', objectFit: 'cover', objectPosition: 'center center' }}
           />
           <div
             className="absolute inset-0 pointer-events-none"
-            style={{ backgroundImage: 'linear-gradient(in oklab 180deg, oklab(0% 0 0 / 0%) 81.58%, oklab(0% 0 0) 100%), linear-gradient(in oklab 90deg, oklab(0% 0 0 / 60%) 0%, oklab(0% 0 0 / 0%) 9.99%)' }}
+            style={{ backgroundImage: 'radial-gradient(ellipse 52.305% 69.61% at 50% 44.45% in oklab, oklab(0% 0 0 / 0%) 0%, 24.46%, oklab(0% 0 0 / 10%) 43.6%, 77.4%, oklab(0% 0 0 / 60%) 100%)' }}
           />
         </>
       )}
@@ -1470,18 +1908,14 @@ export default function Home({ onProjectCreated }) {
 
           {/* page content */}
           <div className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden relative">
-            {/* 后端不可达降级横幅 */}
-            {serverReachable === false && (
-              <div className="flex items-center justify-center gap-2 px-16 py-2 text-sm" style={{ backgroundColor: 'rgba(255,77,79,0.12)', color: '#FF4D4F' }}>
-                <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1L13 12H1L7 1Z" stroke="#FF4D4F" strokeLinejoin="round"/><path d="M7 5V8" stroke="#FF4D4F" strokeLinecap="round"/><circle cx="7" cy="10.5" r="0.5" fill="#FF4D4F"/></svg>
-                后端服务连接异常，部分功能不可用
-              </div>
-            )}
             {activeKey === 'home' && (
-              <StartCreationButton onClick={() => {
-                if (!isLoggedIn) { setLoginOpen(true); return; }
-                setNewProjectOpen(true);
-              }} />
+              <>
+                <HomeSloganText />
+                <StartCreationButton onClick={() => {
+                  if (!isLoggedIn) { setLoginOpen(true); return; }
+                  setNewProjectOpen(true);
+                }} />
+              </>
             )}
             {activeKey === 'project' && isLoadingProject && (
               <div style={{ flex: 1, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
@@ -1490,7 +1924,6 @@ export default function Home({ onProjectCreated }) {
             )}
             {activeKey === 'project' && !activeProject && !isLoadingProject && projectsLoaded && (
               <ProjectList
-                serverReachable={serverReachable}
                 projects={projects}
                 onNewProject={() => {
                   if (!isLoggedIn) { setLoginOpen(true); return; }
@@ -1567,12 +2000,16 @@ export default function Home({ onProjectCreated }) {
                 scriptFinalizedSinceExtraction={scriptFinalizedSinceExtraction}
                 onScriptFinalized={handleScriptFinalized}
                 episodeStatuses={episodeStatuses}
+                onGoToStoryboard={(episodeIndex) => {
+                  setStoryboardInitialEpisodeIndex(episodeIndex);
+                  handleUnlockStep('storyboard');
+                  setActiveStep('storyboard');
+                }}
               />
             )}
             {activeKey === 'project' && activeProject && activeStep === 'subject' && (
               <SubjectPage
                 projectRatio={activeProject.aspect_ratio || activeProject.ratio}
-                serverReachable={serverReachable}
                 projectId={activeProject.id}
                 projectName={activeProject.name}
                 onBack={() => {
@@ -1599,21 +2036,28 @@ export default function Home({ onProjectCreated }) {
                 }}
                 onExtractSubjects={forceExtract ? handleExtractSubjects : undefined}
                 extractError={extractError}
+                onLoadMoreChars={() => loadMoreSubjects('character')}
+                onLoadMoreScenes={() => loadMoreSubjects('scene')}
+                onLoadMoreProps={() => loadMoreSubjects('prop')}
+                hasMoreChars={subjectPageMeta.chars.hasMore}
+                hasMoreScenes={subjectPageMeta.scenes.hasMore}
+                hasMoreProps={subjectPageMeta.props.hasMore}
               />
             )}
             {activeKey === 'project' && activeProject && activeStep === 'storyboard' && (
               <StoryboardPage
-                serverReachable={serverReachable}
                 projectId={activeProject.id}
                 projectName={activeProject.name}
+                projectRatio={activeProject.aspect_ratio || activeProject.ratio}
                 chars={sharedChars ?? []}
                 scenes={sharedScenes ?? []}
                 props={sharedProps ?? []}
                 episodes={scriptEpisodes}
-                onUnlockStep={handleUnlockStep}
+                initialEpisodeIndex={storyboardInitialEpisodeIndex}
                 onUnlockStep={handleUnlockStep}
                 onGenerateStoryboards={handleGenerateStoryboards}
                 isGenerating={isGeneratingStoryboards}
+                completedEpisodesCount={completedEpisodesCount}
                 generateError={generateError}
                 onVideoGenerated={(episodeIndex) => {
                   setEpisodeStatuses((prev) => {
@@ -1624,11 +2068,10 @@ export default function Home({ onProjectCreated }) {
               />
             )}
             {activeKey === 'assets' && (
-              <AssetsPage serverReachable={serverReachable} projects={projects} />
+              <AssetsPage projects={projects} isLoggedIn={isLoggedIn} />
             )}
             {activeKey === 'create' && (
               <CreationPage
-                serverReachable={serverReachable}
                 isLoggedIn={isLoggedIn}
                 onLoginClick={() => setLoginOpen(true)}
                 apiConfigured={apiConfigured}
@@ -1639,20 +2082,14 @@ export default function Home({ onProjectCreated }) {
         </div>
       </div>
 
-      {/* 网站备案信息 — 仅首页可见 */}
-      {activeKey === 'home' && createPortal(
-        <div
-          className="fixed bottom-0 right-0 flex items-center gap-16 text-text-hint z-10"
-          style={{ height: "32px", paddingRight: "24px", fontSize: "12px" }}
-        >
-          <span>ⓒ2026 MiiooAI 版权所有</span>
-          <span>鲁ICP备2026030778号</span>
-        </div>,
-        document.body
-      )}
-      <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} onSuccess={() => {
+      <LoginModal open={loginOpen} onClose={() => setLoginOpen(false)} onSuccess={async () => {
         setLoginOpen(false);
         setIsLoggedIn(true);
+        // 登录成功后立即拉取用户信息，确保头像菜单中手机号等绑定状态即时正确显示
+        try {
+          const user = await apiGetCurrentUser();
+          setCurrentUser({ ...user, avatar_url: normalizeImageUrl(user.avatar_url) ?? '' });
+        } catch {}
         apiGetProjects().then((data) => {
           const normalized = data.map((p) => ({ ...p, cover: p.cover ?? p.cover_url }));
           const sorted = [...normalized].sort((a, b) => {
@@ -1688,7 +2125,7 @@ export default function Home({ onProjectCreated }) {
         onClose={() => setProfileOpen(false)}
         onLogout={handleLogout}
         currentUser={currentUser}
-        onProfileUpdated={(updated) => setCurrentUser(prev => ({ ...prev, ...updated }))}
+        onProfileUpdated={(updated) => setCurrentUser(prev => ({ ...prev, ...updated, avatar_url: normalizeImageUrl(updated.avatar_url ?? prev.avatar_url) ?? '' }))}
       />
       <NewProjectModal
         open={newProjectOpen}

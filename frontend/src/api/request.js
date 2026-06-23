@@ -1,5 +1,7 @@
 const BASE = import.meta.env.VITE_API_BASE_URL;
 
+import { clearAllCache } from '../utils/cache.js';
+
 export function getToken() {
   return localStorage.getItem('token');
 }
@@ -16,6 +18,7 @@ export function setTokens(accessToken, refreshToken) {
 export function clearTokens() {
   localStorage.removeItem('token');
   localStorage.removeItem('refresh_token');
+  clearAllCache(); // 任何登出路径都清空业务缓存，防止跨用户数据残留
 }
 
 function withAuth(options = {}) {
@@ -34,7 +37,15 @@ function withAuth(options = {}) {
 let refreshPromise = null;
 function cloneFormData(fd) {
   const c = new FormData();
-  for (const [k, v] of fd.entries()) c.append(k, v);
+  for (const [k, v] of fd.entries()) {
+    // File 类型需要保留克隆前已设置的文件名（第三参数），
+    // 直接 append(k, v) 会回退到 File.name（可能含中文），导致服务端 500
+    if (v instanceof File) {
+      c.append(k, v, v.name);
+    } else {
+      c.append(k, v);
+    }
+  }
   return c;
 }
 
@@ -76,13 +87,13 @@ export async function authFetch(url, options = {}) {
   try {
     res = await fetch(url, withAuth(options));
   } catch (networkErr) {
-    window.dispatchEvent(new CustomEvent('backend:unreachable'));
+    // AbortError 是用户主动取消，直接透传
+    if (networkErr.name === 'AbortError') throw networkErr;
     const err = new Error(networkErr.message || 'Network request failed');
     err.isNetworkError = true;
     err.cause = networkErr;
     throw err;
   }
-  window.dispatchEvent(new CustomEvent('backend:reachable'));
   if (res.status === 401) {
     const ok = await refreshAccessToken();
     if (ok) {
@@ -109,13 +120,11 @@ export async function authFetchForm(url, options = {}) {
   try {
     res = await fetch(url, { ...options, headers });
   } catch (networkErr) {
-    window.dispatchEvent(new CustomEvent('backend:unreachable'));
     const err = new Error(networkErr.message || 'Network request failed');
     err.isNetworkError = true;
     err.cause = networkErr;
     throw err;
   }
-  window.dispatchEvent(new CustomEvent('backend:reachable'));
   if (res.status === 401) {
     const ok = await refreshAccessToken();
     if (ok) {
@@ -142,21 +151,20 @@ export async function authFetchStream(url, options = {}) {
   try {
     res = await fetch(url, withAuth(options));
   } catch (networkErr) {
+    // AbortError 是用户主动取消，直接透传
+    if (networkErr.name === 'AbortError') throw networkErr;
     // 网络层错误（DNS 失败、连接被拒等）→ 包装为可识别的错误
-    window.dispatchEvent(new CustomEvent('backend:unreachable'));
     const err = new Error(networkErr.message || 'Network request failed');
     err.isNetworkError = true;
     err.cause = networkErr;
     throw err;
   }
-  window.dispatchEvent(new CustomEvent('backend:reachable'));
   if (res.status === 401) {
     const ok = await refreshAccessToken();
     if (ok) {
       try {
         return await fetch(url, withAuth(options));
       } catch (retryErr) {
-        window.dispatchEvent(new CustomEvent('backend:unreachable'));
         const err = new Error(retryErr.message || 'Network request failed after token refresh');
         err.isNetworkError = true;
         err.cause = retryErr;

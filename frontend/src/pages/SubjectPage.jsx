@@ -1,19 +1,23 @@
 import { useState, useRef, useEffect, useMemo } from 'react';
 import { createPortal } from 'react-dom';
+import { useModalSize } from '../utils/useModalSize';
 import DotsLoading from '../components/DotsLoading';
 import BatchGenerateModal from '../components/BatchGenerateModal';
 import AssetPickerModal from '../components/AssetPickerModal';
-import { apiCreateSubject, apiUpdateSubject, apiDeleteSubject, apiGenerateSubjectImage, apiGetSubjects, apiBatchGenerateStream, apiGetSubjectDetail, apiGetSubjectImages, apiBindSubjectReferenceImages, apiDownloadSubjectImage, apiSetPrimarySubjectImage } from '../api/subject';
+import { apiCreateSubject, apiUpdateSubject, apiDeleteSubject, apiGenerateSubjectImage, apiGetSubjects, apiBatchGenerateStream, apiGetSubjectDetail, apiGetSubjectImages, apiBindSubjectReferenceImages, apiUploadSubjectReferenceImage, apiDownloadSubjectImage, apiSetPrimarySubjectImage } from '../api/subject';
 // 模型能力直接从后端 capabilities 获取
 import { apiGetProjects } from '../api/project';
 import { apiGetAssets } from '../api/assets';
 import { apiListModels } from '../api/config';
-import { apiGetVoices } from '../api/voices';
+import { apiGetVoices, apiGetVoiceLibrary } from '../api/voices';
 import placeholderImg from '../assets/placeholder-img.webp';
 import scenePlaceholderImg from '../assets/Mountain landscape.avif';
 import propPlaceholderImg from '../assets/Tool box silhouette.avif';
 import { normalizeImageUrl } from '../utils/imageUrl';
+import { subscribe } from '../utils/cache';
+import { K } from '../utils/cacheKeys';
 import ConfirmDialog from '../components/ConfirmDialog';
+import Checkbox from '../components/Checkbox';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
@@ -302,11 +306,11 @@ function TabNav({ activeTab, counts, onChange }) {
                 >
                   <span
                     style={{
-                      fontFamily: isActive ? FONT_MEDIUM : FONT,
-                      fontWeight: isActive ? 500 : 400,
-                      fontSize: '11px',
+                      fontFamily: isActive ? 'AlibabaPuHuiTi_2_65_Medium, "Alibaba PuHuiTi 2.0", system-ui, sans-serif' : 'AlibabaPuHuiTi_2_55_Regular, "Alibaba PuHuiTi 2.0", system-ui, sans-serif',
+                      fontWeight: isActive ? 600 : 400,
+                      fontSize: '12px',
                       lineHeight: '100%',
-                      color: isActive ? '#000000BF' : '#FFFFFF66',
+                      color: isActive ? 'rgba(0, 0, 0, 0.75)' : 'rgba(255, 255, 255, 0.6)',
                     }}
                   >
                     {counts[key] ?? 0}
@@ -484,21 +488,24 @@ function VoiceCard({ label, active, onClick, previewUrl }) {
   );
 }
 
-function VoiceSelectModal({ open, onClose, onConfirm, currentVoice, onVoicesLoaded }) {
+function VoiceSelectModal({ open, onClose, onConfirm, currentVoice, onVoicesLoaded, preloadedVoices }) {
   const [voices, setVoices] = useState([]);
   const [loading, setLoading] = useState(false);
   const [selected, setSelected] = useState(currentVoice || '');
   const [gender, setGender] = useState('不限');
   const [age, setAge] = useState('不限');
 
+  const fetchedRef = useRef(false);
   useEffect(() => {
-    if (!open) return;
+    if (!open) { fetchedRef.current = false; return; }
+    if (fetchedRef.current && voices.length > 0) return;
     setLoading(true);
-    apiGetVoices({ tab: 'all' })
+    apiGetVoiceLibrary({ provider: 'miioo', skipCache: true })
       .then((data) => {
         const list = Array.isArray(data) ? data : data?.items ?? data?.voices ?? [];
         setVoices(list);
         onVoicesLoaded?.(list);
+        fetchedRef.current = true;
       })
       .catch(() => setVoices([]))
       .finally(() => setLoading(false));
@@ -509,7 +516,7 @@ function VoiceSelectModal({ open, onClose, onConfirm, currentVoice, onVoicesLoad
     return voices.filter((v) => {
       if (gender !== '不限' && v.gender !== gender) return false;
       if (age !== '不限' && v.age_group !== age) return false;
-      if (v.language !== '中文') return false;
+      if (v.language !== '中文' && v.language !== 'zh') return false;
       return true;
     });
   }, [voices, gender, age]);
@@ -583,7 +590,7 @@ function VoiceSelectModal({ open, onClose, onConfirm, currentVoice, onVoicesLoad
           {!loading && rows.map((row, ri) => (
             <div key={ri} style={{ display: 'flex', gap: '14px' }}>
               {row.map((v) => (
-                <VoiceCard key={v.voice_id} label={`${v.name}-${v.style}`} active={selected === v.voice_id} onClick={() => setSelected(v.voice_id)} previewUrl={v.preview_url} />
+                <VoiceCard key={v.voice_id} label={v.name} active={selected === v.voice_id} onClick={() => setSelected(v.voice_id)} previewUrl={v.preview_url} />
               ))}
             </div>
           ))}
@@ -681,10 +688,10 @@ function MoreMenu({ onDownload, onDelete }) {
           style={{
             width: '24px',
             height: '24px',
-            backgroundColor: open ? '#FFFFFF26' : '#00000080',
+            backgroundColor: open ? 'rgba(0,0,0,0.75)' : '#00000080',
             transition: 'background-color 0.12s',
           }}
-          onMouseEnter={(e) => { if (!open) e.currentTarget.style.backgroundColor = '#FFFFFF1A'; }}
+          onMouseEnter={(e) => { if (!open) e.currentTarget.style.backgroundColor = 'rgba(0,0,0,0.65)'; }}
           onMouseLeave={(e) => { if (!open) e.currentTarget.style.backgroundColor = '#00000080'; }}
           onClick={(e) => { e.stopPropagation(); setOpen((v) => !v); }}
         >
@@ -749,7 +756,7 @@ function MoreMenu({ onDownload, onDelete }) {
   );
 }
 
-function CharCard({ name, desc, imageUrl, voice, voiceName, voicePreviewUrl, onVoiceClick, onClick, onDownloadImage, onDeleteSubject, placeholderImg: cardPlaceholder = placeholderImg, loading = false }) {
+function CharCard({ name, desc, imageUrl, voice, voiceName, voicePreviewUrl, onVoiceClick, onClick, onDownloadImage, onDeleteSubject, placeholderImg: cardPlaceholder = placeholderImg, loading = false, selected = false }) {
   const [hovered, setHovered] = useState(false);
   const [voicePlaying, setVoicePlaying] = useState(false);
   const voiceAudioRef = useRef(null);
@@ -777,15 +784,23 @@ function CharCard({ name, desc, imageUrl, voice, voiceName, voicePreviewUrl, onV
 
   return (
     <div
-      className="[font-synthesis:none] flex flex-col w-50 rounded-xl overflow-clip relative shrink-0 bg-[#1A1A1A] border border-solid border-[#FFFFFF14] antialiased cursor-pointer"
-      style={{ height: '246px', outline: hovered ? '1px solid #FFFFFF26' : '1px solid transparent', transition: 'outline-color 0.15s' }}
+      className="[font-synthesis:none] flex flex-col rounded-xl overflow-clip relative bg-[#1A1A1A] antialiased cursor-pointer"
+      style={{
+        aspectRatio: '200/246',
+        outline: selected
+          ? '1px solid rgba(45,195,225,0.6)'
+          : hovered
+          ? '1px solid rgba(255,255,255,0.15)'
+          : '1px solid rgba(255,255,255,0.08)',
+        transition: 'outline-color 0.15s',
+      }}
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
-      onClick={loading ? undefined : onClick}
+      onClick={onClick}
     >
       {/* image area */}
       <div
-        className="flex items-center justify-center flex-1 self-stretch relative"
+        className="flex-1 self-stretch relative"
         style={{
           minHeight: '148px',
           backgroundImage: `url(${imageUrl || cardPlaceholder})`,
@@ -793,20 +808,17 @@ function CharCard({ name, desc, imageUrl, voice, voiceName, voicePreviewUrl, onV
           backgroundPosition: '50%',
         }}
       >
-        {/* 批量生成加载遮罩 */}
+        {/* 加载遮罩 */}
         {loading && (
           <div
-            className="absolute inset-0 z-10"
-            style={{ backgroundColor: 'rgba(0,0,0,0.45)' }}
-            onClick={(e) => e.stopPropagation()}
+            className="absolute inset-0 z-10 flex items-center justify-center"
+            style={{ backgroundColor: 'rgba(0,0,0,0.45)', paddingBottom: '10%' }}
           >
-            <div style={{ position: 'absolute', top: '33%', left: '50%', transform: 'translate(-50%, -50%)' }}>
-              <DotsLoading size={6} color="#2DC3E1" gap={4} />
-            </div>
+            <DotsLoading size={6} color="#2DC3E1" gap={4} />
           </div>
         )}
 
-        {/* top-right actions — 加载中隐藏 */}
+        {/* 右上角操作 — 加载中隐藏 */}
         <div
           className="absolute flex gap-[4px]"
           style={{ top: '8px', right: '8px', opacity: hovered && !loading ? 1 : 0, transition: 'opacity 0.15s' }}
@@ -818,8 +830,7 @@ function CharCard({ name, desc, imageUrl, voice, voiceName, voicePreviewUrl, onV
 
       {/* info overlay */}
       <div
-        className="flex flex-col gap-1.5 absolute left-0 -bottom-px bg-[#161616F2] p-3"
-        style={{ width: '100%' }}
+        className="flex flex-col gap-1.5 absolute -inset-x-px -bottom-px bg-[#161616F2] p-3"
       >
         <div
           className="inline-block font-medium text-[#FFFFFFE6] text-sm/5"
@@ -833,42 +844,44 @@ function CharCard({ name, desc, imageUrl, voice, voiceName, voicePreviewUrl, onV
         >
           {desc}
         </div>
-        {/* voice row — characters only */}
-        {onVoiceClick !== undefined && <div
-          className="flex items-center justify-between"
-       style={{ gap: '6px' }}
-        onClick={(e) => { e.stopPropagation(); onVoiceClick?.(); }}
-      >
-        <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '17px', color: '#FFFFFFCC', flexShrink: 0 }}>
-          选择音色：
-        </span>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
-            <button
-              type="button"
-              onClick={(e) => { e.stopPropagation(); onVoiceClick?.(); }}
-              style={{
-                background: 'transparent', border: 'none', padding: 0, cursor: 'pointer',
-                fontFamily: FONT, fontSize: '12px', lineHeight: '17px', color: (voiceName || voice) ? '#2DC3E1' : '#FFFFFF66',
-                maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
-              }}
-            >
-              {voiceName || voice || '未选择'}
-            </button>
-            {/* headphone preview icon */}
-            <button
-              type="button"
-              title={!voice ? '请先选择音色' : '试听'}
-              disabled={!voice}
-              onClick={handleVoicePlay}
-              style={{ background: 'transparent', border: 'none', padding: 0, cursor: voice ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', opacity: voice ? 1 : 0.3 }}
-            >
-              {voicePlaying
-              ? <PlayingWaveIcon color="#2DC3E1" size={16} />
-              : <HeadphoneIcon color={voice ? '#2DC3E1' : '#FFFFFF66'} />
-            }
-          </button>
-        </div>
-        </div>}
+        {/* 音色行 — 仅角色 */}
+        {onVoiceClick !== undefined && (
+          <div
+            className="flex items-center justify-between"
+            style={{ gap: '6px' }}
+            onClick={(e) => { e.stopPropagation(); onVoiceClick?.(); }}
+          >
+            <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '17px', color: '#FFFFFFCC', flexShrink: 0 }}>
+              选择音色：
+            </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}>
+              <button
+                type="button"
+                onClick={(e) => { e.stopPropagation(); onVoiceClick?.(); }}
+                style={{
+                  background: 'transparent', border: 'none', padding: 0, cursor: 'pointer',
+                  maxWidth: '160px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap',
+                  fontFamily: FONT, fontSize: '12px', lineHeight: '17px',
+                  color: voice ? '#2DC3E1' : '#FFFFFFCC',
+                }}
+              >
+                {voiceName || voice || '未选择'}
+              </button>
+              <button
+                type="button"
+                title={!voice ? '请先选择音色' : '试听'}
+                disabled={!voice}
+                onClick={handleVoicePlay}
+                style={{ background: 'transparent', border: 'none', padding: 0, cursor: voice ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', flexShrink: 0 }}
+              >
+                {voicePlaying
+                  ? <PlayingWaveIcon color="#2DC3E1" size={16} />
+                  : <HeadphoneIcon color={voice ? '#2DC3E1' : '#FFFFFF66'} />
+                }
+              </button>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );
@@ -878,9 +891,9 @@ function AddCard({ onClick }) {
   const [hovered, setHovered] = useState(false);
   return (
     <div
-      className="[font-synthesis:none] flex flex-col items-center justify-center w-50 rounded-xl shrink-0 cursor-pointer border border-dashed"
+      className="[font-synthesis:none] flex flex-col items-center justify-center rounded-xl cursor-pointer border border-dashed"
       style={{
-        height: '246px',
+        aspectRatio: '200/246',
         borderColor: hovered ? '#FFFFFF40' : '#FFFFFF26',
         backgroundColor: hovered ? '#FFFFFF05' : 'transparent',
         gap: '6px',
@@ -913,30 +926,6 @@ const INITIAL_CHARS = [
 ];
 
 const MOCK_PROPS = [];
-
-// ── Edit subject panel ─────────────────────────────────────────────────────
-
-// Checkbox component per design-system spec
-function Checkbox({ checked, onChange }) {
-  const [hovered, setHovered] = useState(false);
-  const bgClass = checked ? 'bg-checkbox-bg-active' : hovered ? 'bg-checkbox-bg-hover' : 'bg-checkbox-bg-normal';
-  const borderClass = checked ? 'border-checkbox-border-active' : 'border-checkbox-border-normal';
-  return (
-    <div
-      className={`flex items-center cursor-pointer ${bgClass} border border-solid ${borderClass} rounded-sm [outline:1px_solid_var(--color-stroke-outline)] outline-offset-0 relative shrink-0`}
-      style={{ width: '14px', height: '14px', padding: '2px', boxSizing: 'border-box' }}
-      onClick={onChange}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-    >
-      {checked && (
-        <svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ position: 'absolute', left: '50%', top: '50%', translate: '-50% -50%' }}>
-          <path d="M3.333 8L6.667 11.333L13.333 4.667" stroke="#FFFFFF" strokeLinecap="round" strokeLinejoin="round" />
-        </svg>
-      )}
-    </div>
-  );
-}
 
 // Icon button with hover/press states for image overlays
 function IconBtn({ children, onClick }) {
@@ -1015,7 +1004,7 @@ function ImageItemUpload({ onUpload, projectId }) {
           type="file"
           accept="image/*"
           style={{ display: 'none' }}
-          onChange={(e) => { const file = e.target.files?.[0]; if (file) { if (file.size > 5 * 1024 * 1024) { alert('抱歉，平台暂不支持上传5M以上的图片资源！'); e.target.value = ''; return; } onUpload?.(file); } e.target.value = ''; }}
+          onChange={(e) => { const file = e.target.files?.[0]; if (file) { if (file.size > 20 * 1024 * 1024) { alert('抱歉，平台暂不支持上传20M以上的图片资源！'); e.target.value = ''; return; } onUpload?.(file); } e.target.value = ''; }}
         />
         <UploadBtn label="本地上传" onClick={() => fileInputRef.current?.click()} />
         <UploadBtn label="从资产库选择" onClick={() => setAssetPickerOpen(true)} />
@@ -1026,9 +1015,8 @@ function ImageItemUpload({ onUpload, projectId }) {
 
 // Modal for viewing an uploaded image full-size
 function ImageViewModal({ open, imageUrl, imageId, projectId, subjectId, onClose }) {
+  const { width: modalW, height: modalH } = useModalSize();
   const [closeHovered, setCloseHovered] = useState(false);
-  const [doneHovered, setDoneHovered] = useState(false);
-  const [donePressed, setDonePressed] = useState(false);
   const [downloadHovered, setDownloadHovered] = useState(false);
   const [downloadPressed, setDownloadPressed] = useState(false);
   const [downloading, setDownloading] = useState(false);
@@ -1052,7 +1040,7 @@ function ImageViewModal({ open, imageUrl, imageId, projectId, subjectId, onClose
       onClick={onClose}
     >
       <div
-        style={{ display: 'flex', flexDirection: 'column', width: '800px', borderRadius: '16px', overflow: 'hidden', height: '600px' }}
+        style={{ display: 'flex', flexDirection: 'column', width: `${modalW}px`, borderRadius: '16px', overflow: 'hidden', height: `${modalH}px` }}
         onClick={(e) => e.stopPropagation()}
       >
         {/* header */}
@@ -1078,20 +1066,6 @@ function ImageViewModal({ open, imageUrl, imageId, projectId, subjectId, onClose
         </div>
         {/* footer */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '16px', justifyContent: 'flex-end', background: '#161616', borderRadius: '0 0 16px 16px', padding: '16px 24px', flexShrink: 0 }}>
-          <div
-            className="flex flex-col shrink-0 rounded-[8px] cursor-pointer"
-            style={{ height: '36px', padding: '1px', backgroundImage: doneHovered ? 'linear-gradient(in oklab 148.76deg, oklab(94.7% -0.078 -0.022 / 45%) 3.64%, oklab(75.5% -0.102 -0.072 / 0%) 42.81%), linear-gradient(in oklab 180deg, #FFFFFF1E, #FFFFFF1E)' : 'linear-gradient(in oklab 148.76deg, oklab(94.7% -0.078 -0.022 / 30%) 3.64%, oklab(75.5% -0.102 -0.072 / 0%) 42.81%), linear-gradient(in oklab 180deg, #FFFFFF14, #FFFFFF14)', boxShadow: '#00000066 3px 3px 8px', outline: '1px solid #00000080', transition: 'background-image 0.15s' }}
-            onClick={onClose}
-            onMouseEnter={() => setDoneHovered(true)}
-            onMouseLeave={() => { setDoneHovered(false); setDonePressed(false); }}
-            onMouseDown={() => setDonePressed(true)}
-            onMouseUp={() => setDonePressed(false)}
-          >
-            <div className="flex items-center flex-1 self-stretch rounded-[7px] gap-[4px] px-[15px]" style={{ backgroundColor: donePressed ? '#222222' : doneHovered ? '#1C1C1C' : '#161616', transition: 'background-color 0.1s' }}>
-              <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF' }}>完成</span>
-            </div>
-          </div>
-
           {/* 下载按钮 */}
           <div
             className="flex flex-col shrink-0 rounded-[8px] cursor-pointer"
@@ -1150,7 +1124,7 @@ function ImageItem({ settled, imageUrl, imageId, onView, onSettledChange, onDown
       {/* top overlay: settled checkbox */}
       <div style={{ position: 'absolute', top: 0, left: 0, right: 0, padding: '8px 10px', backgroundImage: 'linear-gradient(in oklab 180deg, oklab(0% 0 0 / 60%) 0%, oklab(0% 0 0 / 0%) 100%)', display: 'flex', alignItems: 'center', gap: '4px' }}>
         <Checkbox checked={settled} onChange={(e) => { e.stopPropagation(); onSettledChange?.(!settled); }} />
-        <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: settled ? '#2DC3E1' : '#FFFFFF66' }}>定稿</span>
+        <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '16px', color: '#FFFFFF', fontWeight: settled ? 600 : 500 }}>定稿</span>
       </div>
 
       {/* bottom overlay: fullscreen + download — only on hover */}
@@ -1208,35 +1182,105 @@ function RadioOption({ label, checked, onChange }) {
 
 function RefImageItem({ url, onRemove }) {
   const [hovered, setHovered] = useState(false);
+  const [previewPos, setPreviewPos] = useState(null);
+  const hoverTimerRef = useRef(null);
+
+  function handleMouseEnter(e) {
+    setHovered(true);
+    const { clientX, clientY } = e;
+    hoverTimerRef.current = setTimeout(() => {
+      setPreviewPos({ x: clientX, y: clientY });
+    }, 500);
+  }
+
+  function handleMouseMove(e) {
+    setPreviewPos(pos => pos ? { x: e.clientX, y: e.clientY } : pos);
+  }
+
+  function handleMouseLeave() {
+    setHovered(false);
+    clearTimeout(hoverTimerRef.current);
+    setPreviewPos(null);
+  }
+
+  return (
+    <>
+      <div
+        onMouseEnter={handleMouseEnter}
+        onMouseMove={handleMouseMove}
+        onMouseLeave={handleMouseLeave}
+        style={{
+          width: '120px', height: '120px', borderRadius: '8px', overflow: 'hidden', position: 'relative', flexShrink: 0,
+          border: `1px solid ${hovered ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.08)'}`,
+          transition: 'border-color 120ms', cursor: 'pointer',
+        }}
+      >
+        <img src={url} alt="参考图" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+        {hovered && (
+          <div
+            onClick={(e) => { e.stopPropagation(); clearTimeout(hoverTimerRef.current); setPreviewPos(null); onRemove(); }}
+            style={{ position: 'absolute', top: '4px', right: '4px', width: '18px', height: '18px', borderRadius: '4px', backgroundColor: 'rgba(0,0,0,0.70)', display: 'flex', alignItems: 'center', justifyContent: 'center', cursor: 'pointer' }}
+          >
+            <svg width="10" height="10" viewBox="0 0 10 10" fill="none"><path d="M2 2L8 8M8 2L2 8" stroke="#FFFFFF" strokeWidth="1.2" strokeLinecap="round"/></svg>
+          </div>
+        )}
+      </div>
+      {previewPos && url && createPortal(
+        <SubjectRefHoverPreview url={url} mouseX={previewPos.x} mouseY={previewPos.y} />,
+        document.body
+      )}
+    </>
+  );
+}
+
+function SubjectRefHoverPreview({ url, mouseX, mouseY }) {
+  const [size, setSize] = useState(null);
+  const GAP = 16;
+
+  useEffect(() => {
+    setSize(null);
+    const img = new Image();
+    img.onload = () => setSize({ w: img.naturalWidth, h: img.naturalHeight });
+    img.src = url;
+  }, [url]);
+
+  if (!size) return null;
+
+  const maxW = window.innerWidth * 0.35;
+  const maxH = window.innerHeight * 0.35;
+  const ratio = size.w / size.h;
+
+  let previewW, previewH;
+  if (ratio >= 1) {
+    previewW = maxW;
+    previewH = previewW / ratio;
+    if (previewH > maxH) { previewH = maxH; previewW = previewH * ratio; }
+  } else {
+    previewH = maxH;
+    previewW = previewH * ratio;
+    if (previewW > maxW) { previewW = maxW; previewH = previewW / ratio; }
+  }
+
+  let left = mouseX + GAP;
+  let top = mouseY + GAP;
+  if (left + previewW > window.innerWidth - GAP) left = mouseX - previewW - GAP;
+  if (top + previewH > window.innerHeight - GAP) top = mouseY - previewH - GAP;
+  left = Math.max(GAP, left);
+  top = Math.max(GAP, top);
+
   return (
     <div
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
       style={{
-        width: '120px', height: '120px', borderRadius: '8px', overflow: 'hidden', position: 'relative', flexShrink: 0,
-        border: `1px solid ${hovered ? 'rgba(255,255,255,0.2)' : 'rgba(255,255,255,0.08)'}`,
-        transition: 'border-color 120ms', cursor: 'pointer',
+        position: 'fixed', left, top,
+        width: previewW, height: previewH,
+        zIndex: 99999, pointerEvents: 'none',
+        borderRadius: '8px', overflow: 'hidden',
+        boxShadow: '0 8px 32px rgba(0,0,0,0.7)',
+        border: '1px solid rgba(255,255,255,0.12)',
+        backgroundColor: '#111',
       }}
     >
-      <img src={url} alt="参考图" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-      {hovered && (
-        <div style={{ position: 'absolute', inset: 0, background: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <button
-            type="button"
-            onClick={(e) => { e.stopPropagation(); onRemove(); }}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '4px', height: '24px', borderRadius: '6px', padding: '0 8px',
-              background: 'rgba(247,95,95,0.15)', border: '1px solid rgba(247,95,95,0.3)',
-              outline: '1px solid #00000080', cursor: 'pointer',
-              fontFamily: FONT, fontSize: '12px', lineHeight: '16px', color: '#F75F5F',
-            }}
-            onMouseEnter={(e) => { e.currentTarget.style.background = 'rgba(247,95,95,0.25)'; }}
-            onMouseLeave={(e) => { e.currentTarget.style.background = 'rgba(247,95,95,0.15)'; }}
-          >
-            移除
-          </button>
-        </div>
-      )}
+      <img src={url} alt="" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
     </div>
   );
 }
@@ -1267,13 +1311,24 @@ function RefImageField({ maxImages = 3, projectId, subjectId, refImageIds = [], 
   const [assetPickerOpen, setAssetPickerOpen] = useState(false);
   const [loadingRefs, setLoadingRefs] = useState(false);
 
-  // 当外部 refImageIds 变化时，加载对应的 URL
+  // 当外部 refImageIds 变化时，更新参考图列表
+  // refImageIds 可以是：
+  //   - { id, url }[]  — 从后端加载后的对象（新格式）
+  //   - string[]       — 纯 asset_id（兼容旧调用路径）
   useEffect(() => {
-    if (!refImageIds || refImageIds.length === 0) return;
-    // 合并现有数据，保留已加载的 URL，避免覆盖 handleFile/handleAssetConfirm 刚设置的值
+    if (!refImageIds || refImageIds.length === 0) {
+      setRefImages([]);
+      return;
+    }
     setRefImages(prev => {
-      if (typeof refImageIds[0] !== 'string') return prev;
-      return refImageIds.map(id => {
+      return refImageIds.map(item => {
+        // 新格式：{ id, url }
+        if (item && typeof item === 'object' && item.id) {
+          const existing = prev.find(p => p?.id === item.id);
+          return existing?.url ? existing : { id: item.id, url: item.url || null };
+        }
+        // 旧格式：纯字符串 id 或 URL
+        const id = item;
         const existing = prev.find(p => p?.id === id);
         if (existing?.url) return existing;
         if (typeof id === 'string' && (id.startsWith('http') || id.startsWith('blob'))) {
@@ -1287,8 +1342,8 @@ function RefImageField({ maxImages = 3, projectId, subjectId, refImageIds = [], 
   const canAddMore = refImages.length < maxImages;
 
   const handleFile = (file) => {
-    if (file.size > 5 * 1024 * 1024) {
-      alert('抱歉，平台暂不支持上传5M以上的图片资源！');
+    if (file.size > 20 * 1024 * 1024) {
+      alert('抱歉，平台暂不支持上传20M以上的图片资源！');
       return;
     }
     const url = URL.createObjectURL(file);
@@ -1305,7 +1360,7 @@ function RefImageField({ maxImages = 3, projectId, subjectId, refImageIds = [], 
     const assetIds = selectedAssets.map(a => a.id);
     const newList = [
       ...refImages,
-      ...selectedAssets.map(a => ({ url: normalizeImageUrl(a.thumbnailUrl || a.thumbnail_url || a.originalUrl || a.original_url || a.url || a.file_url), id: a.id })),
+      ...selectedAssets.map(a => ({ url: normalizeImageUrl(a.fileUrl || a.originalUrl || a.original_url || a.thumbnailUrl || a.thumbnail_url || a.url || a.file_url), id: a.id, assetId: a.id })),
     ].slice(0, maxImages);
     setRefImages(newList);
     setAssetPickerOpen(false);
@@ -1334,6 +1389,8 @@ function RefImageField({ maxImages = 3, projectId, subjectId, refImageIds = [], 
         onClose={() => setAssetPickerOpen(false)}
         onConfirm={handleAssetConfirm}
         projectId={projectId}
+        preSelectedIds={refImages.map(img => img.assetId).filter(Boolean)}
+        preSelectedUrls={refImages.map(img => img.url).filter(Boolean)}
       />
       <input
         ref={fileInputRef}
@@ -1373,7 +1430,7 @@ function RefImageField({ maxImages = 3, projectId, subjectId, refImageIds = [], 
 // key: subjectId, value: { placeholderId, status: 'pending'|'done', imageUrl?, rawUrl? }
 const pendingGenerations = new Map();
 
-function EditSubjectPanel({ projectId, char, tabLabel = '角色', projectRatio, onClose, onCommit, onCoverChange }) {
+function EditSubjectPanel({ projectId, char, tabLabel = '角色', projectRatio, onClose, onCommit, onCoverChange, refreshToken, setBatchLoadingSubjects }) {
   // ── 从后端拉取模型列表，直接使用后端 capabilities ──────────────
   const [imageModels, setImageModels] = useState([]);
   const [modelsLoading, setModelsLoading] = useState(true);
@@ -1471,89 +1528,102 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', projectRatio, 
     let cancelled = false;
 
     (async () => {
-      // 并行拉取详情和图片列表
-      const [detailRes, imagesRes] = await Promise.allSettled([
-        apiGetSubjectDetail(projectId, char.id).catch(() => null),
-        apiGetSubjectImages(projectId, char.id).catch(() => []),
-      ]);
-
+      // 只拉一次详情，SubjectDetailResponse 包含：
+      //   subject (SubjectResponse)
+      //   primary_image (SubjectImageResponse | null)
+      //   candidate_images (SubjectImageResponse[])
+      //   reference_images (SubjectReferenceImage[])
+      //   latest_generate_config (SubjectGenerateConfig | null)
+      const detailRes = await apiGetSubjectDetail(projectId, char.id).catch(() => null);
       if (cancelled) return;
 
-      // 处理详情
-      const detail = detailRes.status === 'fulfilled' ? detailRes.value : null;
-      if (detail) {
-        if (detail.prompt || detail.prompt_text) {
-          setPromptText(detail.prompt || detail.prompt_text);
-        }
-        if (detail.model || detail.default_image_model) {
-          setSelectedModel(detail.model || detail.default_image_model);
-        }
-        if (detail.ratio) setSelectedRatio(detail.ratio);
-        if (detail.resolution) setSelectedResolution(detail.resolution);
-        if (Array.isArray(detail.reference_image_ids)) setRefImageIds(detail.reference_image_ids);
-      } else if (!promptText) {
-        // 如果 char 对象没有 prompt 且后端也没返回，使用默认提示词
-        setPromptText(defaultPromptForTab(tabLabel));
+      if (!detailRes) {
+        if (!promptText) setPromptText(defaultPromptForTab(tabLabel));
+        setDetailLoaded(true);
+        return;
       }
 
-      // 处理已生成图片列表
-      const imgList = imagesRes.status === 'fulfilled' ? imagesRes.value : [];
-      const imgs = Array.isArray(imgList) ? imgList : (imgList?.images || imgList?.items || []);
-      let finalImages;
-      if (imgs.length > 0) {
-        finalImages = imgs.map((img) => ({
-          id: img.id || img.image_id || `img-${Math.random()}`,
-          rawUrl: img.image_url || img.file_url || img.url || null,
-          url: normalizeImageUrl(img.image_url || img.file_url || img.url),
-          settled: img.is_primary || img.is_settled || false,
-        }));
-      } else {
-        finalImages = [];
+      // ── 从 subject 字段读取基础信息 ──────────────────────────────
+      const subject = detailRes.subject || detailRes;   // 兼容后端扁平返回
+      const genCfg = detailRes.latest_generate_config || subject.gen_config || {};
+
+      if (subject.prompt) setPromptText(subject.prompt);
+      if (genCfg.model || subject.model) setSelectedModel(genCfg.model || subject.model);
+      if (genCfg.ratio || subject.ratio) setSelectedRatio(genCfg.ratio || subject.ratio);
+      if (genCfg.resolution || genCfg.size || subject.resolution) {
+        setSelectedResolution(genCfg.resolution || genCfg.size || subject.resolution);
       }
+
+      // ── 候选图列表（SubjectImageResponse[]） ─────────────────────
+      // 字段：id, image_url, is_primary
+      const candidateImgs = Array.isArray(detailRes.candidate_images) ? detailRes.candidate_images : [];
+      const candidateMapped = candidateImgs.map((img) => ({
+        id: img.id,
+        rawUrl: img.image_url,
+        url: normalizeImageUrl(img.image_url),
+        settled: img.is_primary ?? false,
+        isReference: false,
+      }));
+
+      // ── 手动上传的图（SubjectReferenceImage[]）也放入右侧列表 ────
+      // 字段：asset_id, file_url, name, is_primary
+      // 注意：不写入 refImageIds，参考图字段由用户在本次 session 手动选择，不从后端自动填充
+      // settled 强制为 false：这类图片是用户手动上传的素材，不继承原资产的定稿状态
+      const refImgs = Array.isArray(detailRes.reference_images) ? detailRes.reference_images : [];
+      const refMapped = refImgs.map((img) => ({
+        id: img.asset_id,
+        rawUrl: img.file_url,
+        url: normalizeImageUrl(img.file_url),
+        settled: false,   // 手动上传的图永远不预设为定稿
+        isReference: true,
+      }));
+
+      // 合并，候选图在前，手动上传在后，去重
+      const seen = new Set();
+      let finalImages = [...candidateMapped, ...refMapped].filter((img) => {
+        if (!img.id || seen.has(img.id)) return false;
+        seen.add(img.id);
+        return true;
+      });
 
       // 检查是否有进行中/已完成的跨弹窗生成
       const pending = pendingGenerations.get(char.id);
-      if (pending) {
-        if (pending.status === 'pending') {
-          // 生成中：在列表最前面插入加载占位
-          finalImages.unshift({ url: null, settled: false, id: pending.placeholderId });
-        } else if (pending.status === 'done') {
-          // 弹窗关闭期间生成完成：在列表最前面插入结果图
-          finalImages.unshift({
-            rawUrl: pending.rawUrl,
-            url: normalizeImageUrl(pending.rawUrl),
-            settled: false,
-            id: pending.placeholderId,
-          });
-          pendingGenerations.delete(char.id);
-        }
+      if (pending?.status === 'pending') {
+        finalImages.unshift({ url: null, settled: false, id: pending.placeholderId, isReference: false });
+      } else if (pending?.status === 'done') {
+        finalImages.unshift({
+          rawUrl: pending.rawUrl,
+          url: normalizeImageUrl(pending.rawUrl),
+          settled: false,
+          id: pending.placeholderId,
+          isReference: false,
+        });
+        pendingGenerations.delete(char.id);
       }
 
       if (finalImages.length > 0) {
         setGeneratedImages(finalImages);
       } else if (char?.imageUrl) {
         // 兜底用 char 的封面图
-        setGeneratedImages([{ rawUrl: char.imageUrl, url: normalizeImageUrl(char.imageUrl), settled: true, id: char.imageUrl }]);
+        setGeneratedImages([{ rawUrl: char.imageUrl, url: normalizeImageUrl(char.imageUrl), settled: true, id: char.imageUrl, isReference: false }]);
       } else {
         setGeneratedImages([]);
       }
 
       setDetailLoaded(true);
 
-      // 将后端返回的定稿图同步到卡片封面（修复刷新后定稿不显示在卡片上的 BUG）
-      const _settledImg = finalImages.find(img => img.settled && img.rawUrl);
+      // 将后端返回的定稿图同步到卡片封面
+      const _settledImg = finalImages.find((img) => img.settled && img.rawUrl);
       if (_settledImg) {
         setPrimaryImageUrl(_settledImg.rawUrl);
         setPrimaryImageId(_settledImg.id);
-        if (onCoverChange) {
-          onCoverChange(_settledImg.rawUrl);
-        }
+        onCoverChange?.(_settledImg.rawUrl);
       }
     })();
 
     return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [projectId, char?.id]);
+  }, [projectId, char?.id, refreshToken]);
 
   // ── 默认提示词 ────────────────────────────────────────────────
   function defaultPromptForTab(tab) {
@@ -1753,7 +1823,6 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', projectRatio, 
                 onBlur={() => { setDescFocused(false); onCommit?.(charName, charDesc); }}
                 style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', resize: 'none', fontFamily: FONT, fontSize: '14px', lineHeight: '150%', color: '#FFFFFF' }}
               />
-              <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '18px', color: charDesc.length > 300 ? '#F75F5F' : '#FFFFFF66', textAlign: 'right' }}>{charDesc.length}/300</span>
             </div>
           </div>
 
@@ -1778,7 +1847,6 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', projectRatio, 
                 onBlur={() => setPromptFocused(false)}
                 style={{ flex: 1, background: 'transparent', border: 'none', outline: 'none', resize: 'none', fontFamily: FONT, fontSize: '14px', lineHeight: '150%', color: '#FFFFFF' }}
               />
-              <span style={{ fontFamily: FONT, fontSize: '12px', lineHeight: '18px', color: promptText.length > 1000 ? '#F75F5F' : '#FFFFFF66', textAlign: 'right' }}>{promptText.length}/1000</span>
             </div>
           </div>
 
@@ -1973,18 +2041,20 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', projectRatio, 
             onRefImagesChange={(ids) => setRefImageIds(ids)}
           />
 
-          {/* generation mode radio */}
-          <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF99' }}>生成方式</span>
-            <div style={{ display: 'flex', gap: '24px', alignItems: 'center' }}>
-              {[{ key: 'main', label: '单视图' }, { key: 'three_view', label: '多视图' }].map(({ key, label }) => {
-                const active = genMode === key;
-                return (
-                  <RadioOption key={key} label={label} checked={active} onChange={() => setGenMode(key)} />
-                );
-              })}
+          {/* generation mode radio — 仅角色 Tab 显示 */}
+          {tabLabel === '角色' && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+              <span style={{ fontFamily: FONT, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF99' }}>生成方式</span>
+              <div style={{ display: 'flex', gap: '24px', alignItems: 'center' }}>
+                {[{ key: 'main', label: '单视图' }, { key: 'three_view', label: '多视图' }].map(({ key, label }) => {
+                  const active = genMode === key;
+                  return (
+                    <RadioOption key={key} label={label} checked={active} onChange={() => setGenMode(key)} />
+                  );
+                })}
+              </div>
             </div>
-          </div>
+          )}
         </div>
 
         {/* right: image list */}
@@ -1994,13 +2064,59 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', projectRatio, 
           <ImageItemUpload
             projectId={projectId}
             onUpload={(fileOrId) => {
-              if (typeof fileOrId !== 'string') {
-                const url = URL.createObjectURL(fileOrId);
-                setGeneratedImages((prev) => [{ rawUrl: url, url, settled: false, id: url }, ...prev]);
-              } else if (fileOrId?.url) {
-                // 从资产库选择的图片，有 url 属性
-                const raw = fileOrId.url || fileOrId.file_url;
-                setGeneratedImages((prev) => [{ rawUrl: raw, url: normalizeImageUrl(raw), settled: false, id: fileOrId.id || raw }, ...prev]);
+              // 从资产库选择的资产对象（有 id 和 url 属性）
+              if (fileOrId && typeof fileOrId === 'object' && fileOrId.id) {
+                const raw = fileOrId.url || fileOrId.file_url || fileOrId.fileUrl;
+                // 从资产库选择的图片，settled 强制为 false，不继承原资产的定稿状态
+                setGeneratedImages((prev) => {
+                  const hasSettled = prev.some((img) => img.settled && img.rawUrl);
+                  const newImg = { rawUrl: raw, url: normalizeImageUrl(raw), settled: !hasSettled, id: fileOrId.id, isReference: true };
+                  if (!hasSettled) {
+                    setPrimaryImageUrl(raw);
+                    setPrimaryImageId(fileOrId.id);
+                    onCoverChange?.(raw);
+                  }
+                  return [newImg, ...prev];
+                });
+                // 绑定资产到主体
+                if (projectId && char?.id) {
+                  apiBindSubjectReferenceImages(projectId, char.id, { asset_ids: [fileOrId.id] }).catch((err) => {
+                    console.error('[SubjectPage] 绑定资产到主体失败:', err);
+                  });
+                }
+              } else if (fileOrId instanceof File) {
+                // 本地上传：先用 blob URL 占位，上传完成后替换为真实 asset_id + file_url
+                const blobUrl = URL.createObjectURL(fileOrId);
+                const tempId = `upload-${Date.now()}`;
+                setGeneratedImages((prev) => [{ rawUrl: blobUrl, url: blobUrl, settled: false, id: tempId, isReference: true }, ...prev]);
+                // 上传到后端，返回 SubjectReferenceImage { asset_id, file_url, name }
+                if (projectId && char?.id) {
+                  apiUploadSubjectReferenceImage(projectId, char.id, fileOrId)
+                    .then((res) => {
+                      // res: SubjectReferenceImage
+                      const realId = res?.asset_id;
+                      const realUrl = res?.file_url;
+                      setGeneratedImages((prev) => {
+                        const hasSettled = prev.some((img) => img.settled && img.rawUrl);
+                        const updated = prev.map((img) =>
+                          img.id === tempId
+                            ? { ...img, id: realId || tempId, rawUrl: realUrl || blobUrl, url: normalizeImageUrl(realUrl || blobUrl), settled: !hasSettled }
+                            : img
+                        );
+                        if (!hasSettled && realUrl) {
+                          setPrimaryImageUrl(realUrl);
+                          setPrimaryImageId(realId);
+                          onCoverChange?.(realUrl);
+                        }
+                        return updated;
+                      });
+                    })
+                    .catch((err) => {
+                      console.error('[SubjectPage] 上传参考图失败:', err);
+                      // 上传失败时移除占位
+                      setGeneratedImages((prev) => prev.filter((img) => img.id !== tempId));
+                    });
+                }
               }
             }}
           />
@@ -2022,14 +2138,24 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', projectRatio, 
                 }
               }}
               onSettledChange={(newSettled) => {
-                // 先处理副作用（通知父组件 + 调后端接口），放在 setState 外部
                 if (newSettled) {
                   onCoverChange?.(img?.rawUrl ?? img?.url ?? null);
-                  // 仅当 ID 不是前端占位符时才调后端接口
+                  // 只有真实 ID（非前端占位符）才调后端
                   if (img.id && !String(img.id).startsWith('generated-')) {
-                    apiSetPrimarySubjectImage(projectId, char.id, img.id).catch((err) => {
-                      console.error('[SubjectPage] 设置定稿图失败:', err);
-                    });
+                    if (img.isReference) {
+                      // 参考图：通过 bind 接口把该资产设为 primary
+                      apiBindSubjectReferenceImages(projectId, char.id, {
+                        asset_ids: [img.id],
+                        primary_asset_id: img.id,
+                      }).catch((err) => {
+                        console.error('[SubjectPage] 设置参考图为定稿失败:', err);
+                      });
+                    } else {
+                      // 候选图：set-primary 接口
+                      apiSetPrimarySubjectImage(projectId, char.id, img.id).catch((err) => {
+                        console.error('[SubjectPage] 设置定稿图失败:', err);
+                      });
+                    }
                   }
                 }
 
@@ -2083,6 +2209,7 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', projectRatio, 
             const placeholder = `generated-${Date.now()}`;
             // 写入模块级缓存，跨弹窗打开/关闭保持
             pendingGenerations.set(char.id, { placeholderId: placeholder, status: 'pending' });
+            setBatchLoadingSubjects((prev) => ({ ...prev, [char.id]: true }));
             setGeneratedImages((prev) => [{ url: null, settled: false, id: placeholder }, ...prev]);
 
             const genParams = {
@@ -2100,21 +2227,32 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', projectRatio, 
             apiGenerateSubjectImage(projectId, char.id, genParams)
               .then((result) => {
                 const rawUrl = result.image_url || result.imageUrl || result.url || null;
-                if (rawUrl) {
-                  onCoverChange?.(rawUrl);
-                }
 
                 if (isMountedRef.current) {
                   // 弹窗仍打开：正常更新图片列表
                   const imageUrl = normalizeImageUrl(rawUrl);
                   const realImageId = result.id || result.image_id || null;
                   setGeneratedImages((prev) => {
+                    // ① 占位图替换为真实数据
                     const updated = prev.map((img) =>
                       img.id === placeholder
                         ? { ...img, id: realImageId || placeholder, rawUrl, url: imageUrl, settled: false }
                         : img
                     );
+                    // ② 如果没有任何定稿图，自动将新生成的图设为定稿并更新封面
+                    const hasSettled = updated.some((img) => img.settled && img.rawUrl);
+                    if (!hasSettled && rawUrl) {
+                      updated[0] = { ...updated[0], settled: true };
+                      setPrimaryImageUrl(rawUrl);
+                      setPrimaryImageId(realImageId);
+                      onCoverChange?.(rawUrl);
+                    }
                     return updated;
+                  });
+                  setBatchLoadingSubjects((prev) => {
+                    const next = { ...prev };
+                    delete next[char.id];
+                    return next;
                   });
                   showToast('图片生成成功', 'success');
                   pendingGenerations.delete(char.id);
@@ -2132,6 +2270,11 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', projectRatio, 
               .catch((err) => {
                 console.error('[SubjectPage] 生成图片失败:', err);
                 pendingGenerations.delete(char.id);
+                setBatchLoadingSubjects((prev) => {
+                  const next = { ...prev };
+                  delete next[char.id];
+                  return next;
+                });
                 if (isMountedRef.current) {
                   setGeneratedImages((prev) => prev.filter((img) => img.id !== placeholder));
                 }
@@ -2193,23 +2336,14 @@ function EditSubjectPanel({ projectId, char, tabLabel = '角色', projectRatio, 
 
 // ── Main export ────────────────────────────────────────────────────────────
 
-export default function SubjectPage({ serverReachable, projectId, projectName = '两只老虎的奇遇', onBack, onUnlockStep, onStartStoryboard, onExtractSubjects, extractError = null, isStoryboardGenerated = false, initialTab = 'char', projectRatio, chars: externalChars, onCharsChange, scenes: externalScenes, onScenesChange, props: externalProps, onPropsChange }) {
-
-  if (serverReachable === false) {
-    return (
-      <div className="flex flex-col items-center justify-center gap-3" style={{ flex: 1, paddingTop: "80px" }}>
-        <div className="flex items-center gap-2 px-16 py-2 rounded-lg text-sm" style={{ backgroundColor: "rgba(255,77,79,0.1)", color: "#FF4D4F" }}>
-          <svg width="14" height="14" viewBox="0 0 14 14" fill="none"><path d="M7 1L13 12H1L7 1Z" stroke="#FF4D4F" strokeLinejoin="round"/><path d="M7 5V8" stroke="#FF4D4F" strokeLinecap="round"/><circle cx="7" cy="10.5" r="0.5" fill="#FF4D4F"/></svg>
-          后端服务连接异常，部分功能不可用
-        </div>
-      </div>
-    );
-  }
+export default function SubjectPage({ projectId, projectName = '两只老虎的奇遇', onBack, onUnlockStep, onStartStoryboard, onExtractSubjects, extractError = null, isStoryboardGenerated = false, initialTab = 'char', projectRatio, chars: externalChars, onCharsChange, scenes: externalScenes, onScenesChange, props: externalProps, onPropsChange, onLoadMoreChars, onLoadMoreScenes, onLoadMoreProps, hasMoreChars = false, hasMoreScenes = false, hasMoreProps = false }) {
 
   const [activeTab, setActiveTab] = useState(initialTab);
   const [batchGenOpen, setBatchGenOpen] = useState(false);
   const [isExtracting, setIsExtracting] = useState(false);
   const extractingRef = useRef(false);
+  const subjectListRef = useRef(null);
+  const subjectSentinelRef = useRef(null);
 
   // 仅从剧本页「开始提取主体」触发（Home.jsx 传入 onExtractSubjects 回调），
   // 浏览器刷新 / tab 切换等场景不触发提取
@@ -2236,7 +2370,7 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
     return () => clearInterval(timer);
   }, [isExtracting]);
 
-  const [batchGenerating, setBatchGenerating] = useState(false);
+  const [batchGeneratingByTab, setBatchGeneratingByTab] = useState({});
   const [batchToast, setBatchToast] = useState(null);
   const batchToastTimerRef = useRef(null);
   // 批量生成加载状态：{ [subjectId]: true }
@@ -2305,7 +2439,7 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
     subjectIds.forEach(id => { loadingMap[id] = true; });
     setBatchLoadingSubjects(loadingMap);
 
-    setBatchGenerating(true);
+    setBatchGeneratingByTab(prev => ({ ...prev, [captureTab]: true }));
 
     // 创建 AbortController，用于组件卸载时取消
     const controller = new AbortController();
@@ -2373,10 +2507,15 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
 
       // 生图失败后重新从后端获取主体数据，恢复真实封面
       try {
+        const _spAvailW = window.innerWidth - 48;
+        const _spAvailH = window.innerHeight - 60 - 48;
+        const _spCols = Math.max(1, Math.floor((_spAvailW + 16) / (200 + 16)));
+        const _spRows = Math.max(1, Math.ceil(_spAvailH / (246 + 16))) + 1;
+        const _spLimit = _spCols * _spRows;
         const [newChars, newScenes, newProps] = await Promise.all([
-          apiGetSubjects(projectId, { type: 'character' }),
-          apiGetSubjects(projectId, { type: 'scene' }),
-          apiGetSubjects(projectId, { type: 'prop' }),
+          apiGetSubjects(projectId, { type: 'character', limit: _spLimit }),
+          apiGetSubjects(projectId, { type: 'scene', limit: _spLimit }),
+          apiGetSubjects(projectId, { type: 'prop', limit: _spLimit }),
         ]);
         setChars(normalizeSubjectList(newChars));
         setScenes(normalizeSubjectList(newScenes));
@@ -2390,7 +2529,7 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
     } finally {
       // 清空所有 loading 状态
       setBatchLoadingSubjects({});
-      setBatchGenerating(false);
+      setBatchGeneratingByTab(prev => { const next = { ...prev }; delete next[captureTab]; return next; });
       batchAbortRef.current = null;
     }
   };
@@ -2399,6 +2538,7 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
   const [selectedChar, setSelectedChar] = useState(null);
   const [selectedScene, setSelectedScene] = useState(null);
   const [selectedProp, setSelectedProp] = useState(null);
+  const [subjectDetailRefreshToken, setSubjectDetailRefreshToken] = useState(0);
   const [voiceModalChar, setVoiceModalChar] = useState(null);
   const [voiceList, setVoiceList] = useState([]);
   const [internalChars, setInternalChars] = useState(INITIAL_CHARS);
@@ -2512,6 +2652,51 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  // 订阅主体数据后台更新（角色、场景、道具）
+  useEffect(() => {
+    if (!projectId) return;
+
+    const unsubscribers = [];
+
+    // 订阅角色缓存
+    unsubscribers.push(subscribe(K.subjects(projectId, 'character'), (data) => {
+      if (Array.isArray(data)) {
+        const normalized = normalizeSubjectList(data);
+        setChars(normalized);
+      }
+    }));
+
+    // 订阅场景缓存
+    unsubscribers.push(subscribe(K.subjects(projectId, 'scene'), (data) => {
+      if (Array.isArray(data)) {
+        const normalized = normalizeSubjectList(data);
+        setScenes(normalized);
+      }
+    }));
+
+    // 订阅道具缓存
+    unsubscribers.push(subscribe(K.subjects(projectId, 'prop'), (data) => {
+      if (Array.isArray(data)) {
+        const normalized = normalizeSubjectList(data);
+        setProps(normalized);
+      }
+    }));
+
+    return () => {
+      unsubscribers.forEach(unsub => unsub());
+    };
+  }, [projectId]);
+
+  // 监听资产库删除事件，刷新已打开的主体详情弹窗
+  useEffect(() => {
+    function handleAssetsDeleted(e) {
+      if (e.detail?.projectId && e.detail.projectId !== projectId) return;
+      setSubjectDetailRefreshToken(t => t + 1);
+    }
+    window.addEventListener('project-assets:deleted', handleAssetsDeleted);
+    return () => window.removeEventListener('project-assets:deleted', handleAssetsDeleted);
+  }, [projectId]);
+
   const counts = {
     char: chars.length,
     scene: scenes.length,
@@ -2576,6 +2761,22 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
   useEffect(() => {
     if (chars.length > 0) onUnlockStep?.('subject');
   }, [chars.length]);
+
+  // 滚动触底加载更多主体
+  useEffect(() => {
+    if (!subjectSentinelRef.current || !subjectListRef.current) return;
+    const loadMore = () => {
+      if (activeTab === 'char') onLoadMoreChars?.();
+      else if (activeTab === 'scene') onLoadMoreScenes?.();
+      else if (activeTab === 'prop') onLoadMoreProps?.();
+    };
+    const observer = new IntersectionObserver(
+      (entries) => { if (entries[0].isIntersecting) loadMore(); },
+      { root: subjectListRef.current, rootMargin: '120px', threshold: 0 }
+    );
+    observer.observe(subjectSentinelRef.current);
+    return () => observer.disconnect();
+  }, [activeTab, onLoadMoreChars, onLoadMoreScenes, onLoadMoreProps]);
 
   // 开始智能分镜：跳转到分镜页（由 Home 处理解锁和导航）
   const handleStartStoryboardRequest = () => {
@@ -2687,8 +2888,9 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
 
       {/* card grid */}
       <div
-        className="flex flex-wrap content-start gap-[16px] flex-1 self-stretch overflow-auto min-h-0"
-        style={{ paddingTop: '16px' }}
+        ref={subjectListRef}
+        className="flex-1 self-stretch overflow-auto min-h-0"
+        style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(160px, 1fr))', gap: '16px', alignContent: 'flex-start', padding: '16px 2px 2px 2px' }}
       >
         {activeTab === 'char' && chars.map((char) => (
           <CharCard
@@ -2697,13 +2899,14 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
             desc={char.desc}
             imageUrl={char.imageUrl}
             voice={charVoices[char.id]}
-            voiceName={(() => { const v = voiceList.find(x => x.voice_id === charVoices[char.id]); return v ? `${v.name}-${v.style}` : undefined; })()}
+            voiceName={(() => { const v = voiceList.find(x => x.voice_id === charVoices[char.id]); return v ? v.name : undefined; })()}
             voicePreviewUrl={voiceList.find((v) => v.voice_id === charVoices[char.id])?.preview_url}
             onVoiceClick={() => setVoiceModalChar(char)}
             onClick={() => setSelectedChar(char)}
             onDownloadImage={() => handleDownloadSubjectImage(char.id)}
             onDeleteSubject={() => handleDeleteSubject(char.id)}
             loading={!!batchLoadingSubjects[char.id]}
+            selected={selectedChar?.id === char.id}
           />
         ))}
         {activeTab === 'char' && <AddCard onClick={handleAdd} />}
@@ -2718,6 +2921,7 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
             onDownloadImage={() => handleDownloadSubjectImage(scene.id)}
             onDeleteSubject={() => handleDeleteSubject(scene.id)}
             loading={!!batchLoadingSubjects[scene.id]}
+            selected={selectedScene?.id === scene.id}
           />
         ))}
         {activeTab === 'scene' && <AddCard onClick={handleAdd} />}
@@ -2732,9 +2936,17 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
             onDownloadImage={() => handleDownloadSubjectImage(prop.id)}
             onDeleteSubject={() => handleDeleteSubject(prop.id)}
             loading={!!batchLoadingSubjects[prop.id]}
+            selected={selectedProp?.id === prop.id}
           />
         ))}
         {activeTab === 'prop' && <AddCard onClick={handleAdd} />}
+        {/* 滚动加载哨兵 */}
+        <div ref={subjectSentinelRef} style={{ gridColumn: '1 / -1', height: '1px' }} />
+        {((activeTab === 'char' && hasMoreChars) || (activeTab === 'scene' && hasMoreScenes) || (activeTab === 'prop' && hasMoreProps)) && (
+          <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'center', padding: '8px 0' }}>
+            <span style={{ fontSize: '13px', color: '#FFFFFF40', fontFamily: "'AlibabaPuHuiTi_2_55_Regular',system-ui,sans-serif" }}>加载中…</span>
+          </div>
+        )}
       </div>
 
       {/* edit panel */}
@@ -2745,6 +2957,8 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
           projectRatio={projectRatio}
           char={selectedChar}
           tabLabel="角色"
+          refreshToken={subjectDetailRefreshToken}
+          setBatchLoadingSubjects={setBatchLoadingSubjects}
           onClose={() => setSelectedChar(null)}
           onCommit={(name, desc) => {
             setChars((prev) => prev.map((c) => c.id === selectedChar.id ? { ...c, name, desc } : c));
@@ -2766,6 +2980,8 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
           projectRatio={projectRatio}
           char={selectedScene}
           tabLabel="场景"
+          refreshToken={subjectDetailRefreshToken}
+          setBatchLoadingSubjects={setBatchLoadingSubjects}
           onClose={() => setSelectedScene(null)}
           onCommit={(name, desc) => {
             setScenes((prev) => prev.map((s) => s.id === selectedScene.id ? { ...s, name, desc } : s));
@@ -2786,6 +3002,8 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
           projectRatio={projectRatio}
           char={selectedProp}
           tabLabel="道具"
+          refreshToken={subjectDetailRefreshToken}
+          setBatchLoadingSubjects={setBatchLoadingSubjects}
           onClose={() => setSelectedProp(null)}
           onCommit={(name, desc) => {
             setProps((prev) => prev.map((p) => p.id === selectedProp.id ? { ...p, name, desc } : p));
@@ -2802,15 +3020,22 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
 
       {/* voice select modal */}
       {voiceModalChar && (
-        <VoiceSelectModal
+        <VoiceSelectModal preloadedVoices={voiceList}
           open
           currentVoice={charVoices[voiceModalChar.id]}
           onClose={() => setVoiceModalChar(null)}
           onVoicesLoaded={setVoiceList}
-          onConfirm={(voiceId) => {
-            setCharVoices((prev) => ({ ...prev, [voiceModalChar.id]: voiceId }));
-            apiUpdateSubject(projectId, voiceModalChar.id, { voice_id: voiceId });
-            setVoiceModalChar(null);
+          onConfirm={async (voiceId) => {
+            const normalizedVoiceId = voiceId || null;
+            try {
+              await apiUpdateSubject(projectId, voiceModalChar.id, { voice_id: normalizedVoiceId });
+              setCharVoices((prev) => ({ ...prev, [voiceModalChar.id]: normalizedVoiceId }));
+              setVoiceModalChar(null);
+              showBatchToast('音色保存成功', 'success');
+            } catch (err) {
+              console.error('[SubjectPage] 更新主体音色失败:', err);
+              showBatchToast(err?.message || '音色保存失败，请重试', 'error');
+            }
           }}
         />
       )}
@@ -2818,9 +3043,10 @@ export default function SubjectPage({ serverReachable, projectId, projectName = 
       <BatchGenerateModal
         projectRatio={projectRatio}
         open={batchGenOpen}
-        onClose={() => { if (!batchGenerating) setBatchGenOpen(false); }}
+        onClose={() => { if (!batchGeneratingByTab[activeTab]) setBatchGenOpen(false); }}
         onConfirm={handleBatchGenerate}
-        generating={batchGenerating}
+        generating={!!batchGeneratingByTab[activeTab]}
+        activeTab={activeTab}
       />
 
       {confirmStoryboardOpen && (
