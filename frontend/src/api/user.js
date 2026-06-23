@@ -98,12 +98,30 @@ export async function apiUploadAvatar(file) {
 }
 
 export async function apiGetWechatQrCode() {
-  // 后端无 /api/users/me/wechat/qrcode，暂返回空
-  return { qrCodeUrl: null, ticket: null };
+  const res = await authFetch(`${BASE}/api/users/me/wechat/qrcode`);
+  if (!res.ok) {
+    let detail = res.statusText;
+    try { const body = await res.json(); detail = body?.detail || body?.message || detail; } catch {}
+    throw new Error(`获取微信绑定二维码失败（${res.status}）：${detail}`);
+  }
+  const data = await res.json();
+  return {
+    ticket: data.ticket,
+    qrCodeValue: data.qr_code_value,
+    expiresIn: data.expires_in,
+  };
 }
 
 export async function apiPollWechatBind(ticket) {
-  return { status: 'pending', wechatNickname: null };
+  const res = await authFetch(`${BASE}/api/users/me/wechat/poll/${encodeURIComponent(ticket)}`);
+  if (!res.ok) {
+    let detail = res.statusText;
+    try { const body = await res.json(); detail = body?.detail || body?.message || detail; } catch {}
+    const err = new Error(`轮询微信绑定状态失败（${res.status}）：${detail}`);
+    err.status = res.status;
+    throw err;
+  }
+  return res.json();
 }
 
 export async function apiBindWechat({ wechat_id, wechat_nickname, wechat_avatar_url }) {

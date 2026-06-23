@@ -1,6 +1,8 @@
 import { useState, useRef, useEffect } from 'react';
 import { createPortal } from 'react-dom';
 import ConfirmDialog from './ConfirmDialog';
+import WechatOfficialQr from './WechatOfficialQr';
+import { createSerialPolling } from '../utils/serialPolling';
 import { apiUpdateProfile, apiUploadAvatar, apiDeleteAccount, apiGetWechatQrCode, apiPollWechatBind, apiUnbindWechat, apiSendPhoneCode, apiVerifyPhoneCode, apiRebindPhone } from '../api/user';
 
 const FONT_MEDIUM = "'AlibabaPuHuiTi_2_65_Medium','Alibaba_PuHuiTi_2.0',system-ui,sans-serif";
@@ -598,105 +600,135 @@ function DeleteVerifyDialog({ maskedPhone, onConfirm, onCancel }) {
   );
 }
 
-const SPIN_STYLE = `
-  from { transform: translate(-50%, -50%) rotate(0deg); }
-  to   { transform: translate(-50%, -50%) rotate(360deg); }
-}
-`;
-
 function WechatBindView({ onBack, onClose, onBindSuccess }) {
-  const [qrCodeUrl, setQrCodeUrl] = useState(null);
-  const [bindView, setBindView] = useState('qrcode');
-  const pollRef = useRef(null);
+  const [qrStatus, setQrStatus] = useState('loading'); // loading | ready | scanned | expired | error
+  const [authUrl, setAuthUrl] = useState('');
+  const pollingRef = useRef(null);
   const ticketRef = useRef(null);
 
-  const stopPoll = () => {
-    if (pollRef.current) {
-      clearInterval(pollRef.current);
-      pollRef.current = null;
+  const startPolling = (ticket) => {
+    if (pollingRef.current) { pollingRef.current.stop(); pollingRef.current = null; }
+    pollingRef.current = createSerialPolling({
+      task: async () => apiPollWechatBind(ticket),
+      interval: 2000,
+      onResult: (data) => {
+        if (data.status === 'scanned') {
+          setQrStatus('scanned');
+        } else if (data.status === 'confirmed') {
+          pollingRef.current?.stop();
+          onBindSuccess(data.wechat_nickname);
+        } else if (data.status === 'expired') {
+          pollingRef.current?.stop();
+          setQrStatus('expired');
+        } else if (data.status === 'error') {
+          pollingRef.current?.stop();
+          setQrStatus('error');
+        }
+      },
+      onError: () => {
+        pollingRef.current?.stop();
+        setQrStatus('error');
+      },
+      maxConsecutiveErrors: 3,
+      pauseWhenHidden: true,
+    });
+    pollingRef.current.start();
+  };
+
+  const loadQrCode = async () => {
+    setQrStatus('loading');
+    setAuthUrl('');
+    try {
+      const data = await apiGetWechatQrCode();
+      ticketRef.current = data.ticket;
+      setAuthUrl(data.qrCodeValue);
+      setQrStatus('ready');
+      startPolling(data.ticket);
+    } catch {
+      setQrStatus('error');
     }
   };
 
   useEffect(() => {
-    let cancelled = false;
-    apiGetWechatQrCode().then(({ qrCodeUrl: url, ticket }) => {
-      if (cancelled) return;
-      setQrCodeUrl(url);
-      ticketRef.current = ticket;
-      pollRef.current = setInterval(async () => {
-        const res = await apiPollWechatBind(ticketRef.current);
-        if (res.status === 'scanned') {
-          setBindView('confirming');
-        } else if (res.status === 'confirmed') {
-          stopPoll();
-          onBindSuccess(res.wechatNickname);
-        }
-      }, 2000);
-    });
-    return () => {
-      cancelled = true;
-      stopPoll();
-    };
+    loadQrCode();
+    return () => { pollingRef.current?.stop(); pollingRef.current = null; };
   }, []);
 
-  const handleBack = () => {
-    stopPoll();
-    onBack();
-  };
-
-  const handleClose = () => {
-    stopPoll();
-    onClose();
-  };
+  const isExpiredOrError = qrStatus === 'expired' || qrStatus === 'error';
+  const qrLabel = {
+    loading: '正在获取二维码…',
+    ready: '请使用微信扫码',
+    scanned: '扫码成功，请在微信端确认',
+    expired: '二维码已过期，点击刷新',
+    error: '加载失败，点击重试',
+  }[qrStatus] ?? '请使用微信扫码';
 
   return (
     <>
-      <style>{SPIN_STYLE}</style>
       {/* Header */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '16px 24px', gap: '16px' }}>
         <div style={{ display: 'flex', alignItems: 'center', flex: 1, gap: '4px' }}>
-          <button type="button" onClick={handleBack} style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}>
+          <button type="button" onClick={() => { pollingRef.current?.stop(); onBack(); }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center' }}>
             <BackArrowIcon />
           </button>
           <span style={{ fontFamily: FONT_MEDIUM, fontWeight: 500, fontSize: '16px', lineHeight: '20px', color: '#FFFFFF', flex: 1 }}>
             微信绑定
           </span>
         </div>
-        <button type="button" onClick={handleClose} style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', flexShrink: 0 }}>
+        <button type="button" onClick={() => { pollingRef.current?.stop(); onClose(); }} style={{ background: 'transparent', border: 'none', cursor: 'pointer', padding: 0, display: 'flex', alignItems: 'center', flexShrink: 0 }}>
           <CloseIcon />
         </button>
       </div>
 
       {/* Body */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px', gap: '8px' }}>
-        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '12px', position: 'relative' }}>
-          <div style={{ width: '200px', height: '200px', position: 'relative', flexShrink: 0 }}>
-            {qrCodeUrl ? (
-              <img
-                src={qrCodeUrl}
-                alt="微信绑定二维码"
-                style={{ width: '200px', height: '200px', objectFit: 'contain', display: 'block', borderRadius: '8px' }}
-              />
-            ) : (
-              <div style={{ width: '200px', height: '200px', background: 'rgba(255,255,255,0.06)', borderRadius: '8px' }} />
-            )}
-            {bindView === 'confirming' && (
-              <div style={{ position: 'absolute', inset: 0, borderRadius: '8px', background: 'rgba(0,0,0,0.8)' }} />
-            )}
-            {bindView === 'confirming' && (
-              <svg
-                width="24" height="24" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"
-                style={{ position: 'absolute', left: '50%', top: '50%', animation: 'profile-spin 1s linear infinite', transformOrigin: '50% 50%', transform: 'translate(-50%, -50%)' }}
-              >
-                <path d="M8 14.667C11.682 14.667 14.667 11.682 14.667 8C14.667 4.318 11.682 1.333 8 1.333" stroke="#2DC3E1" strokeLinecap="round" strokeLinejoin="round" />
-                <path d="M8 14.667C4.318 14.667 1.333 11.682 1.333 8C1.333 4.318 4.318 1.333 8 1.333" stroke="#2DC3E1" strokeLinecap="round" strokeLinejoin="round" strokeDasharray="0.67 2" />
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '24px', gap: '12px' }}>
+        <div
+          onClick={isExpiredOrError ? loadQrCode : undefined}
+          style={{
+            position: 'relative',
+            width: 284,
+            height: 284,
+            flexShrink: 0,
+            borderRadius: 8,
+            overflow: 'hidden',
+            cursor: isExpiredOrError ? 'pointer' : 'default',
+          }}
+        >
+          {qrStatus !== 'loading' && !isExpiredOrError && authUrl && (
+            <WechatOfficialQr
+              authUrl={authUrl}
+              onReady={() => {}}
+              onError={() => setQrStatus('error')}
+            />
+          )}
+          {qrStatus === 'loading' && (
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', background: 'rgba(255,255,255,0.06)', borderRadius: 8 }}>
+              <div style={{ width: 24, height: 24, border: '2px solid #FFFFFF33', borderTopColor: '#2DC3E1', borderRadius: '50%', animation: 'spin 0.8s linear infinite' }} />
+            </div>
+          )}
+          {isExpiredOrError && (
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#1D1E1E', borderRadius: 8 }}>
+              <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 4V8M12 4L9 7M12 4L15 7" stroke="#FFFFFFCC" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+                <path d="M4 12C4 7.582 7.582 4 12 4" stroke="#FFFFFFCC" strokeWidth="1.5" strokeLinecap="round" />
+                <path d="M20 12C20 16.418 16.418 20 12 20C7.582 20 4 16.418 4 12" stroke="#FFFFFF33" strokeWidth="1.5" strokeLinecap="round" />
               </svg>
-            )}
-          </div>
-          <span style={{ fontFamily: FONT_REGULAR, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF' }}>
-            {bindView === 'qrcode' ? '请使用微信扫码' : '请在微信端确认'}
-          </span>
+              <div style={{ fontFamily: FONT_REGULAR, color: '#FFFFFFCC', fontSize: 12, lineHeight: '16px' }}>点击刷新</div>
+            </div>
+          )}
+          {qrStatus === 'scanned' && (
+            <div style={{ position: 'absolute', inset: 0, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', gap: 8, backgroundColor: '#1D1E1E', borderRadius: 8 }}>
+              <svg width="24" height="24" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                <path d="M8 14.667C9.841 14.667 11.508 13.921 12.714 12.714C13.921 11.508 14.667 9.841 14.667 8C14.667 6.159 13.921 4.492 12.714 3.286C11.508 2.08 9.841 1.333 8 1.333C6.159 1.333 4.492 2.08 3.286 3.286C2.08 4.492 1.333 6.159 1.333 8C1.333 9.841 2.08 11.508 3.286 12.714C4.492 13.921 6.159 14.667 8 14.667Z" fill="#52BF92" stroke="#52BF92" strokeWidth="1.333" strokeLinejoin="round" />
+                <path d="M5.333 8L7.333 10L11.333 6" stroke="#FFFFFF" strokeWidth="1.333" strokeLinecap="round" strokeLinejoin="round" />
+              </svg>
+              <div style={{ fontFamily: FONT_REGULAR, color: '#52BF92', fontSize: 12, lineHeight: '16px' }}>扫码成功</div>
+            </div>
+          )}
         </div>
+        <span style={{ fontFamily: FONT_REGULAR, fontSize: '14px', lineHeight: '18px', color: '#FFFFFF' }}>
+          {qrLabel}
+        </span>
       </div>
     </>
   );
