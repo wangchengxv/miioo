@@ -147,6 +147,13 @@ export async function apiConfirmWechatLogin({ session_id, phone, sms_code }) {
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ session_id, phone, sms_code }),
   });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try { const body = await res.json(); detail = body?.detail || body?.message || detail; } catch {}
+    const err = new Error(`绑定手机号失败（${res.status}）：${detail}`);
+    err.status = res.status;
+    throw err;
+  }
   const data = await res.json();
   if (data.access_token) setTokens(data.access_token, data.refresh_token);
   return data;

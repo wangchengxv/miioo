@@ -666,8 +666,16 @@ function BindPhoneView({ onBind, onBack, onShowToast, bindToken }) {
       onShowToast?.('error', '验证码只能包含数字');
       return;
     }
-    await apiConfirmWechatLogin({ session_id: bindToken, phone, sms_code: code });
-    onBind();
+    try {
+      const data = await apiConfirmWechatLogin({ session_id: bindToken, phone, sms_code: code });
+      if (!data.access_token) {
+        onShowToast?.('error', data.message || '绑定失败，请重试');
+        return;
+      }
+      onBind();
+    } catch (err) {
+      onShowToast?.('error', err.message || '绑定失败，请重试');
+    }
   };
 
   return (
