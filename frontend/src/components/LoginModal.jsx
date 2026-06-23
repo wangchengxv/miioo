@@ -835,8 +835,14 @@ export default function LoginModal({ open, onClose, onSuccess }) {
           onSuccess?.();
           handleClose();
         } else if (result?.status === 'need_bind_mobile') {
-          setBindToken(result?.bind_token || result?.session_id || wechatSessionIdRef.current);
-          setStep('bind');
+          // bind_token 只有轮询接口会返回，callback/complete 不含此字段
+          // 若 postMessage 没带 bind_token，继续等轮询拿到正确 token 后再切换
+          const token = result?.bind_token || result?.session_id;
+          if (token) {
+            setBindToken(token);
+            setStep('bind');
+          }
+          // 无 token 时保持当前二维码视图，轮询会在下一次返回 need_bind_mobile + bind_token
         } else if (result?.status === 'error') {
           showToast('error', result?.message || '微信登录失败，请稍后重试');
         }
