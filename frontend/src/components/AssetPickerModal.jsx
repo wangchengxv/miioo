@@ -4,7 +4,7 @@ import { useCreationStore } from '../stores/creationStore';
 import Checkbox from './Checkbox';
 import { generationsToFlatList } from '../utils/creativeDaysAdapter';
 import { apiGetProjects } from '../api/project';
-import { apiGetAssetsPage } from '../api/assets';
+import { apiGetAssetsPage, enrichWithStoryboards } from '../api/assets';
 import { normalizeImageUrl } from '../utils/imageUrl';
 
 const FONT = "'AlibabaPuHuiTi_2_55_Regular','Alibaba PuHuiTi 2.0',system-ui,sans-serif";
@@ -36,13 +36,14 @@ const SUB_TAB_KEY_MAP = {
 };
 
 // 子 Tab → 后端 category / asset_type 过滤参数
+// 数组表示该 tab 需要拉取多个 category 的资产（如分镜图包含 storyboard + reference）
 const SUB_TAB_CATEGORY_MAP = {
   '角色':   { category: 'character' },
   '场景':   { category: 'scene' },
   '道具':   { category: 'prop' },
-  '分镜图': { category: 'storyboard', asset_type: 'image' },
-  '分镜视频': { category: 'storyboard', asset_type: 'video' },
-  '音频':   { category: 'audio' },
+  '分镜图': { category: ['storyboard', 'reference'], asset_type: 'image' },
+  '分镜视频': { category: ['storyboard', 'reference'], asset_type: 'video' },
+  '音频':   { category: ['audio', 'reference'] },
   '成片':   { category: 'film' },
 };
 
@@ -238,16 +239,14 @@ export default function AssetPickerModal({
   const [projectHovIdx, setProjectHovIdx] = useState(null);
   const [activeProjectId, setActiveProjectId] = useState(projectId || null);
   const projectBtnRef = useRef(null);
-  const pickerScrollRef = useRef(null);
-  const pickerSentinelRef = useRef(null);
 
   // ── 从后端拉取真实数据 ──────────────────────────────────────────────────
   const [apiProjects, setApiProjects] = useState(null);
   const [apiAssetsMap, setApiAssetsMap] = useState(null);
   const [assetsLoading, setAssetsLoading] = useState(false);
   const [projectsLoading, setProjectsLoading] = useState(false);
-  // 分页 meta：key = `${projectId}__${tabKey}`
-  const [pickerPageMeta, setPickerPageMeta] = useState({});
+  // 已加载完成的 tab key 集合：key = `${projectId}__${tabKey}`
+  const [loadedTabKeys, setLoadedTabKeys] = useState(new Set());
 
   useEffect(() => {
     if (!open) return;
@@ -267,7 +266,7 @@ export default function AssetPickerModal({
     })();
   }, [open]);
 
-  const pickerPageKey = (pid, tabKey) => `${pid}__${tabKey}`;
+  const pickerTabKey = (pid, tabKey) => `${pid}__${tabKey}`;
 
   function normalizePickerAsset(a) {
     return {
@@ -285,16 +284,16 @@ export default function AssetPickerModal({
     };
   }
 
-  // 拉取或切换项目资产（首屏 limit=20，切 Tab 时懒加载）
+  // 切换 Tab 时一次性拉取该 Tab 的全部数据（循环翻页直到 hasMore=false）
   useEffect(() => {
     if (!open || activeTab !== 'project') return;
     const pullProjectId = activeProjectId || projectId;
     if (!pullProjectId) return;
 
     const tabKey = SUB_TAB_KEY_MAP[projectSubTab];
-    const pKey = pickerPageKey(pullProjectId, tabKey);
-    // 已经加载过该分类，跳过
-    if (pickerPageMeta[pKey] !== undefined) return;
+    const pKey = pickerTabKey(pullProjectId, tabKey);
+    // 已加载过该分类，跳过
+    if (loadedTabKeys.has(pKey)) return;
 
     const categoryFilter = SUB_TAB_CATEGORY_MAP[projectSubTab];
     if (!categoryFilter) return;
@@ -302,79 +301,45 @@ export default function AssetPickerModal({
     (async () => {
       try {
         setAssetsLoading(true);
-        const page = await apiGetAssetsPage({
-          project_id: pullProjectId,
-          scope: 'project',
-          limit: 20,
-          ...categoryFilter,
-        });
-        const normalized = page.list.map(normalizePickerAsset);
+        const categories = Array.isArray(categoryFilter.category) ? categoryFilter.category : [categoryFilter.category];
+        const allItems = [];
+
+        for (const cat of categories) {
+          let cursor = undefined;
+          let hasMore = true;
+
+          while (hasMore) {
+            const page = await apiGetAssetsPage({
+              project_id: pullProjectId,
+              scope: 'project',
+              limit: 100,
+              cursor,
+              category: cat,
+              ...(categoryFilter.asset_type ? { asset_type: categoryFilter.asset_type } : {}),
+            });
+            allItems.push(...page.list);
+            hasMore = page.hasMore;
+            cursor = page.nextCursor;
+            if (!cursor) break;
+          }
+        }
+
+        // 分镜 Tab 需要用分镜板数据交叉比对，补全 is_primary / ratio 字段
+        const isStoryboardTab = tabKey === 'storyboard_img' || tabKey === 'storyboard_video';
+        const enriched = await enrichWithStoryboards(pullProjectId, allItems, isStoryboardTab);
+        const normalized = enriched.map(normalizePickerAsset);
         setApiAssetsMap(prev => ({
           ...prev,
           [pullProjectId]: { ...(prev?.[pullProjectId] ?? {}), [tabKey]: normalized },
         }));
-        setPickerPageMeta(prev => ({
-          ...prev,
-          [pKey]: { cursor: page.nextCursor, hasMore: page.hasMore, loading: false },
-        }));
+        setLoadedTabKeys(prev => new Set([...prev, pKey]));
       } catch (err) {
         console.error('[AssetPickerModal] 拉取项目资产失败:', err);
-        setPickerPageMeta(prev => ({ ...prev, [pKey]: { cursor: null, hasMore: false, loading: false } }));
       } finally {
         setAssetsLoading(false);
       }
     })();
   }, [open, activeTab, projectId, activeProjectId, projectSubTab]);
-
-  // 加载更多（触底时调用）
-  async function loadMorePickerAssets() {
-    const pullProjectId = activeProjectId || projectId;
-    if (!pullProjectId) return;
-    const tabKey = SUB_TAB_KEY_MAP[projectSubTab];
-    const pKey = pickerPageKey(pullProjectId, tabKey);
-    const meta = pickerPageMeta[pKey];
-    if (!meta || meta.loading || !meta.hasMore) return;
-
-    const categoryFilter = SUB_TAB_CATEGORY_MAP[projectSubTab];
-    if (!categoryFilter) return;
-
-    setPickerPageMeta(prev => ({ ...prev, [pKey]: { ...prev[pKey], loading: true } }));
-    try {
-      const page = await apiGetAssetsPage({
-        project_id: pullProjectId,
-        scope: 'project',
-        limit: 20,
-        cursor: meta.cursor,
-        ...categoryFilter,
-      });
-      const normalized = page.list.map(normalizePickerAsset);
-      setApiAssetsMap(prev => ({
-        ...prev,
-        [pullProjectId]: {
-          ...(prev?.[pullProjectId] ?? {}),
-          [tabKey]: [...(prev?.[pullProjectId]?.[tabKey] ?? []), ...normalized],
-        },
-      }));
-      setPickerPageMeta(prev => ({
-        ...prev,
-        [pKey]: { cursor: page.nextCursor, hasMore: page.hasMore, loading: false },
-      }));
-    } catch (err) {
-      console.error('[AssetPickerModal] 加载更多资产失败:', err);
-      setPickerPageMeta(prev => ({ ...prev, [pKey]: { ...prev[pKey], loading: false } }));
-    }
-  }
-
-  // IntersectionObserver 触底加载
-  useEffect(() => {
-    if (!pickerSentinelRef.current || !pickerScrollRef.current) return;
-    const observer = new IntersectionObserver(
-      (entries) => { if (entries[0].isIntersecting) loadMorePickerAssets(); },
-      { root: pickerScrollRef.current, rootMargin: '80px', threshold: 0 }
-    );
-    observer.observe(pickerSentinelRef.current);
-    return () => observer.disconnect();
-  }, [open, activeTab, projectSubTab, activeProjectId, pickerPageMeta]);
 
 
   const projects = apiProjects ?? [];
@@ -723,7 +688,7 @@ export default function AssetPickerModal({
         </div>
 
         {/* ── 内容区（可滚动） ── */}
-        <div ref={pickerScrollRef} style={{ flex: 1, overflowY: 'auto', padding: '8px 24px', display: 'flex', flexDirection: 'column' }}>
+        <div style={{ flex: 1, overflowY: 'auto', padding: '8px 24px', display: 'flex', flexDirection: 'column' }}>
           {filteredAssets.length === 0 ? (
             <EmptyState />
           ) : (
@@ -745,19 +710,6 @@ export default function AssetPickerModal({
                 />
                 );
               })}
-              {/* 滚动加载哨兵 */}
-              <div ref={pickerSentinelRef} style={{ width: '100%', height: '1px', flexShrink: 0 }} />
-              {(() => {
-                const pullProjectId = activeProjectId || projectId;
-                const tabKey = SUB_TAB_KEY_MAP[projectSubTab];
-                const pKey = pickerPageKey(pullProjectId, tabKey);
-                const meta = pickerPageMeta[pKey];
-                return (meta?.loading) ? (
-                  <div style={{ width: '100%', display: 'flex', justifyContent: 'center', padding: '8px 0' }}>
-                    <span style={{ fontFamily: FONT, fontSize: '13px', color: '#FFFFFF40' }}>加载中…</span>
-                  </div>
-                ) : null;
-              })()}
             </div>
           )}
         </div>

@@ -436,8 +436,8 @@ async function enrichWithStoryboards(projectId, rawList, needsStoryboards) {
   });
 }
 
-// 导出 groupByCategory 供调用方在累积原始数据后重新分组
-export { groupByCategory };
+// 导出 groupByCategory / enrichWithStoryboards 供调用方使用
+export { groupByCategory, enrichWithStoryboards };
 
 export async function apiGetProjectAssets(projectId, { limit, category } = {}) {
   const fetchFn = async () => {
