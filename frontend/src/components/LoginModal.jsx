@@ -630,7 +630,7 @@ function WechatView({ onBackToPhone, onLoginSuccess, onNeedBind, onShowToast, on
   );
 }
 
-function BindPhoneView({ onBind, onBack, onShowToast, bindToken }) {
+function BindPhoneView({ onBind, onBack, onShowToast, bindToken, sessionId }) {
   const [phone, setPhone] = useState('');
   const [code, setCode] = useState('');
   const [phoneError, setPhoneError] = useState(false);
@@ -685,9 +685,23 @@ function BindPhoneView({ onBind, onBack, onShowToast, bindToken }) {
       return;
     }
     try {
-      await apiConfirmWechatLogin({ session_id: bindToken, phone, sms_code: code });
+      const confirmData = await apiConfirmWechatLogin({ session_id: bindToken, phone, sms_code: code });
+      // confirm 接口成功但未返回 token（后端设计：confirm 只更新 session 状态，token 通过 poll 下发）
+      // 补一次 poll 拿 confirmed 状态的 access_token
+      let hasToken = !!confirmData.access_token;
+      if (!hasToken && sessionId) {
+        try {
+          const pollData = await apiPollWechatQrCodeStatus(sessionId);
+          hasToken = !!pollData.access_token;
+        } catch (_) {}
+      }
+      if (!hasToken) {
+        // 服务端未返回 token，走不了静默登录，给出明确提示
+        onShowToast?.('error', '绑定成功但获取登录凭证失败，请重新登录');
+        return;
+      }
       onShowToast?.('success', '绑定成功，正在为您登录...');
-      setTimeout(() => { onBind(); window.location.reload(); }, 1200);
+      setTimeout(() => { onBind(); }, 1200);
     } catch (err) {
       const friendlyMsg = err.status === 400
         ? '验证码错误或已失效，请重新获取'
@@ -903,7 +917,7 @@ export default function LoginModal({ open, onClose, onSuccess }) {
         <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-start', flex: 1, alignSelf: 'stretch', padding: 0, backgroundColor: '#161616' }}>
           <ModalHeader onClose={handleClose} />
           {step === 'bind' ? (
-            <BindPhoneView onBind={handleLoginSuccess} onBack={() => setStep('login')} onShowToast={showToast} bindToken={bindToken} />
+            <BindPhoneView onBind={handleLoginSuccess} onBack={() => setStep('login')} onShowToast={showToast} bindToken={bindToken} sessionId={wechatSessionIdRef.current} />
           ) : tab === 'phone' ? (
             <PhoneLoginView onLogin={handleLoginSuccess} onChangeTab={setTab} onShowToast={showToast} />
           ) : (
