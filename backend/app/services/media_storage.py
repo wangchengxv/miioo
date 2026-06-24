@@ -1,5 +1,6 @@
 import base64
 import ipaddress
+import logging
 import mimetypes
 import uuid
 from pathlib import Path
@@ -9,8 +10,12 @@ import httpx
 from fastapi import UploadFile
 
 from app.config import settings
+from app.services.media_delivery_urls import build_object_storage_public_url
 from app.services.http_client import upstream_async_client
 from app.utils.url_security import validate_outbound_url
+
+
+logger = logging.getLogger("app.media_storage")
 
 
 _CONTENT_TYPE_EXTENSIONS = {
@@ -35,6 +40,150 @@ MEDIA_FALLBACK_EXTENSIONS = {
 
 def get_upload_root() -> Path:
     return settings.upload_root
+
+
+def _clean_string(value: str | None) -> str:
+    return str(value or "").strip()
+
+
+def _object_storage_write_enabled() -> bool:
+    return _clean_string(getattr(settings, "MEDIA_STORAGE_MODE", "")).lower() in {
+        "hybrid",
+        "object_storage",
+    }
+
+
+def _resolve_object_storage_bucket(*, media_role: str = "raw") -> str:
+    mapping = {
+        "raw": _clean_string(getattr(settings, "MEDIA_OBJECT_STORAGE_BUCKET_RAW", "")),
+        "preview": _clean_string(getattr(settings, "MEDIA_OBJECT_STORAGE_BUCKET_PREVIEW", "")),
+        "derived": _clean_string(getattr(settings, "MEDIA_OBJECT_STORAGE_BUCKET_DERIVED", "")),
+        "hls": _clean_string(getattr(settings, "MEDIA_OBJECT_STORAGE_BUCKET_HLS", "")),
+        "private_download": _clean_string(
+            getattr(settings, "MEDIA_OBJECT_STORAGE_BUCKET_PRIVATE_DOWNLOAD", "")
+        ),
+    }
+    return mapping.get(media_role, "") or mapping["raw"]
+
+
+def _resolve_object_storage_prefix(*, media_role: str = "raw") -> str:
+    mapping = {
+        "raw": _clean_string(getattr(settings, "MEDIA_OBJECT_STORAGE_KEY_PREFIX_RAW", "")),
+        "preview": _clean_string(getattr(settings, "MEDIA_OBJECT_STORAGE_KEY_PREFIX_PREVIEW", "")),
+        "derived": _clean_string(getattr(settings, "MEDIA_OBJECT_STORAGE_KEY_PREFIX_DERIVED", "")),
+        "hls": _clean_string(getattr(settings, "MEDIA_OBJECT_STORAGE_KEY_PREFIX_HLS", "")),
+        "private_download": _clean_string(
+            getattr(settings, "MEDIA_OBJECT_STORAGE_KEY_PREFIX_PRIVATE_DOWNLOAD", "")
+        ),
+    }
+    return mapping.get(media_role, "") or mapping["raw"]
+
+
+def build_object_storage_copy_metadata(
+    managed_url: str | None,
+    *,
+    media_role: str = "raw",
+) -> dict:
+    if not _object_storage_write_enabled():
+        return {}
+
+    managed_storage_key = resolve_managed_storage_key(managed_url)
+    if not managed_storage_key:
+        return {}
+
+    bucket = _resolve_object_storage_bucket(media_role=media_role)
+    if not bucket:
+        return {}
+
+    prefix = _resolve_object_storage_prefix(media_role=media_role).strip("/")
+    object_key = "/".join(part for part in [prefix, managed_storage_key] if part)
+    if not object_key:
+        return {}
+
+    origin_url = build_object_storage_public_url(
+        bucket=bucket,
+        key=object_key,
+        prefer_cdn=False,
+    )
+    cdn_url = build_object_storage_public_url(
+        bucket=bucket,
+        key=object_key,
+        prefer_cdn=True,
+    )
+
+    metadata = {
+        "storage_mode": "object_storage",
+        "storage_bucket": bucket,
+        "storage_key": object_key,
+        "origin_storage_key": object_key,
+        "download_storage_key": object_key,
+    }
+    if origin_url:
+        metadata["source_url"] = origin_url
+        metadata["download_url"] = origin_url
+    if cdn_url:
+        metadata["cdn_url"] = cdn_url
+    return metadata
+
+
+def _build_tencent_cos_client():
+    try:
+        from qcloud_cos import CosConfig, CosS3Client
+    except ImportError as exc:
+        raise RuntimeError(
+            "当前环境未安装 cos-python-sdk-v5，无法把媒体写入腾讯云 COS"
+        ) from exc
+
+    region = _clean_string(getattr(settings, "MEDIA_OBJECT_STORAGE_REGION", ""))
+    secret_id = _clean_string(getattr(settings, "MEDIA_OBJECT_STORAGE_SECRET_ID", ""))
+    secret_key = _clean_string(getattr(settings, "MEDIA_OBJECT_STORAGE_SECRET_KEY", ""))
+    if not region or not secret_id or not secret_key:
+        raise RuntimeError(
+            "对象存储已开启，但 MEDIA_OBJECT_STORAGE_REGION / SECRET_ID / SECRET_KEY 不完整"
+        )
+
+    config = CosConfig(
+        Region=region,
+        Secret_id=secret_id,
+        Secret_key=secret_key,
+        Scheme="https",
+    )
+    return CosS3Client(config)
+
+
+def _sync_managed_upload_to_object_storage(
+    *,
+    managed_url: str,
+    content: bytes,
+    content_type: str | None = None,
+    media_role: str = "raw",
+) -> dict:
+    metadata = build_object_storage_copy_metadata(managed_url, media_role=media_role)
+    if not metadata:
+        return {}
+
+    bucket = _clean_string(metadata.get("storage_bucket"))
+    object_key = _clean_string(metadata.get("storage_key"))
+    if not bucket or not object_key:
+        return {}
+
+    client = _build_tencent_cos_client()
+    put_object_kwargs = {
+        "Bucket": bucket,
+        "Key": object_key,
+        "Body": content,
+    }
+    normalized_content_type = _clean_string(content_type)
+    if normalized_content_type:
+        put_object_kwargs["ContentType"] = normalized_content_type
+
+    client.put_object(**put_object_kwargs)
+    logger.info(
+        "synced managed upload to object storage bucket=%s key=%s",
+        bucket,
+        object_key,
+    )
+    return metadata
 
 
 def normalize_upload_subdir(subdir: str) -> str:
@@ -114,6 +263,7 @@ def build_managed_storage_metadata(
     *,
     origin_url: str | None = None,
     import_source: str,
+    managed_url: str | None = None,
     extra: dict | None = None,
 ) -> dict:
     metadata = {
@@ -124,6 +274,9 @@ def build_managed_storage_metadata(
         metadata["origin_url"] = origin_url
     if extra:
         metadata.update(extra)
+    object_storage_metadata = build_object_storage_copy_metadata(managed_url)
+    if object_storage_metadata:
+        metadata.update(object_storage_metadata)
     return metadata
 
 
@@ -246,8 +399,14 @@ async def persist_remote_file(
     filename = f"{uuid.uuid4().hex}{extension}"
     file_path = upload_dir / filename
     file_path.write_bytes(content)
-
-    return build_upload_url(subdir, filename)
+    managed_url = build_upload_url(subdir, filename)
+    if _object_storage_write_enabled():
+        _sync_managed_upload_to_object_storage(
+            managed_url=managed_url,
+            content=content,
+            content_type=content_type,
+        )
+    return managed_url
 
 
 async def persist_if_external(
@@ -323,5 +482,11 @@ async def persist_uploaded_file(
     stored_name = f"{uuid.uuid4().hex}{extension}"
     file_path = upload_dir / stored_name
     file_path.write_bytes(content)
-
-    return build_upload_url(subdir, stored_name)
+    managed_url = build_upload_url(subdir, stored_name)
+    if _object_storage_write_enabled():
+        _sync_managed_upload_to_object_storage(
+            managed_url=managed_url,
+            content=content,
+            content_type=content_type,
+        )
+    return managed_url

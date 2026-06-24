@@ -1017,13 +1017,18 @@ async def create_asset(
 
     metadata_updates: dict = {}
     if is_managed_upload_url(file_url):
-        metadata_updates["storage_mode"] = "managed_upload"
-        metadata_updates["import_source"] = "manual_asset_import"
+        metadata_updates.update(
+            build_managed_storage_metadata(
+                import_source="manual_asset_import",
+                managed_url=file_url,
+            )
+        )
     if origin_file_url:
         metadata_updates.update(
             build_managed_storage_metadata(
                 origin_url=origin_file_url,
                 import_source="manual_asset_import",
+                managed_url=file_url,
             )
         )
     if origin_thumbnail_url:
@@ -1103,7 +1108,12 @@ async def update_asset(
         )
         asset.reference_image_urls = reference_image_urls
         if reference_image_urls and any(is_managed_upload_url(url) for url in reference_image_urls):
-            metadata["storage_mode"] = "managed_upload"
+            metadata.update(
+                build_managed_storage_metadata(
+                    import_source="manual_asset_import",
+                    managed_url=reference_image_urls[0],
+                )
+            )
         if origin_reference_urls:
             metadata["import_source"] = "manual_asset_import"
             metadata["origin_reference_urls"] = origin_reference_urls

@@ -1127,6 +1127,7 @@ async def _sync_creation_shot_import_asset(
     metadata_updates = build_managed_storage_metadata(
         origin_url=origin_url,
         import_source="creation_shot_import",
+        managed_url=persisted_url,
         extra={
             "source": "creation_shot_import",
             "session_id": str(shot.session_id),
@@ -3633,6 +3634,7 @@ async def upload_creation_image(
         thumbnail_url=derived_thumbnail_url,
         metadata_json=build_managed_storage_metadata(
             import_source="user_upload",
+            managed_url=file_url,
             extra={
                 "source": "creation_upload",
                 "uploaded_via": "creation",
@@ -3733,6 +3735,7 @@ async def upload_creation_video(
         thumbnail_url=thumbnail_url,
         metadata_json=build_managed_storage_metadata(
             import_source="user_upload",
+            managed_url=file_url,
             extra={
                 "source": "creation_upload",
                 "uploaded_via": "creation",
@@ -3814,6 +3817,7 @@ async def upload_creation_audio(
         thumbnail_url=None,
         metadata_json=build_managed_storage_metadata(
             import_source="user_upload",
+            managed_url=file_url,
             extra={
                 "source": "creation_upload",
                 "uploaded_via": "creation",

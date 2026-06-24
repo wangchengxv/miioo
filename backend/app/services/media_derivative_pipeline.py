@@ -11,6 +11,7 @@ from app.services.image_derivatives import (
 from app.services.video_hls_pipeline import generate_video_hls
 from app.services.video_frame import extract_video_frame
 from app.services.video_preview_pipeline import generate_video_preview
+from app.services.media_storage import build_object_storage_copy_metadata
 
 
 def _clean_url(value: Any) -> str | None:
@@ -124,6 +125,9 @@ def build_video_playback_metadata(
         "download_url": resolved_download_url,
         "preview_ready": bool(hls_url or resolved_preview_video_url),
     }
+    object_storage_metadata = build_object_storage_copy_metadata(resolved_download_url)
+    if object_storage_metadata:
+        metadata_updates.update(object_storage_metadata)
     if poster_url:
         metadata_updates["poster_url"] = poster_url
     if hls_url:
