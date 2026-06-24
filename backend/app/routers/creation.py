@@ -2,7 +2,10 @@ from __future__ import annotations
 
 import io
 import json
+import logging
 import re
+import hashlib
+import urllib.request
 import zipfile
 from math import gcd
 from pathlib import Path
@@ -52,6 +55,7 @@ from app.services.model_capabilities import (
 )
 from app.services.audio_voice_context import resolve_audio_voice_context
 from app.services.media_references import delete_managed_upload_if_unreferenced
+from app.services.reference_audio_proxy import MissingBinaryError, probe_reference_audio_duration
 from app.services.media_view_models import (
     build_audio_media_fields,
     build_image_media_fields,
@@ -70,6 +74,7 @@ from app.services.media_storage import (
     resolve_upload_dir,
     resolve_upload_path,
 )
+from app.services.object_storage import sync_managed_image_bundle_to_object_storage
 from app.services.minimax_voice_runtime import (
     MiniMaxProviderRuntime,
     create_minimax_async_tts_task,
@@ -88,6 +93,7 @@ from app.services.visual_styles import append_visual_styles
 from app.utils.url_security import validate_outbound_url
 
 router = APIRouter()
+logger = logging.getLogger("app.routers.creation")
 
 CREATION_LIST_DEFAULT_PAGE_SIZE = 9
 
@@ -1691,6 +1697,7 @@ class CreationAssetBinding(BaseModel):
     asset_type: Literal["image", "video", "audio"] | None = None
     asset_name: str | None = None
     url: str | None = None
+    duration: float | None = Field(default=None, ge=0)
     preview_url: str | None = None
     previewUrl: str | None = None
     preview_video_url: str | None = None
@@ -2807,6 +2814,21 @@ async def _persist_one_creation_image(
         asset_type="image",
     )
     derived_preview_url, preview_metadata = _derive_asset_preview(persisted_url)
+    object_storage_metadata: dict[str, Any] = {}
+    try:
+        object_storage_metadata = sync_managed_image_bundle_to_object_storage(
+            source_url=persisted_url,
+            preview_url=derived_preview_url,
+            thumbnail_url=derived_thumbnail_url,
+        )
+    except (FileNotFoundError, RuntimeError, ValueError) as exc:
+        logger.warning(
+            "creation image object storage sync skipped task_id=%s index=%s url=%s detail=%s",
+            task_id,
+            index,
+            persisted_url,
+            exc,
+        )
 
     asset_id = None
     if save_to_assets:
@@ -2844,6 +2866,7 @@ async def _persist_one_creation_image(
                 "shot_id": str(shot_id) if shot_id else None,
                 **derivative_metadata,
                 **preview_metadata,
+                **object_storage_metadata,
                 "preview_url": derived_preview_url or persisted_url,
             },
         )
@@ -3804,6 +3827,24 @@ async def upload_creation_audio(
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     original_filename = file.filename or "上传音频"
+    audio_duration: float | None = None
+    try:
+        audio_duration = await probe_reference_audio_duration(file_url)
+    except MissingBinaryError:
+        audio_duration = None
+    except Exception as exc:
+        logger.warning("Failed to probe uploaded creation audio duration: %s", exc)
+        audio_duration = None
+
+    extra_metadata = {
+        "source": "creation_upload",
+        "uploaded_via": "creation",
+        "original_filename": original_filename,
+        "session_id": str(session.id) if session else None,
+        "shot_id": str(shot.id) if shot else None,
+    }
+    if audio_duration:
+        extra_metadata["duration"] = audio_duration
     asset = Asset(
         user_id=user.id,
         project_id=project.id if project else None,
@@ -3814,13 +3855,7 @@ async def upload_creation_audio(
         thumbnail_url=None,
         metadata_json=build_managed_storage_metadata(
             import_source="user_upload",
-            extra={
-                "source": "creation_upload",
-                "uploaded_via": "creation",
-                "original_filename": original_filename,
-                "session_id": str(session.id) if session else None,
-                "shot_id": str(shot.id) if shot else None,
-            },
+            extra=extra_metadata,
         ),
     )
     db.add(asset)
@@ -5716,6 +5751,55 @@ async def _run_creation_video_task(
             return
 
         api_key, base_url, _, model, _, _ = provider_runtime
+        provider_type = provider_runtime[2]
+
+        # #region debug-point B:video-provider-runtime
+        try:
+            _dbg_url = "http://127.0.0.1:7777/event"
+            _dbg_session = "video-tail-frame-401"
+            try:
+                with open(".dbg/video-tail-frame-401.env", "r", encoding="utf-8") as _dbg_file:
+                    for _dbg_line in _dbg_file.read().splitlines():
+                        if _dbg_line.startswith("DEBUG_SERVER_URL="):
+                            _dbg_url = _dbg_line.split("=", 1)[1] or _dbg_url
+                        elif _dbg_line.startswith("DEBUG_SESSION_ID="):
+                            _dbg_session = _dbg_line.split("=", 1)[1] or _dbg_session
+            except Exception:
+                pass
+            urllib.request.urlopen(
+                urllib.request.Request(
+                    _dbg_url,
+                    data=json.dumps(
+                        {
+                            "sessionId": _dbg_session,
+                            "runId": "pre-fix",
+                            "hypothesisId": "B",
+                            "location": "backend/app/routers/creation.py:_run_creation_video_generation_job",
+                            "msg": "[DEBUG] resolved video provider runtime",
+                            "data": {
+                                "taskId": str(task_id),
+                                "providerType": provider_type,
+                                "model": model,
+                                "baseUrl": base_url,
+                                "apiKeyFingerprint": hashlib.sha256(api_key.encode("utf-8")).hexdigest()[:12],
+                                "referenceMode": reference_mode,
+                                "generationMode": generation_mode,
+                                "hasFirstFrame": bool(first_frame_url),
+                                "hasLastFrame": bool(last_frame_url),
+                                "hasReferenceVideo": bool(reference_video_url),
+                                "hasReferenceAudio": bool(reference_audio_url),
+                                "attachmentCount": len(attachments or []),
+                                "referenceImageAssetCount": len(reference_image_asset_ids or []),
+                            },
+                        }
+                    ).encode("utf-8"),
+                    headers={"Content-Type": "application/json"},
+                ),
+                timeout=1,
+            ).read()
+        except Exception:
+            pass
+        # #endregion
 
         try:
             video_result = await video_gen_service.generate(

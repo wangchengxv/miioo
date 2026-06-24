@@ -1,10 +1,12 @@
 import asyncio
 import base64
+import hashlib
 import ipaddress
 import json
 import mimetypes
 import re
 import time
+import urllib.request
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlsplit
@@ -34,11 +36,64 @@ from app.services.media_storage import (
     persist_remote_file,
     resolve_upload_path,
 )
+from app.services.reference_audio_proxy import (
+    REFERENCE_AUDIO_MAX_DURATION_SECONDS,
+    validate_seedance_reference_audio_duration,
+)
 from app.services.reference_video_proxy import prepare_local_reference_video_for_upstream
 
 
 def _log(msg: str):
     print(f"[VIDEO_GEN] {msg}")
+
+
+def _debug_secret_fingerprint(value: str | None) -> str | None:
+    normalized = str(value or "").strip()
+    if not normalized:
+        return None
+    return hashlib.sha256(normalized.encode("utf-8")).hexdigest()[:12]
+
+
+def _emit_video_tail_frame_debug(
+    *,
+    hypothesis_id: str,
+    location: str,
+    msg: str,
+    data: dict[str, Any] | None = None,
+    trace_id: str | None = None,
+) -> None:
+    try:
+        debug_url = "http://127.0.0.1:7777/event"
+        debug_session = "video-tail-frame-401"
+        try:
+            with open(".dbg/video-tail-frame-401.env", "r", encoding="utf-8") as debug_file:
+                for debug_line in debug_file.read().splitlines():
+                    if debug_line.startswith("DEBUG_SERVER_URL="):
+                        debug_url = debug_line.split("=", 1)[1] or debug_url
+                    elif debug_line.startswith("DEBUG_SESSION_ID="):
+                        debug_session = debug_line.split("=", 1)[1] or debug_session
+        except Exception:
+            pass
+        payload = {
+            "sessionId": debug_session,
+            "runId": "pre-fix",
+            "hypothesisId": hypothesis_id,
+            "location": location,
+            "msg": msg,
+            "data": data or {},
+        }
+        if trace_id:
+            payload["traceId"] = trace_id
+        urllib.request.urlopen(
+            urllib.request.Request(
+                debug_url,
+                data=json.dumps(payload).encode("utf-8"),
+                headers={"Content-Type": "application/json"},
+            ),
+            timeout=1,
+        ).read()
+    except Exception:
+        pass
 
 
 class VideoGenService:
@@ -206,6 +261,7 @@ class VideoGenService:
             return f"message={response_text}"
 
         upstream_message = str(inner_error.get("message") or "").strip()
+        upstream_code = str(inner_error.get("code") or "").strip()
         param = str(inner_error.get("param") or "").strip() or None
         binding = self._resolve_seedance_content_binding(param, asset_bindings)
         binding_label = self._describe_seedance_binding(binding)
@@ -228,6 +284,27 @@ class VideoGenService:
         trace_suffix = f"（{'；'.join(trace_suffix_parts)}）" if trace_suffix_parts else ""
 
         normalized_message = upstream_message.lower()
+        normalized_code = upstream_code.lower()
+        if (
+            normalized_code == "inputimagesensitivecontentdetected.privacyinformation"
+            or "may contain real person" in normalized_message
+            or "real person" in normalized_message
+        ):
+            image_binding_label = (
+                binding_label
+                if binding and str(binding.get("asset_type") or "").strip() == "image"
+                else "输入图片/参考图片"
+            )
+            return (
+                f"{image_binding_label} 命中平台真人肖像/隐私风控，当前模型无法处理可能包含真人面部、"
+                "自拍、证件照或他人真实肖像的图片素材。"
+                "请改用动漫、插画、3D 虚拟人物、风景、静物等非真人图片重新生成；"
+                "若必须保留当前构图，请先裁掉或彻底脱敏人脸区域后再试。"
+                f"若确认素材并非真人，也可携带错误码 `{upstream_code or 'InputImageSensitiveContentDetected.PrivacyInformation'}`"
+                " 与对应 Request id 联系服务商申诉复核。"
+                f"{trace_suffix}"
+            )
+
         if (
             "video pixel count specified in the request must be less than or equal to"
             in normalized_message
@@ -251,9 +328,31 @@ class VideoGenService:
                 f"{trace_suffix}"
             )
 
+        if (
+            "audio duration (seconds) specified in the request must be less than or equal to"
+            in normalized_message
+        ):
+            limit_match = re.search(
+                r"must be less than or equal to\s+(\d+(?:\.\d+)?)",
+                upstream_message,
+                re.IGNORECASE,
+            )
+            limit_value = limit_match.group(1) if limit_match else f"{REFERENCE_AUDIO_MAX_DURATION_SECONDS:g}"
+            return (
+                f"{binding_label} 时长超过 Seedance 上限 {limit_value} 秒，请裁短到 15 秒内后重试。"
+                f"{trace_suffix}"
+            )
+
         if upstream_message:
             return f"{binding_label} 参数不合法：{upstream_message}{trace_suffix}"
         return f"message={response_text}"
+
+    def _normalize_attachment_duration(self, duration: Any) -> float | None:
+        try:
+            parsed = float(duration)
+        except (TypeError, ValueError):
+            return None
+        return parsed if parsed > 0 else None
 
     def _build_seedance_trace(
         self,
@@ -1723,12 +1822,19 @@ class VideoGenService:
         media_label: str,
         *,
         media_type: str,
+        known_duration_seconds: float | None = None,
     ) -> str:
         cleaned = str(url or "").strip()
         if not cleaned:
             raise ValueError(f"{media_label}地址不能为空")
 
         normalized_url = cleaned
+        if media_type == "audio":
+            await validate_seedance_reference_audio_duration(
+                cleaned,
+                known_duration_seconds=known_duration_seconds,
+                media_label=media_label,
+            )
         if media_type == "video":
             # Strip PUBLIC_BASE_URL prefix so local files served through a
             # public tunnel are correctly recognized for probe/trim.
@@ -1788,6 +1894,12 @@ class VideoGenService:
                                 f"{prepared.width}x{prepared.height}, "
                                 f"duration={prepared.duration_seconds}s -> {prepared.url}"
                             )
+                    elif media_type == "audio":
+                        await validate_seedance_reference_audio_duration(
+                            proxied_url,
+                            known_duration_seconds=known_duration_seconds,
+                            media_label=media_label,
+                        )
                     _log(
                         f"Rehosted {media_label} for Seedance upstream: "
                         f"{normalized_url[:120]} -> {proxied_url}"
@@ -2019,6 +2131,7 @@ class VideoGenService:
             "asset_type": asset_type,
             "asset_name": str(attachment.get("asset_name") or "").strip() or None,
             "url": url,
+            "duration": self._normalize_attachment_duration(attachment.get("duration")),
             "role": str(attachment.get("role") or "").strip() or None,
             "source": str(attachment.get("source") or "").strip() or None,
         }
@@ -2508,11 +2621,46 @@ class VideoGenService:
         async with upstream_async_client(profile="model", timeout=180.0) as client:
             start_time = time.time()
             while time.time() - start_time < max_wait:
-                resp = await client.get(
-                    f"{base_url.rstrip('/')}/volc/api/v3/contents/generations/tasks/{task_id}",
-                    headers=self._headers(api_key),
+                poll_url = f"{base_url.rstrip('/')}/volc/api/v3/contents/generations/tasks/{task_id}"
+                # #region debug-point A:seedance-poll-request
+                _emit_video_tail_frame_debug(
+                    hypothesis_id="A",
+                    location="backend/app/services/video_gen.py:_poll_seedance_task:request",
+                    msg="[DEBUG] seedance poll request",
+                    trace_id=task_id,
+                    data={
+                        "taskId": task_id,
+                        "baseUrl": base_url,
+                        "pollUrl": poll_url,
+                        "apiKeyFingerprint": _debug_secret_fingerprint(api_key),
+                    },
                 )
-                resp.raise_for_status()
+                # #endregion
+                try:
+                    resp = await client.get(
+                        poll_url,
+                        headers=self._headers(api_key),
+                    )
+                    resp.raise_for_status()
+                except httpx.HTTPStatusError as exc:
+                    # #region debug-point D:seedance-poll-401
+                    _emit_video_tail_frame_debug(
+                        hypothesis_id="D",
+                        location="backend/app/services/video_gen.py:_poll_seedance_task:http_error",
+                        msg="[DEBUG] seedance poll http error",
+                        trace_id=task_id,
+                        data={
+                            "taskId": task_id,
+                            "baseUrl": base_url,
+                            "pollUrl": poll_url,
+                            "statusCode": exc.response.status_code if exc.response else None,
+                            "responseBody": exc.response.text[:500] if exc.response else None,
+                            "wwwAuthenticate": exc.response.headers.get("www-authenticate") if exc.response else None,
+                            "apiKeyFingerprint": _debug_secret_fingerprint(api_key),
+                        },
+                    )
+                    # #endregion
+                    raise
                 data = resp.json()
                 parsed = self._extract_video_task_payload(data)
                 task_data = data.get("data", data)
@@ -2775,6 +2923,18 @@ class VideoGenService:
         normalized_last_frame_url = mapped_assets.get("last_frame_url")
         normalized_reference_video_url = mapped_assets.get("reference_video_url")
         normalized_reference_audio_url = mapped_assets.get("reference_audio_url")
+        reference_audio_attachment = next(
+            (
+                attachment
+                for attachment in (mapped_assets.get("attachments") or [])
+                if str(attachment.get("asset_type") or "").strip() == "audio"
+                and str(attachment.get("url") or "").strip() == str(normalized_reference_audio_url or "").strip()
+            ),
+            None,
+        )
+        normalized_reference_audio_duration = self._normalize_attachment_duration(
+            (reference_audio_attachment or {}).get("duration")
+        )
         normalized_attachments: list[dict] = []
         normalized_subjects = mapped_assets.get("subjects") or []
         normalized_multiframe_segments = mapped_assets.get("multiframe_segments") or []
@@ -2817,6 +2977,7 @@ class VideoGenService:
                         normalized_reference_audio_url,
                         "参考音频",
                         media_type="audio",
+                        known_duration_seconds=normalized_reference_audio_duration,
                     )
                 else:
                     normalized_reference_audio_url = self._prepare_external_media_url(
@@ -2851,6 +3012,7 @@ class VideoGenService:
                             normalized_attachment["url"],
                             "参考音频",
                             media_type="audio",
+                            known_duration_seconds=normalized_attachment.get("duration"),
                         )
                     else:
                         normalized_attachment["url"] = self._prepare_external_media_url(
@@ -3382,6 +3544,31 @@ class VideoGenService:
             data = None
             last_http_error: Exception | None = None
             for attempt in range(1, submit_attempts + 1):
+                # #region debug-point A:seedance-submit-request
+                _emit_video_tail_frame_debug(
+                    hypothesis_id="A",
+                    location="backend/app/services/video_gen.py:_generate_seedance:submit",
+                    msg="[DEBUG] seedance submit request",
+                    data={
+                        "baseUrl": base_url,
+                        "submitUrl": submit_url,
+                        "model": normalized_model,
+                        "apiKeyFingerprint": _debug_secret_fingerprint(api_key),
+                        "attempt": attempt,
+                        "referenceMode": normalized_reference_mode,
+                        "generateMode": api_generate_mode,
+                        "ratio": payload.get("ratio"),
+                        "duration": payload.get("duration"),
+                        "resolution": payload.get("resolution"),
+                        "hasFirstFrame": bool(first_frame_url),
+                        "hasLastFrame": bool(last_frame_url),
+                        "hasReferenceVideo": bool(reference_video_url),
+                        "hasReferenceAudio": bool(reference_audio_url),
+                        "attachmentCount": len(attachments or []),
+                        "assetBindingCount": len(asset_bindings or []),
+                    },
+                )
+                # #endregion
                 try:
                     resp = await client.post(
                         submit_url,
@@ -3454,6 +3641,21 @@ class VideoGenService:
             if not task_id:
                 raise Exception(f"No task_id in Seedance response: {data}")
 
+            # #region debug-point C:seedance-submit-response
+            _emit_video_tail_frame_debug(
+                hypothesis_id="C",
+                location="backend/app/services/video_gen.py:_generate_seedance:task_id",
+                msg="[DEBUG] seedance submit response resolved task id",
+                trace_id=str(task_id),
+                data={
+                    "taskId": str(task_id),
+                    "baseUrl": base_url,
+                    "model": normalized_model,
+                    "apiKeyFingerprint": _debug_secret_fingerprint(api_key),
+                    "responseKeys": list(data.keys())[:12] if isinstance(data, dict) else [],
+                },
+            )
+            # #endregion
             result = await self._poll_seedance_task(task_id, api_key, base_url)
             return self._build_video_generation_result(
                 url=result.get("url", ""),

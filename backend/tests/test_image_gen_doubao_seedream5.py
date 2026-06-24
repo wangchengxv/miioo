@@ -1,3 +1,4 @@
+import httpx
 import pytest
 
 from app.services.image_gen import ImageGenService
@@ -149,14 +150,50 @@ class _FakeStreamClient:
         return _FakeStreamResponse(self._lines)
 
 
+class _FailingStreamResponse:
+    def __init__(self, status_code=400, text="stream unsupported"):
+        self._status_code = status_code
+        self._text = text
+
+    def raise_for_status(self):
+        request = httpx.Request("POST", "https://api.onelinkai.cloud/volc/api/v3/images/generations")
+        response = httpx.Response(self._status_code, request=request, text=self._text)
+        raise httpx.HTTPStatusError("stream failed", request=request, response=response)
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+
+class _FallbackDoubaoClient:
+    def __init__(self, payload):
+        self.stream_calls = []
+        self.post_calls = []
+        self._payload = payload
+
+    async def __aenter__(self):
+        return self
+
+    async def __aexit__(self, exc_type, exc, tb):
+        return False
+
+    def stream(self, method, url, headers=None, json=None):
+        self.stream_calls.append({"method": method, "url": url, "json": json or {}})
+        return _FailingStreamResponse()
+
+    async def post(self, url, headers=None, json=None):
+        self.post_calls.append({"url": url, "headers": headers or {}, "json": json or {}})
+        return _FakeResponse(self._payload)
+
+
 @pytest.mark.anyio
 async def test_doubao_generate_stream_yields_images_and_completed(monkeypatch):
     lines = [
         'data: {"type": "image_generation.partial_succeeded", "image_index": 0, "url": "https://cdn.example.com/1.png", "size": "2496x1664"}',
         "",
-        'data: {"type": "image_generation.partial_succeeded", "image_index": 1, "url": "https://cdn.example.com/2.png", "size": "2496x1664"}',
-        "",
-        'data: {"type": "image_generation.completed", "usage": {"generated_images": 2, "total_tokens": 100}}',
+        'data: {"type": "image_generation.completed", "usage": {"generated_images": 1, "total_tokens": 100}}',
         "",
         "data: [DONE]",
     ]
@@ -171,20 +208,82 @@ async def test_doubao_generate_stream_yields_images_and_completed(monkeypatch):
         base_url="https://api.onelinkai.cloud",
         model="doubao-seedream-5.0-lite",
         size="2K",
-        n=2,
+        n=1,
     ):
         events.append(event)
 
     assert client.stream_calls[0]["json"]["stream"] is True
     assert client.stream_calls[0]["url"].endswith("/volc/api/v3/images/generations")
     image_events = [e for e in events if e["type"] == "image"]
-    assert [e["url"] for e in image_events] == [
-        "https://cdn.example.com/1.png",
-        "https://cdn.example.com/2.png",
-    ]
+    assert [e["url"] for e in image_events] == ["https://cdn.example.com/1.png"]
     completed = [e for e in events if e["type"] == "completed"]
     assert len(completed) == 1
-    assert completed[0]["usage"]["generated_images"] == 2
+    assert completed[0]["usage"]["generated_images"] == 1
+
+
+@pytest.mark.anyio
+async def test_doubao_generate_stream_falls_back_to_non_stream_on_http_400(monkeypatch):
+    client = _FallbackDoubaoClient({"data": [{"url": "https://cdn.example.com/fallback.png"}]})
+    _patch_client(monkeypatch, client)
+
+    service = ImageGenService()
+    events = []
+    async for event in service.generate_stream(
+        prompt="x",
+        api_key="k",
+        base_url="https://api.onelinkai.cloud",
+        model="doubao-seedream-5.0-lite",
+        size="2K",
+        n=1,
+    ):
+        events.append(event)
+
+    assert len(client.stream_calls) == 1
+    assert len(client.post_calls) == 1
+    assert events == [
+        {
+            "type": "image",
+            "index": 0,
+            "url": "https://cdn.example.com/fallback.png",
+            "size": "2K",
+        },
+        {"type": "completed", "usage": None},
+    ]
+
+
+@pytest.mark.anyio
+async def test_doubao_generate_stream_bypasses_upstream_stream_for_multi_image(monkeypatch):
+    client = _FallbackDoubaoClient(
+        {
+            "data": [
+                {"url": "https://cdn.example.com/1.png"},
+                {"url": "https://cdn.example.com/2.png"},
+                {"url": "https://cdn.example.com/3.png"},
+            ]
+        }
+    )
+    _patch_client(monkeypatch, client)
+
+    service = ImageGenService()
+    events = []
+    async for event in service.generate_stream(
+        prompt="x",
+        api_key="k",
+        base_url="https://api.onelinkai.cloud",
+        model="doubao-seedream-5.0-lite",
+        size="2K",
+        n=3,
+    ):
+        events.append(event)
+
+    assert len(client.stream_calls) == 0
+    assert len(client.post_calls) == 1
+    assert [event["url"] for event in events if event["type"] == "image"] == [
+        "https://cdn.example.com/1.png",
+        "https://cdn.example.com/2.png",
+        "https://cdn.example.com/3.png",
+    ]
+    assert events[-1] == {"type": "completed", "usage": None}
 
 
 @pytest.mark.anyio

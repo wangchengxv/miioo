@@ -1,6 +1,8 @@
+import json
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 from sqlalchemy import func as sa_func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -40,6 +42,7 @@ from app.services.project_script_service import (
     list_script_histories,
     restore_script_history,
     split_project_script_preview,
+    stream_chat_with_project_script,
 )
 from app.services.script_parser import ALLOWED_SCRIPT_EXTENSIONS, parse_script_upload
 
@@ -267,6 +270,62 @@ async def chat_project_script(
     return ProjectScriptWorkspaceResponse(
         script=_to_script_response(script),
         messages=[_to_message_response(message) for message in messages],
+    )
+
+
+@router.post(
+    "/chat/stream",
+    summary="流式与主剧本对话生成",
+    description="向主剧本工作区发送 AI 指令，并以 `text/event-stream` 形式持续返回增量内容。适合前端边生成边展示整稿。",
+    response_description="SSE 数据流，按 chunk 持续返回模型输出。",
+    openapi_extra={
+        "requestBody": {
+            "content": {
+                "application/json": {
+                    "example": {
+                        "message": "请基于这个项目生成 3 集短剧整稿，每集都有明确冲突和反转",
+                        "episode_count": 3,
+                        "model": "gpt-4.1",
+                        "apply_to_script": True,
+                    }
+                }
+            }
+        }
+    },
+)
+async def chat_project_script_stream(
+    project_id: str,
+    req: ProjectScriptChatRequest,
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    project = await _get_project(project_id, user, db)
+    script = await get_or_create_project_script(project_id, db)
+
+    async def event_generator():
+        try:
+            async for chunk in stream_chat_with_project_script(
+                project=project,
+                project_script=script,
+                user_message=req.message,
+                episode_count=req.episode_count,
+                model=req.model,
+                apply_to_script=req.apply_to_script,
+                db=db,
+            ):
+                yield chunk
+        except Exception as exc:
+            detail = getattr(exc, "detail", str(exc))
+            yield f"data: {json.dumps({'error': detail}, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
     )
 
 

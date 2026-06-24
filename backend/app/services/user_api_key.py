@@ -228,6 +228,47 @@ async def _get_user_model_provider_row(
     return row
 
 
+async def _get_user_enabled_provider_by_types(
+    user_id: UUID,
+    db: AsyncSession,
+    *,
+    provider_types: tuple[str, ...],
+) -> ApiProvider | None:
+    if not provider_types:
+        return None
+    normalized_provider_types = tuple(
+        provider_type.strip().lower()
+        for provider_type in provider_types
+        if str(provider_type or "").strip()
+    )
+    if not normalized_provider_types:
+        return None
+
+    result = await db.execute(
+        select(ApiProvider).where(
+            and_(
+                ApiProvider.user_id == user_id,
+                ApiProvider.is_enabled == True,
+                ApiProvider.provider_type.in_(normalized_provider_types),
+            )
+        )
+    )
+    providers = result.scalars().all()
+    if not providers:
+        return None
+
+    providers.sort(
+        key=lambda provider: (
+            normalized_provider_types.index((provider.provider_type or "").strip().lower())
+            if (provider.provider_type or "").strip().lower() in normalized_provider_types
+            else len(normalized_provider_types),
+            -(provider.updated_at.timestamp() if provider.updated_at else 0.0),
+            str(provider.id),
+        )
+    )
+    return providers[0]
+
+
 async def get_user_model_provider_runtime(
     user_id: UUID,
     db: AsyncSession,
@@ -245,8 +286,26 @@ async def get_user_model_provider_runtime(
         return None
 
     model_config, provider = row
+    normalized_requested_model = (requested_model or "").strip() or None
+    preferred_provider_types = _preferred_provider_types_for_model_id(normalized_requested_model)
+    runtime_provider = provider
+    runtime_model_id = model_config.model_id
+    if normalized_requested_model and preferred_provider_types:
+        current_rank = _preferred_provider_type_rank(
+            provider.provider_type,
+            normalized_requested_model,
+        )
+        if current_rank > 0:
+            preferred_provider = await _get_user_enabled_provider_by_types(
+                user_id,
+                db,
+                provider_types=preferred_provider_types,
+            )
+            if preferred_provider:
+                runtime_provider = preferred_provider
+                runtime_model_id = normalized_requested_model
     resolved_credentials = _resolve_provider_runtime_credentials(
-        provider,
+        runtime_provider,
         category=category,
     )
     if not resolved_credentials:
@@ -255,10 +314,10 @@ async def get_user_model_provider_runtime(
     return (
         api_key,
         base_url,
-        provider.provider_type,
-        model_config.model_id,
-        bool(provider.default_image_watermark),
-        bool(provider.default_video_watermark),
+        runtime_provider.provider_type,
+        runtime_model_id,
+        bool(runtime_provider.default_image_watermark),
+        bool(runtime_provider.default_video_watermark),
     )
 
 

@@ -2,6 +2,7 @@ import asyncio
 import base64
 import binascii
 import json
+import logging
 import mimetypes
 import time
 from collections.abc import AsyncIterator
@@ -20,6 +21,9 @@ from app.services.fal_runtime import (
 from app.services.http_client import upstream_async_client
 from app.utils.onelink_base_url import get_onelink_openai_compat_base_url
 from app.services.media_storage import resolve_upload_path
+
+
+logger = logging.getLogger("app.services.image_gen")
 
 
 class ImageGenService:
@@ -352,6 +356,9 @@ class ImageGenService:
         if body:
             return f"HTTP request failed with status {response.status_code}: {body}"
         return f"HTTP request failed with status {response.status_code}"
+
+    def _should_fallback_stream_to_generate(self, exc: httpx.HTTPStatusError) -> bool:
+        return exc.response.status_code in {400, 404, 405}
 
     def _resolve_primary_reference_image(self, reference_images: list[str]) -> str | None:
         if not reference_images:
@@ -1063,6 +1070,41 @@ class ImageGenService:
             for item in (reference_images or [])
             if str(item).strip()
         ]
+        if request_count > 1:
+            logger.info(
+                "doubao image stream bypassed for multi-image request model=%s base_url=%s size=%s n=%s refs=%s",
+                resolved_model,
+                base_url,
+                size,
+                request_count,
+                len(normalized_reference_images),
+            )
+            images = await self.generate(
+                prompt=prompt,
+                api_key=api_key,
+                base_url=base_url,
+                model=resolved_model,
+                size=size,
+                aspect_ratio=aspect_ratio,
+                resolution=resolution,
+                reference_images=normalized_reference_images,
+                n=request_count,
+                watermark=watermark,
+                output_format=output_format,
+                response_format=response_format,
+                web_search=web_search,
+                optimize_prompt_mode=optimize_prompt_mode,
+                sequential_image_generation=sequential_image_generation,
+            )
+            for index, url in enumerate(images):
+                yield {
+                    "type": "image",
+                    "index": index,
+                    "url": url,
+                    "size": size,
+                }
+            yield {"type": "completed", "usage": None}
+            return
         payload = self._build_doubao_payload(
             resolved_model=resolved_model,
             prompt=prompt,
@@ -1124,6 +1166,44 @@ class ImageGenService:
         except httpx.TimeoutException as exc:
             raise ValueError(f"{resolved_model} 响应超时，请稍后重试") from exc
         except httpx.HTTPStatusError as exc:
+            logger.warning(
+                "doubao image stream request failed, fallback candidate=%s model=%s base_url=%s size=%s n=%s refs=%s status=%s detail=%s",
+                self._should_fallback_stream_to_generate(exc),
+                resolved_model,
+                base_url,
+                size,
+                request_count,
+                len(normalized_reference_images),
+                exc.response.status_code,
+                self._describe_http_error(exc),
+            )
+            if self._should_fallback_stream_to_generate(exc):
+                images = await self.generate(
+                    prompt=prompt,
+                    api_key=api_key,
+                    base_url=base_url,
+                    model=resolved_model,
+                    size=size,
+                    aspect_ratio=aspect_ratio,
+                    resolution=resolution,
+                    reference_images=reference_images,
+                    n=n,
+                    watermark=watermark,
+                    output_format=output_format,
+                    response_format=response_format,
+                    web_search=web_search,
+                    optimize_prompt_mode=optimize_prompt_mode,
+                    sequential_image_generation=sequential_image_generation,
+                )
+                for index, url in enumerate(images):
+                    yield {
+                        "type": "image",
+                        "index": index,
+                        "url": url,
+                        "size": size,
+                    }
+                yield {"type": "completed", "usage": None}
+                return
             raise ValueError(self._describe_http_error(exc)) from exc
 
 

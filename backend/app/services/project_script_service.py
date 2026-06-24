@@ -1,6 +1,6 @@
 import json
 import re
-from typing import Any
+from typing import Any, AsyncGenerator
 from uuid import UUID
 
 from fastapi import HTTPException
@@ -475,6 +475,45 @@ async def chat_with_project_script(
     except Exception as exc:
         _raise_model_call_error("剧本对话生成", exc)
     assistant_content = _extract_llm_content(result, "剧本对话生成")
+    return await _persist_project_script_chat_result(
+        project_script=project_script,
+        user_message=user_message,
+        assistant_content=assistant_content,
+        apply_to_script=apply_to_script,
+        db=db,
+    )
+
+
+def _extract_stream_payload(event: str) -> str | None:
+    line = (event or "").strip()
+    if not line.startswith("data: "):
+        return None
+    return line[6:].strip()
+
+
+def _extract_stream_chunk_text(payload: str) -> str:
+    if not payload or payload == "[DONE]":
+        return ""
+    try:
+        parsed = json.loads(payload)
+    except json.JSONDecodeError:
+        return payload
+    return (
+        parsed.get("choices", [{}])[0].get("delta", {}).get("content")
+        or parsed.get("delta")
+        or parsed.get("content")
+        or parsed.get("chunk")
+        or ""
+    )
+
+
+async def _persist_project_script_chat_result(
+    project_script: ProjectScript,
+    user_message: str,
+    assistant_content: str,
+    apply_to_script: bool,
+    db: AsyncSession,
+) -> tuple[ProjectScript, ProjectScriptMessage, ProjectScriptMessage]:
     is_continuation = _is_continuation_request(user_message)
 
     user_msg = await append_project_script_message(project_script.id, "user", user_message, "chat", db)
@@ -505,6 +544,55 @@ async def chat_with_project_script(
     await db.refresh(user_msg)
     await db.refresh(assistant_msg)
     return project_script, user_msg, assistant_msg
+
+
+async def stream_chat_with_project_script(
+    project: Project,
+    project_script: ProjectScript,
+    user_message: str,
+    episode_count: int | None,
+    model: str | None,
+    apply_to_script: bool,
+    db: AsyncSession,
+) -> AsyncGenerator[str, None]:
+    api_key, base_url, resolved_model_id = await _resolve_chat_model_runtime(project.user_id, db, model)
+    history = await list_project_script_messages(project_script.id, db)
+    messages = await build_chat_messages(project, project_script, history, user_message, episode_count, db)
+    chunks: list[str] = []
+
+    try:
+        async for event in llm_service.stream_chat_completion(
+            messages=messages,
+            api_key=api_key,
+            base_url=base_url,
+            model=resolved_model_id,
+            temperature=0.7,
+            timeout=PROJECT_SCRIPT_LLM_TIMEOUT_SECONDS,
+        ):
+            payload = _extract_stream_payload(event)
+            if payload is None:
+                continue
+            if payload == "[DONE]":
+                break
+            chunk_text = _extract_stream_chunk_text(payload)
+            if chunk_text:
+                chunks.append(chunk_text)
+            yield event
+    except Exception as exc:
+        _raise_model_call_error("剧本对话生成", exc)
+
+    assistant_content = "".join(chunks).strip()
+    if not assistant_content:
+        raise HTTPException(status_code=502, detail="剧本对话生成失败: 模型未返回有效内容")
+
+    await _persist_project_script_chat_result(
+        project_script=project_script,
+        user_message=user_message,
+        assistant_content=assistant_content,
+        apply_to_script=apply_to_script,
+        db=db,
+    )
+    yield "data: [DONE]\n\n"
 
 
 async def split_project_script_preview(

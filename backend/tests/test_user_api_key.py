@@ -195,3 +195,88 @@ async def test_get_user_model_provider_runtime_keeps_existing_order_for_non_offi
         assert model_id == "custom-image-model"
 
     await engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_get_user_model_provider_runtime_falls_back_to_preferred_provider_even_without_matching_model_row(
+    monkeypatch,
+):
+    monkeypatch.setattr("app.services.user_api_key.decrypt_api_key", lambda value: value)
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with engine.begin() as conn:
+        await conn.run_sync(
+            lambda sync_conn: Base.metadata.create_all(
+                sync_conn,
+                tables=[User.__table__, ApiProvider.__table__, ModelConfig.__table__],
+            )
+        )
+
+    user_id = uuid.uuid4()
+    now = datetime(2026, 6, 23, 21, 30, 0)
+
+    async with session_factory() as session:
+        user = User(
+            id=user_id,
+            display_id="miioo_100103",
+            phone="13800000103",
+            password_hash="hashed",
+            nickname="tester",
+        )
+        session.add(user)
+        await session.flush()
+
+        onelink_provider = ApiProvider(
+            user_id=user_id,
+            name="OneLinkAI",
+            provider_type="onelink",
+            base_url="https://api.onelinkai.cloud",
+            api_key_encrypted="onelink-key",
+            is_enabled=True,
+            updated_at=now - timedelta(days=2),
+        )
+        volcengine_provider = ApiProvider(
+            user_id=user_id,
+            name="Volcengine",
+            provider_type="volcengine",
+            base_url="https://ark.cn-beijing.volces.com/api/v3",
+            api_key_encrypted="volcengine-key",
+            is_enabled=True,
+            default_video_watermark=True,
+            updated_at=now,
+        )
+        session.add_all([onelink_provider, volcengine_provider])
+        await session.flush()
+
+        session.add(
+            ModelConfig(
+                provider_id=onelink_provider.id,
+                user_id=user_id,
+                name="OneLink Seedance",
+                model_id="doubao-seedance-2.0",
+                category="video",
+                is_enabled=True,
+                is_default=True,
+                created_at=now - timedelta(days=5),
+            )
+        )
+        await session.commit()
+
+        runtime = await get_user_model_provider_runtime(
+            user_id,
+            session,
+            category="video",
+            requested_model="doubao-seedance-2.0",
+        )
+
+        assert runtime is not None
+        api_key, base_url, provider_type, model_id, _, default_video_watermark = runtime
+        assert api_key == "volcengine-key"
+        assert base_url == "https://ark.cn-beijing.volces.com/api/v3"
+        assert provider_type == "volcengine"
+        assert model_id == "doubao-seedance-2.0"
+        assert default_video_watermark is True
+
+    await engine.dispose()
